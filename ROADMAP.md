@@ -358,6 +358,17 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [ ] Nullable-vector (null-row) support — follow-up
 - [ ] Bulk verification for the RLE-interior (k ≥ 9) high-row-count regime
 
+### 9.6 Run-structured hybrid-stream cursor (fused decode, opt-in)
+- [x] `HybridStreamCursor` — pull-based run cursor over RLE/bit-packing hybrid streams; consumes def levels and dictionary indices run-by-run instead of materializing page-sized `int[]` arrays
+- [x] Fused drain in `FlatColumnWorker`: def+index mode (optional columns) and index-only mode (required dictionary columns), bulk validity + dictionary scatter from run headers
+- [x] `DataPageV1` and `DataPageV2` support in `PageDecoder`; transparent per-page fallback to the materializing path
+- [x] Behavioural oracle (`FusedRunCursorParityTest`) and JMH benchmark (`CursorDecodeBenchmark`); see [`_designs/HYBRID_STREAM_RUN_CURSOR.md`](_designs/HYBRID_STREAM_RUN_CURSOR.md)
+- [x] `ReaderConfig` option `hardwood.cursor-decode` (default `"false"`)
+- [ ] Plain data pages with a column dictionary — plain-index path or partial materialisation
+- [ ] Repetition-level cursors / nested assembly
+- [ ] Default-on — flip `hardwood.cursor-decode` default once field confidence matches the materializing path
+- [ ] Bit-unpack vectorization (#680) — re-evaluate after fusion
+
 ---
 
 ## Phase 10: Public API Design

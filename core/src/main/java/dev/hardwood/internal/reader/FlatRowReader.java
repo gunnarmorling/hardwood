@@ -219,13 +219,16 @@ public final class FlatRowReader implements RowReader {
     /// @param maxRows maximum rows (0 = unlimited). Without a filter this caps scanned
     ///                rows at the [ColumnWorker] drain. With a filter it caps *matching*
     ///                rows (SQL LIMIT), enforced over matches by the reader or wrapper.
+    /// @param cursorDecodeEnabled whether the cursor decode path may engage for
+    ///                dictionary-encoded flat columns
     /// @return a [FlatRowReader] or [FilteredRowReader]
     public static RowReader create(RowGroupIterator rowGroupIterator,
                                    FileSchema schema,
                                    ProjectedSchema projectedSchema,
                                    HardwoodContextImpl context,
                                    ResolvedPredicate filter,
-                                   long maxRows) {
+                                   long maxRows,
+                                   boolean cursorDecodeEnabled) {
         // When statistics prove every surviving row group matches the filter in
         // full, the read is equivalent to an unfiltered read: skip matcher
         // compilation and per-row evaluation entirely, and let maxRows cap
@@ -280,7 +283,7 @@ public final class FlatRowReader implements RowReader {
             FlatColumnWorker worker = new FlatColumnWorker(
                     pageSource, buffer, columnSchema, batchSize,
                     context.decompressorFactory(), context.executor(), workerMaxRows,
-                    columnFilter, drainSide);
+                    columnFilter, drainSide, cursorDecodeEnabled);
 
             buffers[i] = buffer;
             workers[i] = worker;

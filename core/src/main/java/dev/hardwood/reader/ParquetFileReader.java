@@ -77,19 +77,22 @@ public class ParquetFileReader implements AutoCloseable {
     private final HardwoodContextImpl context;
     private final boolean fixedListFastPathEnabled;
     private final boolean metadataFilteringEnabled;
+    private final boolean cursorDecodeEnabled;
     private final boolean ownsContext;
     private final boolean ownsInputFiles;
     private final List<RowGroupIterator> rowGroupIterators = new ArrayList<>();
 
     private ParquetFileReader(List<InputFile> inputFiles, FileMetaData firstFileMetaData,
                               FileSchema schema, HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                              boolean metadataFilteringEnabled, boolean ownsContext, boolean ownsInputFiles) {
+                              boolean metadataFilteringEnabled, boolean cursorDecodeEnabled,
+                              boolean ownsContext, boolean ownsInputFiles) {
         this.inputFiles = inputFiles;
         this.firstFileMetaData = firstFileMetaData;
         this.schema = schema;
         this.context = context;
         this.fixedListFastPathEnabled = fixedListFastPathEnabled;
         this.metadataFilteringEnabled = metadataFilteringEnabled;
+        this.cursorDecodeEnabled = cursorDecodeEnabled;
         this.ownsContext = ownsContext;
         this.ownsInputFiles = ownsInputFiles;
     }
@@ -108,11 +111,15 @@ public class ParquetFileReader implements AutoCloseable {
     /// escape hatch for files whose metadata is wrong (#797).
     private static final String METADATA_FILTERING_OPTION = "hardwood.metadata-filtering";
 
+    /// Reader option key: set to `"true"` to enable the cursor decode path
+    /// for flat dictionary-encoded columns (disabled by default).
+    private static final String CURSOR_DECODE_OPTION = "hardwood.cursor-decode";
+
     /// The [ReaderConfig] option keys the reader recognises. Unknown keys are
     /// ignored (so a flag can be retired without breaking callers) but logged at
     /// `WARNING`, so a typo in a live key surfaces instead of taking the default.
     private static final Set<String> KNOWN_READER_OPTIONS = Set.of(FIXED_LIST_FAST_PATH_OPTION,
-            METADATA_FILTERING_OPTION);
+            METADATA_FILTERING_OPTION, CURSOR_DECODE_OPTION);
 
     private static final System.Logger LOG = System.getLogger(ParquetFileReader.class.getName());
 
@@ -132,6 +139,13 @@ public class ParquetFileReader implements AutoCloseable {
     private static boolean resolveMetadataFiltering(ReaderConfig readerConfig) {
         return !"false".equalsIgnoreCase(
                 readerConfig.options().getOrDefault(METADATA_FILTERING_OPTION, "true"));
+    }
+
+    /// Resolves the cursor decode path flag from a [ReaderConfig]. The path is
+    /// **opt-in**: it stays disabled unless the option is explicitly `"true"`.
+    private static boolean resolveCursorDecode(ReaderConfig readerConfig) {
+        return "true".equalsIgnoreCase(
+                readerConfig.options().getOrDefault(CURSOR_DECODE_OPTION, "false"));
     }
 
     /// Logs a `WARNING` for each [ReaderConfig] option key the reader does not
@@ -203,6 +217,7 @@ public class ParquetFileReader implements AutoCloseable {
         warnUnknownReaderOptions(readerConfig);
         boolean fixedListFastPathEnabled = resolveFixedListFastPath(readerConfig);
         boolean metadataFilteringEnabled = resolveMetadataFiltering(readerConfig);
+        boolean cursorDecodeEnabled = resolveCursorDecode(readerConfig);
         List<InputFile> files = List.copyOf(inputFiles);
         InputFile first = files.get(0);
         first.open();
@@ -228,7 +243,7 @@ public class ParquetFileReader implements AutoCloseable {
             fileOpenedEvent.commit();
 
             return new ParquetFileReader(files, firstFileMetaData, schema, context, fixedListFastPathEnabled,
-                    metadataFilteringEnabled, ownsContext, true);
+                    metadataFilteringEnabled, cursorDecodeEnabled, ownsContext, true);
         }
         catch (Exception e) {
             try {
@@ -480,7 +495,8 @@ public class ParquetFileReader implements AutoCloseable {
                             long maxRows,
                             List<RowGroup> rowGroups) {
         if (schema.isFlatSchema()) {
-            return FlatRowReader.create(rowGroupIterator, schema, projectedSchema, context, filter, maxRows);
+            return FlatRowReader.create(rowGroupIterator, schema, projectedSchema, context, filter, maxRows,
+                    cursorDecodeEnabled);
         }
         else {
             return NestedRowReader.create(rowGroupIterator, schema, projectedSchema, context, fixedListFastPathEnabled, filter, maxRows, rowGroups);
@@ -502,7 +518,7 @@ public class ParquetFileReader implements AutoCloseable {
         }
         InputFile inputFile = inputFiles.get(0);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
-        return ColumnReader.create(columnName, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, null, batchSize);
+        return ColumnReader.create(columnName, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, cursorDecodeEnabled, null, batchSize);
     }
 
     ColumnReader buildColumnReader(int columnIndex, FilterPredicate filter) {
@@ -519,7 +535,7 @@ public class ParquetFileReader implements AutoCloseable {
         }
         InputFile inputFile = inputFiles.get(0);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
-        return ColumnReader.create(columnIndex, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, null, batchSize);
+        return ColumnReader.create(columnIndex, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, cursorDecodeEnabled, null, batchSize);
     }
 
     ColumnReaders buildColumnReaders(ColumnProjection projection, FilterPredicate filter) {
@@ -545,7 +561,7 @@ public class ParquetFileReader implements AutoCloseable {
             if (iterator.getWorkItems().isEmpty()) {
                 return ColumnReaders.noRows(schema, projected);
             }
-            return new ColumnReaders(context, fixedListFastPathEnabled, iterator, schema, projected,
+            return new ColumnReaders(context, fixedListFastPathEnabled, cursorDecodeEnabled, iterator, schema, projected,
                     resolveBatchSize(batchSize, projected, rowGroups));
         }
 
@@ -570,7 +586,7 @@ public class ParquetFileReader implements AutoCloseable {
         // Size against the augmented projection — the predicate columns allocate
         // per-batch arrays too, so they count toward the byte budget.
         return ColumnReaders.filtered(
-                context, fixedListFastPathEnabled, iterator, schema, augProjected, payloadProjected, resolved,
+                context, fixedListFastPathEnabled, cursorDecodeEnabled, iterator, schema, augProjected, payloadProjected, resolved,
                 resolveBatchSize(batchSize, augProjected, rowGroups));
     }
 

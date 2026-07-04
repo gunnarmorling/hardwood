@@ -4668,6 +4668,204 @@ write_fixed_size_list_leadfast(_leadfast)
 print("Generated fixed_size_list_k4_leadfast_v2.parquet: 40 rows x 4 float32, "
       "3 null lists, present run then null across a row-group boundary")
 
+# ============================================================================
+# Fused decode path: tiny dictionary pages (#726)
+# ============================================================================
+#
+# Exercises the run-fused flat decode path against the materialising oracle
+# (FusedRunCursorParityTest). Two conditions must both appear:
+#   1. Many tiny dictionary pages per read batch with UNCOMPRESSED codec, so a
+#      page's fused cursor outlives the reused thread-local decompression buffer
+#      that the next page's decode overwrites -- the cursor must own its bytes.
+#   2. A page whose values all reference a single dictionary entry, which the
+#      writer encodes with index bit width 0 (no index bytes at all); the fused
+#      scatter must still map every value to entry 0.
+# `const_col` supplies (2); the low-cardinality and nullable columns spread
+# values across many tiny pages for (1). `data_page_size` is deliberately tiny
+# to force page splits.
+FUSED_TINY_ROWS = 4000
+_flba_pool_tiny = [b"FLBA0001", b"FLBA0002", b"FLBA0003"]
+fused_tiny = pa.table({
+    'id': pa.array(range(FUSED_TINY_ROWS), type=pa.int32()),
+    'const_col': pa.array([7] * FUSED_TINY_ROWS, type=pa.int32()),
+    'lowcard_int': pa.array([i % 5 for i in range(FUSED_TINY_ROWS)], type=pa.int32()),
+    'nullable_int': pa.array(
+        [None if i % 13 == 0 else (i % 7) for i in range(FUSED_TINY_ROWS)], type=pa.int32()),
+    'lowcard_str': pa.array(
+        ['aa', 'bb', 'cc'][i % 3] if i % 11 else None for i in range(FUSED_TINY_ROWS)),
+    'lowcard_flba': pa.array(
+        [_flba_pool_tiny[i % 3] if i % 7 else None for i in range(FUSED_TINY_ROWS)], type=pa.binary(8)),
+    'lowcard_long': pa.array([(i % 4) * 1000 for i in range(FUSED_TINY_ROWS)], type=pa.int64()),
+})
+pq.write_table(
+    fused_tiny,
+    'core/src/test/resources/run_cursor_tiny_pages.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+    data_page_size=96,
+)
+print("\nGenerated run_cursor_tiny_pages.parquet:")
+print(f"  - {FUSED_TINY_ROWS} rows, tiny uncompressed dictionary pages; const_col forces index bit width 0")
+
+# ============================================================================
+# Fused decode path: required dictionary columns (index-only fused path)
+# ============================================================================
+#
+# Exercises FusedRunCursorParityTest on required (maxDefinitionLevel == 0)
+# dictionary-encoded columns across physical types, low/high cardinality
+# (RLE-rich vs bit-packed index streams), and a single-entry dictionary
+# (index bit width 0). Small data_page_size forces many cursor lifetimes.
+FUSED_REQUIRED_ROWS = 10_000
+FUSED_REQUIRED_RUN = 200
+_fused_req_rng = numpy.random.default_rng(12345)
+
+
+def _fused_req_low_card_indices(dict_size, num_rows, run_length):
+    n_runs = (num_rows + run_length - 1) // run_length
+    run_ids = _fused_req_rng.integers(0, dict_size, size=n_runs)
+    return numpy.repeat(run_ids, run_length)[:num_rows]
+
+
+def _fused_req_high_card_indices(dict_size, num_rows):
+    return _fused_req_rng.integers(0, dict_size, size=num_rows)
+
+
+_int32_pool_lo = numpy.array([10, 20, 30], dtype=numpy.int32)
+_int32_pool_hi = numpy.arange(64, dtype=numpy.int32) * 7
+_int64_pool_lo = numpy.array([100, 200, 300, 400], dtype=numpy.int64)
+_int64_pool_hi = numpy.arange(128, dtype=numpy.int64) * 1000
+_float_pool_lo = numpy.array([1.5, 2.5], dtype=numpy.float32)
+_float_pool_hi = _fused_req_rng.standard_normal(32).astype(numpy.float32)
+_double_pool_lo = numpy.array([0.1, 0.2, 0.3], dtype=numpy.float64)
+_double_pool_hi = _fused_req_rng.standard_normal(64).astype(numpy.float64)
+_str_pool_lo = ["alpha", "beta", "gamma", "delta"]
+_str_pool_hi = [f"val_{i:03d}" for i in range(32)]
+_str_idx_lo = _fused_req_low_card_indices(4, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)
+_str_idx_hi = _fused_req_high_card_indices(32, FUSED_REQUIRED_ROWS)
+
+_flba_pool_lo = [b"FLBA0001", b"FLBA0002", b"FLBA0003", b"FLBA0004"]
+_flba_pool_hi = [f"flba_{i:03d}".encode('utf-8') for i in range(32)]
+_flba_idx_lo = _fused_req_low_card_indices(4, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)
+_flba_idx_hi = _fused_req_high_card_indices(32, FUSED_REQUIRED_ROWS)
+
+_ts_pool_lo = [datetime(2026, 1, 1, 12, 0, 0) + timedelta(minutes=i * 10) for i in range(4)]
+_ts_pool_hi = [datetime(2026, 1, 1, 0, 0, 0) + timedelta(seconds=i * 100) for i in range(32)]
+_ts_idx_lo = _fused_req_low_card_indices(4, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)
+_ts_idx_hi = _fused_req_high_card_indices(32, FUSED_REQUIRED_ROWS)
+
+fused_required_schema = pa.schema([
+    pa.field("int32_low_card", pa.int32(), nullable=False),
+    pa.field("int32_high_card", pa.int32(), nullable=False),
+    pa.field("int64_low_card", pa.int64(), nullable=False),
+    pa.field("int64_high_card", pa.int64(), nullable=False),
+    pa.field("float_low_card", pa.float32(), nullable=False),
+    pa.field("float_high_card", pa.float32(), nullable=False),
+    pa.field("double_low_card", pa.float64(), nullable=False),
+    pa.field("double_high_card", pa.float64(), nullable=False),
+    pa.field("string_low_card", pa.string(), nullable=False),
+    pa.field("string_high_card", pa.string(), nullable=False),
+    pa.field("flba_low_card", pa.binary(8), nullable=False),
+    pa.field("flba_high_card", pa.binary(8), nullable=False),
+    pa.field("int96_low_card", pa.timestamp('us', tz='UTC'), nullable=False),
+    pa.field("int96_high_card", pa.timestamp('us', tz='UTC'), nullable=False),
+    pa.field("single_entry", pa.int32(), nullable=False),
+])
+fused_required = pa.table({
+    "int32_low_card": pa.array(
+        _int32_pool_lo[_fused_req_low_card_indices(3, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)],
+        type=pa.int32()),
+    "int32_high_card": pa.array(
+        _int32_pool_hi[_fused_req_high_card_indices(64, FUSED_REQUIRED_ROWS)],
+        type=pa.int32()),
+    "int64_low_card": pa.array(
+        _int64_pool_lo[_fused_req_low_card_indices(4, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)],
+        type=pa.int64()),
+    "int64_high_card": pa.array(
+        _int64_pool_hi[_fused_req_high_card_indices(128, FUSED_REQUIRED_ROWS)],
+        type=pa.int64()),
+    "float_low_card": pa.array(
+        _float_pool_lo[_fused_req_low_card_indices(2, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)],
+        type=pa.float32()),
+    "float_high_card": pa.array(
+        _float_pool_hi[_fused_req_high_card_indices(32, FUSED_REQUIRED_ROWS)],
+        type=pa.float32()),
+    "double_low_card": pa.array(
+        _double_pool_lo[_fused_req_low_card_indices(3, FUSED_REQUIRED_ROWS, FUSED_REQUIRED_RUN)],
+        type=pa.float64()),
+    "double_high_card": pa.array(
+        _double_pool_hi[_fused_req_high_card_indices(64, FUSED_REQUIRED_ROWS)],
+        type=pa.float64()),
+    "string_low_card": pa.array(
+        [_str_pool_lo[i] for i in _str_idx_lo], type=pa.string()),
+    "string_high_card": pa.array(
+        [_str_pool_hi[i] for i in _str_idx_hi], type=pa.string()),
+    "flba_low_card": pa.array(
+        [_flba_pool_lo[i] for i in _flba_idx_lo], type=pa.binary(8)),
+    "flba_high_card": pa.array(
+        [_flba_pool_hi[i] for i in _flba_idx_hi], type=pa.binary(8)),
+    "int96_low_card": pa.array(
+        [_ts_pool_lo[i] for i in _ts_idx_lo], type=pa.timestamp('us', tz='UTC')),
+    "int96_high_card": pa.array(
+        [_ts_pool_hi[i] for i in _ts_idx_hi], type=pa.timestamp('us', tz='UTC')),
+    "single_entry": pa.array(
+        numpy.full(FUSED_REQUIRED_ROWS, 42, dtype=numpy.int32), type=pa.int32()),
+}, schema=fused_required_schema)
+pq.write_table(
+    fused_required,
+    'core/src/test/resources/run_cursor_required_dict.parquet',
+    use_dictionary=True,
+    compression=None,
+    use_deprecated_int96_timestamps=True,
+    data_page_version='1.0',
+    data_page_size=512,
+)
+print("\nGenerated run_cursor_required_dict.parquet:")
+print(f"  - {FUSED_REQUIRED_ROWS} rows, required dict columns (low/high card + single-entry), "
+      f"data_page_size=512")
+
+# ============================================================================
+# Fused decode path: DataPageV2 variants of the two cursor fixtures above.
+# ============================================================================
+#
+# The design doc lists DataPageV1 and DataPageV2 as in scope (the fused gate is
+# encoding- and level-shape-based; page version only changes how level/value
+# regions are sliced).  The fixtures above use data_page_version='1.0'.  These
+# two mirrors use data_page_version='2.0' so that FusedRunCursorParityTest also
+# exercises:
+#
+#   * The DataPageV2 def+index fused branch (run_cursor_tiny_pages_v2): the
+#     level regions are stored uncompressed as leading bytes of the page body
+#     and the value region is extracted via readValueRegion().
+#   * The DataPageV2 index-only fused branch (run_cursor_required_dict_v2):
+#     readValueRegion() + valuesData[0] as bit-width byte.
+#
+# Data content is identical to the V1 counterparts so the oracle comparison
+# (fused == materialising) still validates correctness, not just that the file
+# is readable.
+pq.write_table(
+    fused_tiny,
+    'core/src/test/resources/run_cursor_tiny_pages_v2.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='2.0',
+    data_page_size=96,
+)
+print("\nGenerated run_cursor_tiny_pages_v2.parquet:")
+print(f"  - {FUSED_TINY_ROWS} rows, DataPageV2, tiny uncompressed dictionary pages; "
+      f"covers def+index fused V2 branch")
+
+pq.write_table(
+    fused_required,
+    'core/src/test/resources/run_cursor_required_dict_v2.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='2.0',
+    data_page_size=512,
+)
+print("\nGenerated run_cursor_required_dict_v2.parquet:")
+print(f"  - {FUSED_REQUIRED_ROWS} rows, DataPageV2, required dict columns; "
+      f"covers index-only fused V2 branch (readValueRegion + valuesData[0])")
 
 # CLI native-image compression codec fixtures (#804).
 # One small file per supported codec, read by cli's NativeCompressionCodecIT to

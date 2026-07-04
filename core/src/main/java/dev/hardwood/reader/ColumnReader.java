@@ -852,9 +852,10 @@ public class ColumnReader implements AutoCloseable {
     static ColumnReader create(String columnName, FileSchema schema,
                                InputFile inputFile, List<RowGroup> rowGroups,
                                HardwoodContextImpl context, boolean fixedListFastPathEnabled,
+                               boolean cursorDecodeEnabled,
                                ResolvedPredicate filter, int batchSize) {
         return create(schema.getColumn(columnName), schema, inputFile, rowGroups, context,
-                fixedListFastPathEnabled, filter, batchSize);
+                fixedListFastPathEnabled, cursorDecodeEnabled, filter, batchSize);
     }
 
     /// Create a ColumnReader for a column by index with optional page-level
@@ -862,14 +863,16 @@ public class ColumnReader implements AutoCloseable {
     static ColumnReader create(int columnIndex, FileSchema schema,
                                InputFile inputFile, List<RowGroup> rowGroups,
                                HardwoodContextImpl context, boolean fixedListFastPathEnabled,
+                               boolean cursorDecodeEnabled,
                                ResolvedPredicate filter, int batchSize) {
         return create(schema.getColumn(columnIndex), schema, inputFile, rowGroups, context,
-                fixedListFastPathEnabled, filter, batchSize);
+                fixedListFastPathEnabled, cursorDecodeEnabled, filter, batchSize);
     }
 
     private static ColumnReader create(ColumnSchema columnSchema, FileSchema schema,
                                        InputFile inputFile, List<RowGroup> rowGroups,
                                        HardwoodContextImpl context, boolean fixedListFastPathEnabled,
+                                       boolean cursorDecodeEnabled,
                                        ResolvedPredicate filter, int batchSize) {
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema,
                 ColumnProjection.columns(columnSchema.fieldPath().toString()));
@@ -885,7 +888,7 @@ public class ColumnReader implements AutoCloseable {
         rowGroupIterator.initialize(projectedSchema, filter);
 
         return createFromIterator(columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled,
-                0, rowGroupIterator, resolvedBatchSize, NestedColumnWorker.IndexMode.REAL_VIEW);
+                cursorDecodeEnabled, 0, rowGroupIterator, resolvedBatchSize, NestedColumnWorker.IndexMode.REAL_VIEW);
     }
 
     /// Creates a ColumnReader from a pre-configured RowGroupIterator.
@@ -899,6 +902,7 @@ public class ColumnReader implements AutoCloseable {
                                            RowGroupIterator rowGroupIterator,
                                            HardwoodContextImpl context,
                                            boolean fixedListFastPathEnabled,
+                                           boolean cursorDecodeEnabled,
                                            int projectedColumnIndex,
                                            RowGroupIterator ownedIterator,
                                            int batchSize,
@@ -932,7 +936,7 @@ public class ColumnReader implements AutoCloseable {
                     });
             FlatColumnWorker flatWorker = new FlatColumnWorker(
                     pageSource, flatBuf, columnSchema, batchSize,
-                    context.decompressorFactory(), context.executor(), 0, null);
+                    context.decompressorFactory(), context.executor(), 0, null, false, cursorDecodeEnabled);
             flatWorker.start();
             return ColumnReader.forFlat(columnSchema, flatBuf, flatWorker, ownedIterator);
         }

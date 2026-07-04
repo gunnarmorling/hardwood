@@ -107,7 +107,7 @@ class FixedSizeListEngagementTest {
                     PageInfo pageInfo = pages.next();
                     PageDecoder decoder = new PageDecoder(
                             pageInfo.columnMetaData(), pageInfo.columnSchema(),
-                            context.decompressorFactory(), false);
+                            context.decompressorFactory(), false, false);
                     Page page = decoder.decodePage(pageInfo.pageData(), pageInfo.dictionary(), scratch);
 
                     assertThat(page.repetitionLevels()).isSameAs(scratch.repetitionLevels(page.size()));
@@ -152,7 +152,7 @@ class FixedSizeListEngagementTest {
             PageInfo pageInfo = pages.next();
             PageDecoder decoder = new PageDecoder(
                     pageInfo.columnMetaData(), pageInfo.columnSchema(),
-                    context.decompressorFactory(), fastPath);
+                    context.decompressorFactory(), fastPath, false);
             Page page = decoder.decodePage(pageInfo.pageData(), pageInfo.dictionary());
             return page.fixedListK();
         }
@@ -183,7 +183,7 @@ class FixedSizeListEngagementTest {
                     PageInfo pageInfo = pages.next();
                     PageDecoder decoder = new PageDecoder(
                             pageInfo.columnMetaData(), pageInfo.columnSchema(),
-                            context.decompressorFactory(), true);
+                            context.decompressorFactory(), true, false);
                     Page page = decoder.decodePage(pageInfo.pageData(), pageInfo.dictionary());
                     result.add(page.fixedListK());
                 }

@@ -57,6 +57,7 @@ public class ColumnReaders implements AutoCloseable {
 
     ColumnReaders(HardwoodContextImpl context,
                   boolean fixedListFastPathEnabled,
+                  boolean cursorDecodeEnabled,
                   RowGroupIterator rowGroupIterator,
                   FileSchema schema,
                   ProjectedSchema projectedSchema,
@@ -71,7 +72,7 @@ public class ColumnReaders implements AutoCloseable {
             ColumnSchema columnSchema = schema.getColumn(originalIndex);
 
             ColumnReader reader = ColumnReader.createFromIterator(
-                    columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled, i, null, batchSize,
+                    columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled, cursorDecodeEnabled, i, null, batchSize,
                     NestedColumnWorker.IndexMode.REAL_VIEW);
 
             readersByName.put(columnSchema.fieldPath().toString(), reader);
@@ -95,6 +96,7 @@ public class ColumnReaders implements AutoCloseable {
     /// are decoded to evaluate the predicate but are not exposed.
     static ColumnReaders filtered(HardwoodContextImpl context,
                                   boolean fixedListFastPathEnabled,
+                                  boolean cursorDecodeEnabled,
                                   RowGroupIterator rowGroupIterator,
                                   FileSchema schema,
                                   ProjectedSchema augProjected,
@@ -107,7 +109,7 @@ public class ColumnReaders implements AutoCloseable {
         for (int i = 0; i < augCount; i++) {
             ColumnSchema columnSchema = schema.getColumn(augProjected.toOriginalIndex(i));
             ColumnReader reader = ColumnReader.createFromIterator(
-                    columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled, i, null, batchSize,
+                    columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled, cursorDecodeEnabled, i, null, batchSize,
                     NestedColumnWorker.IndexMode.REAL_VIEW_KEEP_LEVELS);
             allReaders[i] = reader;
             byPath.put(columnSchema.fieldPath().toString(), reader);
