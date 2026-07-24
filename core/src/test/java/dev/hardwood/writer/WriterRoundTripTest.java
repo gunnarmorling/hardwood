@@ -198,10 +198,10 @@ class WriterRoundTripTest {
 
     @Test
     void rejectsUnsupportedType() {
-        // BYTE_ARRAY is a later increment; the writer rejects it up front rather than
+        // INT96 is deprecated and never produced; the writer rejects it up front rather than
         // producing a partial file.
         FileSchema schema = FileSchema.builder("schema")
-                .addColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)
+                .addColumn("v", PhysicalType.INT96, RepetitionType.REQUIRED)
                 .build();
         assertThatThrownBy(() -> ParquetFileWriter.create(new ByteBufferOutputFile(), schema))
                 .isInstanceOf(UnsupportedOperationException.class);

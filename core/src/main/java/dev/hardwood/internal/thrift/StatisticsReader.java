@@ -34,6 +34,9 @@ public class StatisticsReader {
         Long distinctCount = null;
         byte[] maxValue = null;
         byte[] minValue = null;
+        // is_max_value_exact / is_min_value_exact default to true when absent (parquet.thrift).
+        boolean maxValueExact = true;
+        boolean minValueExact = true;
 
         while (true) {
             ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
@@ -90,6 +93,12 @@ public class StatisticsReader {
                         reader.skipField(header.type());
                     }
                     break;
+                case 7: // is_max_value_exact — a compact bool carries its value in the type nibble
+                    maxValueExact = isBooleanTrue(header.type());
+                    break;
+                case 8: // is_min_value_exact
+                    minValueExact = isBooleanTrue(header.type());
+                    break;
                 default:
                     reader.skipField(header.type());
                     break;
@@ -101,6 +110,13 @@ public class StatisticsReader {
         byte[] resolvedMin = minValue != null ? minValue : deprecatedMin;
         byte[] resolvedMax = maxValue != null ? maxValue : deprecatedMax;
 
-        return new Statistics(resolvedMin, resolvedMax, nullCount, distinctCount, deprecated);
+        return new Statistics(resolvedMin, resolvedMax, nullCount, distinctCount, deprecated,
+                minValueExact, maxValueExact);
+    }
+
+    /// A Thrift compact bool field carries its value in the field-type nibble: `0x01` is true,
+    /// `0x02` is false. There is no separate body to consume.
+    private static boolean isBooleanTrue(byte fieldType) {
+        return fieldType == ThriftCompactConstants.FieldType.BOOLEAN_TRUE.code();
     }
 }

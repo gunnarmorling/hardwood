@@ -32,15 +32,16 @@ public final class RowGroupBuffer {
     /// @param pageValues maximum number of level triples per data page
     /// @param enableDictionary whether columns are dictionary-encoded (with `PLAIN` fallback)
     /// @param dictionaryLimitBytes the dictionary size past which a chunk falls back to `PLAIN`
+    /// @param statisticsTruncationLength the maximum `BYTE_ARRAY` `min` / `max` bound length
     /// @param compressor compresses each page body before it is buffered
     /// @param codec the codec `compressor` applies, recorded in each chunk's metadata
     public RowGroupBuffer(FileSchema schema, int pageValues, boolean enableDictionary, int dictionaryLimitBytes,
-                          Compressor compressor, CompressionCodec codec) {
+                          int statisticsTruncationLength, Compressor compressor, CompressionCodec codec) {
         this.schema = schema;
         this.columns = new ColumnChunkBuffer[schema.getColumnCount()];
         for (int c = 0; c < columns.length; c++) {
             columns[c] = new ColumnChunkBuffer(schema.getColumn(c), pageValues,
-                    enableDictionary, dictionaryLimitBytes, compressor, codec);
+                    enableDictionary, dictionaryLimitBytes, statisticsTruncationLength, compressor, codec);
         }
     }
 
@@ -60,6 +61,16 @@ public final class RowGroupBuffer {
     /// The number of records buffered so far.
     public int rowCount() {
         return rowCount;
+    }
+
+    /// A running estimate of this row group's buffered uncompressed bits, summed across its
+    /// column chunks. The writer flushes the row group once this crosses the configured target.
+    public long bufferedBits() {
+        long bits = 0;
+        for (ColumnChunkBuffer column : columns) {
+            bits += column.bufferedBits();
+        }
+        return bits;
     }
 
     /// Whether no rows have been buffered.

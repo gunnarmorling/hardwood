@@ -102,4 +102,9 @@ final class DoubleValueEncoder extends ValueEncoder {
     Statistics statistics() {
         return statistics.toStatistics();
     }
+
+    @Override
+    long valueBits(int valueIndex) {
+        return Double.SIZE;
+    }
 }

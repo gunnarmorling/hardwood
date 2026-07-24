@@ -15,6 +15,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -775,5 +776,73 @@ class WriterDifferentialTest {
             expected.add(value);
         }
         assertThat(actual).containsExactlyElementsOf(expected);
+    }
+
+    @Test
+    void duckDbReadsWrittenByteArrays(@TempDir Path dir) throws Exception {
+        // Unannotated BYTE_ARRAY reads back as BLOB in DuckDB; compare the raw bytes. Includes an
+        // empty value and a high-bit byte.
+        byte[][] v = { "hello".getBytes(), new byte[0], "a longer value".getBytes(), { (byte) 0x80, 0x00 } };
+        int[] r = new int[v.length];
+        for (int i = 0; i < r.length; i++) {
+            r[i] = i;
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)
+                .build();
+        Path file = dir.resolve("byte_arrays.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
+            writer.writeBatch(batch -> batch.ints(0, r).bytes(1, v));
+        }
+
+        List<String> actual = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
+                        "SELECT hex(v) AS h FROM read_parquet('" + file.toAbsolutePath() + "') ORDER BY r")) {
+            while (rs.next()) {
+                actual.add(rs.getString("h"));
+            }
+        }
+
+        assertThat(actual).hasSize(v.length);
+        for (int i = 0; i < v.length; i++) {
+            assertThat(actual.get(i)).isEqualToIgnoringCase(HexFormat.of().formatHex(v[i]));
+        }
+    }
+
+    @Test
+    void duckDbReadsWrittenFixedLenByteArrays(@TempDir Path dir) throws Exception {
+        byte[][] v = { "abcd".getBytes(), "wxyz".getBytes(), { (byte) 0xFF, (byte) 0xFF, 0x00, 0x01 } };
+        int[] r = new int[v.length];
+        for (int i = 0; i < r.length; i++) {
+            r[i] = i;
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("v", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 4)
+                .build();
+        Path file = dir.resolve("fixed.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
+            writer.writeBatch(batch -> batch.ints(0, r).fixed(1, v));
+        }
+
+        List<String> actual = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
+                        "SELECT hex(v) AS h FROM read_parquet('" + file.toAbsolutePath() + "') ORDER BY r")) {
+            while (rs.next()) {
+                actual.add(rs.getString("h"));
+            }
+        }
+
+        assertThat(actual).hasSize(v.length);
+        for (int i = 0; i < v.length; i++) {
+            assertThat(actual.get(i)).isEqualToIgnoringCase(HexFormat.of().formatHex(v[i]));
+        }
     }
 }

@@ -1,8 +1,9 @@
 # Primitive type write support (#9, stage 12)
 
-**Status: In progress.** Tracking issue: #9. Delivery stage 12 (Breadth) of
-[WRITER_SUPPORT.md](WRITER_SUPPORT.md). This document is the reference the primitive-type
-increments implement against.
+**Status: Complete.** Tracking issue: #9. Delivery stage 12 (Breadth) of
+[WRITER_SUPPORT.md](WRITER_SUPPORT.md), delivered in increments 12a (fixed-width) and 12b
+(variable-width). This document is the reference the primitive-type increments implement
+against.
 
 ## Context
 
@@ -200,9 +201,15 @@ as `Integer.SIZE`. This holds only while every value is four bytes. Two changes 
   = 64, and so on — so a fixed-width row group is sized correctly rather than at twice or a
   quarter of the target;
 - for variable-width columns no constant per-row cost exists, so the flush trigger moves off
-  the proxy entirely: `RowGroupBuffer` tracks the **actual buffered uncompressed bytes** across
-  its column chunks (pending plus sealed page bodies) and the writer flushes once that crosses
-  `rowGroupTargetBytes`. The proxy is retained only to bound the page-level entry count.
+  the proxy entirely: `RowGroupBuffer` sums a **running uncompressed-byte estimate** across its
+  column chunks — each entry's level bits plus its value's `PLAIN` width, accumulated as values
+  are appended — and the writer flushes once that crosses `rowGroupTargetBytes`. The estimate is
+  exact for a non-dictionary column and runs high for a dictionary-encoded one, whose buffered
+  index stream is smaller than the summed `PLAIN` widths, so dictionary row groups flush somewhat
+  below the target. Sizing a row group from its true encoded bytes — measured once the whole group
+  is buffered — is stage 16 (row-group-global dictionary selection), where the per-chunk
+  encoding choice is already made from the fully buffered group. The proxy is retained only to
+  bound the page-level entry count.
 
 ## Component architecture
 

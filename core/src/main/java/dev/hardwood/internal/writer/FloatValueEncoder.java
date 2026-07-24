@@ -101,4 +101,9 @@ final class FloatValueEncoder extends ValueEncoder {
     Statistics statistics() {
         return statistics.toStatistics();
     }
+
+    @Override
+    long valueBits(int valueIndex) {
+        return Float.SIZE;
+    }
 }

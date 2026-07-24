@@ -13,6 +13,7 @@ import java.util.Map;
 
 import dev.hardwood.Experimental;
 import dev.hardwood.Validity;
+import dev.hardwood.internal.writer.BinaryArrayColumnSource;
 import dev.hardwood.internal.writer.BooleanArrayColumnSource;
 import dev.hardwood.internal.writer.ColumnSource;
 import dev.hardwood.internal.writer.DoubleArrayColumnSource;
@@ -555,6 +556,152 @@ public final class ColumnBatch {
     @Experimental
     public ColumnBatch booleans(String columnName, boolean[] values, boolean[] nulls) {
         return booleans(schema.getColumn(columnName).columnIndex(), values, nulls);
+    }
+
+    /// Adds the values for a `REQUIRED BYTE_ARRAY` column, addressed by index. Each value is a
+    /// `byte[]`; the arrays are referenced, not copied.
+    ///
+    /// @see #ints(int, int[])
+    public ColumnBatch bytes(int columnIndex, byte[][] values) {
+        int idx = checkedIndex(columnIndex);
+        requireValues(idx, values == null);
+        validateBinaryValues(idx, values, null, false);
+        store(idx, PhysicalType.BYTE_ARRAY, new BinaryArrayColumnSource(values), values.length, null);
+        return this;
+    }
+
+    /// Adds the values for a `REQUIRED BYTE_ARRAY` column, addressed by name.
+    ///
+    /// @see #ints(int, int[])
+    public ColumnBatch bytes(String columnName, byte[][] values) {
+        return bytes(schema.getColumn(columnName).columnIndex(), values);
+    }
+
+    /// Adds the values for an `OPTIONAL BYTE_ARRAY` column, addressed by index.
+    ///
+    /// @see #ints(int, int[], Validity)
+    @Experimental
+    public ColumnBatch bytes(int columnIndex, byte[][] values, Validity nulls) {
+        int idx = checkedIndex(columnIndex);
+        requireValues(idx, values == null);
+        validateBinaryValues(idx, values, nulls, false);
+        storeNullable(idx, PhysicalType.BYTE_ARRAY, new BinaryArrayColumnSource(values), values.length, nulls);
+        return this;
+    }
+
+    /// Adds the values for an `OPTIONAL BYTE_ARRAY` column, addressed by name.
+    ///
+    /// @see #ints(int, int[], Validity)
+    @Experimental
+    public ColumnBatch bytes(String columnName, byte[][] values, Validity nulls) {
+        return bytes(schema.getColumn(columnName).columnIndex(), values, nulls);
+    }
+
+    /// Adds the values for an `OPTIONAL BYTE_ARRAY` column, addressed by index, with a plain mask.
+    ///
+    /// @see #ints(int, int[], boolean[])
+    @Experimental
+    public ColumnBatch bytes(int columnIndex, byte[][] values, boolean[] nulls) {
+        int idx = checkedIndex(columnIndex);
+        requireValues(idx, values == null);
+        Validity validity = maskToValidity(idx, values.length, nulls);
+        validateBinaryValues(idx, values, validity, false);
+        storeNullable(idx, PhysicalType.BYTE_ARRAY, new BinaryArrayColumnSource(values), values.length, validity);
+        return this;
+    }
+
+    /// Adds the values for an `OPTIONAL BYTE_ARRAY` column, addressed by name, with a plain mask.
+    ///
+    /// @see #ints(int, int[], boolean[])
+    @Experimental
+    public ColumnBatch bytes(String columnName, byte[][] values, boolean[] nulls) {
+        return bytes(schema.getColumn(columnName).columnIndex(), values, nulls);
+    }
+
+    /// Adds the values for a `REQUIRED FIXED_LEN_BYTE_ARRAY` column, addressed by index. Every
+    /// present value must be exactly the column's declared type length.
+    ///
+    /// @see #ints(int, int[])
+    public ColumnBatch fixed(int columnIndex, byte[][] values) {
+        int idx = checkedIndex(columnIndex);
+        requireValues(idx, values == null);
+        validateBinaryValues(idx, values, null, true);
+        store(idx, PhysicalType.FIXED_LEN_BYTE_ARRAY, new BinaryArrayColumnSource(values), values.length, null);
+        return this;
+    }
+
+    /// Adds the values for a `REQUIRED FIXED_LEN_BYTE_ARRAY` column, addressed by name.
+    ///
+    /// @see #ints(int, int[])
+    public ColumnBatch fixed(String columnName, byte[][] values) {
+        return fixed(schema.getColumn(columnName).columnIndex(), values);
+    }
+
+    /// Adds the values for an `OPTIONAL FIXED_LEN_BYTE_ARRAY` column, addressed by index.
+    ///
+    /// @see #ints(int, int[], Validity)
+    @Experimental
+    public ColumnBatch fixed(int columnIndex, byte[][] values, Validity nulls) {
+        int idx = checkedIndex(columnIndex);
+        requireValues(idx, values == null);
+        validateBinaryValues(idx, values, nulls, true);
+        storeNullable(idx, PhysicalType.FIXED_LEN_BYTE_ARRAY, new BinaryArrayColumnSource(values), values.length, nulls);
+        return this;
+    }
+
+    /// Adds the values for an `OPTIONAL FIXED_LEN_BYTE_ARRAY` column, addressed by name.
+    ///
+    /// @see #ints(int, int[], Validity)
+    @Experimental
+    public ColumnBatch fixed(String columnName, byte[][] values, Validity nulls) {
+        return fixed(schema.getColumn(columnName).columnIndex(), values, nulls);
+    }
+
+    /// Adds the values for an `OPTIONAL FIXED_LEN_BYTE_ARRAY` column, addressed by index, with a
+    /// plain mask.
+    ///
+    /// @see #ints(int, int[], boolean[])
+    @Experimental
+    public ColumnBatch fixed(int columnIndex, byte[][] values, boolean[] nulls) {
+        int idx = checkedIndex(columnIndex);
+        requireValues(idx, values == null);
+        Validity validity = maskToValidity(idx, values.length, nulls);
+        validateBinaryValues(idx, values, validity, true);
+        storeNullable(idx, PhysicalType.FIXED_LEN_BYTE_ARRAY, new BinaryArrayColumnSource(values), values.length, validity);
+        return this;
+    }
+
+    /// Adds the values for an `OPTIONAL FIXED_LEN_BYTE_ARRAY` column, addressed by name, with a
+    /// plain mask.
+    ///
+    /// @see #ints(int, int[], boolean[])
+    @Experimental
+    public ColumnBatch fixed(String columnName, byte[][] values, boolean[] nulls) {
+        return fixed(schema.getColumn(columnName).columnIndex(), values, nulls);
+    }
+
+    /// Validates a binary column's present values: none may be `null`, and for a
+    /// `FIXED_LEN_BYTE_ARRAY` (`fixed` true) each must be exactly the column's type length. A
+    /// null-row value (per `validity`) is ignored. Failing here, at the public boundary, beats a
+    /// late error at encode time.
+    private void validateBinaryValues(int columnIndex, byte[][] values, Validity validity, boolean fixed) {
+        Integer typeLength = schema.getColumn(columnIndex).typeLength();
+        for (int i = 0; i < values.length; i++) {
+            if (validity != null && validity.isNull(i)) {
+                continue;
+            }
+            if (values[i] == null) {
+                throw new IllegalArgumentException(
+                        "Column " + describe(columnIndex) + " has a null value at present row " + i);
+            }
+            // A null typeLength here means the column is not FIXED_LEN_BYTE_ARRAY; leave the
+            // wrong-type report to store(), which names the actual type, rather than unboxing null.
+            if (fixed && typeLength != null && values[i].length != typeLength) {
+                throw new IllegalArgumentException("Column " + describe(columnIndex)
+                        + " has a value of length " + values[i].length + " at row " + i
+                        + " but the FIXED_LEN_BYTE_ARRAY type length is " + typeLength);
+            }
+        }
     }
 
     private int checkedIndex(int columnIndex) {

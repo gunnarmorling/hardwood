@@ -461,6 +461,21 @@ public class FileSchema {
             return this;
         }
 
+        /// Append a primitive column, giving the fixed byte length of a `FIXED_LEN_BYTE_ARRAY`
+        /// column.
+        ///
+        /// @param columnName the column name
+        /// @param type the physical type
+        /// @param repetition `REQUIRED` or `OPTIONAL`
+        /// @param typeLength the fixed byte length (required and positive for
+        ///        `FIXED_LEN_BYTE_ARRAY`, rejected for any other type)
+        /// @throws IllegalArgumentException if `repetition` is `REPEATED` or `typeLength` does
+        ///         not match the type
+        public Builder addColumn(String columnName, PhysicalType type, RepetitionType repetition, int typeLength) {
+            content.addColumn(columnName, type, repetition, typeLength);
+            return this;
+        }
+
         /// Append a `struct` group whose fields are declared by `filler`.
         ///
         /// @param structName the group name
@@ -523,13 +538,30 @@ public class FileSchema {
 
         /// Append a primitive field.
         ///
-        /// @throws IllegalArgumentException if `repetition` is `REPEATED`
+        /// @throws IllegalArgumentException if `repetition` is `REPEATED`, or the type is
+        ///         `FIXED_LEN_BYTE_ARRAY` (use the type-length overload)
         public StructBuilder addColumn(String columnName, PhysicalType type, RepetitionType repetition) {
+            return addColumn(columnName, type, repetition, null);
+        }
+
+        /// Append a primitive field, giving the fixed byte length of a `FIXED_LEN_BYTE_ARRAY`
+        /// column.
+        ///
+        /// @throws IllegalArgumentException if `repetition` is `REPEATED`, or `typeLength` does
+        ///         not match the type (required and positive for `FIXED_LEN_BYTE_ARRAY`, absent
+        ///         otherwise)
+        public StructBuilder addColumn(String columnName, PhysicalType type, RepetitionType repetition,
+                                       int typeLength) {
+            return addColumn(columnName, type, repetition, (Integer) typeLength);
+        }
+
+        private StructBuilder addColumn(String columnName, PhysicalType type, RepetitionType repetition,
+                                        Integer typeLength) {
             if (repetition == RepetitionType.REPEATED) {
                 throw new IllegalArgumentException(
                         "Repeated columns are not yet supported by the writer: " + columnName);
             }
-            children.add(new BuilderLeaf(columnName, type, repetition));
+            children.add(leaf(columnName, type, repetition, typeLength));
             return this;
         }
 
@@ -595,8 +627,19 @@ public class FileSchema {
         }
 
         /// Declare a primitive element.
+        ///
+        /// @throws IllegalArgumentException if the type is `FIXED_LEN_BYTE_ARRAY` (use the
+        ///         type-length overload)
         public void primitive(PhysicalType type, RepetitionType repetition) {
-            set(new BuilderLeaf(childName, type, repetition));
+            set(leaf(childName, type, repetition, null));
+        }
+
+        /// Declare a primitive element, giving the fixed byte length of a `FIXED_LEN_BYTE_ARRAY`
+        /// element.
+        ///
+        /// @throws IllegalArgumentException if `typeLength` does not match the type
+        public void primitive(PhysicalType type, RepetitionType repetition, int typeLength) {
+            set(leaf(childName, type, repetition, (Integer) typeLength));
         }
 
         /// Declare a `struct` element.
@@ -651,7 +694,24 @@ public class FileSchema {
 
     private sealed interface BuilderNode {}
 
-    private record BuilderLeaf(String name, PhysicalType type, RepetitionType repetition) implements BuilderNode {}
+    private record BuilderLeaf(String name, PhysicalType type, RepetitionType repetition, Integer typeLength)
+            implements BuilderNode {}
+
+    /// Builds a primitive leaf, validating the type length: required and positive for a
+    /// `FIXED_LEN_BYTE_ARRAY`, absent for every other type.
+    private static BuilderLeaf leaf(String name, PhysicalType type, RepetitionType repetition, Integer typeLength) {
+        if (type == PhysicalType.FIXED_LEN_BYTE_ARRAY) {
+            if (typeLength == null || typeLength <= 0) {
+                throw new IllegalArgumentException(
+                        "FIXED_LEN_BYTE_ARRAY column " + name + " requires a positive type length");
+            }
+        }
+        else if (typeLength != null) {
+            throw new IllegalArgumentException("A type length is only valid for a FIXED_LEN_BYTE_ARRAY column, not "
+                    + type + " (" + name + ")");
+        }
+        return new BuilderLeaf(name, type, repetition, typeLength);
+    }
 
     private record BuilderStruct(String name, RepetitionType repetition, List<BuilderNode> children)
             implements BuilderNode {}
@@ -671,7 +731,7 @@ public class FileSchema {
         for (BuilderNode node : nodes) {
             switch (node) {
                 case BuilderLeaf leaf -> out.add(new SchemaElement(
-                        leaf.name(), leaf.type(), null, leaf.repetition(), null, null, null, null, null, null));
+                        leaf.name(), leaf.type(), leaf.typeLength(), leaf.repetition(), null, null, null, null, null, null));
                 case BuilderStruct group -> {
                     out.add(new SchemaElement(group.name(), null, null, group.repetition(),
                             group.children().size(), null, null, null, null, null));

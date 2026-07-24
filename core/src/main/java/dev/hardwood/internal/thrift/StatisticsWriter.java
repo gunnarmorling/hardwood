@@ -16,12 +16,11 @@ import dev.hardwood.metadata.Statistics;
 /// deprecated `min` / `max` (fields 2 / 1), which are not written. A `min` / `max`
 /// that is absent (a fully null column) is omitted; the null count is always written.
 ///
-/// Each written bound is flagged exact via `is_max_value_exact` / `is_min_value_exact`
-/// (fields 7 / 8): the writer stores the actual extreme, never a truncated approximation,
-/// so a reader may safely use `min_value == max_value` to prove a whole chunk equals a single
-/// value. When bound truncation is introduced (for long `BYTE_ARRAY` values), a truncated
-/// bound must instead be flagged inexact, so this exactness will become per-bound rather than
-/// unconditionally true.
+/// Each written bound carries its exactness via `is_max_value_exact` / `is_min_value_exact`
+/// (fields 7 / 8), taken from the [Statistics]: a fixed-width bound and an untruncated
+/// `BYTE_ARRAY` bound are exact (`true`), while a truncated `BYTE_ARRAY` bound is inexact
+/// (`false`) and only brackets the true extreme. A reader may use `min_value == max_value` to
+/// prove a whole chunk equals a single value only when both bounds are flagged exact.
 public class StatisticsWriter {
 
     public static void write(ThriftCompactWriter writer, Statistics statistics) {
@@ -45,15 +44,21 @@ public class StatisticsWriter {
                 writer.writeBinary(statistics.minValue());
             }
 
-            // 7: is_max_value_exact — the stored max_value is the actual maximum. A Thrift
-            // compact bool carries its value in the field-type nibble, so there is no body.
+            // 7: is_max_value_exact — whether the stored max_value is the actual maximum or a
+            // truncated upper bound. A Thrift compact bool carries its value in the field-type
+            // nibble, so there is no body.
             if (statistics.maxValue() != null) {
-                writer.writeFieldBegin(7, ThriftCompactConstants.FieldType.BOOLEAN_TRUE);
+                writer.writeFieldBegin(7, statistics.isMaxValueExact()
+                        ? ThriftCompactConstants.FieldType.BOOLEAN_TRUE
+                        : ThriftCompactConstants.FieldType.BOOLEAN_FALSE);
             }
 
-            // 8: is_min_value_exact — the stored min_value is the actual minimum.
+            // 8: is_min_value_exact — whether the stored min_value is the actual minimum or a
+            // truncated lower bound.
             if (statistics.minValue() != null) {
-                writer.writeFieldBegin(8, ThriftCompactConstants.FieldType.BOOLEAN_TRUE);
+                writer.writeFieldBegin(8, statistics.isMinValueExact()
+                        ? ThriftCompactConstants.FieldType.BOOLEAN_TRUE
+                        : ThriftCompactConstants.FieldType.BOOLEAN_FALSE);
             }
 
             writer.writeFieldStop();
