@@ -35,6 +35,10 @@ public final class WriterConfig {
     /// chunk falls back to `PLAIN`.
     public static final int DEFAULT_DICTIONARY_PAGE_LIMIT_BYTES = 1 << 20;
 
+    /// Default statistics truncation length: `BYTE_ARRAY` `min` / `max` bounds longer than
+    /// 64 bytes are truncated and flagged inexact.
+    public static final int DEFAULT_STATISTICS_TRUNCATION_LENGTH = 64;
+
     /// Default page compression codec: `ZSTD` when the zstd-jni library is on the classpath,
     /// otherwise `UNCOMPRESSED`. Choosing a codec explicitly through [Builder#codec] still
     /// requires that codec's library and fails at writer creation when it is missing; this
@@ -46,6 +50,7 @@ public final class WriterConfig {
     private final String createdBy;
     private final boolean enableDictionary;
     private final int dictionaryPageLimitBytes;
+    private final int statisticsTruncationLength;
     private final CompressionCodec codec;
 
     private WriterConfig(Builder builder) {
@@ -54,6 +59,7 @@ public final class WriterConfig {
         this.createdBy = builder.createdBy;
         this.enableDictionary = builder.enableDictionary;
         this.dictionaryPageLimitBytes = builder.dictionaryPageLimitBytes;
+        this.statisticsTruncationLength = builder.statisticsTruncationLength;
         this.codec = builder.codec;
     }
 
@@ -92,6 +98,12 @@ public final class WriterConfig {
         return dictionaryPageLimitBytes;
     }
 
+    /// The maximum length of a `BYTE_ARRAY` `min` / `max` statistics bound before it is
+    /// truncated (and flagged inexact).
+    public int statisticsTruncationLength() {
+        return statisticsTruncationLength;
+    }
+
     /// The codec each page body is compressed with.
     public CompressionCodec codec() {
         return codec;
@@ -113,6 +125,7 @@ public final class WriterConfig {
         private String createdBy = DEFAULT_CREATED_BY;
         private boolean enableDictionary = true;
         private int dictionaryPageLimitBytes = DEFAULT_DICTIONARY_PAGE_LIMIT_BYTES;
+        private int statisticsTruncationLength = DEFAULT_STATISTICS_TRUNCATION_LENGTH;
         private CompressionCodec codec = DEFAULT_CODEC;
 
         private Builder() {
@@ -162,6 +175,17 @@ public final class WriterConfig {
                         + Integer.BYTES + " but was " + dictionaryPageLimitBytes);
             }
             this.dictionaryPageLimitBytes = dictionaryPageLimitBytes;
+            return this;
+        }
+
+        /// Sets the maximum `BYTE_ARRAY` `min` / `max` statistics bound length; must be
+        /// positive. A bound longer than this is truncated and flagged inexact.
+        public Builder statisticsTruncationLength(int statisticsTruncationLength) {
+            if (statisticsTruncationLength <= 0) {
+                throw new IllegalArgumentException("statisticsTruncationLength must be positive but was "
+                        + statisticsTruncationLength);
+            }
+            this.statisticsTruncationLength = statisticsTruncationLength;
             return this;
         }
 

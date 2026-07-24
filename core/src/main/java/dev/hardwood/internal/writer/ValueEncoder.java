@@ -28,9 +28,10 @@ abstract class ValueEncoder {
     static final int DICTIONARY_OVERFLOW = Integer.MIN_VALUE;
 
     /// Selects the encoder for a column's physical type. `pageValues` sizes the per-page value
-    /// buffer and the read window; `enableDictionary` requests dictionary encoding where the
-    /// type supports it.
-    static ValueEncoder forColumn(ColumnSchema column, int pageValues, boolean enableDictionary) {
+    /// buffer and the read window; `enableDictionary` requests dictionary encoding where the type
+    /// supports it; `statisticsTruncationLength` bounds `BYTE_ARRAY` `min` / `max` bounds.
+    static ValueEncoder forColumn(ColumnSchema column, int pageValues, boolean enableDictionary,
+                                  int statisticsTruncationLength) {
         PhysicalType type = column.type();
         return switch (type) {
             case INT32 -> new IntValueEncoder(pageValues, enableDictionary);
@@ -38,9 +39,21 @@ abstract class ValueEncoder {
             case FLOAT -> new FloatValueEncoder(pageValues, enableDictionary);
             case DOUBLE -> new DoubleValueEncoder(pageValues, enableDictionary);
             case BOOLEAN -> new BooleanValueEncoder(pageValues);
+            case BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary,
+                    null, statisticsTruncationLength);
+            case FIXED_LEN_BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary,
+                    requireTypeLength(column), statisticsTruncationLength);
             default -> throw new IllegalArgumentException(
                     "Writer does not support physical type " + type + " for column " + column.name());
         };
+    }
+
+    private static int requireTypeLength(ColumnSchema column) {
+        if (column.typeLength() == null) {
+            throw new IllegalArgumentException(
+                    "FIXED_LEN_BYTE_ARRAY column " + column.name() + " has no type length");
+        }
+        return column.typeLength();
     }
 
     /// Rebinds to a new batch's source and resets the value read window. The dictionary and
@@ -79,4 +92,9 @@ abstract class ValueEncoder {
 
     /// The accumulated chunk statistics.
     abstract Statistics statistics();
+
+    /// The uncompressed `PLAIN` bit width of the present value at `valueIndex`, used to size the
+    /// buffered row group: a fixed-width type's constant width, or a `BYTE_ARRAY`'s length plus
+    /// its 4-byte length prefix.
+    abstract long valueBits(int valueIndex);
 }

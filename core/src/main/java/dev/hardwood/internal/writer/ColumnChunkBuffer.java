@@ -63,6 +63,9 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     private final PhysicalType type;
     private final int maxDefLevel;
     private final int maxRepLevel;
+    private final long defLevelBits; // RLE level-stream bits charged per entry (0 when unlevelled)
+    private final long repLevelBits;
+    private long bufferedBits; // running uncompressed bit estimate across this row group's chunk
     private final int[] pendingRep;
     private final int[] pendingDef;
     private final int[] pendingIndices; // dictionary indices for the current page (dictionary mode)
@@ -87,15 +90,17 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// @param compressor compresses each page body before framing
     /// @param codec the codec `compressor` applies, recorded in the chunk metadata
     ColumnChunkBuffer(ColumnSchema column, int pageValues,
-                      boolean enableDictionary, int dictionaryLimitBytes,
+                      boolean enableDictionary, int dictionaryLimitBytes, int statisticsTruncationLength,
                       Compressor compressor, CompressionCodec codec) {
         this.type = column.type();
         this.maxDefLevel = column.maxDefinitionLevel();
         this.maxRepLevel = column.maxRepetitionLevel();
+        this.defLevelBits = maxDefLevel > 0 ? LevelEncoder.bitWidth(maxDefLevel) : 0;
+        this.repLevelBits = maxRepLevel > 0 ? LevelEncoder.bitWidth(maxRepLevel) : 0;
         this.pendingIndices = new int[pageValues];
         this.pendingDef = maxDefLevel > 0 ? new int[pageValues] : null;
         this.pendingRep = maxRepLevel > 0 ? new int[pageValues] : null;
-        this.values = ValueEncoder.forColumn(column, pageValues, enableDictionary);
+        this.values = ValueEncoder.forColumn(column, pageValues, enableDictionary, statisticsTruncationLength);
         this.dictionaryActive = values.dictionaryCapable();
         this.dictionaryLimitBytes = dictionaryLimitBytes;
         this.compressor = compressor;
@@ -132,6 +137,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         if (maxDefLevel > 0) {
             pendingDef[pendingCount] = definitionLevel;
         }
+        bufferedBits += repLevelBits + defLevelBits;
         if (present) {
             if (useDictionary) {
                 pendingIndices[pendingValueCount] = dictionaryIndex;
@@ -141,6 +147,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
             }
             pendingValueCount++;
             values.stat(valueIndex);
+            bufferedBits += values.valueBits(valueIndex);
         }
         else {
             values.statNull();
@@ -149,6 +156,14 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         if (pendingCount == pendingIndices.length) {
             sealPage();
         }
+    }
+
+    /// A running estimate of this chunk's buffered uncompressed bits — each entry's level bits
+    /// plus each present value's `PLAIN` width. The row-group writer sums this across columns to
+    /// decide when to flush, the byte-sized replacement for a fixed rows-per-group proxy once
+    /// variable-width values make the per-row cost non-constant.
+    long bufferedBits() {
+        return bufferedBits;
     }
 
     /// Seals the trailing page, writes the whole column chunk — dictionary page (when present)

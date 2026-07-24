@@ -1,8 +1,9 @@
 # Primitive type write support (#9, stage 12)
 
-**Status: In progress.** Tracking issue: #9. Delivery stage 12 (Breadth) of
-[WRITER_SUPPORT.md](WRITER_SUPPORT.md). This document is the reference the primitive-type
-increments implement against.
+**Status: Complete.** Tracking issue: #9. Delivery stage 12 (Breadth) of
+[WRITER_SUPPORT.md](WRITER_SUPPORT.md), delivered in increments 12a (fixed-width) and 12b
+(variable-width). This document is the reference the primitive-type increments implement
+against.
 
 ## Context
 

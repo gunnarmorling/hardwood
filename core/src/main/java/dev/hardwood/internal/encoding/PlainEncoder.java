@@ -105,4 +105,48 @@ public final class PlainEncoder {
         }
         return packed;
     }
+
+    /// Encode `length` `BYTE_ARRAY` values starting at `offset`, each as a 4-byte little-endian
+    /// length prefix followed by its bytes, matching [PlainDecoder#readByteArrays].
+    ///
+    /// @param values the backing array
+    /// @param offset the index of the first value to encode
+    /// @param length the number of values to encode
+    /// @return the PLAIN-encoded bytes
+    public static byte[] encodeByteArrays(byte[][] values, int offset, int length) {
+        long total = 0;
+        for (int i = 0; i < length; i++) {
+            total += Integer.BYTES + values[offset + i].length;
+        }
+        ByteBuffer buffer = ByteBuffer.allocate(Math.toIntExact(total)).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < length; i++) {
+            byte[] value = values[offset + i];
+            buffer.putInt(value.length);
+            buffer.put(value);
+        }
+        return buffer.array();
+    }
+
+    /// Encode `length` `FIXED_LEN_BYTE_ARRAY` values starting at `offset` as raw concatenated
+    /// bytes (no length prefix — the width is fixed by the schema), matching
+    /// [PlainDecoder#readFixedLenByteArray].
+    ///
+    /// @param values the backing array
+    /// @param offset the index of the first value to encode
+    /// @param length the number of values to encode
+    /// @param typeLength the fixed byte length every value must have
+    /// @return the PLAIN-encoded bytes
+    /// @throws IllegalArgumentException if any value's length is not `typeLength`
+    public static byte[] encodeFixedLenByteArrays(byte[][] values, int offset, int length, int typeLength) {
+        ByteBuffer buffer = ByteBuffer.allocate(Math.multiplyExact(length, typeLength));
+        for (int i = 0; i < length; i++) {
+            byte[] value = values[offset + i];
+            if (value.length != typeLength) {
+                throw new IllegalArgumentException("FIXED_LEN_BYTE_ARRAY value has length " + value.length
+                        + " but the column's type length is " + typeLength);
+            }
+            buffer.put(value);
+        }
+        return buffer.array();
+    }
 }

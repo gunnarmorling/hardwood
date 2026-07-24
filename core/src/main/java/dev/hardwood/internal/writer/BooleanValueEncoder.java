@@ -89,4 +89,9 @@ final class BooleanValueEncoder extends ValueEncoder {
     Statistics statistics() {
         return statistics.toStatistics();
     }
+
+    @Override
+    long valueBits(int valueIndex) {
+        return 1; // bit-packed
+    }
 }

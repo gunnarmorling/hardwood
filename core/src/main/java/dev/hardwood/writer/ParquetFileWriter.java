@@ -34,10 +34,10 @@ import dev.hardwood.schema.FileSchema;
 
 /// Writes a Parquet file through a columnar batch API.
 ///
-/// This increment writes the fixed-width primitive types — `BOOLEAN`, `INT32`, `INT64`,
-/// `FLOAT`, `DOUBLE` — flat `REQUIRED` / `OPTIONAL`, nested inside `REQUIRED` / `OPTIONAL`
-/// `struct` groups, and inside `LIST`s and `MAP`s (including lists of lists, lists of structs,
-/// and maps of any in-scope value). Data is supplied as
+/// This increment writes every primitive physical type — `BOOLEAN`, `INT32`, `INT64`, `FLOAT`,
+/// `DOUBLE`, `BYTE_ARRAY`, and `FIXED_LEN_BYTE_ARRAY` — flat `REQUIRED` / `OPTIONAL`, nested
+/// inside `REQUIRED` / `OPTIONAL` `struct` groups, and inside `LIST`s and `MAP`s (including lists
+/// of lists, lists of structs, and maps of any in-scope value). Data is supplied as
 /// [ColumnBatch] slices; the writer packs each column into size-bounded data pages — a
 /// levelled column's pages carrying an RLE definition-level stream ahead of the values — and
 /// flushes a row group once its buffered data reaches the configured target, so peak memory is
@@ -53,14 +53,27 @@ public final class ParquetFileWriter implements Closeable {
     private static final byte[] MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
     private static final int FORMAT_VERSION = 1;
 
+    /// Nominal `BYTE_ARRAY` value length assumed when estimating the flush-check stride. Only the
+    /// append granularity depends on it; the row group flushes on actual buffered bytes.
+    private static final int ASSUMED_BYTE_ARRAY_LENGTH = 16;
+
     private final OutputFile out;
     private final FileSchema schema;
     private final WriterConfig config;
+    /// Records appended before the per-record size is known, to learn it without overshooting a
+    /// small row-group target on a batch of large variable-width values.
+    private static final int PROBE_RECORDS = 64;
+
     private final int pageValues;
-    private final int maxRowsPerGroup;
+    private final long rowGroupTargetBits;
     private final RecordShredder shredder;
     private final Compressor compressor;
     private final List<RowGroup> rowGroups = new ArrayList<>();
+
+    // Running actual buffered-bit average, learned across the whole write so the append stride
+    // between flush checks lands near the row-group boundary regardless of value width.
+    private long cumulativeBits;
+    private long cumulativeRecords;
 
     private RowGroupBuffer current;
     private long numRows;
@@ -71,7 +84,7 @@ public final class ParquetFileWriter implements Closeable {
         this.schema = schema;
         this.config = config;
         this.pageValues = pageRowCapacity(config.pageTargetBytes(), schema);
-        this.maxRowsPerGroup = maxRowsPerGroup(config.rowGroupTargetBytes(), schema);
+        this.rowGroupTargetBits = Math.multiplyExact(config.rowGroupTargetBytes(), Byte.SIZE);
         this.shredder = new RecordShredder(schema);
         this.compressor = compressor;
         this.current = newRowGroupBuffer();
@@ -79,7 +92,7 @@ public final class ParquetFileWriter implements Closeable {
 
     private RowGroupBuffer newRowGroupBuffer() {
         return new RowGroupBuffer(schema, pageValues, config.enableDictionary(), config.dictionaryPageLimitBytes(),
-                compressor, config.codec());
+                config.statisticsTruncationLength(), compressor, config.codec());
     }
 
     /// Opens a writer with the default [WriterConfig].
@@ -143,14 +156,35 @@ public final class ParquetFileWriter implements Closeable {
         int rows = shredder.recordCount();
         int pos = 0;
         while (pos < rows) {
-            int space = maxRowsPerGroup - current.rowCount();
-            int n = Math.min(space, rows - pos);
+            int n = nextStride(rows - pos);
+            long before = current.bufferedBits();
             current.appendRecords(shredder, sources, pos, n);
+            cumulativeBits += current.bufferedBits() - before;
+            cumulativeRecords += n;
             pos += n;
-            if (current.rowCount() >= maxRowsPerGroup) {
+            if (current.bufferedBits() >= rowGroupTargetBits) {
                 flushRowGroup();
             }
         }
+    }
+
+    /// How many of the next `remaining` records to append before re-checking the buffered-byte
+    /// target. Until the per-record size is measured, a small probe learns it without
+    /// overshooting; afterwards the stride is sized to just fill the remaining row-group budget
+    /// from the running average (exact for fixed-width columns), so a row group lands on the
+    /// target regardless of value width. Capped at one page's worth of entries.
+    private int nextStride(int remaining) {
+        if (cumulativeRecords == 0) {
+            return Math.min(remaining, PROBE_RECORDS);
+        }
+        long avgBits = Math.max(1, cumulativeBits / cumulativeRecords);
+        long remainingBits = Math.max(avgBits, rowGroupTargetBits - current.bufferedBits());
+        long stride = Math.min(pageValues, ceilDiv(remainingBits, avgBits));
+        return (int) Math.max(1, Math.min(remaining, stride));
+    }
+
+    private static long ceilDiv(long numerator, long denominator) {
+        return (numerator + denominator - 1) / denominator;
     }
 
     @Override
@@ -207,54 +241,50 @@ public final class ParquetFileWriter implements Closeable {
     }
 
     /// Rows per data page whose encoded body fits the page target. A page costs each column's
-    /// `PLAIN` value bit width per row plus, for a levelled column, its RLE definition-level
-    /// stream; sizing to the widest column's per-row bit cost keeps every column's page within
-    /// the target. At least one row so a tiny target still makes progress.
+    /// estimated `PLAIN` value bit width per row plus, for a levelled column, its RLE
+    /// definition-level stream; sizing to the widest column's per-row bit cost keeps every
+    /// column's page within the target. At least one row so a tiny target still makes progress.
+    /// This is a page-level entry-count bound only; the actual row-group flush tracks buffered
+    /// bytes, so a variable-width estimate here does not distort the produced file.
     private static int pageRowCapacity(long pageTargetBytes, FileSchema schema) {
-        int maxColumnBitsPerRow = 1;
+        long maxColumnBitsPerRow = 1;
         for (int c = 0; c < schema.getColumnCount(); c++) {
             ColumnSchema column = schema.getColumn(c);
             int defBits = LevelEncoder.bitWidth(column.maxDefinitionLevel());
-            maxColumnBitsPerRow = Math.max(maxColumnBitsPerRow, valueBits(column.type()) + defBits);
+            maxColumnBitsPerRow = Math.max(maxColumnBitsPerRow, estimatedValueBits(column) + defBits);
         }
         long rows = pageTargetBytes * Byte.SIZE / maxColumnBitsPerRow;
         return (int) Math.max(1, Math.min(rows, Integer.MAX_VALUE));
     }
 
-    /// Number of rows whose buffered row-group data fits the row-group target, counting every
-    /// column's `PLAIN` value bit width plus the RLE definition-level stream of each levelled
-    /// column. At least one so the writer always makes progress even with a tiny target or a
-    /// wide schema.
-    private static int maxRowsPerGroup(long rowGroupTargetBytes, FileSchema schema) {
-        int columnCount = schema.getColumnCount();
-        if (columnCount == 0) {
-            return Integer.MAX_VALUE;
-        }
-        long bitsPerRow = 0;
-        for (int c = 0; c < columnCount; c++) {
-            ColumnSchema column = schema.getColumn(c);
-            bitsPerRow += valueBits(column.type()) + LevelEncoder.bitWidth(column.maxDefinitionLevel());
-        }
-        long rows = rowGroupTargetBytes * Byte.SIZE / bitsPerRow;
-        return (int) Math.max(1, Math.min(rows, Integer.MAX_VALUE));
-    }
-
-    /// The `PLAIN` bit width of one value of a fixed-width physical type, used to size pages and
-    /// row groups. Only the fixed-width primitive types this increment supports occur here.
-    private static int valueBits(PhysicalType type) {
-        return switch (type) {
+    /// The estimated `PLAIN` bit width of one of a column's values, used only to bound the
+    /// per-page entry count: exact for the fixed-width scalars and for `FIXED_LEN_BYTE_ARRAY`
+    /// (its schema type length), and a nominal estimate for `BYTE_ARRAY` (a 4-byte length prefix
+    /// plus an assumed value length).
+    private static long estimatedValueBits(ColumnSchema column) {
+        return switch (column.type()) {
             case BOOLEAN -> 1;
             case INT32, FLOAT -> Integer.SIZE;
             case INT64, DOUBLE -> Long.SIZE;
-            default -> throw new IllegalArgumentException("No fixed value width for " + type);
+            case FIXED_LEN_BYTE_ARRAY -> (long) requireTypeLength(column) * Byte.SIZE;
+            case BYTE_ARRAY -> (long) (Integer.BYTES + ASSUMED_BYTE_ARRAY_LENGTH) * Byte.SIZE;
+            case INT96 -> throw new IllegalArgumentException("INT96 is not supported by the writer");
         };
+    }
+
+    private static int requireTypeLength(ColumnSchema column) {
+        if (column.typeLength() == null) {
+            throw new IllegalArgumentException(
+                    "FIXED_LEN_BYTE_ARRAY column " + column.name() + " requires a type length");
+        }
+        return column.typeLength();
     }
 
     /// Whether the writer supports producing a column of this physical type.
     private static boolean isSupportedType(PhysicalType type) {
         return switch (type) {
-            case BOOLEAN, INT32, INT64, FLOAT, DOUBLE -> true;
-            case INT96, BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> false;
+            case BOOLEAN, INT32, INT64, FLOAT, DOUBLE, BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> true;
+            case INT96 -> false;
         };
     }
 

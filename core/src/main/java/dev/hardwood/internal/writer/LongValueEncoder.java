@@ -99,4 +99,9 @@ final class LongValueEncoder extends ValueEncoder {
     Statistics statistics() {
         return statistics.toStatistics();
     }
+
+    @Override
+    long valueBits(int valueIndex) {
+        return Long.SIZE;
+    }
 }
