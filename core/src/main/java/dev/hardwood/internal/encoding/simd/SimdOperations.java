@@ -23,7 +23,11 @@ public interface SimdOperations {
     /// @param defLevels definition levels array
     /// @param maxDef maximum definition level (indicates non-null)
     /// @return count of non-null values
-    int countNonNulls(int[] defLevels, int maxDef);
+    default int countNonNulls(int[] defLevels, int maxDef) {
+        return countNonNulls(defLevels, defLevels.length, maxDef);
+    }
+
+    int countNonNulls(int[] defLevels, int length, int maxDef);
 
     /// Mark null positions in a BitSet where `defLevels[srcPos + i] < maxDefLevel`.
     ///

@@ -87,6 +87,44 @@ class FixedSizeListEngagementTest {
         assertThat(perPageK).as("some pages fall back").contains(0);
     }
 
+    @Test
+    void levelDecodeReusesSlotScratchAcrossPages() throws Exception {
+        InputFile inputFile = InputFile.of(PAGED);
+        inputFile.open();
+        HardwoodContextImpl context = HardwoodContextImpl.create();
+        int decodedPages = 0;
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(PAGED))) {
+            FileSchema schema = reader.getFileSchema();
+            int leaf = columnIndex(schema, "vec_mixed");
+            ColumnSchema columnSchema = schema.getColumn(leaf);
+            PageDecoder.LevelScratch scratch = new PageDecoder.LevelScratch();
+
+            for (RowGroup rowGroup : reader.getFileMetaData().rowGroups()) {
+                SequentialFetchPlan plan = SequentialFetchPlan.build(
+                        inputFile, columnSchema, rowGroup.columns().get(leaf), context, 0, inputFile.name(), 0);
+                Iterator<PageInfo> pages = plan.pages();
+                while (pages.hasNext()) {
+                    PageInfo pageInfo = pages.next();
+                    PageDecoder decoder = new PageDecoder(
+                            pageInfo.columnMetaData(), pageInfo.columnSchema(),
+                            context.decompressorFactory(), false);
+                    Page page = decoder.decodePage(pageInfo.pageData(), pageInfo.dictionary(), scratch);
+
+                    assertThat(page.repetitionLevels()).isSameAs(scratch.repetitionLevels(page.size()));
+                    if (page.definitionLevels() != null) {
+                        assertThat(page.definitionLevels()).isSameAs(scratch.definitionLevels(page.size()));
+                    }
+                    decodedPages++;
+                }
+            }
+        }
+        finally {
+            inputFile.close();
+            context.close();
+        }
+        assertThat(decodedPages).isGreaterThan(1);
+    }
+
     /// Decodes the column's first data page with the fast path forced on or off
     /// and returns the resulting page's `fixedListK` (`> 0` iff the fast path
     /// engaged).
@@ -133,13 +171,7 @@ class FixedSizeListEngagementTest {
         List<Integer> result = new ArrayList<>();
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
             FileSchema schema = reader.getFileSchema();
-            int leaf = -1;
-            for (int c = 0; c < schema.getColumnCount(); c++) {
-                if (schema.getColumn(c).fieldPath().topLevelName().equals(topLevelName)) {
-                    leaf = c;
-                    break;
-                }
-            }
+            int leaf = columnIndex(schema, topLevelName);
             ColumnSchema columnSchema = schema.getColumn(leaf);
             List<RowGroup> rowGroups = reader.getFileMetaData().rowGroups();
             for (RowGroup rowGroup : rowGroups) {
@@ -162,5 +194,14 @@ class FixedSizeListEngagementTest {
             context.close();
         }
         return result;
+    }
+
+    private static int columnIndex(FileSchema schema, String topLevelName) {
+        for (int c = 0; c < schema.getColumnCount(); c++) {
+            if (schema.getColumn(c).fieldPath().topLevelName().equals(topLevelName)) {
+                return c;
+            }
+        }
+        throw new IllegalArgumentException("Unknown column: " + topLevelName);
     }
 }

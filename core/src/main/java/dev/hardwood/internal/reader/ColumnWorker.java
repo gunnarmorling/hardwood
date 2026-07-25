@@ -71,6 +71,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     // === Circular reorder buffer: decode tasks write, drain thread reads ===
     private final AtomicReferenceArray<DecodedPage> reorderBuffer;
 
+    // Level buffers share the lifecycle of their reorder-buffer slot. The
+    // retriever throttle prevents reuse until the drain has consumed the page.
+    private final PageDecoder.LevelScratch[] levelScratchBuffer;
+
     // === File name per reorder-buffer slot (retriever writes, drain reads) ===
     // Visibility: retriever writes fileNameBuffer[slot] before submitting the
     // decode task. The decode task's volatile write to reorderBuffer[slot]
@@ -153,6 +157,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         this.decodeExecutor = decodeExecutor;
         this.maxRows = maxRows;
         this.reorderBuffer = new AtomicReferenceArray<>(MAX_INFLIGHT_PAGES);
+        this.levelScratchBuffer = new PageDecoder.LevelScratch[MAX_INFLIGHT_PAGES];
+        for (int i = 0; i < levelScratchBuffer.length; i++) {
+            levelScratchBuffer[i] = new PageDecoder.LevelScratch();
+        }
         this.fileNameBuffer = new String[MAX_INFLIGHT_PAGES];
         this.filterAlwaysMatchesBuffer = new boolean[MAX_INFLIGHT_PAGES];
     }
@@ -326,7 +334,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         try {
             Page page = pageInfo.isNullPlaceholder()
                     ? pageDecoder.nullPage(pageInfo.placeholderNumValues())
-                    : pageDecoder.decodePage(pageInfo.pageData(), pageInfo.dictionary());
+                    : pageDecoder.decodePage(pageInfo.pageData(), pageInfo.dictionary(), levelScratchBuffer[slot]);
             reorderBuffer.set(slot, new DecodedPage(page, pageInfo.mask()));
         }
         catch (Throwable t) {

@@ -69,6 +69,13 @@ class SimdOperationsTest {
         assertThat(SIMD.countNonNulls(defLevels, 3)).isEqualTo(50);
     }
 
+    @Test
+    void countNonNullsIgnoresScratchTail() {
+        int[] defLevels = {3, 0, 3, 3, 3, 3};
+        assertThat(SCALAR.countNonNulls(defLevels, 3, 3)).isEqualTo(2);
+        assertThat(SIMD.countNonNulls(defLevels, 3, 3)).isEqualTo(2);
+    }
+
     // ==================== markNulls Tests ====================
 
     @ParameterizedTest
