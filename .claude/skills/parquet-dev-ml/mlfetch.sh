@@ -18,14 +18,18 @@ mkdir -p "$CACHE"
 CUR="$(date +%Y-%m)"
 
 for d in "$@"; do
-  if [[ ! "$d" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
-    echo "skipping malformed month: $d (expected YYYY-MM)" >&2
-    continue
+  if [[ ! "$d" =~ ^[0-9]{4}-(0[1-9]|1[0-2])$ ]]; then
+    echo "invalid month: $d (expected YYYY-MM)" >&2
+    exit 2
   fi
   out="$CACHE/parquet-dev-$d.mbox"
   if [[ "$d" == "$CUR" || ! -s "$out" ]]; then
     url="https://lists.apache.org/api/mbox.lua?list=dev&domain=parquet.apache.org&d=$d"
-    curl -fsSL "$url" -o "$out"
+    tmp="$out.tmp.$$"
+    trap 'rm -f "$tmp"' EXIT
+    curl -fsSL "$url" -o "$tmp"
+    mv "$tmp" "$out"
+    trap - EXIT
   fi
   echo "$out"
 done

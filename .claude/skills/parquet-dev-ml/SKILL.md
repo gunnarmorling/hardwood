@@ -53,7 +53,7 @@ SKILL="/workspace/.claude/skills/parquet-dev-ml"
    "$SKILL/thread.py" "inline parquet.thrift" "$CACHE"/parquet-dev-2026-07.mbox
    ```
 
-   `thread.py` takes a case-insensitive Subject substring and one or more mbox files, matches every message in that thread, dedupes by `Message-ID`, drops `>`-quoted lines and signatures, and prints each message's From/Date/body.
+   `thread.py` takes a case-insensitive Subject substring and one or more existing mbox files, matches every message in that thread, dedupes by `Message-ID` (or message content when the ID is absent), drops `>`-quoted lines, reply attributions, and signatures, and prints each message's From/Date/body.
 
 ## Reporting back
 
