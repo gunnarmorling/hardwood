@@ -27,6 +27,25 @@ public final class DictionaryParser {
 
     private DictionaryParser() {}
 
+    /// Total byte length of the dictionary page starting at the beginning of `region` — its header
+    /// plus its compressed body — or `-1` when the region does not begin with a dictionary page.
+    ///
+    /// A page header states its own body length, so a caller holding only the page's start offset
+    /// can read a bounded probe, call this, and learn exactly how many bytes the page occupies
+    /// without knowing where the following page begins.
+    ///
+    /// @param region buffer whose first bytes are a page header
+    /// @return the page's total length in bytes, or `-1` if it is not a dictionary page
+    public static int pageLength(ByteBuffer region) throws IOException {
+        ThriftCompactReader reader = new ThriftCompactReader(region, 0);
+        PageHeader header = PageHeaderReader.read(reader);
+
+        if (header.type() != PageType.DICTIONARY_PAGE) {
+            return -1;
+        }
+        return reader.getBytesRead() + header.compressedPageSize();
+    }
+
     /// Parses a dictionary page from a byte region covering the dictionary area
     /// of a column chunk (the bytes between the chunk start and the first data page).
     ///

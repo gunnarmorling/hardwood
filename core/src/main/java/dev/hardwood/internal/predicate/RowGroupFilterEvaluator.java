@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.predicate;
 
+import dev.hardwood.internal.predicate.dictionary.DictionaryFilterSupport;
+import dev.hardwood.internal.predicate.dictionary.RowGroupDictionaryFilterSource;
 import dev.hardwood.internal.util.Geospatial;
 import dev.hardwood.metadata.BoundingBox;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -27,9 +29,16 @@ import dev.hardwood.reader.FilterPredicate;
 /// slot drops the row group even when it falls inside the statistics min/max range. The two
 /// checks are complementary — either one proving no match is sufficient. A bloom filter can
 /// only prove absence, so it never upgrades a decision to [StatsDecision#ALWAYS_MATCHES].
+///
+/// The same leaves consult the column's dictionary when a [RowGroupDictionaryFilterSource] is
+/// supplied. A dictionary only proves absence for a column whose every data page is
+/// dictionary-encoded, in which case the dictionary holds every non-null value in the chunk and a
+/// value missing from it cannot occur in any row.
+/// All three sources are independent: whichever proves no match first drops the row group.
 public class RowGroupFilterEvaluator {
 
-    /// Determines whether a row group can be skipped using statistics only (no bloom filters).
+    /// Determines whether a row group can be skipped using statistics only (no bloom filters and no
+    /// dictionaries).
     ///
     /// @param predicate the resolved predicate to evaluate
     /// @param rowGroup the row group to check
@@ -39,7 +48,8 @@ public class RowGroupFilterEvaluator {
         return canDropRowGroup(predicate, rowGroup, null);
     }
 
-    /// Determines whether a row group can be skipped based on the given resolved predicate.
+    /// Determines whether a row group can be skipped based on the given resolved predicate,
+    /// consulting bloom filters but no dictionaries.
     ///
     /// @param predicate the resolved predicate to evaluate
     /// @param rowGroup the row group to check
@@ -53,11 +63,7 @@ public class RowGroupFilterEvaluator {
     }
 
     /// Evaluates the predicate against the row group's statistics and bloom filters as a
-    /// three-valued [StatsDecision].
-    ///
-    /// [StatsDecision#CANNOT_MATCH] row groups can be skipped entirely;
-    /// [StatsDecision#ALWAYS_MATCHES] row groups can be read with per-row predicate
-    /// evaluation skipped, since statistics prove every row satisfies the predicate.
+    /// three-valued [StatsDecision], without consulting dictionaries.
     ///
     /// @param predicate the resolved predicate to evaluate
     /// @param rowGroup the row group to check
@@ -66,12 +72,32 @@ public class RowGroupFilterEvaluator {
     /// @return the statistics decision for the row group
     public static StatsDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
             BloomFilterSource bloomFilters) {
+        return decideRowGroup(predicate, rowGroup, bloomFilters, null);
+    }
+
+    /// Evaluates the predicate against the row group's statistics, bloom filters and dictionaries
+    /// as a three-valued [StatsDecision].
+    ///
+    /// [StatsDecision#CANNOT_MATCH] row groups can be skipped entirely;
+    /// [StatsDecision#ALWAYS_MATCHES] row groups can be read with per-row predicate
+    /// evaluation skipped, since statistics prove every row satisfies the predicate.
+    ///
+    /// @param predicate the resolved predicate to evaluate
+    /// @param rowGroup the row group to check
+    /// @param bloomFilters source of the row group's bloom filters, or `null` to skip the bloom
+    ///        filter checks
+    /// @param dictionaries source of the row group's dictionaries, or `null` to skip the dictionary
+    ///        checks
+    /// @return the statistics decision for the row group
+    public static StatsDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
+            BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries) {
         return switch (predicate) {
             case ResolvedPredicate.IntPredicate p -> {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())) {
+                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -80,7 +106,8 @@ public class RowGroupFilterEvaluator {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())) {
+                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -89,7 +116,8 @@ public class RowGroupFilterEvaluator {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())) {
+                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -100,7 +128,8 @@ public class RowGroupFilterEvaluator {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())) {
+                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -111,7 +140,8 @@ public class RowGroupFilterEvaluator {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())) {
+                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -119,7 +149,8 @@ public class RowGroupFilterEvaluator {
             case ResolvedPredicate.IntInPredicate p -> {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
-                        && BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())) {
+                        && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
+                                || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -127,7 +158,8 @@ public class RowGroupFilterEvaluator {
             case ResolvedPredicate.LongInPredicate p -> {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
-                        && BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())) {
+                        && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
+                                || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -135,7 +167,8 @@ public class RowGroupFilterEvaluator {
             case ResolvedPredicate.BinaryInPredicate p -> {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH
-                        && BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())) {
+                        && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
+                                || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
                     yield StatsDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -169,7 +202,7 @@ public class RowGroupFilterEvaluator {
                 }
                 StatsDecision result = StatsDecision.ALWAYS_MATCHES;
                 for (ResolvedPredicate child : a.children()) {
-                    result = StatsDecision.and(result, decideRowGroup(child, rowGroup, bloomFilters));
+                    result = StatsDecision.and(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
                     if (result == StatsDecision.CANNOT_MATCH) {
                         break;
                     }
@@ -182,7 +215,7 @@ public class RowGroupFilterEvaluator {
                 }
                 StatsDecision result = StatsDecision.CANNOT_MATCH;
                 for (ResolvedPredicate child : o.children()) {
-                    result = StatsDecision.or(result, decideRowGroup(child, rowGroup, bloomFilters));
+                    result = StatsDecision.or(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
                     if (result == StatsDecision.ALWAYS_MATCHES) {
                         break;
                     }

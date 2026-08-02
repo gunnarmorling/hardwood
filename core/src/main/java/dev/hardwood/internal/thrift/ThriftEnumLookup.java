@@ -130,6 +130,10 @@ class ThriftEnumLookup {
         return Encoding.UNKNOWN;
     }
 
+    /// Maps a Thrift `PageType` value, yielding [PageType#UNKNOWN] for one this release does not
+    /// recognize. Callers that must decode the page reject `UNKNOWN` themselves; `encoding_stats`
+    /// carries it through, so an unrecognized page type in that optional field does not make the
+    /// file unreadable.
     static PageType pageType(int value) {
         if (value >= 0 && value < PAGE_TYPES.length) {
             return PAGE_TYPES[value];

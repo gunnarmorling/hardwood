@@ -37,6 +37,7 @@ from parquet_annotators import (
     corrupt_data_page_offset_negative,
     falsify_int64_row_group_minmax,
     remove_map_value_field,
+    drop_dictionary_page_offset,
 )
 
 
@@ -4638,3 +4639,129 @@ _copy_if_exists(
     f'{_codec_dir}/lz4_hadoop.parquet',
     'build parquet-testing-runner to fetch the apache/parquet-testing data set',
 )
+
+# Dictionary-encoded FLOAT / DOUBLE columns holding -0.0 but never +0.0, so a
+# +0.0 probe is provably absent from the dictionary while a -0.0 probe is
+# present. A dictionary holds exact stored values and is compared with
+# Float.compare / Double.compare, the same total order the row matchers apply,
+# so this prunes on every column regardless of the column's ColumnOrder.
+_signed_zero_schema = pa.schema([
+    ('f', pa.float32(), False),
+    ('d', pa.float64(), False),
+])
+_signed_zero_values = [-0.0, 1.5, 2.5, 3.5]
+_signed_zero_table = pa.table({
+    'f': [_signed_zero_values[i % 4] for i in range(4096)],
+    'd': [_signed_zero_values[i % 4] for i in range(4096)],
+}, schema=_signed_zero_schema)
+pq.write_table(
+    _signed_zero_table,
+    'core/src/test/resources/dict_signed_zero.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_signed_zero.parquet:")
+print("  - 4096 rows, dictionary-encoded FLOAT 'f' and DOUBLE 'd'")
+print("  - values {-0.0, 1.5, 2.5, 3.5}; +0.0 is absent from both dictionaries")
+
+# A column chunk that omits dictionary_page_offset, leaving data_page_offset to name the
+# dictionary page at the chunk start.
+#
+# dictionary_page_offset is optional in parquet.thrift, and files that omit it are ordinary rather
+# than corrupt: apache/parquet-testing's alltypes_tiny_pages.parquet, written by parquet-mr 1.12,
+# omits it on every one of its PLAIN_DICTIONARY columns, and Trino did the same before 427
+# (trinodb/trino#19032). Current parquet-java writes it whenever a dictionary page exists, so a
+# reader cannot rely on its presence but will usually see it. Readers locate the page the way
+# parquet-java's ColumnChunkMetaData.getStartingPos() does: fall back to the first data page
+# offset, which for such a chunk is the dictionary page.
+#
+# PyArrow always writes the offset, so the footer is rewritten afterwards. Every page stays
+# byte-for-byte where PyArrow put it, so the file reads and prunes exactly like its conventional
+# twin.
+#
+# 'id' keeps conventional offsets, so one file carries both shapes.
+_missing_dict_offset_schema = pa.schema([
+    ('id', pa.int64(), False),
+    ('label', pa.string(), False),
+])
+_missing_dict_offset_rows = 2000
+_missing_dict_offset_table = pa.table({
+    'id': list(range(_missing_dict_offset_rows)),
+    'label': [f'label_{i % 50}' for i in range(_missing_dict_offset_rows)],
+}, schema=_missing_dict_offset_schema)
+pq.write_table(
+    _missing_dict_offset_table,
+    'core/src/test/resources/dict_missing_page_offset.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+    write_page_index=True,
+)
+drop_dictionary_page_offset('core/src/test/resources/dict_missing_page_offset.parquet', 'label')
+print("\nGenerated dict_missing_page_offset.parquet:")
+print("  - 1 row group, 2000 rows, fully dictionary-encoded 'id' and 'label'")
+print("  - 'label' omits the optional dictionary_page_offset; 'id' is conventional")
+
+# Dictionary-encoded INT32 / INT64 / FLOAT / DOUBLE columns whose values leave gaps inside their
+# own min/max range, so a probe for a missing in-range value is provable only by the dictionary and
+# never by statistics. Covers the numeric arms of dictionary push-down that the STRING fixtures
+# cannot reach.
+#
+# The float columns also carry NaN, kept available for NaN-handling work rather than asserted here.
+_dict_numeric_schema = pa.schema([
+    ('i32', pa.int32(), False),
+    ('i64', pa.int64(), False),
+    ('f32', pa.float32(), False),
+    ('f64', pa.float64(), False),
+])
+_dict_numeric_rows = 4096
+_dict_numeric_i32 = [0, 3, 6, 9]
+_dict_numeric_i64 = [0, 1000, 2000, 3000]
+_dict_numeric_float = [1.5, 2.5, float('nan'), 4.5]
+_dict_numeric_table = pa.table({
+    'i32': [_dict_numeric_i32[i % 4] for i in range(_dict_numeric_rows)],
+    'i64': [_dict_numeric_i64[i % 4] for i in range(_dict_numeric_rows)],
+    'f32': [_dict_numeric_float[i % 4] for i in range(_dict_numeric_rows)],
+    'f64': [_dict_numeric_float[i % 4] for i in range(_dict_numeric_rows)],
+}, schema=_dict_numeric_schema)
+pq.write_table(
+    _dict_numeric_table,
+    'core/src/test/resources/dict_numeric_pushdown.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_numeric_pushdown.parquet:")
+print("  - 4096 rows, dictionary-encoded INT32 'i32' {0,3,6,9}, INT64 'i64' {0,1000,2000,3000}")
+print("  - FLOAT 'f32' / DOUBLE 'f64' {1.5, 2.5, NaN, 4.5}")
+print("  - every column leaves in-range gaps only the dictionary can prove absent")
+
+# A dictionary page whose compressed size differs sharply from its uncompressed size, so a reader
+# that sizes the dictionary read from `uncompressed_page_size` instead of `compressed_page_size`
+# over-reads measurably. Every other dictionary fixture is written with compression off, where the
+# two are equal and the mistake is invisible.
+#
+# 256 distinct labels sharing a 40-character run of filler compress to roughly a tenth of their
+# plain size. Only even suffixes are written, so `pad_1_...` stays lexicographically inside the
+# column's min/max while being absent from the dictionary.
+_dict_compressed_schema = pa.schema([
+    ('label', pa.string(), False),
+    ('payload', pa.int64(), False),
+])
+_dict_compressed_rows = 20000
+_dict_compressed_names = [f'pad_{2 * i}_' + 'z' * 40 for i in range(256)]
+_dict_compressed_table = pa.table({
+    'label': [_dict_compressed_names[i % 256] for i in range(_dict_compressed_rows)],
+    'payload': list(range(_dict_compressed_rows)),
+}, schema=_dict_compressed_schema)
+pq.write_table(
+    _dict_compressed_table,
+    'core/src/test/resources/dict_compressed_page.parquet',
+    use_dictionary=True,
+    compression='snappy',
+    write_statistics=True,
+)
+print("\nGenerated dict_compressed_page.parquet:")
+print("  - 1 row group, 20000 rows, Snappy-compressed dictionary-encoded 'label'")
+print("  - dictionary page compresses ~10x, so compressed and uncompressed sizes diverge")

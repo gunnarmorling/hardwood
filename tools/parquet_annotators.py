@@ -23,6 +23,12 @@ Supported annotations:
 Modern-only fixture helpers (strip legacy annotations so only `logicalType` remains):
 - `strip_converted_type` — for LIST / MAP outer groups.
 
+Column chunk layout helpers:
+- `drop_dictionary_page_offset` — omit the optional `dictionary_page_offset`, as
+  parquet-mr 1.12 and Trino <427 do.
+- `drop_encoding_stats` — omit the optional `encoding_stats`, making the chunk
+  ineligible for dictionary predicate push-down.
+
 Legacy-only fixture helpers (set `converted_type` and clear `logicalType`):
 - `annotate_columns_as_legacy_converted_type` — for primitive columns.
 - `annotate_map_as_legacy_key_value` — for MAP groups (MAP_KEY_VALUE on the
@@ -312,6 +318,71 @@ def falsify_int64_row_group_minmax(path: str, column_name: str, row_group_index:
         stats.max = encoded_max
     stats.is_min_value_exact = True
     stats.is_max_value_exact = True
+def drop_dictionary_page_offset(path: str, column_name: str) -> None:
+    """Rewrite `path` so the named column chunk omits `dictionary_page_offset`, with
+    `data_page_offset` naming the dictionary page at the chunk start rather than the
+    first data page.
+
+    The field is optional in parquet.thrift and real writers omit it: parquet-mr 1.12
+    does (see alltypes_tiny_pages.parquet in apache/parquet-testing), as did Trino before
+    427 (trinodb/trino#19032). PyArrow always writes it, so the shape cannot be produced
+    by writing alone. It is a footer-only change — every page stays byte-for-byte where
+    PyArrow put it — so the file still reads correctly for a reader that falls back to the
+    first data page offset, the way parquet-java's ColumnChunkMetaData.getStartingPos()
+    does.
+    """
+    data_before_footer, file_metadata = _read_parquet_footer(path)
+
+    patched = 0
+    for row_group in file_metadata.row_groups:
+        for column in row_group.columns:
+            meta_data = column.meta_data
+            if meta_data is None or meta_data.path_in_schema != [column_name]:
+                continue
+            if meta_data.dictionary_page_offset is None:
+                raise ValueError(
+                    f"{path} column '{column_name}' has no dictionary_page_offset to make implicit")
+            meta_data.data_page_offset = meta_data.dictionary_page_offset
+            meta_data.dictionary_page_offset = None
+            patched += 1
+
+    if patched == 0:
+        raise ValueError(f"{path} has no column chunk named '{column_name}'")
+
+    _write_parquet_footer(path, data_before_footer, file_metadata)
+
+
+def drop_encoding_stats(path: str, column_name: str) -> None:
+    """Rewrite `path` so the named column chunk omits `encoding_stats`.
+
+    The field is optional in parquet.thrift, and without it a reader cannot establish
+    that a chunk's dictionary covers all of its values — a writer may fall back to plain
+    pages once the dictionary grows too large, leaving a dictionary describing only a
+    prefix. Chunks in this shape are therefore ineligible for dictionary predicate
+    push-down. PyArrow always writes the field, so the shape cannot be produced by
+    writing alone.
+
+    It is a footer-only change — every page stays byte-for-byte where PyArrow put it, and
+    the dictionary pages are still present and still used by the read path — so a file
+    patched this way differs from its unpatched twin in exactly one respect: whether
+    push-down is eligible.
+    """
+    data_before_footer, file_metadata = _read_parquet_footer(path)
+
+    patched = 0
+    for row_group in file_metadata.row_groups:
+        for column in row_group.columns:
+            meta_data = column.meta_data
+            if meta_data is None or meta_data.path_in_schema != [column_name]:
+                continue
+            if not meta_data.encoding_stats:
+                raise ValueError(
+                    f"{path} column '{column_name}' has no encoding_stats to drop")
+            meta_data.encoding_stats = None
+            patched += 1
+
+    if patched == 0:
+        raise ValueError(f"{path} has no column chunk named '{column_name}'")
 
     _write_parquet_footer(path, data_before_footer, file_metadata)
 

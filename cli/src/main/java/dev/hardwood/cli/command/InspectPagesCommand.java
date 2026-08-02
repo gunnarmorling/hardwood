@@ -450,6 +450,8 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                 DataPageHeaderV2 dp = header.dataPageHeaderV2();
                 yield dp != null ? dp.statistics() : null;
             }
+            // UNKNOWN cannot reach here (PageHeaderReader rejects it) but, like an index page,
+            // carries no inline statistics either way.
             case DICTIONARY_PAGE, INDEX_PAGE, UNKNOWN -> null;
         };
     }
