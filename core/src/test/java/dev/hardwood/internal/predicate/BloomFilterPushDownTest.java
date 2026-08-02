@@ -128,13 +128,31 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void negativeZeroFloatIsNeverPrunedByBloom() {
-        // `price` stores +0.0; a query for -0.0f must still match it (-0.0f == +0.0f) even though the
-        // two have different IEEE-754 bits and therefore different bloom hashes. The ±0 carve-out
-        // keeps the row group rather than pruning on the raw-bit hash.
+    void negativeZeroFloatCanBePrunedByBloom() {
+        // `price` stores +0.0; Float.compare treats -0.0f as distinct, so its raw-bit bloom probe
+        // can prove the row group absent.
         FilterPredicate negZero = FilterPredicate.eq("price", -0.0f);
         assertThat(statisticsDrop(negZero)).isFalse();
-        assertThat(bloomDrop(negZero)).isFalse();
+        assertThat(bloomDrop(negZero)).isTrue();
+    }
+
+    @Test
+    void negativeZeroDoubleCanBePrunedByBloom() {
+        FilterPredicate negZero = FilterPredicate.eq("ratio", -0.0);
+        assertThat(statisticsDrop(negZero)).isFalse();
+        assertThat(bloomDrop(negZero)).isTrue();
+    }
+
+    @Test
+    void nanFloatIsNeverPrunedByBloom() {
+        FilterPredicate nan = FilterPredicate.eq("price", Float.NaN);
+        assertThat(bloomDrop(nan)).isFalse();
+    }
+
+    @Test
+    void nanDoubleIsNeverPrunedByBloom() {
+        FilterPredicate nan = FilterPredicate.eq("ratio", Double.NaN);
+        assertThat(bloomDrop(nan)).isFalse();
     }
 
     @Test
