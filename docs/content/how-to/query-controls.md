@@ -142,8 +142,10 @@ Filters work with all reader types: `RowReader`, `ColumnReader`, `AvroRowReader`
   binary (`BYTE_ARRAY` / `FIXED_LEN_BYTE_ARRAY`) columns that carry a Bloom filter, and to `in`
   predicates on the integer and binary types. It runs automatically during row-group pruning,
   alongside statistics, and skips a row group when the value is provably absent. For `FLOAT` /
-  `DOUBLE`, `eq(-0.0)` and `eq(NaN)` are not pruned by the Bloom filter. Range predicates (`lt`,
-  `gt`, …) and `notEq` are unaffected — a Bloom filter answers only membership.
+  `DOUBLE`, `eq(NaN)` is not pruned by the Bloom filter — raw-bit hashing distinguishes NaN
+  payloads that `Float.compare` / `Double.compare` treat as equal, so a Bloom miss cannot prove a
+  NaN absent; `eq(-0.0)` is pruned normally. Range predicates (`lt`, `gt`, …) and `notEq` are
+  unaffected — a Bloom filter answers only membership.
 - **Dictionary-based filtering is not supported
   ([#196](https://github.com/hardwood-hq/hardwood/issues/196)).** Dictionary-encoded columns
   are not checked for predicate matches before decoding.

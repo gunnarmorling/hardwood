@@ -43,22 +43,22 @@ final class BloomFilterSupport {
 
     /// Single-value bloom check for `FLOAT` values; see the `INT32` overload.
     ///
-    /// Bloom filters hash the raw IEEE-754 bits, which distinguish `-0.0f` from `+0.0f` and every
-    /// NaN bit pattern — but `FLOAT` equality treats `-0.0f == +0.0f` and `NaN != NaN`. Probing
-    /// those by raw bits could prove a value absent that an equal stored value would match, so they
-    /// are never pruned here (statistics still apply).
+    /// Bloom filters hash raw IEEE-754 bits and the record matcher uses [Float#compare(float, float)],
+    /// so both distinguish `-0.0f` from `+0.0f` and signed zeros are safe to probe. NaN values are
+    /// not: the matcher treats different NaN payloads as equal while raw-bit hashing distinguishes
+    /// them, so a bloom miss cannot prove a NaN absent.
     static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, float value) {
-        if (value == 0.0f || Float.isNaN(value)) {
+        if (Float.isNaN(value)) {
             return false;
         }
         BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
         return bloomFilter != null && !bloomFilter.mightContain(XxHash64.hash(value));
     }
 
-    /// Single-value bloom check for `DOUBLE` values. See the `FLOAT` overload for the `±0` / `NaN`
-    /// carve-out.
+    /// Single-value bloom check for `DOUBLE` values. See the `FLOAT` overload for signed-zero and
+    /// NaN behavior.
     static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, double value) {
-        if (value == 0.0 || Double.isNaN(value)) {
+        if (Double.isNaN(value)) {
             return false;
         }
         BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);

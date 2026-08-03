@@ -128,13 +128,15 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void negativeZeroFloatIsNeverPrunedByBloom() {
-        // `price` stores +0.0; a query for -0.0f must still match it (-0.0f == +0.0f) even though the
-        // two have different IEEE-754 bits and therefore different bloom hashes. The ±0 carve-out
-        // keeps the row group rather than pruning on the raw-bit hash.
-        FilterPredicate negZero = FilterPredicate.eq("price", -0.0f);
-        assertThat(statisticsDrop(negZero)).isFalse();
-        assertThat(bloomDrop(negZero)).isFalse();
+    void oppositeSignedZerosArePrunedByBloom() {
+        // The fixture stores +0.0. Matchers and bloom hashes both distinguish its sign from -0.0.
+        FilterPredicate negativeFloatZero = FilterPredicate.eq("price", -0.0f);
+        assertThat(statisticsDrop(negativeFloatZero)).isFalse();
+        assertThat(bloomDrop(negativeFloatZero)).isTrue();
+
+        FilterPredicate negativeDoubleZero = FilterPredicate.eq("ratio", -0.0);
+        assertThat(statisticsDrop(negativeDoubleZero)).isFalse();
+        assertThat(bloomDrop(negativeDoubleZero)).isTrue();
     }
 
     @Test

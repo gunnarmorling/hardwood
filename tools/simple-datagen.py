@@ -3821,6 +3821,41 @@ print("  - Bloom filters on 'id', 'name', 'code', 'price', 'ratio', 'dec', 'ts',
       " 'value' has none")
 
 # =====================================================================
+# FLOAT / DOUBLE signed-zero bloom-filter fixture (#829). Both columns
+# contain only -0.0, whose raw IEEE-754 bloom hash differs from +0.0.
+# Statistics are disabled so row-group decisions isolate bloom-filter
+# behavior: +0.0 is absent, -0.0 is present, and NaN probes must stay
+# conservative because raw-bit hashing distinguishes NaN payloads while
+# Float.compare / Double.compare do not.
+# =====================================================================
+
+signed_zero_bloom_schema = pa.schema([
+    ('float_value', pa.float32(), False),
+    ('double_value', pa.float64(), False),
+])
+signed_zero_bloom_table = pa.table({
+    'float_value': [-0.0] * 16,
+    'double_value': [-0.0] * 16,
+}, schema=signed_zero_bloom_schema)
+
+pq.write_table(
+    signed_zero_bloom_table,
+    'core/src/test/resources/bloom_filter_signed_zero_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0',
+    write_statistics=False,
+    bloom_filter_options={
+        'float_value': {'ndv': 1, 'fpp': 0.01},
+        'double_value': {'ndv': 1, 'fpp': 0.01},
+    },
+)
+
+print("\nGenerated bloom_filter_signed_zero_test.parquet:")
+print("  - 1 row group, 16 rows, FLOAT float_value + DOUBLE double_value, all -0.0")
+print("  - Bloom filters on both columns; statistics disabled")
+
+# =====================================================================
 # Local-wall-clock TIMESTAMP fixture (#568). PyArrow's `pa.timestamp(unit)`
 # with no `tz=` argument emits TIMESTAMP(isAdjustedToUTC=false), the
 # "naive" / wall-clock case. The companion UTC-adjusted column lets the
