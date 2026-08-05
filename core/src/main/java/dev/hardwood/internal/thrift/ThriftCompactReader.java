@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 
@@ -240,6 +242,18 @@ public class ThriftCompactReader {
         }
 
         return new CollectionHeader(elementType, size);
+    }
+
+    /// Read a `list<i64>` in full: the collection header followed by its elements.
+    /// The header's element type is not enforced — a caller has already gated on
+    /// the field's own type code before reaching here.
+    public List<Long> readI64List() throws IOException {
+        CollectionHeader listHeader = readListHeader();
+        List<Long> values = new ArrayList<>(listHeader.size());
+        for (int i = 0; i < listHeader.size(); i++) {
+            values.add(readI64());
+        }
+        return values;
     }
 
     /// Skip a field of the given type.

@@ -205,8 +205,9 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                 null,
                 null,
                 null,
-                // The writer does not emit encoding_stats yet.
-                List.of());
+                // The writer does not emit encoding_stats or size_statistics yet.
+                List.of(),
+                null);
     }
 
     /// Seals the current page as a dictionary-indexed page and switches the rest of the chunk

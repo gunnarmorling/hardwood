@@ -237,7 +237,7 @@ class RowGroupDictionaryFilterSourceTest {
                     m.numValues(), m.totalUncompressedSize(), m.totalCompressedSize(),
                     m.keyValueMetadata(), m.dataPageOffset(), m.dictionaryPageOffset(), m.statistics(),
                     m.geospatialStatistics(), m.bloomFilterOffset(), m.bloomFilterLength(),
-                    encodingStats));
+                    encodingStats, m.sizeStatistics()));
         }
 
         RowGroupDictionaryFilterSource sourceWithChunkSize(long totalCompressedSize) {
@@ -252,7 +252,7 @@ class RowGroupDictionaryFilterSourceTest {
                     m.numValues(), m.totalUncompressedSize(), totalCompressedSize,
                     m.keyValueMetadata(), dataPageOffset, dictionaryPageOffset, m.statistics(),
                     m.geospatialStatistics(), m.bloomFilterOffset(), m.bloomFilterLength(),
-                    m.encodingStats()));
+                    m.encodingStats(), m.sizeStatistics()));
         }
 
         ColumnMetaData metaData() {

@@ -19,10 +19,13 @@ final class ThriftStructBuilder {
 
     // Thrift Compact Protocol field type codes.
     static final byte TYPE_I32 = 0x05;
+    static final byte TYPE_I64 = 0x06;
     static final byte TYPE_LIST = 0x09;
+    static final byte TYPE_STRUCT = 0x0C;
 
     // Thrift Compact Protocol list element type codes.
     private static final byte ELEM_BOOL = 0x01;
+    private static final byte ELEM_I32 = 0x05;
     private static final byte ELEM_I64 = 0x06;
     private static final byte ELEM_BINARY = 0x08;
     private static final byte ELEM_STRUCT = 0x0C;
@@ -60,6 +63,14 @@ final class ThriftStructBuilder {
         return this;
     }
 
+    ThriftStructBuilder i32List(int... values) {
+        listHeader(values.length, ELEM_I32);
+        for (int value : values) {
+            writeZigzag(value);
+        }
+        return this;
+    }
+
     ThriftStructBuilder i64List(long... values) {
         listHeader(values.length, ELEM_I64);
         for (long value : values) {
@@ -78,6 +89,18 @@ final class ThriftStructBuilder {
 
     ThriftStructBuilder i32(int value) {
         writeZigzag(value);
+        return this;
+    }
+
+    ThriftStructBuilder i64(long value) {
+        writeZigzag(value);
+        return this;
+    }
+
+    /// Writes an already-built struct as the value of the field just opened. Field ids
+    /// restart within a nested struct, so the nested body is built by its own builder.
+    ThriftStructBuilder nested(byte[] struct) {
+        buffer.put(struct);
         return this;
     }
 
