@@ -97,7 +97,7 @@ All fields (column_idx, descending, nulls_first) ❌ — struct not read.
 | 13 | encoding_stats | ❌ | dictionary/plain page mix not read |
 | 14 | bloom_filter_offset | ✅ | shown in dive; filter body read & decoded (#669); used for `eq`/`in` row-group pruning (#105) |
 | 15 | bloom_filter_length | ✅ | shown in dive; #669 read path; #105 pushdown |
-| 16 | size_statistics | ❌ | #607 |
+| 16 | size_statistics | 🟡 | on public record, no functional consumer |
 | 17 | geospatial_statistics | ✅ | row-group filter evaluator (no per-page geospatial stats exist) |
 
 ### PageEncodingStats
@@ -118,11 +118,14 @@ All fields (page_type, encoding, count) ❌ — struct not read.
 | 6 | min_value | ✅ | preferred |
 | 7 | is_max_value_exact | ❌ | truncated-bound flag ignored; #483 |
 | 8 | is_min_value_exact | ❌ | #483 |
-| 9 | nan_count | ❌ | #607 |
+| 9 | nan_count | 🟡 | on public record; the FP always-matches gap it unblocks is #795 |
 
 ### SizeStatistics
-All fields (unencoded_byte_array_data_bytes, repetition_level_histogram,
-definition_level_histogram) ❌ — struct not read. **#607**.
+| id | field | status | notes |
+|----|-------|--------|-------|
+| 1 | unencoded_byte_array_data_bytes | 🟡 | on public record, no functional consumer |
+| 2 | repetition_level_histogram | 🟡 | absent and empty are distinguished (`null` vs empty list) |
+| 3 | definition_level_histogram | 🟡 | |
 
 ### GeospatialStatistics
 | id | field | status | notes |
@@ -178,15 +181,15 @@ Empty struct; not read (see `PageHeader.index_page_header`).
 | 3 | max_values | ✅ | |
 | 4 | boundary_order | ✅ | |
 | 5 | null_counts | ✅ | |
-| 6 | repetition_level_histograms | ❌ | #607 |
-| 7 | definition_level_histograms | ❌ | skipped; surfacing tracked by #607 |
-| 8 | nan_counts | ❌ | #607 |
+| 6 | repetition_level_histograms | 🟡 | per-page, concatenated page-major |
+| 7 | definition_level_histograms | 🟡 | per-page, concatenated page-major |
+| 8 | nan_counts | 🟡 | on public record, no functional consumer |
 
 ### OffsetIndex
 | id | field | status | notes |
 |----|-------|--------|-------|
 | 1 | page_locations | ✅ | page scanning |
-| 2 | unencoded_byte_array_data_bytes | ❌ | #607 |
+| 2 | unencoded_byte_array_data_bytes | 🟡 | per-page counterpart of the chunk-level field |
 
 ### PageLocation
 All fields (offset, compressed_page_size, first_row_index) ✅.
@@ -225,8 +228,8 @@ The ❌ rows cluster into a handful of capabilities, cross-referenced to ROADMAP
 
 - **Modular encryption** — entire feature stubbed to fail-fast. #128 (ROADMAP has no phase yet).
 - **Bloom-filter writing** — filter *serialization* is not implemented (ROADMAP 9.3). The read path (#669) and `eq`/`in` pushdown (#105) are done.
-- **Size statistics & level histograms** — ROADMAP 9.x; #607.
-- **Statistics completeness** — distinct_count, exactness flags, nan_count; #483, #607.
+- **Size statistics & level histograms** — parsed and exposed; no functional consumer yet.
+- **Statistics completeness** — distinct_count and nan_count parsed but unconsumed; exactness flags still unread (#483).
 - **Declared sort order** — `sorting_columns`, `is_sorted`; ROADMAP 4.2.
 - **Column orders** — float total-order vs type-defined; #483.
 - **Deprecated / niche** — split-file `file_path`, index pages, encoding_stats, row-group ordinals: no planned support.

@@ -306,6 +306,9 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 ### 9.1 Statistics
 - [x] Implement `Statistics` record (minValue, maxValue, nullCount, distinctCount)
 - [x] Statistics deserialization (`StatisticsReader` with deprecated/preferred field fallback)
+- [x] `nan_count` deserialization (`StatisticsReader` field 9; no functional consumer yet)
+- [x] Implement `SizeStatistics` record (unencoded `BYTE_ARRAY` size, repetition/definition level histograms)
+- [x] SizeStatistics deserialization (`SizeStatisticsReader`, `ColumnMetaData` field 16)
 - [x] Type-specific comparators (`StatisticsDecoder` for int, long, float, double, boolean, binary)
 - [x] Statistics collection during writing (`StatisticsCollector`, INT32 min/max/null_count)
 - [ ] Binary min/max truncation for efficiency
@@ -317,8 +320,10 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Min/max values per page
   - [x] Boundary order
   - [x] Null counts
+  - [x] Per-page repetition/definition level histograms and NaN counts
 - [x] Implement `OffsetIndex` structure
   - [x] Page locations (offset, size, first row)
+  - [x] Per-page unencoded `BYTE_ARRAY` sizes
 - [x] Page index reading (`ColumnIndexReader`, `OffsetIndexReader`)
 - [x] Coalesced index fetching (`RowGroupIndexBuffers` — single read per row group)
 - [x] OffsetIndex-based page scanning (`PageScanner.scanPagesFromIndex()`)
