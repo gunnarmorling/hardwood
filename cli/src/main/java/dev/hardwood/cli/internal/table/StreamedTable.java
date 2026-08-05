@@ -35,13 +35,13 @@ public class StreamedTable {
         // compute column widths based on headers + sample rows
         int[] widths = new int[n];
         for (int i = 0; i < n; i++) {
-            widths[i] = headers[i].length();
+            widths[i] = RowTable.displayWidth(headers[i]);
         }
         for (String[] rowFunc : sampleRows) {
             for (int i = 0; i < n; i++) {
                 String cell = rowFunc[i];
                 if (cell != null) {
-                    widths[i] = Math.max(widths[i], cell.length());
+                    widths[i] = Math.max(widths[i], RowTable.displayWidth(cell));
                 }
             }
         }
@@ -97,10 +97,11 @@ public class StreamedTable {
                 if (cell == null) {
                     cell = "";
                 }
-                if (cell.length() > widths[i]) {
-                    cell = cell.substring(0, widths[i] - 1) + "\u2026";
+                if (RowTable.displayWidth(cell) > widths[i]) {
+                    int end = displayPrefixEnd(cell, 0, widths[i] - 1);
+                    cell = cell.substring(0, end) + "\u2026";
                 }
-                out.printf(" %-" + widths[i] + "s |", cell);
+                printCell(out, cell, widths[i]);
             }
             out.println();
             return;
@@ -115,9 +116,13 @@ public class StreamedTable {
                 cell = "";
             }
             List<String> lines = new ArrayList<>();
-            for (int start = 0; start < cell.length(); start += widths[i]) {
-                int end = Math.min(start + widths[i], cell.length());
+            for (int start = 0; start < cell.length();) {
+                int end = displayPrefixEnd(cell, start, widths[i]);
+                if (end == start) {
+                    end += Character.charCount(cell.codePointAt(start));
+                }
                 lines.add(cell.substring(start, end));
+                start = end;
             }
             maxLines = Math.max(maxLines, lines.size());
             wrappedCells.add(lines.toArray(new String[0]));
@@ -128,9 +133,32 @@ public class StreamedTable {
             for (int i = 0; i < n; i++) {
                 String[] lines = wrappedCells.get(i);
                 String content = (line < lines.length) ? lines[line] : "";
-                out.printf(" %-" + widths[i] + "s |", content);
+                printCell(out, content, widths[i]);
             }
             out.println();
         }
+    }
+
+    private void printCell(PrintWriter out, String content, int width) {
+        out.print(" ");
+        out.print(content);
+        out.print(" ".repeat(Math.max(0, width - RowTable.displayWidth(content))));
+        out.print(" |");
+    }
+
+    private static int displayPrefixEnd(String value, int start, int maxWidth) {
+        int width = 0;
+        int end = start;
+        while (end < value.length()) {
+            int codePoint = value.codePointAt(end);
+            int next = end + Character.charCount(codePoint);
+            int codePointWidth = RowTable.displayWidth(value.substring(end, next));
+            if (width + codePointWidth > maxWidth) {
+                break;
+            }
+            width += codePointWidth;
+            end = next;
+        }
+        return end;
     }
 }

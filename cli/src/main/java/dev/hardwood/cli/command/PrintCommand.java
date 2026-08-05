@@ -26,8 +26,6 @@ import org.aesh.command.invocation.CommandInvocation;
 import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
-import com.github.freva.asciitable.AsciiTable;
-
 import dev.hardwood.InputFile;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.cli.internal.table.StreamedTable;
@@ -104,15 +102,14 @@ public class PrintCommand implements Command<CommandInvocation> {
 
     private void printTransposed(Stream<Object[]> stream, String[] headers, List<SchemaNode> fields, AtomicLong rowIndex) {
         stream.forEach(r -> {
-            Stream<Object[]> data = IntStream.range(0, headers.length)
-                    .mapToObj(i -> new Object[]{headers[i], RowTable.renderValue(r[i], fields.get(i))});
-            System.out.println(
-                    AsciiTable.builder()
-                            .data((rowIndex != null ?
-                                    Stream.concat(
-                                            Stream.of(new Object[][]{new Object[]{"rowIndex", Long.toString(rowIndex.getAndIncrement())}}), data) : data)
-                                    .toArray(Object[][]::new))
-                            .asString());
+            Stream<String[]> data = IntStream.range(0, headers.length)
+                    .mapToObj(i -> new String[]{headers[i], RowTable.renderValue(r[i], fields.get(i))});
+            List<String[]> tableRows = (rowIndex != null ?
+                    Stream.concat(
+                            Stream.<String[]>of(new String[]{"rowIndex", Long.toString(rowIndex.getAndIncrement())}), data) : data)
+                    .toList();
+            System.out.println(RowTable.renderTransposedTable(
+                    tableRows.get(0), tableRows.subList(1, tableRows.size())));
         });
     }
 

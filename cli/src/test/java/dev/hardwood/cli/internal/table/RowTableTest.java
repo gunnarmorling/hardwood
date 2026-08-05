@@ -99,4 +99,25 @@ class RowTableTest {
                     .isEqualTo(expected);
         }
     }
+
+    @Test
+    void rendersTransposedTableWithWideCharsAligned() {
+        String out = RowTable.renderTransposedTable(
+                new String[]{"name", "말도"},
+                List.of(
+                        new String[]{"city", "漢字水"},
+                        new String[]{"note", "x"}));
+
+        assertThat(out).isEqualTo("""
+                +------+--------+
+                | name |   말도 |
+                +------+--------+
+                | city | 漢字水 |
+                +------+--------+
+                | note |      x |
+                +------+--------+""");
+        int expectedWidth = RowTable.displayWidth(out.lines().findFirst().orElseThrow());
+        assertThat(out.lines()).allSatisfy(line ->
+                assertThat(RowTable.displayWidth(line)).isEqualTo(expectedWidth));
+    }
 }

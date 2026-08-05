@@ -20,6 +20,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.RowValueFormatter;
@@ -331,7 +332,12 @@ public final class RowTable {
     }
 
     public static String renderTable(String[] headers, List<String[]> rows) {
-        return renderTable(headers, rows, Collections.emptyList(), Collections.emptyList());
+        return renderTable(headers, rows, Collections.emptyList(), Collections.emptyList(), false);
+    }
+
+    public static String renderTransposedTable(String[] headers, List<String[]> rows) {
+        List<Integer> separatorsBefore = IntStream.range(1, rows.size()).boxed().toList();
+        return renderTable(headers, rows, separatorsBefore, Collections.emptyList(), true);
     }
 
     /// Renders a table like [renderTable(String[], List)], but inserts a horizontal
@@ -346,6 +352,13 @@ public final class RowTable {
     public static String renderTable(String[] headers, List<String[]> rows,
                                      List<Integer> separatorsBefore,
                                      List<Integer> heavySeparatorsBefore) {
+        return renderTable(headers, rows, separatorsBefore, heavySeparatorsBefore, false);
+    }
+
+    private static String renderTable(String[] headers, List<String[]> rows,
+                                      List<Integer> separatorsBefore,
+                                      List<Integer> heavySeparatorsBefore,
+                                      boolean rightAlignHeaders) {
         int cols = headers.length;
         int[] widths = new int[cols];
         for (int i = 0; i < cols; i++) {
@@ -364,7 +377,7 @@ public final class RowTable {
 
         StringBuilder sb = new StringBuilder();
         sb.append(lightBorder).append('\n');
-        sb.append(renderCells(headers, widths, false)).append('\n');
+        sb.append(renderCells(headers, widths, rightAlignHeaders)).append('\n');
         sb.append(lightBorder).append('\n');
         for (int r = 0; r < rows.size(); r++) {
             if (heavySet.contains(r)) {
