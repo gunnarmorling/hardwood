@@ -15,6 +15,11 @@ import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
 
 /// Reader for OffsetIndex from Thrift Compact Protocol.
+///
+/// Parquet OffsetIndex struct fields:
+///
+/// - 1: page_locations (list<PageLocation>)
+/// - 2: unencoded_byte_array_data_bytes (list<i64>, optional)
 public class OffsetIndexReader {
 
     public static OffsetIndex read(ThriftCompactReader reader) throws IOException {
@@ -29,6 +34,7 @@ public class OffsetIndexReader {
 
     private static OffsetIndex readInternal(ThriftCompactReader reader) throws IOException {
         List<PageLocation> pageLocations = new ArrayList<>();
+        List<Long> unencodedByteArrayDataBytes = null;
 
         while (true) {
             ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
@@ -48,12 +54,20 @@ public class OffsetIndexReader {
                         reader.skipField(header.type());
                     }
                     break;
+                case 2: // unencoded_byte_array_data_bytes (list<i64>, optional)
+                    if (header.type() == 0x09) { // LIST
+                        unencodedByteArrayDataBytes = reader.readI64List();
+                    }
+                    else {
+                        reader.skipField(header.type());
+                    }
+                    break;
                 default:
                     reader.skipField(header.type());
                     break;
             }
         }
 
-        return new OffsetIndex(pageLocations);
+        return new OffsetIndex(pageLocations, unencodedByteArrayDataBytes);
     }
 }

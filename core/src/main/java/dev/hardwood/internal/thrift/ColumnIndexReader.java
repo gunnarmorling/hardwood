@@ -26,7 +26,8 @@ import dev.hardwood.metadata.ColumnIndex;
 /// - 7: definition_level_histograms (list<i64>, optional)
 /// - 8: nan_counts (list<i64>, optional)
 ///
-/// Fields 6–8 are not yet surfaced and are skipped.
+/// The histograms of fields 6 and 7 are stored one per page, concatenated page-major;
+/// they are surfaced in that layout.
 public class ColumnIndexReader {
 
     public static ColumnIndex read(ThriftCompactReader reader) throws IOException {
@@ -45,6 +46,9 @@ public class ColumnIndexReader {
         List<byte[]> maxValues = new ArrayList<>();
         ColumnIndex.BoundaryOrder boundaryOrder = ColumnIndex.BoundaryOrder.UNORDERED;
         List<Long> nullCounts = null;
+        List<Long> repetitionLevelHistograms = null;
+        List<Long> definitionLevelHistograms = null;
+        List<Long> nanCounts = null;
 
         while (true) {
             ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
@@ -101,24 +105,43 @@ public class ColumnIndexReader {
                     break;
                 case 5: // null_counts (list<i64>, optional)
                     if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        nullCounts = new ArrayList<>(listHeader.size());
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            nullCounts.add(reader.readI64());
-                        }
+                        nullCounts = reader.readI64List();
+                    }
+                    else {
+                        reader.skipField(header.type());
+                    }
+                    break;
+                case 6: // repetition_level_histograms (list<i64>, optional)
+                    if (header.type() == 0x09) { // LIST
+                        repetitionLevelHistograms = reader.readI64List();
+                    }
+                    else {
+                        reader.skipField(header.type());
+                    }
+                    break;
+                case 7: // definition_level_histograms (list<i64>, optional)
+                    if (header.type() == 0x09) { // LIST
+                        definitionLevelHistograms = reader.readI64List();
+                    }
+                    else {
+                        reader.skipField(header.type());
+                    }
+                    break;
+                case 8: // nan_counts (list<i64>, optional)
+                    if (header.type() == 0x09) { // LIST
+                        nanCounts = reader.readI64List();
                     }
                     else {
                         reader.skipField(header.type());
                     }
                     break;
                 default:
-                    // Fields 6 (repetition_level_histograms), 7 (definition_level_histograms)
-                    // and 8 (nan_counts) are not yet surfaced and fall through to be skipped.
                     reader.skipField(header.type());
                     break;
             }
         }
 
-        return new ColumnIndex(nullPages, minValues, maxValues, boundaryOrder, nullCounts);
+        return new ColumnIndex(nullPages, minValues, maxValues, boundaryOrder, nullCounts,
+                repetitionLevelHistograms, definitionLevelHistograms, nanCounts);
     }
 }

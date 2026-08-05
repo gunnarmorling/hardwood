@@ -12,7 +12,11 @@ import java.util.List;
 /// Offset index for a column chunk, providing page locations for direct lookup.
 ///
 /// @param pageLocations locations of each data page in the column chunk
+/// @param unencodedByteArrayDataBytes per-page unencoded size of the `BYTE_ARRAY` data,
+///     or `null` if not available. One entry per page, in the order of `pageLocations`
 /// @see <a href="https://parquet.apache.org/docs/file-format/pageindex/">File Format – Page Index</a>
 /// @see <a href="https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift">parquet.thrift</a>
-public record OffsetIndex(List<PageLocation> pageLocations) {
+public record OffsetIndex(
+        List<PageLocation> pageLocations,
+        List<Long> unencodedByteArrayDataBytes) {
 }

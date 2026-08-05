@@ -245,10 +245,19 @@ public class ThriftCompactReader {
     }
 
     /// Read a `list<i64>` in full: the collection header followed by its elements.
-    /// The header's element type is not enforced — a caller has already gated on
-    /// the field's own type code before reaching here.
+    ///
+    /// A list declaring any other element type is skipped element-wise and reported as
+    /// `null`. Its elements are not varints, so decoding them as such would desynchronise
+    /// the stream and corrupt every field that follows; a file that mistypes a list loses
+    /// only that field.
     public List<Long> readI64List() throws IOException {
         CollectionHeader listHeader = readListHeader();
+        if (listHeader.elementType() != TYPE_I64) {
+            for (int i = 0; i < listHeader.size(); i++) {
+                skipField(listHeader.elementType());
+            }
+            return null;
+        }
         List<Long> values = new ArrayList<>(listHeader.size());
         for (int i = 0; i < listHeader.size(); i++) {
             values.add(readI64());

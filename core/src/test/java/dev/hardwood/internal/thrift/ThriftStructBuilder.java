@@ -80,12 +80,21 @@ final class ThriftStructBuilder {
         return this;
     }
 
-    ThriftStructBuilder emptyStructList(int count) {
-        listHeader(count, ELEM_STRUCT);
-        for (int i = 0; i < count; i++) {
-            buffer.put((byte) 0); // empty struct: immediate STOP
+    /// Writes a `list<struct>` of already-built struct bodies.
+    ThriftStructBuilder structList(byte[]... structs) {
+        listHeader(structs.length, ELEM_STRUCT);
+        for (byte[] struct : structs) {
+            buffer.put(struct);
         }
         return this;
+    }
+
+    ThriftStructBuilder emptyStructList(int count) {
+        byte[][] structs = new byte[count][];
+        for (int i = 0; i < count; i++) {
+            structs[i] = new byte[]{ 0 }; // empty struct: immediate STOP
+        }
+        return structList(structs);
     }
 
     ThriftStructBuilder i32(int value) {
