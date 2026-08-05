@@ -71,7 +71,7 @@ final class BinaryStatisticsCollector {
             maxValue = truncateMax(max, truncationLength);
             maxExact = false;
         }
-        return new Statistics(minValue, maxValue, nullCount, null, false, minExact, maxExact);
+        return new Statistics(minValue, maxValue, nullCount, null, false, minExact, maxExact, null);
     }
 
     /// The smallest length-`<= n` byte string that is `>=` `value`: the first `n` bytes with the

@@ -365,9 +365,9 @@ behaviour it covers changes.
 
 | 2 | `SizeStatistics` record and reader | New record, `SizeStatisticsReader`, `ColumnMetaData.sizeStatistics`, `ColumnMetaDataReader` case 16, reader tests. |
 
-| 3 | NaN counts | `Statistics.nanCount` + `StatisticsReader` case 9; `ColumnIndex.nanCounts` + case 8. |
+| 3 | Chunk-level NaN count | `Statistics.nanCount` + `StatisticsReader` case 9. |
 
-| 4 | Page-index histograms and per-page sizes | `ColumnIndexReader` cases 6/7, `OffsetIndexReader` case 2, corrected class JavaDoc, extended `ColumnIndexReaderTest`. |
+| 4 | Page-index fields | All three `ColumnIndexReader` cases 6/7/8 together — one edit of the record and its construction sites — plus `OffsetIndexReader` case 2, corrected class JavaDoc, extended `ColumnIndexReaderTest`. |
 
 | 5 | Fixture-backed test | New PyArrow fixture and its assertions. |
 

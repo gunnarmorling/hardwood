@@ -20,6 +20,7 @@ final class ThriftStructBuilder {
     // Thrift Compact Protocol field type codes.
     static final byte TYPE_I32 = 0x05;
     static final byte TYPE_I64 = 0x06;
+    static final byte TYPE_BINARY = 0x08;
     static final byte TYPE_LIST = 0x09;
     static final byte TYPE_STRUCT = 0x0C;
 
@@ -94,6 +95,12 @@ final class ThriftStructBuilder {
 
     ThriftStructBuilder i64(long value) {
         writeZigzag(value);
+        return this;
+    }
+
+    ThriftStructBuilder binary(byte[] value) {
+        writeVarint(value.length);
+        buffer.put(value);
         return this;
     }
 

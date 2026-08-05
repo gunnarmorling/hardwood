@@ -24,6 +24,10 @@ package dev.hardwood.metadata;
 /// @param isMinMaxDeprecated whether the bounds came from the deprecated `min` / `max` fields
 /// @param isMinValueExact whether `minValue` is the exact minimum (not a truncated lower bound)
 /// @param isMaxValueExact whether `maxValue` is the exact maximum (not a truncated upper bound)
+/// @param nanCount number of NaN values in the column chunk, or `null` if absent. Only
+///     meaningful for `FLOAT`, `DOUBLE` and `FLOAT16` columns. NaN sits outside the
+///     ordering of `minValue`/`maxValue`, so those bounds say nothing about how many
+///     NaN values a chunk holds
 /// @see <a href="https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift">parquet.thrift</a>
 public record Statistics(
         byte[] minValue,
@@ -32,12 +36,13 @@ public record Statistics(
         Long distinctCount,
         boolean isMinMaxDeprecated,
         boolean isMinValueExact,
-        boolean isMaxValueExact) {
+        boolean isMaxValueExact,
+        Long nanCount) {
 
-    /// Statistics whose bounds are exact — the common case for every fixed-width type and any
-    /// untruncated bound.
+    /// Statistics whose bounds are exact and whose NaN count was not recorded — the common case
+    /// for every fixed-width type and any untruncated bound.
     public Statistics(byte[] minValue, byte[] maxValue, Long nullCount, Long distinctCount,
                       boolean isMinMaxDeprecated) {
-        this(minValue, maxValue, nullCount, distinctCount, isMinMaxDeprecated, true, true);
+        this(minValue, maxValue, nullCount, distinctCount, isMinMaxDeprecated, true, true, null);
     }
 }
