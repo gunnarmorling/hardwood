@@ -4573,3 +4573,25 @@ _copy_if_exists(
     f'{_codec_dir}/lz4_hadoop.parquet',
     'build parquet-testing-runner to fetch the apache/parquet-testing data set',
 )
+
+# ============================================================================
+# East Asian Wide Characters
+# ============================================================================
+# String values whose terminal display width is twice their UTF-16 code unit
+# count. Used by the CLI to verify that table rendering sizes columns by
+# display width rather than String.length().
+_wide_char_table = pa.table({
+    'city': ['Montevideo', '말도나도주', '漢字水', 'コキンボ', 'Tokyo 東京'],
+    'count': [1, 2, 3, 4, 5],
+}, schema=pa.schema([
+    ('city', pa.string(), False),
+    ('count', pa.int64(), False),
+]))
+pq.write_table(_wide_char_table, 'core/src/test/resources/wide_chars.parquet',
+               use_dictionary=False,
+               compression=None,
+               data_page_version='1.0')
+
+print("\nGenerated wide_chars.parquet:")
+print("  - city: Latin, Hangul, CJK ideographs, Katakana, and a mixed-width value")
+print("  - count: int64 narrow column to expose trailing-border drift")

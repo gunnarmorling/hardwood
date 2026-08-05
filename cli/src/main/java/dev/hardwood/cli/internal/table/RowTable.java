@@ -379,6 +379,39 @@ public final class RowTable {
         return sb.toString();
     }
 
+    /// Renders a header-less table with a border between every row and every cell
+    /// right-aligned, used for the transposed row view where each table is one
+    /// record laid out as field/value pairs.
+    ///
+    /// Column widths are computed from terminal display width, as in
+    /// [renderTable(String[], List)].
+    public static String renderRows(List<String[]> rows) {
+        if (rows.isEmpty()) {
+            return "";
+        }
+
+        int cols = rows.getFirst().length;
+        int[] widths = new int[cols];
+        for (String[] row : rows) {
+            if (row.length != cols) {
+                throw new IllegalArgumentException(
+                        "All rows must have " + cols + " cells, but one had " + row.length);
+            }
+            for (int i = 0; i < cols; i++) {
+                widths[i] = Math.max(widths[i], displayWidth(row[i]));
+            }
+        }
+
+        String border = buildBorder(widths, '-');
+        StringBuilder sb = new StringBuilder();
+        for (String[] row : rows) {
+            sb.append(border).append('\n');
+            sb.append(renderCells(row, widths, true)).append('\n');
+        }
+        sb.append(border);
+        return sb.toString();
+    }
+
     private static String buildBorder(int[] widths, char fill) {
         StringBuilder sb = new StringBuilder();
         sb.append('+');
@@ -433,7 +466,7 @@ public final class RowTable {
         return width;
     }
 
-    private static boolean isWideCodePoint(int cp) {
+    static boolean isWideCodePoint(int cp) {
         return (cp >= 0x1100 && cp <= 0x115F)     // Hangul Jamo
                 || (cp >= 0x2E80 && cp <= 0x303E) // CJK Radicals, Kangxi, CJK Symbols & Punctuation
                 || (cp >= 0x3041 && cp <= 0x33FF) // Hiragana, Katakana, Bopomofo, Hangul Compat, CJK Strokes

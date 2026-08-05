@@ -35,13 +35,13 @@ public class StreamedTable {
         // compute column widths based on headers + sample rows
         int[] widths = new int[n];
         for (int i = 0; i < n; i++) {
-            widths[i] = headers[i].length();
+            widths[i] = RowTable.displayWidth(headers[i]);
         }
         for (String[] rowFunc : sampleRows) {
             for (int i = 0; i < n; i++) {
                 String cell = rowFunc[i];
                 if (cell != null) {
-                    widths[i] = Math.max(widths[i], cell.length());
+                    widths[i] = Math.max(widths[i], RowTable.displayWidth(cell));
                 }
             }
         }
@@ -93,32 +93,25 @@ public class StreamedTable {
         if (truncate) {
             out.print("|");
             for (int i = 0; i < n; i++) {
-                String cell = rowFunc.apply(i);
-                if (cell == null) {
-                    cell = "";
+                String cell = cellAt(rowFunc, i);
+                if (RowTable.displayWidth(cell) > widths[i]) {
+                    // The ellipsis itself occupies the last cell of the column.
+                    cell = widths[i] == 0 ? "" : cell.substring(0, prefixEnd(cell, 0, widths[i] - 1)) + "\u2026";
                 }
-                if (cell.length() > widths[i]) {
-                    cell = cell.substring(0, widths[i] - 1) + "\u2026";
-                }
-                out.printf(" %-" + widths[i] + "s |", cell);
+                printPadded(out, cell, widths[i]);
             }
             out.println();
             return;
         }
 
         List<String[]> wrappedCells = new ArrayList<>();
-        int maxLines = 0;
+        // An empty cell wraps to no lines at all, so a row whose cells are all empty
+        // would print nothing and disappear from the table. Every row occupies at
+        // least one line.
+        int maxLines = 1;
 
         for (int i = 0; i < n; i++) {
-            String cell = rowFunc.apply(i);
-            if (cell == null) {
-                cell = "";
-            }
-            List<String> lines = new ArrayList<>();
-            for (int start = 0; start < cell.length(); start += widths[i]) {
-                int end = Math.min(start + widths[i], cell.length());
-                lines.add(cell.substring(start, end));
-            }
+            List<String> lines = wrap(cellAt(rowFunc, i), widths[i]);
             maxLines = Math.max(maxLines, lines.size());
             wrappedCells.add(lines.toArray(new String[0]));
         }
@@ -128,9 +121,63 @@ public class StreamedTable {
             for (int i = 0; i < n; i++) {
                 String[] lines = wrappedCells.get(i);
                 String content = (line < lines.length) ? lines[line] : "";
-                out.printf(" %-" + widths[i] + "s |", content);
+                printPadded(out, content, widths[i]);
             }
             out.println();
         }
+    }
+
+    private static String cellAt(IntFunction<String> rowFunc, int i) {
+        String cell = rowFunc.apply(i);
+        return cell == null ? "" : cell;
+    }
+
+    /// Writes the cell followed by enough spaces to fill `width` terminal cells.
+    /// `printf("%-Ns")` cannot be used because its padding counts UTF-16 code
+    /// units, which under-pads East Asian wide characters.
+    private static void printPadded(PrintWriter out, String cell, int width) {
+        out.print(' ');
+        out.print(cell);
+        int padding = width - RowTable.displayWidth(cell);
+        for (int i = 0; i < padding; i++) {
+            out.print(' ');
+        }
+        out.print(" |");
+    }
+
+    /// Splits the cell into chunks of at most `width` terminal cells each.
+    private static List<String> wrap(String cell, int width) {
+        List<String> lines = new ArrayList<>();
+        int start = 0;
+        while (start < cell.length()) {
+            int end = prefixEnd(cell, start, width);
+            if (end == start) {
+                // The column is narrower than the next code point. Emit it on its own
+                // so wrapping terminates; the cell overflows the column by one cell.
+                end = start + Character.charCount(cell.codePointAt(start));
+            }
+            lines.add(cell.substring(start, end));
+            start = end;
+        }
+        return lines;
+    }
+
+    /// Index just past the longest run starting at `from` whose display width fits
+    /// `width`, never splitting a code point. Returns `from` when even the first
+    /// code point does not fit.
+    private static int prefixEnd(String s, int from, int width) {
+        int used = 0;
+        int i = from;
+        int len = s.length();
+        while (i < len) {
+            int cp = s.codePointAt(i);
+            int cellsUsed = RowTable.isWideCodePoint(cp) ? 2 : 1;
+            if (used + cellsUsed > width) {
+                break;
+            }
+            used += cellsUsed;
+            i += Character.charCount(cp);
+        }
+        return i;
     }
 }

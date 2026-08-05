@@ -19,6 +19,8 @@ class PrintCommandTest implements PrintCommandContract {
 
     private final String VARIANT_ATTRIBUTES_FILE = getClass().getResource("/variant_attributes_example.parquet").getPath();
 
+    private final String WIDE_CHARS_FILE = getClass().getResource("/wide_chars.parquet").getPath();
+
     @Override
     public String plainFile() {
         return getClass().getResource("/plain_uncompressed.parquet").getPath();
@@ -107,5 +109,40 @@ class PrintCommandTest implements PrintCommandContract {
                 | 1  | email       | "ada@example.com"                 |
                 | 1  | preferences | {"opt_in": true, "theme": "dark"} |
                 +----+-------------+-----------------------------------+""");
+    }
+
+    @Test
+    void alignsEastAsianWideCharacters() {
+        Cli.Result result = Cli.launch("print", "-f", WIDE_CHARS_FILE);
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                +------------+-------+
+                | city       | count |
+                +------------+-------+
+                | Montevideo | 1     |
+                | 말도나도주 | 2     |
+                | 漢字水     | 3     |
+                | コキンボ   | 4     |
+                | Tokyo 東京 | 5     |
+                +------------+-------+""");
+    }
+
+    @Test
+    void alignsEastAsianWideCharactersWhenTransposed() {
+        Cli.Result result = Cli.launch("print", "-f", WIDE_CHARS_FILE, "--transpose", "-n", "2");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                +-------+------------+
+                |  city | Montevideo |
+                +-------+------------+
+                | count |          1 |
+                +-------+------------+
+                +-------+------------+
+                |  city | 말도나도주 |
+                +-------+------------+
+                | count |          2 |
+                +-------+------------+""");
     }
 }
