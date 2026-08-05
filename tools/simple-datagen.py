@@ -4811,3 +4811,31 @@ pq.write_table(
 print("\nGenerated dict_compressed_page.parquet:")
 print("  - 1 row group, 20000 rows, Snappy-compressed dictionary-encoded 'label'")
 print("  - dictionary page compresses ~10x, so compressed and uncompressed sizes diverge")
+
+# Size statistics and level histograms (#607).
+# PyArrow writes SizeStatistics (ColumnMetaData field 16) by default and, with
+# write_page_index, the per-page histograms and unencoded BYTE_ARRAY sizes in the
+# ColumnIndex / OffsetIndex. The three columns cover the shapes that make those
+# fields non-trivial:
+#   - name:  BYTE_ARRAY with a null, so unencoded_byte_array_data_bytes is set and
+#            the definition-level histogram has a non-zero null bucket
+#   - tags:  a LIST, the only shape with a repetition-level histogram
+#   - score: DOUBLE including a NaN. No nan_count is written — no available writer
+#            emits Statistics field 9 or ColumnIndex field 8 — so those two fields
+#            have unit coverage only.
+# One row group, one page per column, so each histogram covers the whole column.
+_size_stats_table = pa.table({
+    'name': pa.array(['alpha', None, 'gamma', 'delta'], pa.string()),
+    'tags': pa.array([[1, 2], [], None, [3]], pa.list_(pa.int32())),
+    'score': pa.array([1.5, float('nan'), 3.0, None], pa.float64()),
+})
+pq.write_table(
+    _size_stats_table,
+    'core/src/test/resources/size_statistics_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    write_page_index=True,
+)
+print("\nGenerated size_statistics_test.parquet:")
+print("  - Schema: name: string, tags: list<int32>, score: double")
+print("  - 4 rows, one row group: SizeStatistics per chunk, histograms in the page index")

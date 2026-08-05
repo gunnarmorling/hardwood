@@ -343,7 +343,29 @@ definition-level histogram;
 
 entry;
 
-- a `DOUBLE` column containing NaN, for a non-zero `nanCount`.
+- a `DOUBLE` column containing NaN.
+
+  
+
+PyArrow 24.0.0 writes `SizeStatistics` and the page-index histograms by default, so five
+
+of the six fields are asserted against writer-produced bytes. It writes **no** NaN count
+
+for any column, including the one holding a NaN, and no other available writer emits
+
+`Statistics` field 9 or `ColumnIndex` field 8 either. Those two fields therefore have
+
+positive coverage only in the reader unit tests; the fixture asserts them absent, pinning
+
+that an omitted count reads back as `null` rather than zero.
+
+  
+
+The same fixture pins the absent-versus-empty distinction against real bytes: PyArrow
+
+records the repetition-level histogram of a non-repeated column as present-but-empty in
+
+`SizeStatistics` and as absent in the `ColumnIndex`.
 
   
 
