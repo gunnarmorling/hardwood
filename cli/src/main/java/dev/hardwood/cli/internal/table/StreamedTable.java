@@ -22,10 +22,9 @@ public class StreamedTable {
                int sampleSize, int maxWidth, boolean truncate, boolean rowDelimiter) {
         int n = headers.length;
 
-        // sample a bit the rows so we can better adjust the widths
+        // sample a few rows so we can better adjust the widths
         List<String[]> sampleRows = new ArrayList<>();
-        int count = 0;
-        while (count++ < sampleSize && iterator.hasNext()) {
+        for (int count = 0; count < sampleSize && iterator.hasNext(); count++) {
             IntFunction<String> next = iterator.next();
             sampleRows.add(IntStream.range(0, headers.length)
                     .mapToObj(next)
@@ -37,9 +36,9 @@ public class StreamedTable {
         for (int i = 0; i < n; i++) {
             widths[i] = RowTable.displayWidth(headers[i]);
         }
-        for (String[] rowFunc : sampleRows) {
+        for (String[] row : sampleRows) {
             for (int i = 0; i < n; i++) {
-                String cell = rowFunc[i];
+                String cell = row[i];
                 if (cell != null) {
                     widths[i] = Math.max(widths[i], RowTable.displayWidth(cell));
                 }
@@ -57,8 +56,8 @@ public class StreamedTable {
         out.println(sep);
 
         // catch up the sampled rows
-        for (String[] rowFunc : sampleRows) {
-            printRow(out, i -> rowFunc[i], widths, truncate);
+        for (String[] row : sampleRows) {
+            printRow(out, i -> row[i], widths, truncate);
             if (rowDelimiter) {
                 out.println(sep);
             }
@@ -96,7 +95,9 @@ public class StreamedTable {
                 String cell = cellAt(rowFunc, i);
                 if (RowTable.displayWidth(cell) > widths[i]) {
                     // The ellipsis itself occupies the last cell of the column.
-                    cell = widths[i] == 0 ? "" : cell.substring(0, prefixEnd(cell, 0, widths[i] - 1)) + "\u2026";
+                    cell = widths[i] == 0 ?
+                            "" :
+                            cell.substring(0, prefixEnd(cell, 0, widths[i] - 1)) + "…";
                 }
                 printPadded(out, cell, widths[i]);
             }

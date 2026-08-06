@@ -74,6 +74,31 @@ hardwood convert -n 100 --format json -f data.parquet
 hardwood convert -n -50 --format csv -f data.parquet
 ```
 
+## Column widths in `print`
+
+`hardwood print` sizes each column from the header plus the first
+`--sample-size` rows (default 10). Rows beyond the sample are fitted to those
+widths.
+
+`--max-width` (default 50) caps a column. The cap is measured in **terminal
+cells**, not characters: East Asian wide characters (CJK, Hangul, Kana,
+Fullwidth forms) occupy two cells each, so a column capped at 50 holds 25
+ideographs.
+
+Values exceeding the cap are truncated with `…`. Pass `--no-truncate` to wrap
+them onto continuation lines instead.
+
+```shell
+# Cap columns at 20 terminal cells
+hardwood print -f data.parquet -w 20
+
+# Wrap long values instead of truncating them
+hardwood print -f data.parquet -w 20 --no-truncate
+
+# Widen the sample used to auto-size columns
+hardwood print -f data.parquet -s 100
+```
+
 ## Interactive exploration (`dive`)
 
 `hardwood dive` launches a terminal UI for interactively navigating a Parquet file's structure:

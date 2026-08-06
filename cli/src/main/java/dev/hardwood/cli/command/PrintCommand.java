@@ -45,7 +45,7 @@ public class PrintCommand implements Command<CommandInvocation> {
     @Option(shortName = 's', name = "sample-size", defaultValue = "10", description = "Max number of lines used to auto-adjust the column width.")
     int sampleSize;
 
-    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width in characters of a column.")
+    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width of a column in terminal cells; East Asian wide characters count as two.")
     int maxWidth;
 
     @Option(shortName = 't', name = "truncate", hasValue = false, negatable = true, defaultValue = "true", description = "Should rows be truncated instead of wrapping on next line when too long.")

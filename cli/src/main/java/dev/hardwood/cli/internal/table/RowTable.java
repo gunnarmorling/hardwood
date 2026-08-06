@@ -383,7 +383,7 @@ public final class RowTable {
     /// right-aligned, used for the transposed row view where each table is one
     /// record laid out as field/value pairs.
     ///
-    /// Column widths are computed from terminal display width, as in
+    /// Column widths are computed from the terminal display width, as in
     /// [renderTable(String[], List)].
     public static String renderRows(List<String[]> rows) {
         if (rows.isEmpty()) {
@@ -416,9 +416,7 @@ public final class RowTable {
         StringBuilder sb = new StringBuilder();
         sb.append('+');
         for (int w : widths) {
-            for (int i = 0; i < w + 2; i++) {
-                sb.append(fill);
-            }
+            sb.repeat(String.valueOf(fill), Math.max(0, w + 2));
             sb.append('+');
         }
         return sb.toString();
@@ -446,9 +444,7 @@ public final class RowTable {
     }
 
     private static void appendSpaces(StringBuilder sb, int count) {
-        for (int i = 0; i < count; i++) {
-            sb.append(' ');
-        }
+        sb.repeat(" ", Math.max(0, count));
     }
 
     /// Returns the number of terminal cells the string occupies. East Asian wide
