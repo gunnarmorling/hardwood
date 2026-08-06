@@ -75,18 +75,38 @@ class StreamedTableTest {
     }
 
     @Test
-    void emitsWideCharacterInColumnNarrowerThanOneWideCell() {
-        // Guards the wrap force-progress branch: a wide char whose width (2) exceeds the
-        // column width (1) must still advance one code point per line rather than loop
-        // forever. It necessarily overflows the border — nothing narrower is possible.
+    void floorsColumnWidthAtWideGlyphMinContentWidth() {
+        // A column containing a 2-cell glyph cannot be squeezed below its widest
+        // unbreakable token, so the sampled wide rows render flush with the border.
         String output = render(List.<String[]>of(new String[]{"가나"}), "x", 1, false);
+
+        assertThat(output).isEqualTo("""
+                +----+
+                | x  |
+                +----+
+                | 가 |
+                | 나 |
+                +----+""");
+        assertEqualDisplayWidths(output);
+    }
+
+    @Test
+    void keepsForceProgressWhenWideGlyphIsOutsideSampledRows() {
+        // The min-content floor only sees sampled rows. When a wide glyph appears in
+        // an unsampled row, the force-progress branch still prevents an infinite loop.
+        String output = render(
+                List.<String[]>of(new String[]{"x"}, new String[]{"가"}),
+                "x",
+                1,
+                false,
+                1);
 
         assertThat(output).isEqualTo("""
                 +---+
                 | x |
                 +---+
+                | x |
                 | 가 |
-                | 나 |
                 +---+""");
     }
 
@@ -95,6 +115,10 @@ class StreamedTableTest {
     }
 
     private static String render(List<String[]> rows, String header, int maxWidth, boolean truncate) {
+        return render(rows, header, maxWidth, truncate, rows.size());
+    }
+
+    private static String render(List<String[]> rows, String header, int maxWidth, boolean truncate, int sampleSize) {
         StringWriter output = new StringWriter();
         new StreamedTable().print(
                 new PrintWriter(output),
@@ -102,7 +126,7 @@ class StreamedTableTest {
                 rows.stream()
                         .<IntFunction<String>>map(row -> column -> row[column])
                         .iterator(),
-                rows.size(),
+                sampleSize,
                 maxWidth,
                 truncate,
                 false);

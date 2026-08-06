@@ -34,20 +34,23 @@ public class StreamedTable {
 
         // compute column widths based on headers + sample rows
         int[] widths = new int[n];
+        int[] minWidths = new int[n];
         for (int i = 0; i < n; i++) {
             widths[i] = RowTable.displayWidth(headers[i]);
+            minWidths[i] = widestGlyph(headers[i]);
         }
         for (String[] rowFunc : sampleRows) {
             for (int i = 0; i < n; i++) {
                 String cell = rowFunc[i];
                 if (cell != null) {
                     widths[i] = Math.max(widths[i], RowTable.displayWidth(cell));
+                    minWidths[i] = Math.max(minWidths[i], widestGlyph(cell));
                 }
             }
         }
 
         for (int i = 0; i < n; i++) {
-            widths[i] = Math.min(widths[i], maxWidth);
+            widths[i] = Math.max(Math.min(widths[i], maxWidth), minWidths[i]);
         }
 
         String sep = makeSeparator(widths);
@@ -160,5 +163,18 @@ public class StreamedTable {
             end = next;
         }
         return end;
+    }
+
+    private static int widestGlyph(String value) {
+        if (value == null) {
+            return 1;
+        }
+        int widest = 1;
+        for (int i = 0; i < value.length();) {
+            int codePoint = value.codePointAt(i);
+            widest = Math.max(widest, RowTable.charWidth(codePoint));
+            i += Character.charCount(codePoint);
+        }
+        return widest;
     }
 }
