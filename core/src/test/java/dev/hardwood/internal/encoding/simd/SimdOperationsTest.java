@@ -76,6 +76,26 @@ class SimdOperationsTest {
         assertThat(SIMD.countNonNulls(defLevels, 3, 3)).isEqualTo(2);
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {1, 7, 8, 9, 63, 64, 65, 200})
+    void countNonNullsIgnoresEntriesBeyondLen(int len) {
+        // A reused level buffer is longer than the page's value count: the tail
+        // holds stale present-looking values that must not be counted. The lengths
+        // straddle the SIMD main-loop/tail boundary (MIN_BATCH_SIZE and vector
+        // width), so the vectorised path is exercised with a truncated length —
+        // not just the scalar fallback that a single small length would hit.
+        int[] defLevels = IntStream.range(0, len + 137).map(i -> 3).toArray();
+        int expected = 0;
+        for (int i = 0; i < len; i++) {
+            defLevels[i] = i % 3 == 0 ? 3 : 0;
+            if (defLevels[i] == 3) {
+                expected++;
+            }
+        }
+        assertThat(SCALAR.countNonNulls(defLevels, len, 3)).isEqualTo(expected);
+        assertThat(SIMD.countNonNulls(defLevels, len, 3)).isEqualTo(expected);
+    }
+
     // ==================== markNulls Tests ====================
 
     @ParameterizedTest

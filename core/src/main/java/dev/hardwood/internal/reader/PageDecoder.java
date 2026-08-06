@@ -138,10 +138,15 @@ public class PageDecoder {
     /// @param dictionary dictionary for this page, or null if not dictionary-encoded
     /// @return decoded page
     public Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary) throws IOException {
-        return decodePage(pageBuffer, dictionary, null);
+        // Standalone callers have no reorder slot to reuse across, so a throwaway
+        // scratch (allocated fresh here, buffers grown lazily) matches the old
+        // per-call allocation while keeping the decode path free of null handling.
+        return decodePage(pageBuffer, dictionary, new LevelScratch());
     }
 
     /// Decode a single data page, reusing the supplied slot-owned level scratch.
+    /// `scratch` must not be null; standalone callers pass a throwaway instance via
+    /// the two-argument overload.
     Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary, LevelScratch scratch) throws IOException {
         PageDecodedEvent event = new PageDecodedEvent();
         event.begin();
@@ -183,7 +188,7 @@ public class PageDecoder {
     /// Decode levels using RLE/Bit-Packing Hybrid encoding.
     private int[] decodeRepetitionLevels(byte[] levelData, int offset, int length, int numValues, int maxLevel,
             LevelScratch scratch) {
-        int[] levels = scratch == null ? new int[numValues] : scratch.repetitionLevels(numValues);
+        int[] levels = scratch.repetitionLevels(numValues);
         RleBitPackingHybridDecoder decoder = new RleBitPackingHybridDecoder(levelData, offset, length, getBitWidth(maxLevel));
         decoder.readInts(levels, 0, numValues);
         return levels;
@@ -209,7 +214,7 @@ public class PageDecoder {
         if (decoder.isSingleRleRunOf(maxDef, numValues)) {
             return null;
         }
-        int[] levels = scratch == null ? new int[numValues] : scratch.definitionLevels(numValues);
+        int[] levels = scratch.definitionLevels(numValues);
         decoder.readInts(levels, 0, numValues);
         return levels;
     }

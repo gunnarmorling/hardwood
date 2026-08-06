@@ -22,12 +22,27 @@ package dev.hardwood.internal.reader;
 /// - [ByteArrayPage] - BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY, INT96
 public sealed interface Page {
 
+    /// The number of values (leaves) on this page — the logical length of the
+    /// level and value arrays. The level arrays may be physically longer (see
+    /// [#definitionLevels]), so this is the count callers must iterate, never
+    /// `definitionLevels().length`.
     int size();
 
     int maxDefinitionLevel();
 
+    /// Definition levels for this page, or `null` when every leaf is present
+    /// (the all-present convention; see [#allPresent]).
+    ///
+    /// When non-null the array holds one level per value but **may be longer than
+    /// [#size]**: it is a pooled decode buffer reused across pages and grown to the
+    /// largest page seen, so its tail beyond `size()` is stale. Read only the first
+    /// `size()` entries; never use `definitionLevels().length` as the value count.
     int[] definitionLevels();
 
+    /// Repetition levels for this page, or `null` for a non-repeated (flat) column.
+    ///
+    /// As with [#definitionLevels], when non-null the array is a pooled buffer that
+    /// **may be longer than [#size]**; only the first `size()` entries are valid.
     int[] repetitionLevels();
 
     /// Number of elements per row when this page is a fixed-width fixed-size-list
