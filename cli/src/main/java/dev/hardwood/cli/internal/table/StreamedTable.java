@@ -152,7 +152,7 @@ public class StreamedTable {
         while (end < value.length()) {
             int codePoint = value.codePointAt(end);
             int next = end + Character.charCount(codePoint);
-            int codePointWidth = RowTable.displayWidth(value.substring(end, next));
+            int codePointWidth = RowTable.charWidth(codePoint);
             if (width + codePointWidth > maxWidth) {
                 break;
             }

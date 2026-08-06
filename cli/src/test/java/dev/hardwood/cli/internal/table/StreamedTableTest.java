@@ -58,11 +58,47 @@ class StreamedTableTest {
         assertEqualDisplayWidths(output);
     }
 
+    @Test
+    void truncatesSurrogatePairsOnCodePointBoundaries() {
+        // The truncation boundary falls mid-cell where an emoji sits: it must be dropped
+        // whole, never split into a lone surrogate. "😀" occupies two char units, so a
+        // code-unit-based cut would land inside the pair.
+        String output = render(List.<String[]>of(new String[]{"😀😀😀"}), "x", 2, true);
+
+        assertThat(output).isEqualTo("""
+                +----+
+                | x  |
+                +----+
+                | 😀… |
+                +----+""");
+        assertEqualDisplayWidths(output);
+    }
+
+    @Test
+    void emitsWideCharacterInColumnNarrowerThanOneWideCell() {
+        // Guards the wrap force-progress branch: a wide char whose width (2) exceeds the
+        // column width (1) must still advance one code point per line rather than loop
+        // forever. It necessarily overflows the border — nothing narrower is possible.
+        String output = render(List.<String[]>of(new String[]{"가나"}), "x", 1, false);
+
+        assertThat(output).isEqualTo("""
+                +---+
+                | x |
+                +---+
+                | 가 |
+                | 나 |
+                +---+""");
+    }
+
     private static String render(List<String[]> rows, int maxWidth, boolean truncate) {
+        return render(rows, "name", maxWidth, truncate);
+    }
+
+    private static String render(List<String[]> rows, String header, int maxWidth, boolean truncate) {
         StringWriter output = new StringWriter();
         new StreamedTable().print(
                 new PrintWriter(output),
-                new String[]{"name"},
+                new String[]{header},
                 rows.stream()
                         .<IntFunction<String>>map(row -> column -> row[column])
                         .iterator(),

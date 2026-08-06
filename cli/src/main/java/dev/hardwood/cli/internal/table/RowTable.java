@@ -440,10 +440,16 @@ public final class RowTable {
         int len = s.length();
         while (i < len) {
             int cp = s.codePointAt(i);
-            width += isWideCodePoint(cp) ? 2 : 1;
+            width += charWidth(cp);
             i += Character.charCount(cp);
         }
         return width;
+    }
+
+    /// Returns the number of terminal cells a single code point occupies: 2 for East
+    /// Asian wide characters (CJK ideographs, Hangul, Kana, Fullwidth forms), 1 otherwise.
+    static int charWidth(int cp) {
+        return isWideCodePoint(cp) ? 2 : 1;
     }
 
     private static boolean isWideCodePoint(int cp) {
