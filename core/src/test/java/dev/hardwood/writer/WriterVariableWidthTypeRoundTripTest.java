@@ -271,6 +271,84 @@ class WriterVariableWidthTypeRoundTripTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void writesAndReadsBackNullableFixedLenByteArrays() throws Exception {
+        byte[][] values = { bytes("aaaa"), bytes("xxxx"), bytes("cccc"), bytes("xxxx"), bytes("eeee") };
+        boolean[] nulls = { false, true, false, true, false };
+        FileSchema schema = oneColumn("v", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.OPTIONAL, 4);
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.fixed(0, values, nulls));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            byte[][] got = new byte[values.length][];
+            try (ColumnReader c = reader.columnReader(0)) {
+                int pos = 0;
+                while (c.nextBatch()) {
+                    int count = c.getRecordCount();
+                    byte[][] batch = c.getBinaries();
+                    Validity validity = c.getLeafValidity();
+                    for (int j = 0; j < count; j++) {
+                        got[pos + j] = validity.isNull(j) ? null : batch[j];
+                    }
+                    pos += count;
+                }
+            }
+            assertThat(got[0]).isEqualTo(bytes("aaaa"));
+            assertThat(got[1]).isNull();
+            assertThat(got[2]).isEqualTo(bytes("cccc"));
+            assertThat(got[3]).isNull();
+            assertThat(got[4]).isEqualTo(bytes("eeee"));
+            assertThat(columnMeta(reader, 0).statistics().nullCount()).isEqualTo(2L);
+        }
+    }
+
+    @Test
+    void dictionaryEncodesLowCardinalityFixedLenByteArrays() throws Exception {
+        byte[][] dictionary = { bytes("red"), bytes("grn"), bytes("blu"), bytes("ylw") };
+        byte[][] values = new byte[1000][];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = dictionary[i % dictionary.length];
+        }
+        FileSchema schema = oneColumn("v", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 3);
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.fixed(0, values));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            assertThat(columnMeta(reader, 0).dictionaryPageOffset()).isNotNull();
+            assertThat(readBinaries(reader, 0)).isDeepEqualTo(values);
+        }
+    }
+
+    @Test
+    void fixedLenByteArrayBoundsAreWholeAndExactBeyondTruncationLength() throws Exception {
+        // A FIXED_LEN_BYTE_ARRAY wider than the truncation length must still carry whole, exact
+        // bounds: a fixed width already bounds the footer, so BYTE_ARRAY truncation must not apply.
+        byte[] min = bytes("aaaaaaaaaaaaaaaaaaaa"); // 20 bytes
+        byte[] max = bytes("zzzzzzzzzzzzzzzzzzzz"); // 20 bytes
+        byte[][] values = { max, min };
+        FileSchema schema = oneColumn("v", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 20);
+        WriterConfig config = WriterConfig.builder().statisticsTruncationLength(8).build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            writer.writeBatch(batch -> batch.fixed(0, values));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics stats = columnMeta(reader, 0).statistics();
+            assertThat(stats.minValue()).isEqualTo(min);
+            assertThat(stats.maxValue()).isEqualTo(max);
+            assertThat(stats.isMinValueExact()).isTrue();
+            assertThat(stats.isMaxValueExact()).isTrue();
+        }
+    }
+
     private static byte[] bytes(String s) {
         return s.getBytes(StandardCharsets.UTF_8);
     }

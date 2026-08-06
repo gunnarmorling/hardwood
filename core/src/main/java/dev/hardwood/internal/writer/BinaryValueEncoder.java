@@ -32,9 +32,13 @@ final class BinaryValueEncoder extends ValueEncoder {
     BinaryValueEncoder(int pageValues, boolean enableDictionary, Integer typeLength,
                        int statisticsTruncationLength) {
         this.plain = new byte[pageValues][];
-        this.window = new byte[Math.max(1, pageValues)][];
+        this.window = new byte[pageValues][];
         this.dictionary = enableDictionary ? new BinaryDictionaryEncoder() : null;
-        this.statistics = new BinaryStatisticsCollector(statisticsTruncationLength);
+        // FIXED_LEN_BYTE_ARRAY bounds are written whole and always exact — a fixed width already
+        // bounds them — so only BYTE_ARRAY truncates. Integer.MAX_VALUE disables truncation, since
+        // no value can be longer than that.
+        this.statistics = new BinaryStatisticsCollector(
+                typeLength == null ? statisticsTruncationLength : Integer.MAX_VALUE);
         this.typeLength = typeLength;
     }
 

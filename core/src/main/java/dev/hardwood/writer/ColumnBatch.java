@@ -694,7 +694,9 @@ public final class ColumnBatch {
                 throw new IllegalArgumentException(
                         "Column " + describe(columnIndex) + " has a null value at present row " + i);
             }
-            if (fixed && values[i].length != typeLength) {
+            // A null typeLength here means the column is not FIXED_LEN_BYTE_ARRAY; leave the
+            // wrong-type report to store(), which names the actual type, rather than unboxing null.
+            if (fixed && typeLength != null && values[i].length != typeLength) {
                 throw new IllegalArgumentException("Column " + describe(columnIndex)
                         + " has a value of length " + values[i].length + " at row " + i
                         + " but the FIXED_LEN_BYTE_ARRAY type length is " + typeLength);
