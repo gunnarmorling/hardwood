@@ -74,13 +74,6 @@
         <version>${aesh-readline.version}</version>
       </dependency>
 
-      <!-- ASCII table rendering for command output -->
-      <dependency>
-        <groupId>com.github.freva</groupId>
-        <artifactId>ascii-table</artifactId>
-        <version>1.8.0</version>
-      </dependency>
-
       <!-- TamboUI (TUI library for the `dive` subcommand; the upstream tamboui-bom
            omits widgets/tui, pin directly) -->
       <dependency>
@@ -132,11 +125,6 @@
     <dependency>
       <groupId>dev.hardwood</groupId>
       <artifactId>hardwood-aws-auth</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>com.github.freva</groupId>
-      <artifactId>ascii-table</artifactId>
     </dependency>
 
     <!-- TamboUI (TUI library for the `dive` subcommand) -->
