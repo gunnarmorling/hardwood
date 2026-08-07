@@ -1,7 +1,7 @@
 ---
 name: hardwood-cli
 description: 'Inspect, debug, and convert Apache Parquet files with the `hardwood` CLI. Use whenever a user is debugging code that reads or writes Parquet (Arrow / Spark / Flink / Java / Python) and the data file itself may be the cause — to check the schema, physical and logical types, repetition, or a row sample. Use it to diagnose query-optimizer behavior: why row-group pruning, min/max predicate pushdown, or page-index filtering isn''t skipping data. Use it to read per-column and per-row-group compressed sizes and codecs, page-level min/max statistics and the page index, dictionary-encoded values, the footer / PAR1 header, or to convert rows to CSV or JSON. Trigger on `.parquet` files, "is this column dictionary encoded", "why are all row groups scanned", "why isn''t pushdown working", "what types does this parquet have", "convert parquet to csv/json", and any question about row groups, column chunks, data pages, the page index, statistics, or encodings.'
-license: Apache-2.0. LICENSE.txt has complete terms
+license: Apache-2.0
 ---
 
 # Inspecting Parquet files with `hardwood`
@@ -86,9 +86,11 @@ spot these:
 - **`inspect dictionary` → `no dictionary (column is not dictionary-encoded)`**
   versus a table of entries: tells you whether a column is dict-encoded and what
   its distinct values are.
-- **`footer` → magic bytes** `PAR1` at both ends = a plain Parquet file;
-  `PARE` = Parquet Modular Encryption (encrypted footer), which most readers
-  cannot open without keys.
+- **`footer` → magic bytes** `PAR1` at both ends = a plain Parquet file. An
+  encrypted footer (Parquet Modular Encryption) does not print a magic value:
+  `footer` instead exits non-zero and writes `Encrypted Parquet files are not
+  supported (Parquet Modular Encryption).` to stderr — that error, not a `PARE`
+  string in the output, is the signal the file needs decryption keys.
 
 ## Playbook: "the source Parquet file looks wrong"
 
@@ -226,10 +228,13 @@ Leading Magic:  PAR1
 Trailing Magic: PAR1
 ```
 
-- `PAR1` at both ends = a normal file. `PARE` (trailing) means **Parquet
-  Modular Encryption** with an encrypted footer — report that the reader needs
-  decryption keys; this is why a file "won't open".
-- A `Footer Length` that is implausibly large or a missing trailing magic means
+- `PAR1` at both ends = a normal file. If the footer is encrypted (**Parquet
+  Modular Encryption**), `footer` prints no magic line at all — it exits
+  non-zero with `Encrypted Parquet files are not supported (Parquet Modular
+  Encryption).` on stderr. Report that the reader needs decryption keys; this is
+  why the file "won't open".
+- A `Footer Length` that is implausibly large or a missing trailing magic (the
+  command reports `Invalid Parquet file: trailing magic bytes not found.`) means
   the file is truncated/corrupt.
 
 ## Flags at a glance
