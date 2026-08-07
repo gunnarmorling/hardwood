@@ -1,0 +1,38 @@
+#
+#  SPDX-License-Identifier: Apache-2.0
+#
+#  Copyright The original authors
+#
+#  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+#
+
+name: Trigger skills publish
+
+# Publishes the agent skills under skills/ to the standalone
+# hardwood-hq/hardwood-skills distribution repository whenever they change on
+# main. This repository stays the single source of truth; the sibling repo only
+# wraps skills/ in the Claude Code plugin manifests. Mirrors the documentation
+# publish flow (docs-trigger.yml): fire a repository_dispatch and let the
+# destination repo do the work with its own token. Unlike the docs, skills are
+# static Markdown with no build to gate on, so this fires directly on the change
+# rather than on a completed Main Build.
+
+on:
+  push:
+    branches: [main]
+    paths: ['skills/**']
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fire repository_dispatch to skills repo
+        env:
+          GH_TOKEN: ${{ secrets.SKILLS_DISPATCH_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          jq -n \
+            --arg ref "$SHA" \
+            '{event_type: "publish-skills", client_payload: {source_ref: $ref}}' \
+          | gh api repos/hardwood-hq/hardwood-skills/dispatches --input -

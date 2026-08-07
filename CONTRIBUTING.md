@@ -30,13 +30,15 @@ Larger changes — new features, refactorings that affect the system design — 
 
 This repository is the source of truth for the [agent skills](https://agentskills.io) under `skills/` (e.g. `skills/hardwood-cli/`, which teaches AI coding agents how to drive the `hardwood` CLI). They live here, alongside the code they document, so a change to a CLI flag, output label, or command is made in the same PR as the matching skill edit — the skill can't drift from the tool.
 
-Distribution is separate. The [`hardwood-hq/hardwood-skills`](https://github.com/hardwood-hq/hardwood-skills) repository wraps `skills/` in the Claude Code plugin and marketplace manifests and is what users install. It is a **published mirror** — never edit its `skills/` directly. After changing a skill here, publish it to a local checkout of that repository:
+Distribution is automated. The [`hardwood-hq/hardwood-skills`](https://github.com/hardwood-hq/hardwood-skills) repository wraps `skills/` in the Claude Code plugin and marketplace manifests and is what users install. It is a **published mirror** — never edit its `skills/` directly. When a change to `skills/` lands on `main`, the [Trigger skills publish](.github/workflows/skills-trigger.yml) workflow fires a `repository_dispatch` at that repository, which re-syncs `skills/` from here and commits it; you don't need to do anything.
+
+To publish out-of-band — testing against a local checkout, or a manual backfill — run the same sync by hand:
 
 ```shell
 tools/publish-skills.sh /path/to/hardwood-skills
 ```
 
-then commit and push in that checkout (the script prints the exact commands). When you edit a skill, note in the PR that `hardwood-skills` needs a follow-up publish so it isn't forgotten.
+then commit and push in that checkout (the script prints the exact commands).
 
 ## Commit messages
 
