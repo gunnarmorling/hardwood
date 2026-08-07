@@ -35,6 +35,7 @@ from parquet_annotators import (
     collapse_list_of_lists_to_legacy_two_level,
     strip_converted_type,
     corrupt_data_page_offset_negative,
+    falsify_int64_row_group_minmax,
     remove_map_value_field,
 )
 
@@ -4340,6 +4341,35 @@ pq.write_table(
 corrupt_data_page_offset_negative(_negative_offset_path)
 print("\nGenerated negative_data_page_offset.parquet:")
 print("  - valid footer with data_page_offset = -1 (controlled-rejection fixture)")
+
+# ============================================================================
+# Lying-Statistics Test File (hardwood-hq/hardwood#797)
+# ============================================================================
+#
+# Same 3-row-group layout as filter_pushdown_int.parquet (RG1 id 1-100, RG2
+# 101-200, RG3 201-300), but RG3's `id` statistics are rewritten to advertise a
+# false [101, 200] range. A reader trusting the footer prunes RG3 for
+# gt(id, 200) and returns zero rows; the real data holds 201-300, so the correct
+# answer is 100 rows. The `hardwood.statistics-filtering` opt-out must recover
+# those rows by ignoring the statistics and evaluating every row.
+
+_lying_stats_path = 'core/src/test/resources/filter_pushdown_int_lying_stats.parquet'
+_lying_writer = pq.ParquetWriter(
+    _lying_stats_path,
+    schema=filter_int_schema,
+    use_dictionary=False,
+    compression='NONE',
+    data_page_version='1.0',
+    write_statistics=True,
+)
+_lying_writer.write_table(rg1)
+_lying_writer.write_table(rg2)
+_lying_writer.write_table(rg3)
+_lying_writer.close()
+falsify_int64_row_group_minmax(_lying_stats_path, 'id', 2, fake_min=101, fake_max=200)
+print("\nGenerated filter_pushdown_int_lying_stats.parquet:")
+print("  - RG3 `id` statistics falsified to [101, 200]; real data is 201-300")
+print("  - gt(id, 200) yields 0 rows if stats are trusted, 100 rows if ignored")
 
 
 # Key-only map (set) fixture (#657).

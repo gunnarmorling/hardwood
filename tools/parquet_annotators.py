@@ -269,6 +269,53 @@ def corrupt_data_page_offset_negative(path: str) -> None:
     _write_parquet_footer(path, data_before_footer, file_metadata)
 
 
+def falsify_int64_row_group_minmax(path: str, column_name: str, row_group_index: int,
+                                   fake_min: int, fake_max: int) -> None:
+    """Rewrite `path` so the named INT64 column's statistics in one row group
+    advertise a `[fake_min, fake_max]` range that excludes values the column
+    actually holds.
+
+    Models a writer that emitted wrong min/max: a reader trusting the footer
+    prunes the row group for a predicate the real data satisfies, silently
+    dropping matching rows. The statistics-filtering opt-out
+    (hardwood-hq/hardwood#797) must recover the correct rows by ignoring these
+    statistics and evaluating every row. The range stays internally consistent
+    (`fake_min <= fake_max`) so the reader trusts it rather than refusing it as
+    malformed.
+    """
+    if fake_min > fake_max:
+        raise ValueError(f"fake_min {fake_min} must not exceed fake_max {fake_max}")
+
+    data_before_footer, file_metadata = _read_parquet_footer(path)
+
+    if row_group_index >= len(file_metadata.row_groups):
+        raise ValueError(f"{path} has no row group at index {row_group_index}")
+    columns = file_metadata.row_groups[row_group_index].columns
+    chunk = next((c for c in columns
+                  if c.meta_data is not None and c.meta_data.path_in_schema == [column_name]), None)
+    if chunk is None:
+        raise ValueError(f"Column {column_name!r} not found in row group {row_group_index} of {path}")
+    stats = chunk.meta_data.statistics
+    if stats is None:
+        raise ValueError(f"Column {column_name!r} in row group {row_group_index} of {path} "
+                         "has no statistics to falsify")
+
+    encoded_min = struct.pack('<q', fake_min)
+    encoded_max = struct.pack('<q', fake_max)
+    # Overwrite both the preferred (min_value/max_value) and deprecated (min/max)
+    # fields where present, so the lie holds whichever a reader consults.
+    stats.min_value = encoded_min
+    stats.max_value = encoded_max
+    if stats.min is not None:
+        stats.min = encoded_min
+    if stats.max is not None:
+        stats.max = encoded_max
+    stats.is_min_value_exact = True
+    stats.is_max_value_exact = True
+
+    _write_parquet_footer(path, data_before_footer, file_metadata)
+
+
 def annotate_column_as_bson(path: str, column_name: str) -> None:
     """Rewrite `path` so that the named column carries the BSON logical type."""
     data_before_footer, file_metadata = _read_parquet_footer(path)

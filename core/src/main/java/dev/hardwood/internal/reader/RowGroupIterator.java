@@ -251,33 +251,55 @@ public class RowGroupIterator {
         return referenceSchema;
     }
 
-    /// Disables or re-enables statistics-based filtering for this iterator. With it
-    /// disabled, a filter predicate takes no metadata-derived shortcut — no
-    /// row-group statistics/bloom pruning, no page-index or inline-page-statistics
-    /// skipping, no always-match decision — so the predicate is evaluated against
-    /// every decoded row. Enabled by default; must be set before `initialize`.
-    public void setStatisticsFiltering(boolean enabled) {
-        this.statisticsFilteringEnabled = enabled;
+    /// Applies column projection and optional filter, builds the full work list.
+    /// Statistics-based filtering stays enabled.
+    ///
+    /// @param projection column projection
+    /// @param filter resolved predicate, or `null` for no filtering
+    /// @return the projected schema
+    public ProjectedSchema initialize(ColumnProjection projection, ResolvedPredicate filter) {
+        return initialize(projection, filter, true);
     }
 
     /// Applies column projection and optional filter, builds the full work list.
     ///
     /// @param projection column projection
     /// @param filter resolved predicate, or `null` for no filtering
+    /// @param statisticsFilteringEnabled when `false`, the filter takes no
+    ///        metadata-derived shortcut — no row-group statistics/bloom pruning,
+    ///        no page-index or inline-page-statistics skipping, no always-match
+    ///        decision — so the predicate is evaluated against every decoded row
     /// @return the projected schema
-    public ProjectedSchema initialize(ColumnProjection projection, ResolvedPredicate filter) {
-        return initialize(ProjectedSchema.create(referenceSchema, projection), filter);
+    public ProjectedSchema initialize(ColumnProjection projection, ResolvedPredicate filter,
+                                      boolean statisticsFilteringEnabled) {
+        return initialize(ProjectedSchema.create(referenceSchema, projection), filter,
+                statisticsFilteringEnabled);
+    }
+
+    /// Applies a pre-built projected schema and optional filter, builds the full work list.
+    /// Statistics-based filtering stays enabled.
+    ///
+    /// @param projected pre-built projected schema
+    /// @param filter resolved predicate, or `null` for no filtering
+    /// @return the projected schema (same as input)
+    public ProjectedSchema initialize(ProjectedSchema projected, ResolvedPredicate filter) {
+        return initialize(projected, filter, true);
     }
 
     /// Applies a pre-built projected schema and optional filter, builds the full work list.
     ///
     /// @param projected pre-built projected schema
     /// @param filter resolved predicate, or `null` for no filtering
+    /// @param statisticsFilteringEnabled when `false`, the filter takes no
+    ///        metadata-derived shortcut, so the predicate is evaluated against
+    ///        every decoded row (see the sibling three-arg overload)
     /// @return the projected schema (same as input)
-    public ProjectedSchema initialize(ProjectedSchema projected, ResolvedPredicate filter) {
+    public ProjectedSchema initialize(ProjectedSchema projected, ResolvedPredicate filter,
+                                      boolean statisticsFilteringEnabled) {
         if (referenceSchema == null) {
             throw new IllegalStateException("openFirst() must be called before initialize()");
         }
+        this.statisticsFilteringEnabled = statisticsFilteringEnabled;
         this.projectedSchema = projected;
         this.filterPredicate = filter;
         this.dropLeavesByColumn = filter != null && statisticsFilteringEnabled

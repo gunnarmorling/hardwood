@@ -105,7 +105,7 @@ public class ParquetFileReader implements AutoCloseable {
     /// page-index or inline-page-statistics skipping, no always-match fast path —
     /// and the predicate is evaluated against every decoded row, so results
     /// depend only on the data pages. The escape hatch for files whose
-    /// statistics are wrong (#799).
+    /// statistics are wrong (#797).
     private static final String STATISTICS_FILTERING_OPTION = "hardwood.statistics-filtering";
 
     /// The [ReaderConfig] option keys the reader recognises. Unknown keys are
@@ -443,9 +443,8 @@ public class ParquetFileReader implements AutoCloseable {
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema, projection, true);
 
         RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, maxRows, tailSkip, physicalSkip);
-        iterator.setStatisticsFiltering(statisticsFilteringEnabled);
         iterator.setFirstFile(schema, firstFileRowGroups);
-        iterator.initialize(projectedSchema, resolved);
+        iterator.initialize(projectedSchema, resolved, statisticsFilteringEnabled);
         rowGroupIterators.add(iterator);
 
         // Physical-skip residue: the iterator has seeked to the row group the offset
@@ -556,9 +555,8 @@ public class ParquetFileReader implements AutoCloseable {
         // compact each exposed column to the matching records per batch.
         ColumnProjection augmented = augmentWithPredicateColumns(projection, resolved);
         RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, 0);
-        iterator.setStatisticsFiltering(statisticsFilteringEnabled);
         iterator.setFirstFile(schema, rowGroups);
-        ProjectedSchema augProjected = iterator.initialize(augmented, resolved);
+        ProjectedSchema augProjected = iterator.initialize(augmented, resolved, statisticsFilteringEnabled);
         ProjectedSchema payloadProjected = ProjectedSchema.create(schema, projection);
         rowGroupIterators.add(iterator);
         // Statistics/bloom pruning dropped every row group — no record can match.

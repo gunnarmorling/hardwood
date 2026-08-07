@@ -21,18 +21,25 @@ import dev.hardwood.reader.RowReader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The `hardwood.statistics-filtering` reader option (#799): set to `"false"`,
+/// The `hardwood.statistics-filtering` reader option (#797): set to `"false"`,
 /// no row group or page is skipped from statistics, bloom filters, or page
 /// indexes, and predicates fall back to per-row evaluation — the escape hatch
 /// for files whose metadata is unreliable. Results must be identical to the
 /// default path; only the shortcut is gone.
 ///
 /// `filter_pushdown_int.parquet`: 3 row groups of 100 rows — `id` 1..100,
-/// 101..200, 201..300, with statistics that would normally prune.
+/// 101..200, 201..300, with honest statistics that would normally prune.
+///
+/// `filter_pushdown_int_lying_stats.parquet`: same data, but the third row
+/// group's `id` statistics are falsified to advertise `[101, 200]`. Trusting
+/// that footer prunes the group that really holds 201..300, so the default read
+/// silently drops matching rows; the opt-out must recover them.
 class StatisticsFilteringOptionTest extends AbstractJfrRecorderTest {
 
     private static final Path FIXTURE =
             Paths.get("src/test/resources/filter_pushdown_int.parquet");
+    private static final Path LYING_STATS_FIXTURE =
+            Paths.get("src/test/resources/filter_pushdown_int_lying_stats.parquet");
     private static final String PUSH_DOWN_EVENT = "dev.hardwood.RowGroupFilter";
 
     private static final ReaderConfig STATS_OFF = ReaderConfig.builder()
@@ -109,5 +116,40 @@ class StatisticsFilteringOptionTest extends AbstractJfrRecorderTest {
         assertThat(events(PUSH_DOWN_EVENT).count())
                 .as("statistics filtering disabled: no push-down evaluation ran")
                 .isZero();
+    }
+
+    @Test
+    void lyingStatisticsDropMatchingRowsByDefaultButOptOutRecoversThem() throws Exception {
+        // The third row group's `id` statistics claim [101, 200] while the data
+        // is 201..300. gt(200) prunes that group when the footer is trusted, so
+        // the default read returns nothing — the exact silent-data-loss failure
+        // the opt-out exists to escape.
+        try (HardwoodContext context = HardwoodContext.create();
+             ParquetFileReader reader = ParquetFileReader.open(InputFile.of(LYING_STATS_FIXTURE), context);
+             RowReader rows = reader.buildRowReader()
+                     .filter(FilterPredicate.gt("id", 200L))
+                     .build()) {
+            assertThat(rows.hasNext())
+                    .as("trusting the falsified statistics prunes the matching row group")
+                    .isFalse();
+        }
+
+        // With statistics filtering off the same predicate is evaluated per row,
+        // so the 100 genuinely-matching rows (201..300) are returned.
+        try (HardwoodContext context = HardwoodContext.create();
+             ParquetFileReader reader = ParquetFileReader.open(InputFile.of(LYING_STATS_FIXTURE), context, STATS_OFF);
+             RowReader rows = reader.buildRowReader()
+                     .filter(FilterPredicate.gt("id", 200L))
+                     .build()) {
+            long expected = 201;
+            while (rows.hasNext()) {
+                rows.next();
+                assertThat(rows.getLong("id")).isEqualTo(expected);
+                expected++;
+            }
+            assertThat(expected)
+                    .as("ignoring the falsified statistics recovers every matching row")
+                    .isEqualTo(301);
+        }
     }
 }
