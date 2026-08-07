@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 #
+#  SPDX-License-Identifier: Apache-2.0
+#
+#  Copyright The original authors
+#
+#  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+#
+
+#
 # Publishes the agent skills from this repository to a local checkout of
 # hardwood-hq/hardwood-skills, which distributes them as a Claude Code plugin.
 #
@@ -22,6 +30,7 @@ fi
 
 rm -rf "$dest/skills"
 cp -a "$repo_root/skills" "$dest/skills"
+"$repo_root/tools/stamp-skill-banner.sh" "$dest/skills"
 
 sha="$(git -C "$repo_root" rev-parse --short HEAD)"
 echo "Synced skills/ -> $dest/skills/ (from hardwood@$sha)"
