@@ -26,6 +26,18 @@ Every change should be linked to a GitHub issue. If one doesn't exist for what y
 
 Larger changes — new features, refactorings that affect the system design — should start with a short Markdown document under `_designs_/` describing the intended end state. Open the design as a PR so it can be reviewed before implementation starts. Mark it complete once the work lands.
 
+## Agent skills
+
+This repository is the source of truth for the [agent skills](https://agentskills.io) under `skills/` (e.g. `skills/hardwood-cli/`, which teaches AI coding agents how to drive the `hardwood` CLI). They live here, alongside the code they document, so a change to a CLI flag, output label, or command is made in the same PR as the matching skill edit — the skill can't drift from the tool.
+
+Distribution is separate. The [`hardwood-hq/hardwood-skills`](https://github.com/hardwood-hq/hardwood-skills) repository wraps `skills/` in the Claude Code plugin and marketplace manifests and is what users install. It is a **published mirror** — never edit its `skills/` directly. After changing a skill here, publish it to a local checkout of that repository:
+
+```shell
+tools/publish-skills.sh /path/to/hardwood-skills
+```
+
+then commit and push in that checkout (the script prints the exact commands). When you edit a skill, note in the PR that `hardwood-skills` needs a follow-up publish so it isn't forgotten.
+
 ## Commit messages
 
 Every commit message begins with the issue key:

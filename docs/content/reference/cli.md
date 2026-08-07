@@ -239,6 +239,21 @@ source hardwood_completion
 
 To make it permanent, add the line above to your `~/.bashrc` or `~/.bash_profile`.
 
+## Use with AI coding agents
+
+The repository ships an [Agent Skill](https://agentskills.io) at `skills/hardwood-cli/` that teaches an AI coding agent when and how to reach for the CLI while debugging Parquet read/write code (checking schema and physical/logical types, diagnosing why predicate pushdown or page skipping isn't happening, reading dictionary entries, and so on).
+
+For [Claude Code](https://claude.com/claude-code), it is packaged as the `hardwood` plugin, distributed from the [`hardwood-skills`](https://github.com/hardwood-hq/hardwood-skills) marketplace. Install it once — inside Claude Code, run:
+
+```text
+/plugin marketplace add hardwood-hq/hardwood-skills
+/plugin install hardwood@hardwood-skills
+```
+
+After installing, the skill loads automatically in future sessions whenever a task involves a Parquet file. It drives the `hardwood` binary, so ensure `hardwood` is on your `PATH` (from the [release page](https://github.com/hardwood-hq/hardwood/releases/tag/{{cli_release_tag}}) or the Docker image below).
+
+For other agent harnesses — or a Claude Code setup without the plugin — copy `skills/hardwood-cli/SKILL.md` into that tool's skills directory (for Claude Code that is `~/.claude/skills/hardwood-cli/`).
+
 ## Docker
 
 A minimal Fedora-based Docker image is published to the GitHub Container Registry for Linux amd64 and arm64:
