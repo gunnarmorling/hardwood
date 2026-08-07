@@ -1031,8 +1031,12 @@ public class Utils {
             case DOUBLE -> reader.getDoubles()[index];
             case BOOLEAN -> reader.getBooleans()[index];
             case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY, INT96 -> {
-                if (colSchema.logicalType() instanceof LogicalType.StringType
-                        || colSchema.logicalType() instanceof LogicalType.JsonType) {
+                // JSON leaves stay binary here: parquet-java's Avro reader has no
+                // JSON type and surfaces the raw bytes, so reading them as bytes
+                // keeps this a byte-exact comparison (matching the row-level path,
+                // which reads the same column via the Avro BYTES accessor). The
+                // UTF8/JSON String-interning path is already covered by StringType.
+                if (colSchema.logicalType() instanceof LogicalType.StringType) {
                     yield reader.getStrings()[index];
                 }
                 yield reader.getBinaries()[index];
