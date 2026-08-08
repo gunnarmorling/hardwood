@@ -28,13 +28,13 @@ Reading `encoding_stats` requires exposing it on `ColumnMetaData`, which brings 
 
 `dictionary_page_offset` is optional in `parquet.thrift`, and its absence is ordinary rather than corrupt — parquet-mr 1.12 omits it on every `PLAIN_DICTIONARY` column of `alltypes_tiny_pages.parquet` in `apache/parquet-testing`, and Trino did the same before 427. Current parquet-java writes it whenever a dictionary page exists, so it is usually but not reliably present.
 
-The page is therefore located the way parquet-java's `ColumnChunkMetaData.getStartingPos()` locates it: at `dictionary_page_offset` when that is set and precedes the first data page, otherwise at the chunk's first page.
+A dictionary page is always the chunk's first page, so the chunk's start offset is also the dictionary page's. It is `dictionary_page_offset` whenever the file declares a positive one, and `data_page_offset` otherwise. parquet-java's `ColumnChunkMetaData.getStartingPos()` additionally ignores a declared `dictionary_page_offset` that does not precede the first data page, degrading to `data_page_offset` and so to a read that finds no dictionary page; that shape is rejected here instead.
 
 Its *length* comes from the page header, never from the offsets. Where `data_page_offset` follows the dictionary page, the gap between them is the page's length for a well-formed writer and sizes the opening read exactly; where there is no such gap, a bounded probe opens instead and the header-declared length drives a second, exactly-sized read. The gap is only a hint: DuckDB before [duckdb/duckdb#10829](https://github.com/duckdb/duckdb/issues/10829) computed `data_page_offset` without the dictionary page's header size, understating it.
 
 Two metadata shapes are rejected rather than worked around, both with the file name attached:
 
-- a first data page that *precedes* the dictionary page, which cannot be read under any interpretation, and
+- a first data page that *precedes* the dictionary page, which contradicts the format's page ordering rather than merely omitting information, and
 - a header-declared page length running past the end of the enclosing column chunk.
 
 ## Cost model
