@@ -19,7 +19,6 @@ import dev.hardwood.metadata.PageEncodingStats;
 import dev.hardwood.metadata.PageType;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Verifies how `ColumnMetaData.encoding_stats` (field 13) is decoded, using hand-crafted Thrift
 /// Compact Protocol bytes so each shape can be isolated. Field header byte is
@@ -110,46 +109,76 @@ class PageEncodingStatsReaderTest {
     }
 
     @Test
-    void missingCountRejected() {
-        // Entry carrying only page_type and encoding. All three fields are required.
-        assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
+    void missingCountDropsTheField() throws IOException {
+        // Entry carrying only page_type and encoding. All three fields are required, so the
+        // entry cannot be reconstructed — and since the counts only mean anything as a complete
+        // partition of the chunk's pages, the whole field is reported as absent.
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
                 ENCODING_STATS_FIELD, 0x1C,
                 0x15, 0x00, 0x15, 0x00, 0x00,
-                0x00)))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("count");
+                0x00));
+
+        assertThat(metaData.encodingStats()).isEmpty();
     }
 
     @Test
-    void negativeCountRejected() {
-        assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
+    void negativeCountDropsTheField() throws IOException {
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
                 ENCODING_STATS_FIELD, 0x1C,
                 0x15, 0x00, 0x15, 0x00, 0x15, 0x01, 0x00,
-                0x00)))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("PageEncodingStats.count");
+                0x00));
+
+        assertThat(metaData.encodingStats()).isEmpty();
     }
 
     @Test
-    void nonStructListElementTypeRejected() {
+    void oneMalformedEntryDropsTheWholeField() throws IOException {
+        // A well-formed (DATA_PAGE, PLAIN, 1) entry followed by one missing its count. Keeping
+        // the first would present 1 page as the chunk's full page inventory when it is not.
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
+                ENCODING_STATS_FIELD, 0x2C,
+                0x15, 0x00, 0x15, 0x00, 0x15, 0x02, 0x00,
+                0x15, 0x04, 0x15, 0x00, 0x00,
+                0x00));
+
+        assertThat(metaData.encodingStats()).isEmpty();
+    }
+
+    @Test
+    void nonStructListElementTypeDropsTheField() throws IOException {
         // Field 13 declared as list<i32> (element type 0x05) carrying the value 1. Elements are
-        // read as structs, so decoding it would misread value bytes as field headers.
-        assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
+        // read as structs, so decoding it would misread value bytes as field headers; skipping
+        // by the declared element type consumes it instead.
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
                 ENCODING_STATS_FIELD, 0x15,
                 0x02,
-                0x00)))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("encoding_stats");
+                0x00));
+
+        assertThat(metaData.encodingStats()).isEmpty();
     }
 
     @Test
-    void wrongWireTypeOnRequiredFieldRejected() {
+    void wrongWireTypeOnRequiredFieldDropsTheField() throws IOException {
         // page_type declared as i64 (0x06) rather than i32.
-        assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
                 ENCODING_STATS_FIELD, 0x1C,
                 0x16, 0x00, 0x15, 0x00, 0x15, 0x02, 0x00,
-                0x00)))
-                .isInstanceOf(IOException.class)
-                .hasMessageContaining("page_type");
+                0x00));
+
+        assertThat(metaData.encodingStats()).isEmpty();
+    }
+
+    @Test
+    void malformedFieldDoesNotDisturbLaterFields() throws IOException {
+        // encoding_stats as list<i32>, then field 14 (bloom_filter_offset, i64) = 8. The skip
+        // has to leave the reader exactly on the next field header for this to decode.
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
+                ENCODING_STATS_FIELD, 0x15,
+                0x02,
+                0x16, 0x10,
+                0x00));
+
+        assertThat(metaData.encodingStats()).isEmpty();
+        assertThat(metaData.bloomFilterOffset()).isEqualTo(8L);
     }
 }

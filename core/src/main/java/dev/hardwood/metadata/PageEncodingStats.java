@@ -11,7 +11,9 @@ package dev.hardwood.metadata;
 /// column chunk.
 ///
 /// A chunk's full set of these is available from [ColumnMetaData#encodingStats()]; the field is
-/// optional in the format, so it may be absent.
+/// optional in the format, so it may be absent. When present it is complete: the counts account
+/// for every page in the chunk. A file that encodes the field in some other way than the format
+/// defines reads as absent rather than as a partial list.
 ///
 /// @param pageType the kind of page counted
 /// @param encoding the encoding those pages were written with
