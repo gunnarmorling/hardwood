@@ -25,16 +25,23 @@ final class FilterCoordinator {
     /// The exposed subset, compacted to the matching records each batch.
     private final ColumnReader[] payloadReaders;
     private final SelectionEngine engine;
+    private long rowsToSkip;
+    private long rowsRemaining;
+    private final boolean rowLimit;
 
     private long generation;
     private boolean hasBatch;
     private int recordCount;
     private boolean closed;
 
-    FilterCoordinator(ColumnReader[] allReaders, ColumnReader[] payloadReaders, SelectionEngine engine) {
+    FilterCoordinator(ColumnReader[] allReaders, ColumnReader[] payloadReaders, SelectionEngine engine,
+                      long skip, long maxRows) {
         this.allReaders = allReaders;
         this.payloadReaders = payloadReaders;
         this.engine = engine;
+        this.rowsToSkip = skip;
+        this.rowsRemaining = maxRows;
+        this.rowLimit = maxRows > 0;
     }
 
     long generation() {
@@ -53,6 +60,41 @@ final class FilterCoordinator {
     /// the payload readers. Returns `false` (without incrementing the
     /// generation) once the input is exhausted.
     boolean advance() {
+        if (rowLimit && rowsRemaining == 0) {
+            hasBatch = false;
+            recordCount = 0;
+            return false;
+        }
+
+        while (advanceFilteredBatch()) {
+            int start = (int) Math.min(rowsToSkip, recordCount);
+            rowsToSkip -= start;
+            int available = recordCount - start;
+            int count = rowLimit ? (int) Math.min(rowsRemaining, available) : available;
+            if (count == 0) {
+                continue;
+            }
+
+            if (start != 0 || count != recordCount) {
+                int[] kept = engine.selection();
+                for (int i = 0; i < count; i++) {
+                    kept[i] = start + i;
+                }
+                for (ColumnReader reader : payloadReaders) {
+                    reader.applySelection(kept, count);
+                }
+            }
+
+            recordCount = count;
+            if (rowLimit) {
+                rowsRemaining -= count;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean advanceFilteredBatch() {
         if (!allReaders[0].rawNextBatch()) {
             hasBatch = false;
             recordCount = 0;

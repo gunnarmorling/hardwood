@@ -60,7 +60,9 @@ public class ColumnReaders implements AutoCloseable {
                   RowGroupIterator rowGroupIterator,
                   FileSchema schema,
                   ProjectedSchema projectedSchema,
-                  int batchSize) {
+                  int batchSize,
+                  long skip,
+                  long maxRows) {
         int projectedColumnCount = projectedSchema.getProjectedColumnCount();
         this.readersByName = new LinkedHashMap<>(projectedColumnCount);
         this.readersByIndex = new ColumnReader[projectedColumnCount];
@@ -73,6 +75,7 @@ public class ColumnReaders implements AutoCloseable {
             ColumnReader reader = ColumnReader.createFromIterator(
                     columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled, i, null, batchSize,
                     NestedColumnWorker.IndexMode.REAL_VIEW);
+            reader.configureWindow(skip, maxRows);
 
             readersByName.put(columnSchema.fieldPath().toString(), reader);
             readersByIndex[i] = reader;
@@ -100,7 +103,9 @@ public class ColumnReaders implements AutoCloseable {
                                   ProjectedSchema augProjected,
                                   ProjectedSchema payloadProjected,
                                   ResolvedPredicate resolved,
-                                  int batchSize) {
+                                  int batchSize,
+                                  long skip,
+                                  long maxRows) {
         int augCount = augProjected.getProjectedColumnCount();
         ColumnReader[] allReaders = new ColumnReader[augCount];
         Map<String, ColumnReader> byPath = new LinkedHashMap<>(augCount);
@@ -124,7 +129,8 @@ public class ColumnReaders implements AutoCloseable {
         }
 
         SelectionEngine engine = SelectionEngine.create(schema, augProjected, resolved, allReaders, batchSize);
-        FilterCoordinator coordinator = new FilterCoordinator(allReaders, payloadReaders, engine);
+        FilterCoordinator coordinator = new FilterCoordinator(
+                allReaders, payloadReaders, engine, skip, maxRows);
         for (ColumnReader reader : allReaders) {
             reader.setCoordinator(coordinator);
         }

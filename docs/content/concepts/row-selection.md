@@ -11,10 +11,10 @@
 -->
 # Row Selection
 
-You rarely want every row of a Parquet file. Hardwood gives a `RowReader` five controls for
-narrowing what comes back — `filter`, `head`, `tail`, `skip`, and the `byteRange` row-group
-predicate. They compose predictably once you hold one idea: **row selection counts over the
-result set, not over the file.** For the step-by-step recipes, see
+You rarely want every row of a Parquet file. Hardwood's row and column reader builders provide
+`filter`, `head`, `skip`, and the `byteRange` row-group predicate; `RowReaderBuilder` also provides
+`tail`. They compose predictably once you hold one idea: **row selection counts over the result
+set, not over the file.** For the step-by-step recipes, see
 [Predicate Pushdown, Projection, Limits, and Splits](../how-to/query-controls.md).
 
 ## Two questions: which rows, and where they live
@@ -22,7 +22,7 @@ result set, not over the file.** For the step-by-step recipes, see
 Selection has two independent axes, and each control belongs to exactly one of them.
 
 - **Which rows you want — the logical result.** A `FilterPredicate` (`WHERE`), and the
-  positional controls `head`, `tail`, and `skip`.
+  positional controls `head` and `skip`, plus `tail` for row readers.
 - **Where data lives in the file — the physical layout.** `RowGroupPredicate.byteRange(...)`,
   at row-group granularity. This is the lever for splitting a file across parallel readers, not
   for shaping what a single reader returns.
@@ -85,8 +85,9 @@ wrong tool — that is what `byteRange` is for.
 
 ## Currently supported combinations
 
-`head`, `skip`, and `byteRange` each compose with a `FilterPredicate`; `head`/`skip` count over
-the matched rows. `tail` + filter is **not** supported and is rejected at `build()`: unlike the
+`head`, `skip`, and `byteRange` each compose with a `FilterPredicate` on the row and column
+reader builders; `head`/`skip` count over the matched rows. `tail` + filter is **not** supported
+on `RowReaderBuilder` and is rejected at `build()`: unlike the
 forward-streaming `head`/`skip`, the *last* `n` matching rows have no row-group-statistics
 shortcut, so it would require a reverse scan over the whole file. Until that lands, take the tail
 of the unfiltered file, or filter and keep the trailing matches yourself.

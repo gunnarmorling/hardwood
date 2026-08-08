@@ -1,14 +1,15 @@
 # Design: row selection semantics
 
-**Status: In progress.** Tracking issues: #538 (`head` + filter), #540 / #541
-(`skip` + filter), #542 (`tail` + filter), #543 (`firstRow` → `skip` rename).
+**Status: In progress.** Tracking issues: #433 (column-reader parity), #538 (`head` + filter),
+#540 / #541 (`skip` + filter), #542 (`tail` + filter), #543 (`firstRow` → `skip` rename).
 The reader-facing counterpart is `docs/content/concepts/row-selection.md`.
 
 ## Scope
 
-How the row-selection controls on `RowReaderBuilder` — `head`, `tail`, `skip` —
-relate to the two filtering mechanisms — the row-level `FilterPredicate` and the
-group-level `RowGroupPredicate` (e.g. `byteRange`). The goal is a single model
+How the row-selection controls on `RowReaderBuilder`, `ColumnReaderBuilder`, and
+`ColumnReadersBuilder` — `head`, `skip`, and the row-reader-only `tail` — relate to the two
+filtering mechanisms — the row-level `FilterPredicate` and the group-level
+`RowGroupPredicate` (e.g. `byteRange`). The goal is a single model
 under which the controls compose predictably, so a caller can reason about
 `skip(a).filter(p).head(b)` without knowing the file's row-group structure or
 the filter's selectivity.
@@ -32,7 +33,8 @@ in file order.
 
 ## The one rule
 
-`head`, `tail`, and `skip` count over the surviving relation, in file order:
+`head` and `skip` count over the surviving relation, in file order on every reader builder;
+`tail` follows the same model on `RowReaderBuilder`:
 
 - `skip(n)` discards the first `n` rows of the relation (SQL `OFFSET`).
 - `head(n)` keeps at most the first `n` rows (SQL `LIMIT`).

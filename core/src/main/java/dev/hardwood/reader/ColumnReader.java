@@ -88,6 +88,10 @@ public class ColumnReader implements AutoCloseable {
     private int recordCount;
     private boolean exhausted;
     private boolean closed;
+    private long rowsToSkip;
+    private long rowsRemaining;
+    private boolean rowLimit;
+    private int[] windowSelection;
 
     // Real-items-only view for nested batches, computed lazily and cached per
     // batch. Invalidated in `nextBatch()`.
@@ -187,7 +191,44 @@ public class ColumnReader implements AutoCloseable {
             consumedGeneration = coordinator.generation();
             return coordinator.hasBatch();
         }
-        return rawNextBatch();
+        if (rowLimit && rowsRemaining == 0) {
+            currentFlatBatch = null;
+            currentNestedBatch = null;
+            exhausted = true;
+            return false;
+        }
+        while (rawNextBatch()) {
+            if (applyWindow()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean applyWindow() {
+        int start = (int) Math.min(rowsToSkip, recordCount);
+        rowsToSkip -= start;
+
+        int available = recordCount - start;
+        int count = rowLimit ? (int) Math.min(rowsRemaining, available) : available;
+        if (count == 0) {
+            return false;
+        }
+
+        if (start != 0 || count != recordCount) {
+            if (windowSelection == null || windowSelection.length < count) {
+                windowSelection = new int[count];
+            }
+            for (int i = 0; i < count; i++) {
+                windowSelection[i] = start + i;
+            }
+            applySelection(windowSelection, count);
+        }
+
+        if (rowLimit) {
+            rowsRemaining -= count;
+        }
+        return true;
     }
 
     /// Advances this reader to its next decoded batch without applying any
@@ -527,6 +568,12 @@ public class ColumnReader implements AutoCloseable {
         this.coordinator = coordinator;
     }
 
+    void configureWindow(long skip, long maxRows) {
+        this.rowsToSkip = skip;
+        this.rowsRemaining = maxRows;
+        this.rowLimit = maxRows > 0;
+    }
+
     /// Whether this reader decodes through the nested pipeline.
     boolean isNested() {
         return nested;
@@ -852,9 +899,9 @@ public class ColumnReader implements AutoCloseable {
     static ColumnReader create(String columnName, FileSchema schema,
                                InputFile inputFile, List<RowGroup> rowGroups,
                                HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                               ResolvedPredicate filter, int batchSize) {
+                               ResolvedPredicate filter, int batchSize, long maxRows, long skip) {
         return create(schema.getColumn(columnName), schema, inputFile, rowGroups, context,
-                fixedListFastPathEnabled, filter, batchSize);
+                fixedListFastPathEnabled, filter, batchSize, maxRows, skip);
     }
 
     /// Create a ColumnReader for a column by index with optional page-level
@@ -862,15 +909,15 @@ public class ColumnReader implements AutoCloseable {
     static ColumnReader create(int columnIndex, FileSchema schema,
                                InputFile inputFile, List<RowGroup> rowGroups,
                                HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                               ResolvedPredicate filter, int batchSize) {
+                               ResolvedPredicate filter, int batchSize, long maxRows, long skip) {
         return create(schema.getColumn(columnIndex), schema, inputFile, rowGroups, context,
-                fixedListFastPathEnabled, filter, batchSize);
+                fixedListFastPathEnabled, filter, batchSize, maxRows, skip);
     }
 
     private static ColumnReader create(ColumnSchema columnSchema, FileSchema schema,
                                        InputFile inputFile, List<RowGroup> rowGroups,
                                        HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                                       ResolvedPredicate filter, int batchSize) {
+                                       ResolvedPredicate filter, int batchSize, long maxRows, long skip) {
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema,
                 ColumnProjection.columns(columnSchema.fieldPath().toString()));
 
@@ -880,12 +927,15 @@ public class ColumnReader implements AutoCloseable {
                         BatchSizing.valuesPerRow(projectedSchema, rowGroups));
 
         RowGroupIterator rowGroupIterator = new RowGroupIterator(
-                List.of(inputFile), context, 0);
+                List.of(inputFile), context, maxRows, 0L, skip);
         rowGroupIterator.setFirstFile(schema, rowGroups);
         rowGroupIterator.initialize(projectedSchema, filter);
 
-        return createFromIterator(columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled,
+        ColumnReader reader = createFromIterator(
+                columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled,
                 0, rowGroupIterator, resolvedBatchSize, NestedColumnWorker.IndexMode.REAL_VIEW);
+        reader.configureWindow(rowGroupIterator.firstRowGroupSkip(), maxRows);
+        return reader;
     }
 
     /// Creates a ColumnReader from a pre-configured RowGroupIterator.

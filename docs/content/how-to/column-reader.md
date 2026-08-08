@@ -54,6 +54,25 @@ Column readers can also be created by index via `columnReader(int columnIndex)`.
 
 A filtered column reader returns **only** the matching rows — exact, with no client-side residual filtering required. Each batch's `getRecordCount()` and typed arrays already exclude non-matching rows, so a direct aggregate over the output is correct. The predicate may reference the column being read, another column, or a column that is not read at all; for `columnReaders(projection)` every column is filtered to the same row set and stays row-aligned. Predicate columns that are not part of the projection are decoded internally to evaluate the filter but are not exposed.
 
+### Limiting and Skipping Rows
+
+Both column reader builders support `skip(long)` and `head(long)`. They can be combined to read a bounded window:
+
+```java
+try (ColumnReader id = reader.buildColumnReader("id")
+        .skip(150)
+        .head(20)
+        .build()) {
+    while (id.nextBatch()) {
+        process(id.getLongs(), id.getRecordCount());
+    }
+}
+```
+
+Without a row filter, `skip(n)` is a physical offset and earlier row groups are not decoded. With a `FilterPredicate`, it is a logical offset over matching rows, so `filter(p).skip(n).head(k)` has the same meaning as `WHERE p OFFSET n LIMIT k`. A `RowGroupPredicate` is applied first, and the window is counted within the row groups it keeps.
+
+On `ColumnReadersBuilder`, the window is shared by the whole projection. Every projected column therefore returns the same records and remains aligned across batch and row-group boundaries.
+
 ### Reading Multiple Columns
 
 For reading multiple columns together, use `columnReaders(projection)` which returns a `ColumnReaders` collection. Drive every reader in lockstep with `ColumnReaders.nextBatch()`:

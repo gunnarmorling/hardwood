@@ -258,7 +258,7 @@ try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(path));
 
 A row group is included if and only if its **midpoint** — the start of its first column chunk plus half of its on-disk compressed size — falls in `[start, end)`. This is the standard Hadoop-input-format split convention: across a partitioning of the file into disjoint byte ranges, every row group lands in exactly one range, regardless of where the split boundary falls inside the row group itself.
 
-**Granularity is row-group, not row.** A row group whose midpoint is in `[0, 1000)` is read in full, including any rows whose data extends beyond byte 1000. If you need true row-level windowing, combine `RowGroupPredicate` with [`RowReaderBuilder.skip(...)`](#skipping-rows-skip) and [`head(...)`](#row-limit).
+**Granularity is row-group, not row.** A row group whose midpoint is in `[0, 1000)` is read in full, including any rows whose data extends beyond byte 1000. If you need true row-level windowing, combine `RowGroupPredicate` with [`skip(...)`](#skipping-rows-skip) and [`head(...)`](#row-limit).
 
 `RowGroupPredicate` composes with [`FilterPredicate`](#predicate-pushdown-filter) via intersection — both apply, and a row group is read if and only if it passes both:
 
@@ -277,7 +277,7 @@ ColumnReader col = fileReader.buildColumnReader("price")
         RowGroupPredicate.byteRange(otherStart, otherEnd)))
 ```
 
-The same `filter(RowGroupPredicate)` overload is available on `RowReaderBuilder` and `ColumnReadersBuilder`. On `RowReaderBuilder`, `skip(N)` and `head(N)` index over the *row-group-filtered* sequence — `skip(N)` skips `N` rows of the kept set, `head(N)` caps reading at `N` rows of the kept set. Combining `RowGroupPredicate` with `tail(N)` is rejected: tail mode requires a known total row count, which row-group filtering invalidates.
+The same `filter(RowGroupPredicate)` overload is available on `RowReaderBuilder`, `ColumnReaderBuilder`, and `ColumnReadersBuilder`. On all three builders, `skip(N)` and `head(N)` index over the *row-group-filtered* sequence — `skip(N)` skips `N` rows of the kept set, and `head(N)` caps reading at `N` rows of the kept set. Combining `RowGroupPredicate` with `tail(N)` is rejected on `RowReaderBuilder`: tail mode requires a known total row count, which row-group filtering invalidates.
 
 ### Empty ranges
 
@@ -303,7 +303,7 @@ Tail mode cannot currently be combined with a filter predicate — the set of ma
 
 ### Skipping Rows (`skip`)
 
-The `skip(long)` builder method is SQL `OFFSET`: it discards leading rows before reading. What "leading rows" means depends on whether a filter is present — see [Row Selection](../concepts/row-selection.md) for the model.
+The `skip(long)` builder method is available on the row and column reader builders. It is SQL `OFFSET`: it discards leading rows before reading. What "leading rows" means depends on whether a filter is present — see [Row Selection](../concepts/row-selection.md) for the model.
 
 **Without a filter,** `skip(n)` is a physical absolute row index. Earlier row groups are not opened — their pages are not fetched or decoded — making this an O(1 row group) seek on remote backends, in contrast to walking `next()` from row 0.
 

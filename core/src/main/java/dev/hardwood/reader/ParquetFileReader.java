@@ -488,55 +488,65 @@ public class ParquetFileReader implements AutoCloseable {
     }
 
     ColumnReader buildColumnReader(String columnName, FilterPredicate filter) {
-        return buildColumnReader(columnName, filter, null, AUTO_BATCH_SIZE);
+        return buildColumnReader(columnName, filter, null, AUTO_BATCH_SIZE, 0L, 0L);
     }
 
     ColumnReader buildColumnReader(
-            String columnName, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize) {
+            String columnName, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize,
+            long maxRows, long skip) {
         ensureSingleFile("columnReader(String)");
         if (filter != null) {
             // Exact filtering routes through the shared filtered-projection
             // engine and exposes the single requested column.
-            return buildColumnReaders(ColumnProjection.columns(columnName), filter, rowGroupFilter, batchSize)
+            return buildColumnReaders(
+                    ColumnProjection.columns(columnName), filter, rowGroupFilter, batchSize, maxRows, skip)
                     .getColumnReader(0);
         }
         InputFile inputFile = inputFiles.get(0);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
-        return ColumnReader.create(columnName, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, null, batchSize);
+        return ColumnReader.create(
+                columnName, schema, inputFile, rowGroups, context, fixedListFastPathEnabled,
+                null, batchSize, maxRows, skip);
     }
 
     ColumnReader buildColumnReader(int columnIndex, FilterPredicate filter) {
-        return buildColumnReader(columnIndex, filter, null, AUTO_BATCH_SIZE);
+        return buildColumnReader(columnIndex, filter, null, AUTO_BATCH_SIZE, 0L, 0L);
     }
 
     ColumnReader buildColumnReader(
-            int columnIndex, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize) {
+            int columnIndex, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize,
+            long maxRows, long skip) {
         ensureSingleFile("columnReader(int)");
         if (filter != null) {
             String columnName = schema.getColumn(columnIndex).fieldPath().toString();
-            return buildColumnReaders(ColumnProjection.columns(columnName), filter, rowGroupFilter, batchSize)
+            return buildColumnReaders(
+                    ColumnProjection.columns(columnName), filter, rowGroupFilter, batchSize, maxRows, skip)
                     .getColumnReader(0);
         }
         InputFile inputFile = inputFiles.get(0);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
-        return ColumnReader.create(columnIndex, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, null, batchSize);
+        return ColumnReader.create(
+                columnIndex, schema, inputFile, rowGroups, context, fixedListFastPathEnabled,
+                null, batchSize, maxRows, skip);
     }
 
     ColumnReaders buildColumnReaders(ColumnProjection projection, FilterPredicate filter) {
-        return buildColumnReaders(projection, filter, null, AUTO_BATCH_SIZE);
+        return buildColumnReaders(projection, filter, null, AUTO_BATCH_SIZE, 0L, 0L);
     }
 
     ColumnReaders buildColumnReaders(
             ColumnProjection projection,
             FilterPredicate filter,
             RowGroupPredicate rowGroupFilter,
-            int batchSize) {
+            int batchSize,
+            long maxRows,
+            long skip) {
         ResolvedPredicate resolved = filter != null
                 ? FilterPredicateResolver.resolve(filter, schema, firstFileMetaData.columnOrders()) : null;
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
 
         if (resolved == null) {
-            RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, 0);
+            RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, maxRows, 0L, skip);
             iterator.setFirstFile(schema, rowGroups);
             ProjectedSchema projected = iterator.initialize(projection, null);
             rowGroupIterators.add(iterator);
@@ -546,7 +556,7 @@ public class ParquetFileReader implements AutoCloseable {
                 return ColumnReaders.noRows(schema, projected);
             }
             return new ColumnReaders(context, fixedListFastPathEnabled, iterator, schema, projected,
-                    resolveBatchSize(batchSize, projected, rowGroups));
+                    resolveBatchSize(batchSize, projected, rowGroups), iterator.firstRowGroupSkip(), maxRows);
         }
 
         // Exact filtering (#624): decode the payload columns *and* the predicate
@@ -571,7 +581,7 @@ public class ParquetFileReader implements AutoCloseable {
         // per-batch arrays too, so they count toward the byte budget.
         return ColumnReaders.filtered(
                 context, fixedListFastPathEnabled, iterator, schema, augProjected, payloadProjected, resolved,
-                resolveBatchSize(batchSize, augProjected, rowGroups));
+                resolveBatchSize(batchSize, augProjected, rowGroups), skip, maxRows);
     }
 
     /// Resolves a requested batch size to a concrete record count. A positive
@@ -842,6 +852,8 @@ public class ParquetFileReader implements AutoCloseable {
         private FilterPredicate filter;
         private RowGroupPredicate rowGroupFilter;
         private int batchSize = AUTO_BATCH_SIZE;
+        private long headRows;
+        private long skip;
 
         private ColumnReaderBuilder(ParquetFileReader fileReader, String columnName) {
             this.fileReader = fileReader;
@@ -876,6 +888,22 @@ public class ParquetFileReader implements AutoCloseable {
             return this;
         }
 
+        public ColumnReaderBuilder head(long maxRows) {
+            if (maxRows <= 0) {
+                throw new IllegalArgumentException("head row count must be positive: " + maxRows);
+            }
+            this.headRows = maxRows;
+            return this;
+        }
+
+        public ColumnReaderBuilder skip(long skip) {
+            if (skip < 0) {
+                throw new IllegalArgumentException("skip must be non-negative: " + skip);
+            }
+            this.skip = skip;
+            return this;
+        }
+
         /// Set the maximum number of records to return in each batch.
         ///
         /// When unset, the batch size is chosen adaptively from the column's
@@ -892,9 +920,11 @@ public class ParquetFileReader implements AutoCloseable {
 
         public ColumnReader build() {
             if (byName) {
-                return fileReader.buildColumnReader(columnName, filter, rowGroupFilter, batchSize);
+                return fileReader.buildColumnReader(
+                        columnName, filter, rowGroupFilter, batchSize, headRows, skip);
             }
-            return fileReader.buildColumnReader(columnIndex, filter, rowGroupFilter, batchSize);
+            return fileReader.buildColumnReader(
+                    columnIndex, filter, rowGroupFilter, batchSize, headRows, skip);
         }
     }
 
@@ -920,6 +950,8 @@ public class ParquetFileReader implements AutoCloseable {
         private FilterPredicate filter;
         private RowGroupPredicate rowGroupFilter;
         private int batchSize = AUTO_BATCH_SIZE;
+        private long headRows;
+        private long skip;
 
         private ColumnReadersBuilder(ParquetFileReader fileReader, ColumnProjection projection) {
             if (projection == null) {
@@ -948,6 +980,22 @@ public class ParquetFileReader implements AutoCloseable {
             return this;
         }
 
+        public ColumnReadersBuilder head(long maxRows) {
+            if (maxRows <= 0) {
+                throw new IllegalArgumentException("head row count must be positive: " + maxRows);
+            }
+            this.headRows = maxRows;
+            return this;
+        }
+
+        public ColumnReadersBuilder skip(long skip) {
+            if (skip < 0) {
+                throw new IllegalArgumentException("skip must be non-negative: " + skip);
+            }
+            this.skip = skip;
+            return this;
+        }
+
         /// Set the maximum number of records to return in each batch for all columns.
         ///
         /// When unset, the batch size is chosen adaptively from the projected
@@ -963,7 +1011,8 @@ public class ParquetFileReader implements AutoCloseable {
         }
 
         public ColumnReaders build() {
-            return fileReader.buildColumnReaders(projection, filter, rowGroupFilter, batchSize);
+            return fileReader.buildColumnReaders(
+                    projection, filter, rowGroupFilter, batchSize, headRows, skip);
         }
     }
 
