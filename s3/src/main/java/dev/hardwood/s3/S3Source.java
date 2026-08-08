@@ -10,6 +10,7 @@ package dev.hardwood.s3;
 import java.io.Closeable;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -221,6 +222,9 @@ public final class S3Source implements Closeable {
         /// for the sparse-file backing. Defaults to the JVM's
         /// `java.io.tmpdir`. Ignored when range backing is
         /// [RangeBacking#NONE].
+        ///
+        /// Under [RangeBacking#SPARSE_TEMPFILE] the directory must exist
+        /// and be writeable; [#build()] rejects it otherwise.
         public Builder tempDir(Path tempDir) {
             this.tempDir = Objects.requireNonNull(tempDir, "tempDir must not be null");
             return this;
@@ -252,7 +256,24 @@ public final class S3Source implements Closeable {
             Path effectiveTempDir = tempDir != null
                     ? tempDir
                     : Path.of(System.getProperty("java.io.tmpdir"));
+            if (rangeBacking == RangeBacking.SPARSE_TEMPFILE) {
+                requireUsableTempDir(effectiveTempDir);
+            }
             return new S3Source(api, client, externalClient, rangeBacking, effectiveTempDir);
+        }
+
+        /// Rejects a temp directory that [RangeBacking#SPARSE_TEMPFILE]
+        /// could not create its backing file in, so the misconfiguration
+        /// surfaces here rather than at the first [S3InputFile#open()].
+        private static void requireUsableTempDir(Path dir) {
+            if (!Files.isDirectory(dir)) {
+                throw new IllegalStateException("tempDir does not exist or is not a directory: " + dir
+                        + " (required by RangeBacking.SPARSE_TEMPFILE)");
+            }
+            if (!Files.isWritable(dir)) {
+                throw new IllegalStateException("tempDir is not writeable: " + dir
+                        + " (required by RangeBacking.SPARSE_TEMPFILE)");
+            }
         }
     }
 }

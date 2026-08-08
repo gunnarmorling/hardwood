@@ -8,7 +8,6 @@
 package dev.hardwood.internal.reader;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -38,10 +37,16 @@ import dev.hardwood.InputFile;
 /// the mapping cannot exceed [Integer#MAX_VALUE] bytes. Files larger
 /// than 2 GB cannot be range-backed; [#open] throws on those.
 ///
-/// **Lifecycle.** [#close] unmaps the buffer (best-effort, GC drives
-/// the actual unmap) and deletes the temp file. The wrapped file is
-/// closed via the standard delegation.
+/// **Lifecycle.** [#close] drops the mapping reference and deletes the
+/// temp file. The unmap itself is GC-driven, so the address space and
+/// the file's blocks are reclaimed on the next collection rather than
+/// at `close()`. Where the platform refuses to unlink a file that still
+/// carries a mapping — Windows does — the delete is deferred to JVM
+/// exit rather than failing the close. The wrapped file is closed via
+/// the standard delegation.
 public final class RangeBackedInputFile implements InputFile {
+
+    private static final System.Logger LOG = System.getLogger(RangeBackedInputFile.class.getName());
 
     private final InputFile delegate;
     private final Path tempDir;
@@ -125,20 +130,6 @@ public final class RangeBackedInputFile implements InputFile {
         return mapping.slice(Math.toIntExact(offset), length);
     }
 
-    /// Returns true if the entire range is already in the cache. Test /
-    /// diagnostic only — the public read path goes through [#readRange].
-    public synchronized boolean isPopulated(long offset, int length) {
-        if (populated == null) {
-            return false;
-        }
-        return populated.contains(offset, offset + length);
-    }
-
-    /// Returns the wrapped [InputFile]. Test / diagnostic only.
-    public InputFile delegate() {
-        return delegate;
-    }
-
     @Override
     public long length() {
         if (fileLength < 0) {
@@ -167,17 +158,7 @@ public final class RangeBackedInputFile implements InputFile {
             }
             channel = null;
         }
-        try {
-            cleanupTempFile();
-        }
-        catch (RuntimeException e) {
-            if (firstFailure == null) {
-                firstFailure = new IOException("Failed to delete temp cache file", e);
-            }
-            else {
-                firstFailure.addSuppressed(e);
-            }
-        }
+        cleanupTempFile();
         try {
             delegate.close();
         }
@@ -194,15 +175,25 @@ public final class RangeBackedInputFile implements InputFile {
         }
     }
 
+    /// Deletes the backing file, or defers the delete to JVM exit if the
+    /// platform refuses it. Windows will not unlink a file that still
+    /// carries a mapping, and the unmap here is GC-driven, so a failure
+    /// is expected there rather than exceptional — failing [#close] over
+    /// it would break every range-backed read on that platform. The
+    /// deferral is logged so a leaked temp file is never silent.
     private void cleanupTempFile() {
-        if (tempFile != null) {
-            try {
-                Files.deleteIfExists(tempFile);
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-            tempFile = null;
+        if (tempFile == null) {
+            return;
         }
+        try {
+            Files.deleteIfExists(tempFile);
+        }
+        catch (IOException e) {
+            tempFile.toFile().deleteOnExit();
+            LOG.log(System.Logger.Level.WARNING,
+                    "Could not delete range-cache file {0} ({1}); deferred to JVM exit",
+                    tempFile, e);
+        }
+        tempFile = null;
     }
 }
