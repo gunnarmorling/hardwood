@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
@@ -34,7 +35,7 @@ class PageEncodingStatsReader {
         for (int i = 0; i < listHeader.size(); i++) {
             result.add(readStats(reader));
         }
-        return List.copyOf(result);
+        return Collections.unmodifiableList(result);
     }
 
     /// Reads a single PageEncodingStats Thrift struct (field 1: page_type, field 2: encoding,

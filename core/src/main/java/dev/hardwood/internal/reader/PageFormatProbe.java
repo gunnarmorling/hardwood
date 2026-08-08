@@ -51,7 +51,7 @@ final class PageFormatProbe {
     /// oversize headers). The dictionary page, if any, is skipped over by
     /// reading at the column's `dataPageOffset` directly.
     static PageType firstDataPageType(InputFile inputFile,
-                                                  ColumnChunk columnChunk) throws IOException {
+                                      ColumnChunk columnChunk) throws IOException {
         long offset = columnChunk.metaData().dataPageOffset();
         long maxLength = columnChunk.metaData().totalCompressedSize();
         int peek = (int) Math.min(INITIAL_PEEK_SIZE, maxLength);
