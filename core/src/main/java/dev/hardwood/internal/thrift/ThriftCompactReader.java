@@ -217,6 +217,13 @@ public class ThriftCompactReader {
     }
 
     /// Read a list/set header.
+    ///
+    /// A long-form element count is validated against the bytes still in the buffer. Every Thrift
+    /// element occupies at least one byte on the wire, so a count larger than the remainder cannot
+    /// describe real data. Callers that pre-size a collection from the count would otherwise turn
+    /// a five-byte varint into a multi-gigabyte allocation, and a count past the `int` range would
+    /// wrap to a negative capacity (an unchecked exception) or to zero (a silently empty
+    /// collection) instead of a controlled error naming the file.
     public CollectionHeader readListHeader() throws IOException {
         byte sizeAndType = readByte();
         int size = (sizeAndType >> 4) & 0x0F;
@@ -224,7 +231,12 @@ public class ThriftCompactReader {
 
         if (size == 15) {
             // Size is encoded separately
-            size = (int) readVarint();
+            long declaredSize = readVarint();
+            if (declaredSize < 0 || declaredSize > buffer.remaining()) {
+                throw new IOException("Malformed Parquet metadata: collection declares "
+                        + declaredSize + " elements but only " + buffer.remaining() + " bytes remain");
+            }
+            size = (int) declaredSize;
         }
 
         return new CollectionHeader(elementType, size);

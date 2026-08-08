@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Tests for ThriftCompactReader, particularly field skipping for complex types.
 class ThriftCompactReaderTest {
@@ -161,5 +162,62 @@ class ThriftCompactReaderTest {
         // Should be at STOP
         ThriftCompactReader.FieldHeader stop = reader.readFieldHeader();
         assertThat(stop).isNull();
+    }
+
+    /// A long-form element count larger than the bytes left cannot describe real elements — the
+    /// cheapest of them still costs a byte — so it is rejected before any caller pre-sizes a
+    /// collection from it.
+    @Test
+    void listHeaderRejectsCountLargerThanRemainingBytes() {
+        // List header: size nibble 15 (long form), element type struct (0x0C), then varint(100).
+        ThriftCompactReader reader = reader(0xFC, 0x64, 0x00, 0x00);
+
+        assertThatThrownBy(reader::readListHeader)
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("declares 100 elements")
+                .hasMessageContaining("2 bytes remain");
+    }
+
+    /// A count past the `int` range would wrap to a negative capacity, which surfaces as an
+    /// unchecked `IllegalArgumentException` from the collection constructor rather than as the
+    /// controlled, file-attributed `IOException` the footer path contracts for.
+    @Test
+    void listHeaderRejectsCountOverflowingInt() {
+        // varint 0x80 0x80 0x80 0x80 0x08 encodes 2^31, which casts to Integer.MIN_VALUE.
+        ThriftCompactReader reader = reader(0xFC, 0x80, 0x80, 0x80, 0x80, 0x08, 0x00);
+
+        assertThatThrownBy(reader::readListHeader)
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("2147483648 elements");
+    }
+
+    /// The one success case among these tests: the others all assert a rejection, so a bound that
+    /// wrongly rejected every long-form list would still pass them — while breaking any file with
+    /// 15 or more columns, row groups or key-value pairs, since those all take this path.
+    ///
+    /// Sizing the list to fill the buffer exactly also pins the comparison at `>` rather than
+    /// `>=`: a collection is allowed to end where the buffer does.
+    @Test
+    void listHeaderAcceptsLongFormCountWithinRemainingBytes() throws IOException {
+        // 15 bool elements, each one byte, followed by exactly 15 payload bytes.
+        int[] bytes = new int[17];
+        bytes[0] = 0xF1;  // size nibble 15 (long form), element type bool
+        bytes[1] = 0x0F;  // varint(15)
+        for (int i = 0; i < 15; i++) {
+            bytes[i + 2] = 0x01;
+        }
+
+        ThriftCompactReader.CollectionHeader header = reader(bytes).readListHeader();
+
+        assertThat(header.size()).isEqualTo(15);
+        assertThat(header.elementType()).isEqualTo((byte) 0x01);
+    }
+
+    private static ThriftCompactReader reader(int... bytes) {
+        byte[] b = new byte[bytes.length];
+        for (int i = 0; i < bytes.length; i++) {
+            b[i] = (byte) bytes[i];
+        }
+        return new ThriftCompactReader(ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN));
     }
 }

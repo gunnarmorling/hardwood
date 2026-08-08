@@ -19,6 +19,7 @@ import dev.hardwood.metadata.PageEncodingStats;
 import dev.hardwood.metadata.PageType;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Verifies how `ColumnMetaData.encoding_stats` (field 13) is decoded, using hand-crafted Thrift
 /// Compact Protocol bytes so each shape can be isolated. Field header byte is
@@ -94,6 +95,19 @@ class PageEncodingStatsReaderTest {
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(0xD5, 0x02, 0x00));
 
         assertThat(metaData.encodingStats()).isEmpty();
+    }
+
+    @Test
+    void impossibleEntryCountIsRejectedAsMalformedMetadata() {
+        // Long-form list size 2^31, which casts to a negative capacity. Pre-sizing from it throws
+        // IllegalArgumentException, which escapes ParquetMetadataReader's catch (IOException) and
+        // reaches the caller unchecked and without the file name.
+        assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
+                ENCODING_STATS_FIELD, 0xFC,
+                0x80, 0x80, 0x80, 0x80, 0x08,
+                0x00)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("2147483648 elements");
     }
 
     @Test
