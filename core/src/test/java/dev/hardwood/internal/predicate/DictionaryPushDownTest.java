@@ -57,6 +57,7 @@ class DictionaryPushDownTest {
     @AfterAll
     static void close() throws Exception {
         reader.close();
+        context.close();
     }
 
     @Test

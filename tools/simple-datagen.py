@@ -4708,7 +4708,8 @@ print("  - 'label' omits the optional dictionary_page_offset; 'id' is convention
 # never by statistics. Covers the numeric arms of dictionary push-down that the STRING fixtures
 # cannot reach.
 #
-# The float columns also carry NaN, kept available for NaN-handling work rather than asserted here.
+# The float columns also carry NaN, so that the total-order equality dictionary push-down uses --
+# which treats all NaNs as equal -- can be asserted against a real NaN dictionary entry.
 _dict_numeric_schema = pa.schema([
     ('i32', pa.int32(), False),
     ('i64', pa.int64(), False),
@@ -4736,6 +4737,28 @@ print("\nGenerated dict_numeric_pushdown.parquet:")
 print("  - 4096 rows, dictionary-encoded INT32 'i32' {0,3,6,9}, INT64 'i64' {0,1000,2000,3000}")
 print("  - FLOAT 'f32' / DOUBLE 'f64' {1.5, 2.5, NaN, 4.5}")
 print("  - every column leaves in-range gaps only the dictionary can prove absent")
+
+# A dictionary-encoded FIXED_LEN_BYTE_ARRAY column. FLBA shares the ByteArrayDictionary arm with
+# BYTE_ARRAY but reaches it through a distinct physical type, and no other fixture carries a
+# dictionary-encoded one. The codes are fixed-width ASCII so they can be probed through the
+# String-valued predicate factories, and they leave lexicographic gaps ('aa05', 'aa07') inside the
+# ['aa00', 'aa09'] range statistics advertise, so only the dictionary can prove a probe absent.
+_dict_flba_schema = pa.schema([('code', pa.binary(4), False)])
+_dict_flba_rows = 4096
+_dict_flba_codes = [b'aa00', b'aa03', b'aa06', b'aa09']
+_dict_flba_table = pa.table({
+    'code': [_dict_flba_codes[i % 4] for i in range(_dict_flba_rows)],
+}, schema=_dict_flba_schema)
+pq.write_table(
+    _dict_flba_table,
+    'core/src/test/resources/dict_flba_pushdown.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_flba_pushdown.parquet:")
+print("  - 4096 rows, dictionary-encoded FIXED_LEN_BYTE_ARRAY(4) 'code'")
+print("  - values {aa00, aa03, aa06, aa09}; 'aa05' / 'aa07' are in-range but absent")
 
 # A dictionary page whose compressed size differs sharply from its uncompressed size, so a reader
 # that sizes the dictionary read from `uncompressed_page_size` instead of `compressed_page_size`

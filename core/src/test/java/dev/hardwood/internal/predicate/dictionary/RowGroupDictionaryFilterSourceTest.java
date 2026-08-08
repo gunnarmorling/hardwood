@@ -145,10 +145,12 @@ class RowGroupDictionaryFilterSourceTest {
 
     private static void withFixture(Path path, FixtureTest test) throws Exception {
         InputFile inputFile = InputFile.of(path);
-        try (ParquetFileReader reader = ParquetFileReader.open(inputFile)) {
+        try (ParquetFileReader reader = ParquetFileReader.open(inputFile);
+             HardwoodContextImpl context = HardwoodContextImpl.create()) {
             test.run(new Fixture(inputFile,
                     reader.getFileMetaData().rowGroups().getFirst(),
-                    FileSchema.fromSchemaElements(reader.getFileMetaData().schema())));
+                    FileSchema.fromSchemaElements(reader.getFileMetaData().schema()),
+                    context));
         }
     }
 
@@ -159,7 +161,8 @@ class RowGroupDictionaryFilterSourceTest {
 
     /// One fixture's row group, with helpers that rewrite the dictionary column's offsets so a
     /// writer convention can be reproduced without a fixture per convention.
-    private record Fixture(InputFile inputFile, RowGroup rowGroup, FileSchema schema) {
+    private record Fixture(InputFile inputFile, RowGroup rowGroup, FileSchema schema,
+                           HardwoodContextImpl context) {
 
         long dictionaryPageOffset() {
             return metaData().dictionaryPageOffset();
@@ -170,8 +173,7 @@ class RowGroupDictionaryFilterSourceTest {
         }
 
         RowGroupDictionaryFilterSource source() {
-            return new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema,
-                    HardwoodContextImpl.create());
+            return new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context);
         }
 
         RowGroupDictionaryFilterSource sourceWithOffsets(Long dictionaryPageOffset, long dataPageOffset) {
@@ -207,7 +209,7 @@ class RowGroupDictionaryFilterSourceTest {
                     .toList();
             return new RowGroupDictionaryFilterSource(inputFile,
                     new RowGroup(columns, rowGroup.totalByteSize(), rowGroup.numRows()),
-                    schema, HardwoodContextImpl.create());
+                    schema, context);
         }
     }
 }

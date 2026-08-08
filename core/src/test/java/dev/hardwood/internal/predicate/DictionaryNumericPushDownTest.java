@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.internal.predicate.dictionary.DictionaryFilterSupport;
 import dev.hardwood.internal.predicate.dictionary.RowGroupDictionaryFilterSource;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
 import dev.hardwood.metadata.RowGroup;
@@ -36,6 +37,9 @@ class DictionaryNumericPushDownTest {
 
     private static final Path FIXTURE = Paths.get("src/test/resources/dict_numeric_pushdown.parquet");
 
+    private static final int F32_COLUMN = 2;
+    private static final int F64_COLUMN = 3;
+
     private static ParquetFileReader reader;
     private static InputFile inputFile;
     private static RowGroup rowGroup;
@@ -54,6 +58,7 @@ class DictionaryNumericPushDownTest {
     @AfterAll
     static void close() throws Exception {
         reader.close();
+        context.close();
     }
 
     @Test
@@ -90,6 +95,23 @@ class DictionaryNumericPushDownTest {
         assertThat(statisticsDrop(absent)).as("3.5 lies within [1.5, 4.5]").isFalse();
         assertThat(dictionaryDrop(absent)).isTrue();
         assertThat(dictionaryDrop(FilterPredicate.eq("f64", 2.5))).isFalse();
+    }
+
+    @Test
+    void naNIsReportedPresentByADictionaryHoldingIt() {
+        // Equality runs through Float.compare / Double.compare, the IEEE 754 total order, which
+        // treats all NaNs as equal — unlike `==`, under which no NaN matches anything. Both float
+        // columns carry NaN, so a NaN probe must find it.
+        //
+        // Asserted against the dictionary arm directly rather than through the row-group decision:
+        // the format keeps NaN out of min/max, so statistics judge a NaN probe to fall outside
+        // [1.5, 4.5] and drop the row group before any dictionary is read.
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries(), F32_COLUMN, 3.5f))
+                .as("an absent value is still absent, so the arm under test is live")
+                .isTrue();
+
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries(), F32_COLUMN, Float.NaN)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries(), F64_COLUMN, Double.NaN)).isFalse();
     }
 
     @Test

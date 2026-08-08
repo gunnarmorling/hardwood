@@ -38,6 +38,7 @@ class DictionarySignedZeroTest {
     private static final int DOUBLE_COLUMN = 1;
 
     private static ParquetFileReader reader;
+    private static HardwoodContextImpl context;
     private static RowGroupDictionaryFilterSource dictionaries;
 
     @BeforeAll
@@ -46,13 +47,14 @@ class DictionarySignedZeroTest {
         reader = ParquetFileReader.open(inputFile);
         RowGroup rowGroup = reader.getFileMetaData().rowGroups().getFirst();
         FileSchema schema = FileSchema.fromSchemaElements(reader.getFileMetaData().schema());
-        dictionaries = new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema,
-                HardwoodContextImpl.create());
+        context = HardwoodContextImpl.create();
+        dictionaries = new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context);
     }
 
     @AfterAll
     static void close() throws Exception {
         reader.close();
+        context.close();
     }
 
     @Test
