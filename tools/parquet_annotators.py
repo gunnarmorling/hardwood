@@ -318,6 +318,10 @@ def falsify_int64_row_group_minmax(path: str, column_name: str, row_group_index:
         stats.max = encoded_max
     stats.is_min_value_exact = True
     stats.is_max_value_exact = True
+
+    _write_parquet_footer(path, data_before_footer, file_metadata)
+
+
 def drop_dictionary_page_offset(path: str, column_name: str) -> None:
     """Rewrite `path` so the named column chunk omits `dictionary_page_offset`, with
     `data_page_offset` naming the dictionary page at the chunk start rather than the
