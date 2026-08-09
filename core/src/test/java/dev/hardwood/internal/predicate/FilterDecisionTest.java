@@ -16,44 +16,44 @@ import org.junit.jupiter.api.Test;
 
 import dev.hardwood.reader.FilterPredicate;
 
-import static dev.hardwood.internal.predicate.StatsDecision.ALWAYS_MATCHES;
-import static dev.hardwood.internal.predicate.StatsDecision.CANNOT_MATCH;
-import static dev.hardwood.internal.predicate.StatsDecision.MIGHT_MATCH;
+import static dev.hardwood.internal.predicate.FilterDecision.ALWAYS_MATCHES;
+import static dev.hardwood.internal.predicate.FilterDecision.CANNOT_MATCH;
+import static dev.hardwood.internal.predicate.FilterDecision.MIGHT_MATCH;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// Unit matrix for the three-valued statistics decision: [StatsDecision] combinators and
+/// Unit matrix for the three-valued statistics decision: [FilterDecision] combinators and
 /// [StatisticsFilterSupport#decideLeaf] over synthetic [MinMaxStats].
 ///
 /// The [#decisionAgreesWithBruteForceOnRandomData] property pins the decision's meaning
-/// against decoded values: [StatsDecision#ALWAYS_MATCHES] must imply zero non-matching
-/// rows and [StatsDecision#CANNOT_MATCH] zero matching rows, over randomized
+/// against decoded values: [FilterDecision#ALWAYS_MATCHES] must imply zero non-matching
+/// rows and [FilterDecision#CANNOT_MATCH] zero matching rows, over randomized
 /// high-cardinality data (low-cardinality fixtures satisfy broken decisions silently).
-class StatsDecisionTest {
+class FilterDecisionTest {
 
     // ==================== Combinators ====================
 
     @Test
     void andCombinator() {
-        assertThat(StatsDecision.and(ALWAYS_MATCHES, ALWAYS_MATCHES)).isEqualTo(ALWAYS_MATCHES);
-        assertThat(StatsDecision.and(ALWAYS_MATCHES, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
-        assertThat(StatsDecision.and(MIGHT_MATCH, ALWAYS_MATCHES)).isEqualTo(MIGHT_MATCH);
-        assertThat(StatsDecision.and(MIGHT_MATCH, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
-        assertThat(StatsDecision.and(CANNOT_MATCH, ALWAYS_MATCHES)).isEqualTo(CANNOT_MATCH);
-        assertThat(StatsDecision.and(ALWAYS_MATCHES, CANNOT_MATCH)).isEqualTo(CANNOT_MATCH);
-        assertThat(StatsDecision.and(CANNOT_MATCH, MIGHT_MATCH)).isEqualTo(CANNOT_MATCH);
-        assertThat(StatsDecision.and(CANNOT_MATCH, CANNOT_MATCH)).isEqualTo(CANNOT_MATCH);
+        assertThat(FilterDecision.and(ALWAYS_MATCHES, ALWAYS_MATCHES)).isEqualTo(ALWAYS_MATCHES);
+        assertThat(FilterDecision.and(ALWAYS_MATCHES, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
+        assertThat(FilterDecision.and(MIGHT_MATCH, ALWAYS_MATCHES)).isEqualTo(MIGHT_MATCH);
+        assertThat(FilterDecision.and(MIGHT_MATCH, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
+        assertThat(FilterDecision.and(CANNOT_MATCH, ALWAYS_MATCHES)).isEqualTo(CANNOT_MATCH);
+        assertThat(FilterDecision.and(ALWAYS_MATCHES, CANNOT_MATCH)).isEqualTo(CANNOT_MATCH);
+        assertThat(FilterDecision.and(CANNOT_MATCH, MIGHT_MATCH)).isEqualTo(CANNOT_MATCH);
+        assertThat(FilterDecision.and(CANNOT_MATCH, CANNOT_MATCH)).isEqualTo(CANNOT_MATCH);
     }
 
     @Test
     void orCombinator() {
-        assertThat(StatsDecision.or(ALWAYS_MATCHES, ALWAYS_MATCHES)).isEqualTo(ALWAYS_MATCHES);
-        assertThat(StatsDecision.or(ALWAYS_MATCHES, MIGHT_MATCH)).isEqualTo(ALWAYS_MATCHES);
-        assertThat(StatsDecision.or(ALWAYS_MATCHES, CANNOT_MATCH)).isEqualTo(ALWAYS_MATCHES);
-        assertThat(StatsDecision.or(CANNOT_MATCH, ALWAYS_MATCHES)).isEqualTo(ALWAYS_MATCHES);
-        assertThat(StatsDecision.or(MIGHT_MATCH, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
-        assertThat(StatsDecision.or(MIGHT_MATCH, CANNOT_MATCH)).isEqualTo(MIGHT_MATCH);
-        assertThat(StatsDecision.or(CANNOT_MATCH, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
-        assertThat(StatsDecision.or(CANNOT_MATCH, CANNOT_MATCH)).isEqualTo(CANNOT_MATCH);
+        assertThat(FilterDecision.or(ALWAYS_MATCHES, ALWAYS_MATCHES)).isEqualTo(ALWAYS_MATCHES);
+        assertThat(FilterDecision.or(ALWAYS_MATCHES, MIGHT_MATCH)).isEqualTo(ALWAYS_MATCHES);
+        assertThat(FilterDecision.or(ALWAYS_MATCHES, CANNOT_MATCH)).isEqualTo(ALWAYS_MATCHES);
+        assertThat(FilterDecision.or(CANNOT_MATCH, ALWAYS_MATCHES)).isEqualTo(ALWAYS_MATCHES);
+        assertThat(FilterDecision.or(MIGHT_MATCH, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
+        assertThat(FilterDecision.or(MIGHT_MATCH, CANNOT_MATCH)).isEqualTo(MIGHT_MATCH);
+        assertThat(FilterDecision.or(CANNOT_MATCH, MIGHT_MATCH)).isEqualTo(MIGHT_MATCH);
+        assertThat(FilterDecision.or(CANNOT_MATCH, CANNOT_MATCH)).isEqualTo(CANNOT_MATCH);
     }
 
     // ==================== Integer leaf decisions ====================
@@ -196,7 +196,7 @@ class StatsDecisionTest {
             FilterPredicate.Operator op = ops[random.nextInt(ops.length)];
 
             ResolvedPredicate leaf = new ResolvedPredicate.LongPredicate(0, op, literal);
-            StatsDecision decision =
+            FilterDecision decision =
                     StatisticsFilterSupport.decideLeaf(leaf, longStats(min, max, 0L));
 
             int matching = 0;
@@ -231,12 +231,12 @@ class StatsDecisionTest {
 
     // ==================== Fixtures ====================
 
-    private static StatsDecision decideInt(FilterPredicate.Operator op, int value, int min, int max) {
+    private static FilterDecision decideInt(FilterPredicate.Operator op, int value, int min, int max) {
         ResolvedPredicate leaf = new ResolvedPredicate.IntPredicate(0, op, value);
         return StatisticsFilterSupport.decideLeaf(leaf, intStats(min, max, 0L));
     }
 
-    private static StatsDecision decideBinary(FilterPredicate.Operator op, String value,
+    private static FilterDecision decideBinary(FilterPredicate.Operator op, String value,
             String min, String max) {
         ResolvedPredicate leaf = new ResolvedPredicate.BinaryPredicate(
                 0, op, value.getBytes(StandardCharsets.UTF_8), false);

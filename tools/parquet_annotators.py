@@ -283,7 +283,7 @@ def falsify_int64_row_group_minmax(path: str, column_name: str, row_group_index:
 
     Models a writer that emitted wrong min/max: a reader trusting the footer
     prunes the row group for a predicate the real data satisfies, silently
-    dropping matching rows. The statistics-filtering opt-out
+    dropping matching rows. The metadata-filtering opt-out
     (hardwood-hq/hardwood#797) must recover the correct rows by ignoring these
     statistics and evaluating every row. The range stays internally consistent
     (`fake_min <= fake_max`) so the reader trusts it rather than refusing it as

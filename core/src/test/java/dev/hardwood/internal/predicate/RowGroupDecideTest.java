@@ -24,14 +24,14 @@ import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.FilterPredicate;
 
-import static dev.hardwood.internal.predicate.StatsDecision.ALWAYS_MATCHES;
-import static dev.hardwood.internal.predicate.StatsDecision.CANNOT_MATCH;
-import static dev.hardwood.internal.predicate.StatsDecision.MIGHT_MATCH;
+import static dev.hardwood.internal.predicate.FilterDecision.ALWAYS_MATCHES;
+import static dev.hardwood.internal.predicate.FilterDecision.CANNOT_MATCH;
+import static dev.hardwood.internal.predicate.FilterDecision.MIGHT_MATCH;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// [RowGroupFilterEvaluator#decideRowGroup] behavior over whole row groups: leaf decisions
 /// with row-group [Statistics], `AND`/`OR` composition, null predicates, and the
-/// equivalence of `canDropRowGroup` with the [StatsDecision#CANNOT_MATCH] decision.
+/// equivalence of `canDropRowGroup` with the [FilterDecision#CANNOT_MATCH] decision.
 class RowGroupDecideTest {
 
     private static final int COL = 0;
@@ -118,7 +118,7 @@ class RowGroupDecideTest {
 
     // ==================== Fixtures ====================
 
-    private static StatsDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
+    private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
         return RowGroupFilterEvaluator.decideRowGroup(predicate, rowGroup, null);
     }
 

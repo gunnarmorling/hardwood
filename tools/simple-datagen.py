@@ -4386,7 +4386,7 @@ print("  - valid footer with data_page_offset = -1 (controlled-rejection fixture
 # 101-200, RG3 201-300), but RG3's `id` statistics are rewritten to advertise a
 # false [101, 200] range. A reader trusting the footer prunes RG3 for
 # gt(id, 200) and returns zero rows; the real data holds 201-300, so the correct
-# answer is 100 rows. The `hardwood.statistics-filtering` opt-out must recover
+# answer is 100 rows. The `hardwood.metadata-filtering` opt-out must recover
 # those rows by ignoring the statistics and evaluating every row.
 
 _lying_stats_path = 'core/src/test/resources/filter_pushdown_int_lying_stats.parquet'

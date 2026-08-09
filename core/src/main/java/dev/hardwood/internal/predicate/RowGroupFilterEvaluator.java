@@ -28,7 +28,7 @@ import dev.hardwood.reader.FilterPredicate;
 /// when one is supplied via a [BloomFilterSource]: a value that hashes to a definitely-absent
 /// slot drops the row group even when it falls inside the statistics min/max range. The two
 /// checks are complementary — either one proving no match is sufficient. A bloom filter can
-/// only prove absence, so it never upgrades a decision to [StatsDecision#ALWAYS_MATCHES].
+/// only prove absence, so it never upgrades a decision to [FilterDecision#ALWAYS_MATCHES].
 ///
 /// The same leaves consult the column's dictionary when a [RowGroupDictionaryFilterSource] is
 /// supplied. A dictionary only proves absence for a column whose every data page is
@@ -59,27 +59,27 @@ public class RowGroupFilterEvaluator {
     ///         `false` if it may contain matching rows
     public static boolean canDropRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
             BloomFilterSource bloomFilters) {
-        return decideRowGroup(predicate, rowGroup, bloomFilters) == StatsDecision.CANNOT_MATCH;
+        return decideRowGroup(predicate, rowGroup, bloomFilters) == FilterDecision.CANNOT_MATCH;
     }
 
     /// Evaluates the predicate against the row group's statistics and bloom filters as a
-    /// three-valued [StatsDecision], without consulting dictionaries.
+    /// three-valued [FilterDecision], without consulting dictionaries.
     ///
     /// @param predicate the resolved predicate to evaluate
     /// @param rowGroup the row group to check
     /// @param bloomFilters source of the row group's bloom filters, or `null` to evaluate
     ///        statistics only
     /// @return the statistics decision for the row group
-    public static StatsDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
+    public static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
             BloomFilterSource bloomFilters) {
         return decideRowGroup(predicate, rowGroup, bloomFilters, null);
     }
 
     /// Evaluates the predicate against the row group's statistics, bloom filters and dictionaries
-    /// as a three-valued [StatsDecision].
+    /// as a three-valued [FilterDecision].
     ///
-    /// [StatsDecision#CANNOT_MATCH] row groups can be skipped entirely;
-    /// [StatsDecision#ALWAYS_MATCHES] row groups can be read with per-row predicate
+    /// [FilterDecision#CANNOT_MATCH] row groups can be skipped entirely;
+    /// [FilterDecision#ALWAYS_MATCHES] row groups can be read with per-row predicate
     /// evaluation skipped, since statistics prove every row satisfies the predicate.
     ///
     /// @param predicate the resolved predicate to evaluate
@@ -89,36 +89,36 @@ public class RowGroupFilterEvaluator {
     /// @param dictionaries source of the row group's dictionaries, or `null` to skip the dictionary
     ///        checks
     /// @return the statistics decision for the row group
-    public static StatsDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
+    public static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
             BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries) {
         return switch (predicate) {
             case ResolvedPredicate.IntPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
                                 || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.LongPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
                                 || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.FloatPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
                                 || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
@@ -127,60 +127,60 @@ public class RowGroupFilterEvaluator {
             // neighbouring value would prove the wrong one absent. The dictionary holds the
             // stored values, so its entries can be widened instead and compared exactly.
             case ResolvedPredicate.Float16Predicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && DictionaryFilterSupport.valueAbsentFloat16(dictionaries, p.columnIndex(), p.value())) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.DoublePredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
                                 || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.BooleanPredicate p ->
                     statisticsDecision(p, p.columnIndex(), rowGroup);
             case ResolvedPredicate.BinaryPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
                                 || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.IntInPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
                                 || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.LongInPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
                                 || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
             case ResolvedPredicate.BinaryInPredicate p -> {
-                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
-                if (decision != StatsDecision.CANNOT_MATCH
+                FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != FilterDecision.CANNOT_MATCH
                         && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
                                 || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
             }
@@ -191,30 +191,30 @@ public class RowGroupFilterEvaluator {
                 // for nested columns the null count tallies leaf values, not rows, so
                 // nullCount == numRows does not prove every row's leaf is null.
                 yield stats != null && stats.nullCount() != null && stats.nullCount() == 0
-                        ? StatsDecision.CANNOT_MATCH
-                        : StatsDecision.MIGHT_MATCH;
+                        ? FilterDecision.CANNOT_MATCH
+                        : FilterDecision.MIGHT_MATCH;
             }
             case ResolvedPredicate.IsNotNullPredicate p -> {
                 Statistics stats = getStatistics(p.columnIndex(), rowGroup);
                 if (stats == null || stats.nullCount() == null) {
-                    yield StatsDecision.MIGHT_MATCH;
+                    yield FilterDecision.MIGHT_MATCH;
                 }
                 // Can drop IS NOT NULL if all values are null (nullCount == numRows)
                 if (stats.nullCount() == rowGroup.numRows()) {
-                    yield StatsDecision.CANNOT_MATCH;
+                    yield FilterDecision.CANNOT_MATCH;
                 }
                 yield stats.nullCount() == 0
-                        ? StatsDecision.ALWAYS_MATCHES
-                        : StatsDecision.MIGHT_MATCH;
+                        ? FilterDecision.ALWAYS_MATCHES
+                        : FilterDecision.MIGHT_MATCH;
             }
             case ResolvedPredicate.And a -> {
                 if (a.children().isEmpty()) {
-                    yield StatsDecision.MIGHT_MATCH;
+                    yield FilterDecision.MIGHT_MATCH;
                 }
-                StatsDecision result = StatsDecision.ALWAYS_MATCHES;
+                FilterDecision result = FilterDecision.ALWAYS_MATCHES;
                 for (ResolvedPredicate child : a.children()) {
-                    result = StatsDecision.and(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
-                    if (result == StatsDecision.CANNOT_MATCH) {
+                    result = FilterDecision.and(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
+                    if (result == FilterDecision.CANNOT_MATCH) {
                         break;
                     }
                 }
@@ -222,12 +222,12 @@ public class RowGroupFilterEvaluator {
             }
             case ResolvedPredicate.Or o -> {
                 if (o.children().isEmpty()) {
-                    yield StatsDecision.MIGHT_MATCH;
+                    yield FilterDecision.MIGHT_MATCH;
                 }
-                StatsDecision result = StatsDecision.CANNOT_MATCH;
+                FilterDecision result = FilterDecision.CANNOT_MATCH;
                 for (ResolvedPredicate child : o.children()) {
-                    result = StatsDecision.or(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
-                    if (result == StatsDecision.ALWAYS_MATCHES) {
+                    result = FilterDecision.or(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
+                    if (result == FilterDecision.ALWAYS_MATCHES) {
                         break;
                     }
                 }
@@ -237,25 +237,25 @@ public class RowGroupFilterEvaluator {
                 ColumnMetaData cmd = rowGroup.columns().get(p.columnIndex()).metaData();
                 GeospatialStatistics geospatialStatistics = cmd.geospatialStatistics();
                 if (geospatialStatistics == null || geospatialStatistics.bbox() == null) {
-                    yield StatsDecision.MIGHT_MATCH; // no stats, can't drop
+                    yield FilterDecision.MIGHT_MATCH; // no stats, can't drop
                 }
                 BoundingBox bbox = geospatialStatistics.bbox();
                 yield !Geospatial.xAxisOverlaps(bbox.xmin(), bbox.xmax(), p.xmin(), p.xmax()) ||
                         bbox.ymax() < p.ymin() ||
                         bbox.ymin() > p.ymax()
-                        ? StatsDecision.CANNOT_MATCH
-                        : StatsDecision.MIGHT_MATCH;
+                        ? FilterDecision.CANNOT_MATCH
+                        : FilterDecision.MIGHT_MATCH;
             }
         };
     }
 
-    /// The column's min/max statistics decision for the leaf, [StatsDecision#MIGHT_MATCH]
+    /// The column's min/max statistics decision for the leaf, [FilterDecision#MIGHT_MATCH]
     /// when statistics are absent.
-    private static StatsDecision statisticsDecision(ResolvedPredicate leaf, int columnIndex,
+    private static FilterDecision statisticsDecision(ResolvedPredicate leaf, int columnIndex,
             RowGroup rowGroup) {
         Statistics stats = getStatistics(columnIndex, rowGroup);
         return stats == null
-                ? StatsDecision.MIGHT_MATCH
+                ? FilterDecision.MIGHT_MATCH
                 : StatisticsFilterSupport.decideLeaf(leaf, MinMaxStats.of(stats));
     }
 

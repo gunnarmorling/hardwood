@@ -21,9 +21,9 @@ import dev.hardwood.reader.RowReader;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The `hardwood.statistics-filtering` reader option (#797): set to `"false"`,
-/// no row group or page is skipped from statistics, bloom filters, or page
-/// indexes, and predicates fall back to per-row evaluation — the escape hatch
+/// The `hardwood.metadata-filtering` reader option (#797): set to `"false"`,
+/// no row group or page is skipped from statistics, bloom filters, dictionary
+/// pages, or page indexes, and predicates fall back to per-row evaluation — the escape hatch
 /// for files whose metadata is unreliable. Results must be identical to the
 /// default path; only the shortcut is gone.
 ///
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// group's `id` statistics are falsified to advertise `[101, 200]`. Trusting
 /// that footer prunes the group that really holds 201..300, so the default read
 /// silently drops matching rows; the opt-out must recover them.
-class StatisticsFilteringOptionTest extends AbstractJfrRecorderTest {
+class MetadataFilteringOptionTest extends AbstractJfrRecorderTest {
 
     private static final Path FIXTURE =
             Paths.get("src/test/resources/filter_pushdown_int.parquet");
@@ -43,7 +43,7 @@ class StatisticsFilteringOptionTest extends AbstractJfrRecorderTest {
     private static final String PUSH_DOWN_EVENT = "dev.hardwood.RowGroupFilter";
 
     private static final ReaderConfig STATS_OFF = ReaderConfig.builder()
-            .option("hardwood.statistics-filtering", "false")
+            .option("hardwood.metadata-filtering", "false")
             .build();
 
     @Test

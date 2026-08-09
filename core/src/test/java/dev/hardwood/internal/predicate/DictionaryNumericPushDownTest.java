@@ -133,7 +133,7 @@ class DictionaryNumericPushDownTest {
     private static boolean dictionaryDrop(FilterPredicate filter) {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, dictionaries())
-                == StatsDecision.CANNOT_MATCH;
+                == FilterDecision.CANNOT_MATCH;
     }
 
     private static boolean statisticsDrop(FilterPredicate filter) {

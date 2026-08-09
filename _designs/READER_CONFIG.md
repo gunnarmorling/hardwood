@@ -94,12 +94,13 @@ eventually, the key drops out of the recognised set (callers still passing it ge
 the unknown-key warning) and the private resolver and decode branch are removed —
 the public `ReaderConfig` surface never changes.
 
-## Statistics filtering flag
+## Metadata filtering flag
 
-The `hardwood.statistics-filtering` option (default `"true"`) gates every
+The `hardwood.metadata-filtering` option (default `"true"`) gates every
 filtering decision the reader derives from writer-produced metadata, resolved
 privately in `ParquetFileReader`. Set it to `"false"` and a filtered read takes no
-metadata-derived shortcut — no row-group statistics or bloom-filter pruning, no
+metadata-derived shortcut — no row-group pruning from statistics, bloom filters
+or dictionary pages, no
 page-index row ranges, no inline page-statistics drops, and no always-match fast
 path — so the predicate is evaluated against every decoded row and the result
 depends only on the data pages. It is the escape hatch for files whose footer or
