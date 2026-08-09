@@ -220,6 +220,31 @@ class StreamedTableTest {
                 +---+""");
     }
 
+    @Test
+    void closesTableWhenRowsArePrintedWithZeroSampleSize() {
+        String output = render(List.<String[]>of(new String[]{"a"}, new String[]{"b"}), "s", 10, true, 0);
+
+        assertThat(output).isEqualTo("""
+                +---+
+                | s |
+                +---+
+                | a |
+                | b |
+                +---+""");
+        assertEqualDisplayWidths(output);
+    }
+
+    @Test
+    void doesNotAddExtraSeparatorForZeroRowsWithZeroSampleSize() {
+        String output = render(List.of(), "s", 10, true, 0);
+
+        assertThat(output).isEqualTo("""
+                +---+
+                | s |
+                +---+""");
+        assertEqualDisplayWidths(output);
+    }
+
     private static String render(List<String[]> rows, int maxWidth, boolean truncate) {
         return render(rows, "name", maxWidth, truncate);
     }

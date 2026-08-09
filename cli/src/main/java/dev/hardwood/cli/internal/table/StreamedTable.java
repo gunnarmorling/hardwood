@@ -60,9 +60,12 @@ public class StreamedTable {
         printRow(out, i -> headers[i], widths, truncate);
         out.println(sep);
 
+        boolean emittedDataRow = false;
+
         // catch up the sampled rows
         for (String[] rowFunc : sampleRows) {
             printRow(out, i -> rowFunc[i], widths, truncate);
+            emittedDataRow = true;
             if (rowDelimiter) {
                 out.println(sep);
             }
@@ -72,12 +75,13 @@ public class StreamedTable {
         while (iterator.hasNext()) {
             IntFunction<String> rowFunc = iterator.next();
             printRow(out, rowFunc, widths, truncate);
+            emittedDataRow = true;
             if (rowDelimiter) {
                 out.println(sep);
             }
         }
 
-        if (!rowDelimiter && !sampleRows.isEmpty()) {
+        if (!rowDelimiter && emittedDataRow) {
             out.println(sep);
         }
 
