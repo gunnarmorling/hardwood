@@ -148,6 +148,9 @@ public class StreamedTable {
                 cell = "";
             }
             List<String> lines = new ArrayList<>();
+            if (cell.isEmpty()) {
+                lines.add("");
+            }
             for (int start = 0; start < cell.length();) {
                 int end = displayPrefixEnd(cell, start, widths[i]);
                 if (end == start) {

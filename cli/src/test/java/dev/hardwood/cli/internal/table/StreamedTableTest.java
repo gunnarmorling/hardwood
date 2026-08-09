@@ -46,6 +46,41 @@ class StreamedTableTest {
     }
 
     @Test
+    void rendersAllEmptyRowsWhenWrapping() {
+        String output = render(
+                List.<String[]>of(new String[]{"", ""}),
+                new String[]{"left", "right"},
+                10,
+                false);
+
+        assertThat(output).isEqualTo("""
+                +------+-------+
+                | left | right |
+                +------+-------+
+                |      |       |
+                +------+-------+""");
+        assertEqualDisplayWidths(output);
+    }
+
+    @Test
+    void wrapsRowsWithEmptyAndNonEmptyCells() {
+        String output = render(
+                List.<String[]>of(new String[]{"", "abcdef"}),
+                new String[]{"empty", "value"},
+                5,
+                false);
+
+        assertThat(output).isEqualTo("""
+                +-------+-------+
+                | empty | value |
+                +-------+-------+
+                |       | abcde |
+                |       | f     |
+                +-------+-------+""");
+        assertEqualDisplayWidths(output);
+    }
+
+    @Test
     void doesNotTruncateSurrogatePairsThatFitTheDisplayWidth() {
         String output = render(List.<String[]>of(new String[]{"😀abcd"}), 5, true);
 
@@ -253,11 +288,19 @@ class StreamedTableTest {
         return render(rows, header, maxWidth, truncate, rows.size());
     }
 
+    private static String render(List<String[]> rows, String[] headers, int maxWidth, boolean truncate) {
+        return render(rows, headers, maxWidth, truncate, rows.size());
+    }
+
     private static String render(List<String[]> rows, String header, int maxWidth, boolean truncate, int sampleSize) {
+        return render(rows, new String[]{header}, maxWidth, truncate, sampleSize);
+    }
+
+    private static String render(List<String[]> rows, String[] headers, int maxWidth, boolean truncate, int sampleSize) {
         StringWriter output = new StringWriter();
         new StreamedTable().print(
                 new PrintWriter(output),
-                new String[]{header},
+                headers,
                 rows.stream()
                         .<IntFunction<String>>map(row -> column -> row[column])
                         .iterator(),
