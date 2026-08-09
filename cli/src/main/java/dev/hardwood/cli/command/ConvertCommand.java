@@ -21,6 +21,7 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.JsonStrings;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
@@ -205,13 +206,13 @@ public class ConvertCommand implements Command<CommandInvocation> {
                 if (i > 0)
                     out.print(",");
                 SchemaNode fieldSchema = fields.get(i);
-                out.print("\"" + jsonEscape(headers[i]) + "\":");
+                out.print("\"" + JsonStrings.escape(headers[i]) + "\":");
                 if (fieldSchema instanceof SchemaNode.GroupNode group && group.isVariant()) {
                     PqVariant variant = rowReader.getVariant(fieldSchema.name());
                     out.print(RowTable.renderVariant(variant));
                 } else {
                     String val = RowTable.renderField(rowReader, i, fieldSchema);
-                    out.print("\"" + jsonEscape(val) + "\"");
+                    out.print("\"" + JsonStrings.escape(val) + "\"");
                 }
             }
             out.print("}");
@@ -238,12 +239,4 @@ public class ConvertCommand implements Command<CommandInvocation> {
         return "\"" + value.replace("\"", "\"\"") + "\"";
     }
 
-    private static String jsonEscape(String value) {
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
 }

@@ -7,7 +7,17 @@
  */
 package dev.hardwood.cli.command;
 
+import java.nio.file.Path;
+
+import org.apache.avro.Schema;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import dev.hardwood.OutputFile;
+import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.schema.FileSchema;
+import dev.hardwood.writer.ParquetFileWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,6 +45,23 @@ class SchemaCommandTest implements SchemaCommandContract {
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).contains("\"type\": \"record\"");
+    }
+
+    @Test
+    void escapesNamesInAvroSchema(@TempDir Path tempDir) throws Exception {
+        Path parquetFile = tempDir.resolve("escaped-names.parquet");
+        FileSchema schema = FileSchema.builder("root \"schema\"\\path")
+                .addColumn("say \"hi\"\\field", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .build();
+        try (ParquetFileWriter ignored = ParquetFileWriter.create(OutputFile.of(parquetFile), schema)) {
+        }
+
+        Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "AVRO");
+
+        assertThat(result.exitCode()).isZero();
+        Schema parsed = new Schema.Parser().setValidate(false).parse(result.output());
+        assertThat(parsed.getName()).isEqualTo("Root \"schema\"\\path");
+        assertThat(parsed.getFields()).extracting(Schema.Field::name).containsExactly("say \"hi\"\\field");
     }
 
     @Test

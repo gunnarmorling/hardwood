@@ -19,6 +19,7 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.JsonStrings;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ParquetFileReader;
@@ -78,7 +79,7 @@ public class SchemaCommand implements Command<CommandInvocation> {
         String p = "  ".repeat(indent);
         sb.append(p).append("{\n");
         sb.append(p).append("  \"type\": \"record\",\n");
-        sb.append(p).append("  \"name\": \"").append(capitalize(name)).append("\",\n");
+        sb.append(p).append("  \"name\": \"").append(JsonStrings.escape(capitalize(name))).append("\",\n");
         sb.append(p).append("  \"fields\": [\n");
 
         List<SchemaNode> children = group.children();
@@ -97,7 +98,7 @@ public class SchemaCommand implements Command<CommandInvocation> {
     private static void appendAvroField(StringBuilder sb, SchemaNode node, int indent) {
         boolean optional = node.repetitionType() == RepetitionType.OPTIONAL;
         String p = "  ".repeat(indent);
-        sb.append(p).append("{ \"name\": \"").append(node.name()).append("\", \"type\": ");
+        sb.append(p).append("{ \"name\": \"").append(JsonStrings.escape(node.name())).append("\", \"type\": ");
         appendAvroType(sb, node, optional, indent);
         if (optional) {
             sb.append(", \"default\": null");

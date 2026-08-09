@@ -244,6 +244,11 @@
       <artifactId>hardwood-test-support</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>dev.hardwood</groupId>
+      <artifactId>hardwood-avro</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <profiles>
