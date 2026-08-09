@@ -69,9 +69,9 @@ public class FooterCommand implements Command<CommandInvocation> {
 
             long footerOffset = fileSize - TRAILER_SIZE - footerLength;
 
-            System.out.println("File Size:     " + fileSize + " bytes");
-            System.out.println("Footer Offset: " + footerOffset + " bytes");
-            System.out.println("Footer Length: " + footerLength + " bytes");
+            System.out.println("File Size:      " + fileSize + " bytes");
+            System.out.println("Footer Offset:  " + footerOffset + " bytes");
+            System.out.println("Footer Length:  " + footerLength + " bytes");
             System.out.println("Leading Magic:  " + new String(leadingMagic, StandardCharsets.US_ASCII));
             System.out.println("Trailing Magic: " + new String(trailingMagic, StandardCharsets.US_ASCII));
         }
