@@ -122,8 +122,19 @@ public class RowGroupFilterEvaluator {
                 }
                 yield decision;
             }
-            case ResolvedPredicate.Float16Predicate p ->
-                    statisticsDecision(p, p.columnIndex(), rowGroup);
+            // No bloom check: a bloom filter hashes the 2-byte stored form, so probing it would
+            // mean narrowing the predicate to binary16 first — lossy, and a probe rounded to a
+            // neighbouring value would prove the wrong one absent. The dictionary holds the
+            // stored values, so its entries can be widened instead and compared exactly.
+            case ResolvedPredicate.Float16Predicate p -> {
+                StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
+                if (decision != StatsDecision.CANNOT_MATCH
+                        && p.op() == FilterPredicate.Operator.EQ
+                        && DictionaryFilterSupport.valueAbsentFloat16(dictionaries, p.columnIndex(), p.value())) {
+                    yield StatsDecision.CANNOT_MATCH;
+                }
+                yield decision;
+            }
             case ResolvedPredicate.DoublePredicate p -> {
                 StatsDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != StatsDecision.CANNOT_MATCH

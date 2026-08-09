@@ -4760,6 +4760,29 @@ print("\nGenerated dict_flba_pushdown.parquet:")
 print("  - 4096 rows, dictionary-encoded FIXED_LEN_BYTE_ARRAY(4) 'code'")
 print("  - values {aa00, aa03, aa06, aa09}; 'aa05' / 'aa07' are in-range but absent")
 
+# A dictionary-encoded FLOAT16 column. FLOAT16 is FIXED_LEN_BYTE_ARRAY(2) annotated Float16Type,
+# so it shares the ByteArrayDictionary arm with the other binary types but is probed through the
+# float-valued predicate factories. float16_logical_type_test.parquet is written plain, so it
+# cannot exercise push-down. Every value here is exactly representable in binary16, so the probes
+# say what they look like: 3.0 and 6.0 fall inside the [1.0, 8.0] range statistics advertise while
+# being absent from the dictionary.
+_dict_float16_schema = pa.schema([('half', pa.float16(), False)])
+_dict_float16_rows = 4096
+_dict_float16_values = [numpy.float16(v) for v in (1.0, 2.0, 4.0, 8.0)]
+_dict_float16_table = pa.table({
+    'half': [_dict_float16_values[i % 4] for i in range(_dict_float16_rows)],
+}, schema=_dict_float16_schema)
+pq.write_table(
+    _dict_float16_table,
+    'core/src/test/resources/dict_float16_pushdown.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_float16_pushdown.parquet:")
+print("  - 4096 rows, dictionary-encoded FLOAT16 'half'")
+print("  - values {1.0, 2.0, 4.0, 8.0}; 3.0 / 6.0 are in-range but absent")
+
 # A dictionary page whose compressed size differs sharply from its uncompressed size, so a reader
 # that sizes the dictionary read from `uncompressed_page_size` instead of `compressed_page_size`
 # over-reads measurably. Every other dictionary fixture is written with compression off, where the

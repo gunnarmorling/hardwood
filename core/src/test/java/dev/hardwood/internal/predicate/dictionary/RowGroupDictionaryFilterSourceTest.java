@@ -18,6 +18,9 @@ import dev.hardwood.internal.reader.Dictionary;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
+import dev.hardwood.metadata.Encoding;
+import dev.hardwood.metadata.PageEncodingStats;
+import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.FileSchema;
@@ -43,6 +46,54 @@ class RowGroupDictionaryFilterSourceTest {
     private static final Path MISSING_PAGE_OFFSET = Paths.get("src/test/resources/dict_missing_page_offset.parquet");
 
     private static final int DICTIONARY_COLUMN = 1;
+
+    /// Every value of the fixture's dictionary column is dictionary-encoded, so the chunk really is
+    /// eligible; substituting `encoding_stats` is what makes each ineligible shape reachable
+    /// without a fixture per shape. A chunk reported ineligible yields no dictionary, and a `null`
+    /// dictionary is what stops [DictionaryFilterSupport] from proving anything absent — so these
+    /// pin the one guarantee that keeps push-down from dropping row groups that hold matching rows.
+    @Test
+    void aChunkWhoseEncodingStatsAreAbsentIsIneligible() throws Exception {
+        withFixture(SMALL_DICTIONARY, fixture ->
+                assertThat(fixture.sourceWithEncodingStats(List.of()).forColumn(DICTIONARY_COLUMN))
+                        .isNull());
+    }
+
+    @Test
+    void aChunkWithANonDictionaryDataPageIsIneligible() throws Exception {
+        // The writer-fallback shape: the dictionary filled up part-way through the chunk and the
+        // remaining pages went out plain, so the dictionary describes only a prefix of the values.
+        withFixture(SMALL_DICTIONARY, fixture ->
+                assertThat(fixture.sourceWithEncodingStats(List.of(
+                        new PageEncodingStats(PageType.DICTIONARY_PAGE, Encoding.PLAIN, 1),
+                        new PageEncodingStats(PageType.DATA_PAGE, Encoding.RLE_DICTIONARY, 3),
+                        new PageEncodingStats(PageType.DATA_PAGE, Encoding.PLAIN, 2)))
+                        .forColumn(DICTIONARY_COLUMN))
+                        .isNull());
+    }
+
+    @Test
+    void aChunkCountingAPageTypeThisReleaseCannotClassifyIsIneligible() throws Exception {
+        // An unrecognized page type may hold values in any encoding, so it cannot be assumed not
+        // to contradict the dictionary.
+        withFixture(SMALL_DICTIONARY, fixture ->
+                assertThat(fixture.sourceWithEncodingStats(List.of(
+                        new PageEncodingStats(PageType.DICTIONARY_PAGE, Encoding.PLAIN, 1),
+                        new PageEncodingStats(PageType.DATA_PAGE, Encoding.RLE_DICTIONARY, 3),
+                        new PageEncodingStats(PageType.UNKNOWN, Encoding.RLE_DICTIONARY, 1)))
+                        .forColumn(DICTIONARY_COLUMN))
+                        .isNull());
+    }
+
+    @Test
+    void aChunkWithNoDataPageIsIneligible() throws Exception {
+        // A dictionary page alone proves nothing about values no data page claims to hold.
+        withFixture(SMALL_DICTIONARY, fixture ->
+                assertThat(fixture.sourceWithEncodingStats(List.of(
+                        new PageEncodingStats(PageType.DICTIONARY_PAGE, Encoding.PLAIN, 1)))
+                        .forColumn(DICTIONARY_COLUMN))
+                        .isNull());
+    }
 
     @Test
     void wellFormedOffsetsReadTheDictionary() throws Exception {
@@ -178,6 +229,15 @@ class RowGroupDictionaryFilterSourceTest {
 
         RowGroupDictionaryFilterSource sourceWithOffsets(Long dictionaryPageOffset, long dataPageOffset) {
             return sourceWith(dictionaryPageOffset, dataPageOffset, metaData().totalCompressedSize());
+        }
+
+        RowGroupDictionaryFilterSource sourceWithEncodingStats(List<PageEncodingStats> encodingStats) {
+            ColumnMetaData m = metaData();
+            return sourceWith(new ColumnMetaData(m.type(), m.encodings(), m.pathInSchema(), m.codec(),
+                    m.numValues(), m.totalUncompressedSize(), m.totalCompressedSize(),
+                    m.keyValueMetadata(), m.dataPageOffset(), m.dictionaryPageOffset(), m.statistics(),
+                    m.geospatialStatistics(), m.bloomFilterOffset(), m.bloomFilterLength(),
+                    encodingStats));
         }
 
         RowGroupDictionaryFilterSource sourceWithChunkSize(long totalCompressedSize) {
