@@ -446,6 +446,28 @@ public final class RowTable {
         return width;
     }
 
+    /// Returns the min-content width of the string: the number of terminal cells taken
+    /// by its widest single code point, i.e. the narrowest column the string can be
+    /// wrapped into without a glyph overflowing. Empty strings have a width of 1.
+    static int widestGlyph(String s) {
+        int widest = 1;
+        int i = 0;
+        int len = s.length();
+        while (i < len) {
+            int cp = s.codePointAt(i);
+            widest = Math.max(widest, charWidth(cp));
+            i += Character.charCount(cp);
+        }
+        return widest;
+    }
+
+    /// Returns the number of terminal cells taken by the string's first code point,
+    /// i.e. the narrowest column that can render any of the string at all. Empty
+    /// strings have a width of 1.
+    static int firstGlyph(String s) {
+        return s.isEmpty() ? 1 : charWidth(s.codePointAt(0));
+    }
+
     /// Returns the number of terminal cells a single code point occupies: 2 for East
     /// Asian wide characters (CJK ideographs, Hangul, Kana, Fullwidth forms), 1 otherwise.
     static int charWidth(int cp) {

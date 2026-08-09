@@ -37,20 +37,21 @@ public class StreamedTable {
         int[] minWidths = new int[n];
         for (int i = 0; i < n; i++) {
             widths[i] = RowTable.displayWidth(headers[i]);
-            minWidths[i] = widestGlyph(headers[i]);
+            minWidths[i] = mandatoryGlyph(headers[i], truncate);
         }
         for (String[] rowFunc : sampleRows) {
             for (int i = 0; i < n; i++) {
                 String cell = rowFunc[i];
                 if (cell != null) {
                     widths[i] = Math.max(widths[i], RowTable.displayWidth(cell));
-                    minWidths[i] = Math.max(minWidths[i], widestGlyph(cell));
+                    minWidths[i] = Math.max(minWidths[i], mandatoryGlyph(cell, truncate));
                 }
             }
         }
 
         for (int i = 0; i < n; i++) {
-            widths[i] = Math.max(Math.min(widths[i], maxWidth), minWidths[i]);
+            widths[i] = Math.max(Math.min(widths[i], maxWidth),
+                    minColumnWidth(minWidths[i], widths[i], truncate));
         }
 
         String sep = makeSeparator(widths);
@@ -81,6 +82,30 @@ public class StreamedTable {
         }
 
         out.flush();
+    }
+
+    /// The glyph of `value` the column is obliged to render, in cells.
+    ///
+    /// Wrapping owes every glyph a line, so it is the widest one anywhere in the value.
+    /// Truncating owes only the first: everything after it is a candidate for being cut,
+    /// and sizing the column to a glyph that the ellipsis may well replace pads it out
+    /// with space no render can reach.
+    private static int mandatoryGlyph(String value, boolean truncate) {
+        return truncate ? RowTable.firstGlyph(value) : RowTable.widestGlyph(value);
+    }
+
+    /// The narrowest a column can be and still render its content faithfully.
+    ///
+    /// Wrapping needs room for the glyph itself, since nothing splits a glyph across
+    /// lines. Truncating needs one cell more, for the ellipsis that sits next to it —
+    /// without that cell the ellipsis crowds out the character entirely and the column
+    /// shows a marker and no content. A column whose values all fit is never truncated,
+    /// so it keeps the plain glyph floor.
+    private static int minColumnWidth(int mandatoryGlyph, int naturalWidth, boolean truncate) {
+        if (!truncate || naturalWidth <= mandatoryGlyph) {
+            return mandatoryGlyph;
+        }
+        return mandatoryGlyph + 1;
     }
 
     private String makeSeparator(int[] widths) {
@@ -163,18 +188,5 @@ public class StreamedTable {
             end = next;
         }
         return end;
-    }
-
-    private static int widestGlyph(String value) {
-        if (value == null) {
-            return 1;
-        }
-        int widest = 1;
-        for (int i = 0; i < value.length();) {
-            int codePoint = value.codePointAt(i);
-            widest = Math.max(widest, RowTable.charWidth(codePoint));
-            i += Character.charCount(codePoint);
-        }
-        return widest;
     }
 }

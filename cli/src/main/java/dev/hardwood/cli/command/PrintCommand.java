@@ -44,7 +44,7 @@ public class PrintCommand implements Command<CommandInvocation> {
     @Option(shortName = 's', name = "sample-size", defaultValue = "10", description = "Max number of lines used to auto-adjust the column width.")
     int sampleSize;
 
-    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width in characters of a column.")
+    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width of a column.")
     int maxWidth;
 
     @Option(shortName = 't', name = "truncate", hasValue = false, negatable = true, defaultValue = "true", description = "Should rows be truncated instead of wrapping on next line when too long.")
@@ -73,6 +73,7 @@ public class PrintCommand implements Command<CommandInvocation> {
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(inputFile)) {
+            validateMaxWidth();
             int rowLimit = RowLimits.parse(n);
             ColumnProjection projection = parseColumnProjection();
             FileSchema fileSchema = reader.getFileSchema();
@@ -98,6 +99,16 @@ public class PrintCommand implements Command<CommandInvocation> {
         }
 
         return CommandResult.SUCCESS;
+    }
+
+    /// Rejects widths below one cell. A column has to be at least one cell wide to
+    /// render anything at all, so a smaller value has no faithful rendering rather
+    /// than merely an ugly one.
+    private void validateMaxWidth() {
+        if (maxWidth < 1) {
+            throw new IllegalArgumentException(
+                    "Invalid value for option '-w': expected a positive integer, got '" + maxWidth + "'");
+        }
     }
 
     private void printTransposed(Stream<Object[]> stream, String[] headers, List<SchemaNode> fields, AtomicLong rowIndex) {
