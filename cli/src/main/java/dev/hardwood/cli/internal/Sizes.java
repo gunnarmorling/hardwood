@@ -23,17 +23,17 @@ public class Sizes {
             return bytes + " B";
         }
         if (bytes < 1_024 * 1_024) {
-            return Fmt.fmt("%.1f KB", bytes / 1_024.0);
+            return Fmt.fmt("%.1f KiB", bytes / 1_024.0);
         }
         if (bytes < 1_024L * 1_024 * 1_024) {
-            return Fmt.fmt("%.1f MB", bytes / (1_024.0 * 1_024));
+            return Fmt.fmt("%.1f MiB", bytes / (1_024.0 * 1_024));
         }
-        return Fmt.fmt("%.1f GB", bytes / (1_024.0 * 1_024 * 1_024));
+        return Fmt.fmt("%.1f GiB", bytes / (1_024.0 * 1_024 * 1_024));
     }
 
     /// Renders bytes as a human-readable form plus the raw byte count in
-    /// parentheses (e.g. `"1.5 KB  (1,536 B)"`). When the value is under
-    /// 1 KB the human form already shows the raw count, so the parenthesised
+    /// parentheses (e.g. `"1.5 KiB  (1,536 B)"`). When the value is under
+    /// 1 KiB the human form already shows the raw count, so the parenthesised
     /// form is dropped to avoid `"422 B  (422 B)"` duplication.
     public static String dualFormat(long bytes) {
         if (bytes < 1_024) {
