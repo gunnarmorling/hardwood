@@ -53,10 +53,6 @@ public final class HadoopInputFile implements InputFile {
     /// - `fs.s3a.endpoint` — endpoint override (e.g. LocalStack, MinIO)
     /// - `fs.s3a.path.style.access` — force path-style access
     ///
-    /// The length is read before this method returns, so a path that does not exist fails
-    /// here rather than on the first read. For S3 paths that means the client connects
-    /// during this call.
-    ///
     /// @param path the Hadoop path
     /// @param conf the Hadoop configuration
     /// @return an input file backed by the given path
@@ -65,8 +61,6 @@ public final class HadoopInputFile implements InputFile {
         URI uri = path.toUri();
 
         if (!isS3(uri)) {
-            // Read the length without opening: no mapping and no descriptor is held by an
-            // instance the caller never passes to a reader.
             java.nio.file.Path localPath = java.nio.file.Path.of(uri);
             long length = Files.size(localPath);
             return new HadoopInputFile(dev.hardwood.InputFile.of(localPath), path, conf, length);
@@ -103,16 +97,10 @@ public final class HadoopInputFile implements InputFile {
         }
     }
 
-    /// The path this file was created from.
-    ///
-    /// @return the Hadoop path
     public Path getPath() {
         return path;
     }
 
-    /// The configuration this file was created with.
-    ///
-    /// @return the Hadoop configuration
     public Configuration getConfiguration() {
         return conf;
     }
@@ -124,12 +112,6 @@ public final class HadoopInputFile implements InputFile {
 
     // --- org.apache.parquet.io.InputFile ---
 
-    /// The file length in bytes, read when this instance was created.
-    ///
-    /// Declares no checked exception, so the length of a file held in the concrete
-    /// type can be read without handling [IOException].
-    ///
-    /// @return the file length in bytes
     @Override
     public long getLength() {
         return length;

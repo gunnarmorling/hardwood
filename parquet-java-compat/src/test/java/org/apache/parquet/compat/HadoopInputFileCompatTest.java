@@ -9,6 +9,7 @@ package org.apache.parquet.compat;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileSystemNotFoundException;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -85,5 +86,25 @@ class HadoopInputFileCompatTest {
         assertThatThrownBy(() -> HadoopInputFile.fromPathUnchecked(new Path(MISSING_PATH), new Configuration()))
                 .isInstanceOf(UncheckedIOException.class)
                 .hasCauseInstanceOf(IOException.class);
+    }
+
+    /// A scheme that is neither S3 nor a local path takes the local branch, where
+    /// `java.nio.file.Path.of` has no provider for it. Upstream reports the same condition as
+    /// an `IOException` from `path.getFileSystem(conf)`, so the type here is a divergence: a
+    /// caller's `catch (IOException)` around `fromPath` does not cover it.
+    @Test
+    void unsupportedSchemeThrowsFileSystemNotFound() {
+        assertThatThrownBy(() -> HadoopInputFile.fromPath(new Path("hdfs://nn/x.parquet"), new Configuration()))
+                .isInstanceOf(FileSystemNotFoundException.class)
+                .hasMessageContaining("hdfs");
+    }
+
+    /// [FileSystemNotFoundException] is not an [IOException], so it passes straight through
+    /// `fromPathUnchecked`'s catch rather than being wrapped like every other failure.
+    @Test
+    void unsupportedSchemeIsNotWrappedByFromPathUnchecked() {
+        assertThatThrownBy(() -> HadoopInputFile.fromPathUnchecked(new Path("gs://bucket/k.parquet"), new Configuration()))
+                .isInstanceOf(FileSystemNotFoundException.class)
+                .isNotInstanceOf(UncheckedIOException.class);
     }
 }
