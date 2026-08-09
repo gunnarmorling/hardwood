@@ -9,8 +9,10 @@ package org.apache.parquet.hadoop.util;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.net.URI;
+import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Set;
 
@@ -31,12 +33,18 @@ public final class HadoopInputFile implements InputFile {
     private static final Set<String> S3_SCHEMES = Set.of("s3", "s3a", "s3n");
 
     private final dev.hardwood.InputFile delegate;
+    private final Path path;
+    private final Configuration conf;
+    private final long length;
 
-    private HadoopInputFile(dev.hardwood.InputFile delegate) {
+    private HadoopInputFile(dev.hardwood.InputFile delegate, Path path, Configuration conf, long length) {
         this.delegate = delegate;
+        this.path = path;
+        this.conf = conf;
+        this.length = length;
     }
 
-    /// Create an [InputFile] from a Hadoop-style Path and Configuration.
+    /// Create a [HadoopInputFile] from a Hadoop-style Path and Configuration.
     ///
     /// For local paths, the Configuration is ignored and a local file is returned.
     /// For S3 paths, the Configuration is used to construct an S3 client with properties:
@@ -45,29 +53,86 @@ public final class HadoopInputFile implements InputFile {
     /// - `fs.s3a.endpoint` — endpoint override (e.g. LocalStack, MinIO)
     /// - `fs.s3a.path.style.access` — force path-style access
     ///
+    /// The length is read before this method returns, so a path that does not exist fails
+    /// here rather than on the first read. For S3 paths that means the client connects
+    /// during this call.
+    ///
     /// @param path the Hadoop path
     /// @param conf the Hadoop configuration
-    /// @return an InputFile backed by the given path
-    public static InputFile fromPath(Path path, Configuration conf) {
+    /// @return an input file backed by the given path
+    /// @throws IOException if the file does not exist or its length cannot be read
+    public static HadoopInputFile fromPath(Path path, Configuration conf) throws IOException {
         URI uri = path.toUri();
 
-        dev.hardwood.InputFile hardwoodFile;
-        if (isS3(uri)) {
-            hardwoodFile = createS3InputFile(uri, conf);
-        }
-        else {
-            hardwoodFile = dev.hardwood.InputFile.of(java.nio.file.Path.of(uri));
+        if (!isS3(uri)) {
+            // Read the length without opening: no mapping and no descriptor is held by an
+            // instance the caller never passes to a reader.
+            java.nio.file.Path localPath = java.nio.file.Path.of(uri);
+            long length = Files.size(localPath);
+            return new HadoopInputFile(dev.hardwood.InputFile.of(localPath), path, conf, length);
         }
 
-        return new HadoopInputFile(hardwoodFile);
+        // S3 has no equivalent: the length comes from the response to the initial fetch.
+        dev.hardwood.InputFile hardwoodFile = createS3InputFile(uri, conf);
+        try {
+            hardwoodFile.open();
+            long length = hardwoodFile.length();
+            return new HadoopInputFile(hardwoodFile, path, conf, length);
+        }
+        catch (IOException | RuntimeException e) {
+            closeQuietly(hardwoodFile, e);
+            throw e;
+        }
+    }
+
+    /// Same as [#fromPath(Path, Configuration)], but wraps an [IOException] in an
+    /// unchecked exception.
+    ///
+    /// The wrapper is an [UncheckedIOException], which preserves the cause as an
+    /// [IOException]. Upstream parquet-java wraps in a plain `RuntimeException`.
+    ///
+    /// @param path the Hadoop path
+    /// @param conf the Hadoop configuration
+    /// @return an input file backed by the given path
+    public static HadoopInputFile fromPathUnchecked(Path path, Configuration conf) {
+        try {
+            return fromPath(path, conf);
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /// The path this file was created from.
+    ///
+    /// @return the Hadoop path
+    public Path getPath() {
+        return path;
+    }
+
+    /// The configuration this file was created with.
+    ///
+    /// @return the Hadoop configuration
+    public Configuration getConfiguration() {
+        return conf;
+    }
+
+    @Override
+    public String toString() {
+        return path.toString();
     }
 
     // --- org.apache.parquet.io.InputFile ---
 
+    /// The file length in bytes, read when this instance was created.
+    ///
+    /// Declares no checked exception, so the length of a file held in the concrete
+    /// type can be read without handling [IOException].
+    ///
+    /// @return the file length in bytes
     @Override
-    public long getLength() throws IOException {
-        delegate.open();
-        return delegate.length();
+    public long getLength() {
+        return length;
     }
 
     // --- package-private access for InputFiles bridge ---
@@ -77,6 +142,17 @@ public final class HadoopInputFile implements InputFile {
     }
 
     // --- internal helpers ---
+
+    /// Releases a file that failed to open, attaching any close failure to the original
+    /// exception so the cause of the failure is not lost.
+    private static void closeQuietly(dev.hardwood.InputFile file, Exception failure) {
+        try {
+            file.close();
+        }
+        catch (IOException | RuntimeException e) {
+            failure.addSuppressed(e);
+        }
+    }
 
     private static boolean isS3(URI uri) {
         String scheme = uri.getScheme();
