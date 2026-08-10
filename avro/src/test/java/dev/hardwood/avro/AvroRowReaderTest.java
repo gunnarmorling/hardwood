@@ -242,6 +242,39 @@ class AvroRowReaderTest {
     }
 
     @Test
+    void readVariantInListAndMapPositions() throws Exception {
+        // variant_in_repeated_test.parquet carries the same VARIANT group at the
+        // top level, as a map value, and as a list element. All three convert to
+        // the RECORD{metadata, value} shape, so all three must materialize it —
+        // a list element surfaces as PqVariant and a map value has to be read
+        // through getVariantValue rather than getStructValue.
+        Path fixture = TEST_RESOURCES.resolve("variant_in_repeated_test.parquet");
+
+        try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(fixture));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            Schema schema = reader.getSchema();
+            List<GenericRecord> rows = readAll(reader);
+            assertThat(rows).hasSize(2);
+
+            // Row 1 payloads: BOOLEAN_TRUE (0x04), INT32(7), short string "hi".
+            Map<?, ?> varMap = (Map<?, ?>) rows.get(0).get("var_map");
+            assertThat(varMap).hasSize(2);
+            assertThat(bytes(((GenericRecord) varMap.get("a")).get("value"))).containsExactly(0x04);
+            assertThat(bytes(((GenericRecord) varMap.get("b")).get("value")))
+                    .containsExactly(0x14, 7, 0, 0, 0);
+
+            List<?> varList = (List<?>) rows.get(0).get("var_list");
+            assertThat(varList).hasSize(3);
+            assertThat(bytes(((GenericRecord) varList.get(0)).get("value"))).containsExactly(0x04);
+            assertThat(bytes(((GenericRecord) varList.get(2)).get("value")))
+                    .containsExactly(0x09, 'h', 'i');
+
+            assertThatCode(() -> serialize(schema, rows)).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     void shreddedVariantExposesTypedAccessViaPqVariant() throws Exception {
         // Companion to readShreddedVariantColumn, asserting the PqVariant API
         // surface directly rather than the Avro record form. Same fixture, same

@@ -26,6 +26,7 @@ import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqList;
 import dev.hardwood.row.PqMap;
 import dev.hardwood.row.PqStruct;
+import dev.hardwood.row.PqVariant;
 
 /// Reads Parquet rows as Avro [GenericRecord] instances.
 ///
@@ -133,7 +134,7 @@ public class AvroRowReader implements AutoCloseable {
                 && second.schema().getType() == Schema.Type.BYTES;
     }
 
-    private static GenericRecord materializeVariant(dev.hardwood.row.PqVariant variant, Schema recordSchema) {
+    private static GenericRecord materializeVariant(PqVariant variant, Schema recordSchema) {
         if (variant == null) {
             return null;
         }
@@ -225,7 +226,13 @@ public class AvroRowReader implements AutoCloseable {
                 yield val instanceof byte[] bytes ? wrapFixed(bytes, elementSchema) : val;
             }
             case RECORD -> {
+                // A VARIANT-annotated element group surfaces as PqVariant rather than
+                // PqStruct, so the value itself selects the materializer here — no
+                // need for the isVariantShape sniff the schema-driven paths use.
                 Object val = pqList.get(index);
+                if (val instanceof PqVariant variant) {
+                    yield materializeVariant(variant, elementSchema);
+                }
                 yield val instanceof PqStruct struct ? materializeStruct(struct, elementSchema) : val;
             }
             case ARRAY -> {
@@ -272,7 +279,9 @@ public class AvroRowReader implements AutoCloseable {
                     ? decimalBytes(entry.getDecimalValue())
                     : wrapBytes(entry.getBinaryValue());
             case FIXED -> wrapFixed(entry.getBinaryValue(), valueSchema);
-            case RECORD -> materializeStruct(entry.getStructValue(), valueSchema);
+            case RECORD -> isVariantShape(valueSchema)
+                    ? materializeVariant(entry.getVariantValue(), valueSchema)
+                    : materializeStruct(entry.getStructValue(), valueSchema);
             case ARRAY -> materializeList(entry.getListValue(), valueSchema.getElementType());
             case MAP -> materializeMap(entry.getMapValue(), valueSchema.getValueType());
             default -> entry.getValue();
