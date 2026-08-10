@@ -63,10 +63,17 @@ public final class Keys {
     /// Fallback stride when no screen has yet rendered (no viewport observed).
     public static final int PAGE_STRIDE = 20;
 
+    /// Fallback terminal width before the first frame renders.
+    private static final int DEFAULT_VIEWPORT_COLUMNS = 120;
+
     /// Side channel from a list screen's render → its handle: the visible
     /// row count the screen settled on. Used to size PgDn/PgUp jumps so
     /// they advance by exactly one viewport instead of a hard-coded 20.
     private static int observedViewportRows = -1;
+
+    /// Side channel used by horizontally scrolling screens to keep key
+    /// handling consistent with the most recently rendered column window.
+    private static int observedViewportColumns = -1;
 
     /// Called by a list screen's `render` to record the body row count it
     /// can show. The next `handle` will use this as the PgDn/PgUp stride.
@@ -78,6 +85,16 @@ public final class Keys {
     /// count, or `PAGE_STRIDE` before any screen has rendered.
     public static int viewportStride() {
         return observedViewportRows > 0 ? observedViewportRows : PAGE_STRIDE;
+    }
+
+    /// Records the terminal width used by horizontally scrolling screens.
+    public static void observeViewportWidth(int columns) {
+        observedViewportColumns = Math.max(1, columns);
+    }
+
+    /// Most recently observed terminal width, or a pre-render fallback.
+    public static int viewportWidth() {
+        return observedViewportColumns > 0 ? observedViewportColumns : DEFAULT_VIEWPORT_COLUMNS;
     }
 
     /// True iff a screen has rendered and recorded a viewport size — used
@@ -92,6 +109,7 @@ public final class Keys {
     /// by that render and trigger unwanted auto-resize.
     public static void resetObservedViewport() {
         observedViewportRows = -1;
+        observedViewportColumns = -1;
     }
 
     /// Conditional-keybar builder. Each `add(enabled, binding)` appends the

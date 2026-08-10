@@ -715,7 +715,8 @@ class DiveStateTest {
 
         DataPreviewScreen.handle(key(KeyCode.RIGHT), model, stack);
 
-        // single-column fixture → no room to scroll, state unchanged
+        // Both narrow columns fit in the default viewport, so scrolling
+        // would hide data without revealing anything new.
         assertThat(((ScreenState.DataPreview) stack.top()).columnScroll()).isZero();
     }
 

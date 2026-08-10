@@ -166,6 +166,7 @@ public final class DiveApp {
         // the same frame for the body itself, but the keybar is computed
         // first so it needs the seed.
         Keys.observeViewport(Math.max(1, area.height() - 5));
+        Keys.observeViewportWidth(area.width());
         String screenKeys = keybarForActive();
         String globalKeys = " [?] help   [q] quit";
         int kbHeight = Chrome.keybarHeight(screenKeys, globalKeys, area.width());

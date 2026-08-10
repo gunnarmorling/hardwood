@@ -20,6 +20,7 @@ import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Rect;
 import dev.tamboui.style.Style;
+import dev.tamboui.text.CharWidth;
 import dev.tamboui.text.Line;
 import dev.tamboui.text.Span;
 import dev.tamboui.text.Text;
@@ -41,7 +42,8 @@ import dev.tamboui.widgets.table.TableState;
 /// row 0 — only backward moves (`PgUp`, `g` jump-to-top) recreate the reader.
 public final class DataPreviewScreen {
 
-    private static final int VISIBLE_COLUMNS = 5;
+    private static final int COLUMN_SPACING = 1;
+    private static final int MIN_PARTIAL_COLUMN_WIDTH = 8;
     private static final int VALUE_TRUNCATE = 32;
 
     /// A sliding ±10×viewport row window of pre-formatted Data preview
@@ -144,8 +146,8 @@ public final class DataPreviewScreen {
             return true;
         }
         if (event.isRight()) {
-            int maxScroll = Math.max(0, columnCount - VISIBLE_COLUMNS);
-            if (state.columnScroll() >= maxScroll) {
+            ColumnWindow window = columnWindow(state, Keys.viewportWidth());
+            if (window.end() >= columnCount) {
                 return false;
             }
             stack.replaceTop(withColumnScroll(state, state.columnScroll() + 1));
@@ -182,39 +184,26 @@ public final class DataPreviewScreen {
         // Block borders (top + bottom) + header row = 3 cells of chrome
         // around the data rows.
         Keys.observeViewport(area.height() - 3);
+        Keys.observeViewportWidth(area.width());
         int columnCount = state.columnNames().size();
-        int windowEnd = Math.min(columnCount, state.columnScroll() + VISIBLE_COLUMNS);
-        List<String> visible = state.columnNames().subList(state.columnScroll(), windowEnd);
-
-        // Compute the per-column width tamboui will end up giving each
-        // Fill(1) cell so our `…` truncation indicator stays visible
-        // instead of being clipped past. Account for borders (2),
-        // highlight symbol "▶ " (2), and column-spacing of 2 between
-        // each visible column. Capped at VALUE_TRUNCATE so very wide
-        // terminals don't render unbounded values.
-        int gutter = 2 + 2 + Math.max(0, (visible.size() - 1) * 2);
-        int perColWidth = visible.isEmpty()
-                ? VALUE_TRUNCATE
-                : Math.max(8, Math.min(VALUE_TRUNCATE,
-                        (area.width() - gutter) / visible.size()));
+        ColumnWindow window = columnWindow(state, area.width());
 
         List<Row> rows = new ArrayList<>();
         for (List<String> row : state.rows()) {
-            List<String> sliced = row.subList(state.columnScroll(), windowEnd);
-            String[] truncated = new String[sliced.size()];
-            for (int i = 0; i < sliced.size(); i++) {
-                truncated[i] = truncate(sliced.get(i), perColWidth);
+            String[] truncated = new String[window.widths().size()];
+            for (int i = 0; i < truncated.length; i++) {
+                truncated[i] = truncate(row.get(state.columnScroll() + i), window.widths().get(i));
             }
             rows.add(Row.from(truncated));
         }
-        Row header = Row.from(visible.toArray(new String[0])).style(Theme.accent().bold());
+        Row header = Row.from(window.headers().toArray(new String[0])).style(Theme.accent().bold());
 
         long total = model.facts().totalRows();
         long lastRow = state.firstRow() + state.rows().size();
         String typeMode = state.logicalTypes() ? "" : " · physical";
         String title = Fmt.fmt(" Data preview (rows %,d–%,d of %,d · cols %d–%d of %d%s) ",
                 state.firstRow() + 1, lastRow, total,
-                state.columnScroll() + 1, windowEnd, columnCount, typeMode);
+                state.columnScroll() + 1, window.end(), columnCount, typeMode);
 
         Block block = Block.builder()
                 .title(title)
@@ -222,14 +211,14 @@ public final class DataPreviewScreen {
                 .borderType(BorderType.ROUNDED)
                 .build();
         List<Constraint> widths = new ArrayList<>();
-        for (int i = 0; i < visible.size(); i++) {
-            widths.add(new Constraint.Fill(1));
+        for (int width : window.widths()) {
+            widths.add(new Constraint.Length(width));
         }
         Table table = Table.builder()
                 .header(header)
                 .rows(rows)
                 .widths(widths)
-                .columnSpacing(2)
+                .columnSpacing(COLUMN_SPACING)
                 .block(block)
                 .highlightSymbol("▶ ")
                 .highlightStyle(Theme.selection())
@@ -409,7 +398,8 @@ public final class DataPreviewScreen {
         int loaded = state.rows().size();
         int columnCount = state.columnNames().size();
         boolean canPage = total > state.pageSize();
-        boolean canColumnScroll = columnCount > VISIBLE_COLUMNS;
+        ColumnWindow window = columnWindow(state, Keys.viewportWidth());
+        boolean canColumnScroll = state.columnScroll() > 0 || window.end() < columnCount;
         boolean anyLogical = false;
         for (SchemaNode child : model.schema().getRootNode().children()) {
             if (child instanceof SchemaNode.PrimitiveNode p && p.logicalType() != null) {
@@ -641,10 +631,67 @@ public final class DataPreviewScreen {
         return withSelectedRow(loaded, newSel);
     }
 
+    private static ColumnWindow columnWindow(ScreenState.DataPreview state, int viewportWidth) {
+        int availableWidth = viewportWidth - 2;
+        if (!state.rows().isEmpty()) {
+            availableWidth -= 2;
+        }
+        availableWidth = Math.max(1, availableWidth);
+
+        List<String> headers = new ArrayList<>();
+        List<Integer> widths = new ArrayList<>();
+        int used = 0;
+        int column = state.columnScroll();
+        while (column < state.columnNames().size()) {
+            int spacing = widths.isEmpty() ? 0 : COLUMN_SPACING;
+            int remaining = availableWidth - used - spacing;
+            if (remaining <= 0) {
+                break;
+            }
+
+            int naturalWidth = columnContentWidth(state, column);
+            if (!widths.isEmpty() && naturalWidth > remaining
+                    && remaining < MIN_PARTIAL_COLUMN_WIDTH) {
+                break;
+            }
+
+            int width = Math.min(naturalWidth, remaining);
+            headers.add(truncate(state.columnNames().get(column), width));
+            widths.add(width);
+            used += spacing + width;
+            column++;
+            if (width < naturalWidth) {
+                break;
+            }
+        }
+        return new ColumnWindow(column, headers, widths);
+    }
+
+    private static int columnContentWidth(ScreenState.DataPreview state, int column) {
+        int width = CharWidth.of(state.columnNames().get(column));
+        for (List<String> row : state.rows()) {
+            width = Math.max(width, CharWidth.of(row.get(column)));
+        }
+        return Math.max(1, Math.min(VALUE_TRUNCATE, width));
+    }
+
     private static String truncate(String s, int max) {
-        if (s.length() <= max) {
+        if (max < 1) {
+            throw new IllegalArgumentException("Maximum width must be positive");
+        }
+        if (CharWidth.of(s) <= max) {
             return s;
         }
-        return s.substring(0, max - 1) + "…";
+        if (max == 1) {
+            return "…";
+        }
+        return CharWidth.substringByWidth(s, max - 1) + "…";
+    }
+
+    private record ColumnWindow(int end, List<String> headers, List<Integer> widths) {
+        private ColumnWindow {
+            headers = List.copyOf(headers);
+            widths = List.copyOf(widths);
+        }
     }
 }

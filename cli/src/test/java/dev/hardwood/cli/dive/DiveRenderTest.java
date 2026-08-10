@@ -9,6 +9,7 @@ package dev.hardwood.cli.dive;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -177,8 +178,8 @@ class DiveRenderTest {
 
     @Test
     void dataPreviewCellEndsInEllipsisAtComputedWidth() throws Exception {
-        // Tight viewport (60 cols) so per-col width = (60 - chrome) / 5
-        // is small enough that ISO-8601 timestamp columns get truncated.
+        // Tight viewport (50 cols) leaves only a partial-width slot for
+        // one of the visible columns, so long values must be truncated.
         // The yellow_tripdata fixture has TIMESTAMP and DECIMAL columns
         // wider than the per-cell budget at this viewport.
         Path file = Path.of(getClass().getResource("/yellow_tripdata_sample.parquet").getPath());
@@ -186,11 +187,25 @@ class DiveRenderTest {
             ScreenState.DataPreview state = dev.hardwood.cli.dive.internal.DataPreviewScreen
                     .initialState(m, 10);
             RenderHarness.RenderedFrame frame = RenderHarness.render(
-                    new Rect(0, 0, 60, 40), state, m);
+                    new Rect(0, 0, 50, 40), state, m);
             assertThat(frame.contains("…"))
                     .as("expected at least one truncated cell with ellipsis")
                     .isTrue();
         }
+    }
+
+    @Test
+    void dataPreviewPacksNarrowColumnsIntoAvailableWidth() {
+        List<String> columns = List.of("a", "b", "c", "d", "e", "f", "g", "h");
+        List<String> cells = List.of("1", "2", "3", "4", "5", "6", "7", "8");
+        ScreenState.DataPreview state = new ScreenState.DataPreview(
+                0, 1, columns, List.of(cells), List.of(cells),
+                0, 0, -1, true, Set.of(), 0);
+
+        RenderHarness.RenderedFrame frame = RenderHarness.render(
+                new Rect(0, 0, 24, 6), state, model);
+
+        assertThat(frame.contains("a b c d e f g h")).isTrue();
     }
 
     /// Cross-product smoke render: every screen × every fixture renders
