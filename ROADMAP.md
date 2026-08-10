@@ -260,7 +260,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] UINT_8, UINT_16, UINT_32, UINT_64 (unsigned integers)
   - [x] Generic getObject() with automatic conversion based on logical type
 - [x] Logical type implementations (code exists, partial test coverage)
-  - [x] ENUM (no test coverage - PyArrow doesn't write ENUM logical type)
+  - [x] ENUM (tested; fixture is post-processed to set the ENUM annotation since PyArrow cannot emit it natively)
   - [x] UUID (tested with PyArrow 21+ which writes UUID logical type)
   - [x] JSON (tested with PyArrow 22+ which writes JSON logical type via `pa.json_()`)
   - [x] BSON (tested; fixture is post-processed to set the BSON annotation since PyArrow cannot emit it natively)

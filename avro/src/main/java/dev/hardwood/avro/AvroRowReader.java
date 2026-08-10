@@ -182,18 +182,21 @@ public class AvroRowReader implements AutoCloseable {
 
     private List<Object> materializeList(PqList pqList, Schema elementSchema) {
         Schema resolved = resolveUnion(elementSchema);
+        List<String> strings = resolved.getType() == Schema.Type.STRING && !isUuid(resolved)
+                ? pqList.strings()
+                : null;
         List<Object> result = new ArrayList<>(pqList.size());
         for (int i = 0; i < pqList.size(); i++) {
             if (pqList.isNull(i)) {
                 result.add(null);
                 continue;
             }
-            result.add(materializeListElement(pqList, i, resolved));
+            result.add(materializeListElement(pqList, strings, i, resolved));
         }
         return result;
     }
 
-    private Object materializeListElement(PqList pqList, int index, Schema elementSchema) {
+    private Object materializeListElement(PqList pqList, List<String> strings, int index, Schema elementSchema) {
         return switch (elementSchema.getType()) {
             case BOOLEAN -> pqList.get(index);
             case INT -> pqList.get(index);
@@ -206,8 +209,11 @@ public class AvroRowReader implements AutoCloseable {
             case FLOAT -> pqList.get(index);
             case DOUBLE -> pqList.get(index);
             case STRING -> {
+                if (!isUuid(elementSchema)) {
+                    yield strings.get(index);
+                }
                 Object val = pqList.get(index);
-                yield isUuid(elementSchema) && val instanceof UUID u ? u.toString() : val;
+                yield val instanceof UUID u ? u.toString() : val;
             }
             case BYTES -> {
                 Object val = pqList.get(index);

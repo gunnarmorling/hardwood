@@ -868,6 +868,56 @@ class AvroRowReaderTest {
     }
 
     @Test
+    void enumValuesMaterializeAsStringsAtEveryNestingPosition() throws Exception {
+        // enum_nested_test.parquet: ENUM values occur at the top level, inside a
+        // struct, as list elements, and as map values. Avro maps ENUM to string,
+        // so every non-null materialized value must be a String and serialize.
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve("enum_nested_test.parquet")));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            Schema schema = reader.getSchema();
+            assertThat(resolveNullable(schema.getField("status").schema()).getType())
+                    .isEqualTo(Schema.Type.STRING);
+            assertThat(resolveNullable(resolveNullable(schema.getField("tags").schema()).getElementType()).getType())
+                    .isEqualTo(Schema.Type.STRING);
+            Schema meta = resolveNullable(schema.getField("meta").schema());
+            assertThat(resolveNullable(meta.getField("kind").schema()).getType())
+                    .isEqualTo(Schema.Type.STRING);
+            assertThat(resolveNullable(resolveNullable(schema.getField("labels").schema()).getValueType()).getType())
+                    .isEqualTo(Schema.Type.STRING);
+
+            List<GenericRecord> records = readAll(reader);
+            assertThat(records).hasSize(3);
+            for (GenericRecord record : records) {
+                assertThat(record.get("status") == null || record.get("status") instanceof String).isTrue();
+                GenericRecord recordMeta = (GenericRecord) record.get("meta");
+                assertThat(recordMeta.get("kind") == null || recordMeta.get("kind") instanceof String).isTrue();
+
+                List<?> tags = (List<?>) record.get("tags");
+                assertThat(tags).allMatch(value -> value == null || value instanceof String);
+                Map<?, ?> labels = (Map<?, ?>) record.get("labels");
+                assertThat(labels.values()).allMatch(value -> value == null || value instanceof String);
+            }
+
+            List<?> secondTags = (List<?>) records.get(1).get("tags");
+            assertThat(secondTags).hasSize(1);
+            assertThat(secondTags.get(0)).isEqualTo("BLUE");
+            Map<?, ?> secondLabels = (Map<?, ?>) records.get(1).get("labels");
+            assertThat(secondLabels).hasSize(2);
+            assertThat(secondLabels.get("b")).isEqualTo("OFF");
+            assertThat(secondLabels.get("c")).isEqualTo("ON");
+            assertThat(records.get(2).get("status")).isNull();
+            GenericRecord thirdMeta = (GenericRecord) records.get(2).get("meta");
+            assertThat(thirdMeta.get("kind")).isNull();
+            assertThat(((List<?>) records.get(2).get("tags")).get(0)).isNull();
+            assertThat(((Map<?, ?>) records.get(2).get("labels")).get("d")).isNull();
+
+            assertThatCode(() -> serialize(schema, records)).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     void listOfDecimalOnFixedMaterializesAsGenericFixed() throws Exception {
         // list_decimal_flba_test.parquet: id INT32, amounts list<decimal(10,2)>
         // stored as FIXED_LEN_BYTE_ARRAY(5). The Avro element type is a `fixed`
@@ -903,6 +953,16 @@ class AvroRowReaderTest {
 
     private static BigDecimal decimalFromFixed(Object fixed) {
         return new BigDecimal(new BigInteger(((GenericData.Fixed) fixed).bytes()), 2);
+    }
+
+    private static Schema resolveNullable(Schema schema) {
+        if (!schema.isUnion()) {
+            return schema;
+        }
+        return schema.getTypes().stream()
+                .filter(candidate -> candidate.getType() != Schema.Type.NULL)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static void serialize(Schema schema, List<GenericRecord> records) throws Exception {

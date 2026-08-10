@@ -28,6 +28,7 @@ from parquet_annotators import (
     annotate_element_at_path_as_json,
     annotate_element_at_path_as_time,
     annotate_element_at_path_as_decimal,
+    annotate_element_at_path_as_enum,
     annotate_columns_as_legacy_converted_type,
     annotate_map_as_legacy_key_value,
     collapse_list_to_unannotated_repeated,
@@ -3020,6 +3021,43 @@ print("\nGenerated typed_accessors_issue_445.parquet:")
 print("  - Fixture for hardwood#445: INTERVAL list, INTERVAL-value map,")
 print("    TIME-keyed map, DECIMAL-keyed map, JSON-value map, FLOAT16-value map,")
 print("    struct{ts, JSON, INT_8}.")
+
+# enum_nested_test.parquet
+# Regression fixture for hardwood-hq/hardwood#847. PyArrow does not emit ENUM,
+# so each BYTE_ARRAY leaf is annotated after writing. The same ENUM representation
+# appears at the top level, in a struct, as a list element, and as a map value.
+enum_nested_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('status', pa.binary(), True),
+    ('tags', pa.list_(pa.binary())),
+    ('meta', pa.struct([('kind', pa.binary())])),
+    ('labels', pa.map_(pa.string(), pa.binary())),
+])
+enum_nested_table = pa.table({
+    'id': [1, 2, 3],
+    'status': [b'ACTIVE', b'INACTIVE', None],
+    'tags': [[b'RED', b'GREEN'], [b'BLUE'], [None, b'RED']],
+    'meta': [{'kind': b'PRIMARY'}, {'kind': b'SECONDARY'}, {'kind': None}],
+    'labels': [[('a', b'ON')], [('b', b'OFF'), ('c', b'ON')], [('d', None)]],
+}, schema=enum_nested_schema)
+pq.write_table(
+    enum_nested_table,
+    'core/src/test/resources/enum_nested_test.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+)
+for enum_path in (
+        ['status'],
+        ['tags', 'list', 'element'],
+        ['meta', 'kind'],
+        ['labels', 'key_value', 'value'],
+):
+    annotate_element_at_path_as_enum(
+        'core/src/test/resources/enum_nested_test.parquet', enum_path)
+print("\nGenerated enum_nested_test.parquet:")
+print("  - ENUM at top level, in a struct, as a list element, and as a map value")
+print("  - dictionary-encoded values with nulls and repeated symbols")
 
 # old_list_structure_test.parquet
 # Tests reading the pre-standard 2-level LIST encoding (see hardwood-hq/hardwood#282).

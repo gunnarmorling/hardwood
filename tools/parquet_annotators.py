@@ -16,6 +16,7 @@ preserved byte-for-byte.
 Supported annotations:
 - BSON       — `annotate_column_as_bson`
 - FLOAT16    — `annotate_element_at_path_as_float16`
+- ENUM       — `annotate_element_at_path_as_enum`
 - INTERVAL   — `annotate_column_as_interval`
 - JSON       — `annotate_element_at_path_as_json`
 - VARIANT    — `annotate_group_as_variant`
@@ -503,6 +504,19 @@ def annotate_element_at_path_as_json(path: str, name_path) -> None:
     el = _find_schema_element_by_path(file_metadata, list(name_path))
     el.logicalType = _parquet.LogicalType(JSON=_parquet.JsonType())
     el.converted_type = _parquet.ConvertedType.JSON
+    _write_parquet_footer(path, data_before_footer, file_metadata)
+
+
+def annotate_element_at_path_as_enum(path: str, name_path) -> None:
+    """Annotate the SchemaElement at `name_path` as ENUM (BYTE_ARRAY payload).
+
+    PyArrow has no ENUM emitter; the underlying column must be written as
+    `pa.binary()` and post-annotated here.
+    """
+    data_before_footer, file_metadata = _read_parquet_footer(path)
+    el = _find_schema_element_by_path(file_metadata, list(name_path))
+    el.logicalType = _parquet.LogicalType(ENUM=_parquet.EnumType())
+    el.converted_type = _parquet.ConvertedType.ENUM
     _write_parquet_footer(path, data_before_footer, file_metadata)
 
 
