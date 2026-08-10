@@ -917,9 +917,6 @@ class AvroRowReaderTest {
 
     @Test
     void enumListRecordsSerializeWithGeneratedSchema() throws Exception {
-        // The generated Avro schema declares list<ENUM> elements as string. Before
-        // hardwood-hq/hardwood#847 was fixed, the reader put byte[] elements into
-        // that list and GenericDatumWriter rejected the record.
         try (ParquetFileReader fileReader = ParquetFileReader.open(
                 InputFile.of(TEST_RESOURCES.resolve("enum_nested_test.parquet")));
              AvroRowReader reader = AvroReaders.rowReader(fileReader)) {

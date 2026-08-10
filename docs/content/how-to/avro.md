@@ -74,7 +74,7 @@ AvroRowReader reader = AvroReaders.buildRowReader(fileReader)
     .build();
 ```
 
-Hardwood materializes timestamps as `Long` (millis/micros since epoch), dates as `Integer` (days since epoch), decimals and binary data as `ByteBuffer`, and ENUM values as `String`.
+Values are stored in Avro's standard representations: timestamps as `Long` (millis/micros since epoch), dates as `Integer` (days since epoch), decimals as `ByteBuffer`, binary data as `ByteBuffer` and ENUM values as `String`.
 
 A Parquet column annotated with the `NULL` logical type (e.g. PyArrow's `pa.null()` columns) maps to a bare Avro `null` field — not the usual `union [null, T]` nullable wrap, which is illegal when `T` is itself `null`. The same collapse applies inside lists and maps: a `list<null>` element or `map<string, null>` value position becomes a bare `null` in the corresponding Avro `array` / `map` schema.
 
