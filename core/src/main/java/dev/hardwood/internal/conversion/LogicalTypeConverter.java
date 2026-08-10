@@ -52,10 +52,11 @@ public class LogicalTypeConverter {
             case LogicalType.BsonType t -> convertToBson(physicalValue, physicalType);
             case LogicalType.IntervalType t -> convertToInterval(physicalValue, physicalType);
             case LogicalType.Float16Type t -> convertToFloat16(physicalValue, physicalType);
-            // Enum is stored as raw BYTE_ARRAY; Geometry / Geography carry
-            // opaque WKB / WKT binary payloads with no decoder yet — pass
-            // each through unchanged.
-            case LogicalType.EnumType e -> physicalValue;
+            // Enum stores a UTF-8 payload and the spec tells readers without a
+            // native enum type to interpret it as a string, so it decodes like UTF8.
+            case LogicalType.EnumType e -> convertToString(physicalValue, physicalType);
+            // Geometry / Geography carry opaque WKB / WKT binary payloads with no
+            // decoder yet — pass each through unchanged.
             case LogicalType.GeometryType g -> physicalValue;
             case LogicalType.GeographyType g -> physicalValue;
             // NullType columns must have all-null values; the null short-circuit

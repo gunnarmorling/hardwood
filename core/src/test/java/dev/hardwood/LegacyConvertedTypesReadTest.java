@@ -81,6 +81,7 @@ class LegacyConvertedTypesReadTest {
             rows.next();
             assertThat(rows.getString("utf8_col")).isEqualTo("alpha");
             assertThat(rows.getString("json_col")).isEqualTo("{\"k\":1}");
+            assertThat(rows.getString("enum_col")).isEqualTo("RED");
             assertThat(new String(rows.getBinary("enum_col"), StandardCharsets.UTF_8)).isEqualTo("RED");
             // Minimal empty BSON document: 4-byte length prefix (5) + terminating null.
             assertThat(rows.getBinary("bson_col")).containsExactly(0x05, 0x00, 0x00, 0x00, 0x00);

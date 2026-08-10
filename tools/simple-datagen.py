@@ -3059,6 +3059,32 @@ print("\nGenerated enum_nested_test.parquet:")
 print("  - ENUM at top level, in a struct, as a list element, and as a map value")
 print("  - dictionary-encoded values with nulls and repeated symbols")
 
+# uuid_list_test.parquet
+# UUID list elements: the materializers decode a UUID element to its canonical
+# string form rather than the 16 raw bytes, and only the list position exercises
+# that through the generic element accessor.
+# PyArrow cannot infer a list of the UUID extension type from raw bytes, so the
+# element array is built explicitly and wrapped in a ListArray.
+uuid_list_elements = pa.ExtensionArray.from_storage(pa.uuid(), pa.array([
+    uuid.UUID('12345678-1234-5678-1234-567812345678').bytes,
+    uuid.UUID('87654321-4321-8765-4321-876543218765').bytes,
+    None,
+], type=pa.binary(16)))
+uuid_list_table = pa.table({
+    'id': pa.array([1, 2, 3], type=pa.int32()),
+    'session_ids': pa.ListArray.from_arrays(
+        pa.array([0, 2, 3, 3], type=pa.int32()), uuid_list_elements),
+})
+pq.write_table(
+    uuid_list_table,
+    'core/src/test/resources/uuid_list_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0',
+)
+print("\nGenerated uuid_list_test.parquet:")
+print("  - list<uuid> with a two-element list, a null element, and an empty list")
+
 # old_list_structure_test.parquet
 # Tests reading the pre-standard 2-level LIST encoding (see hardwood-hq/hardwood#282).
 # PyArrow only writes the standard 3-level encoding, so this fixture cannot be

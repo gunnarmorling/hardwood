@@ -435,6 +435,34 @@ class AvroRowReaderTest {
         }
     }
 
+    @Test
+    void readUuidListElements() throws Exception {
+        // uuid_list_test.parquet: session_ids is a list<uuid>. The list element
+        // path shares the Avro STRING arm with UTF-8 columns, so the uuid logical
+        // type has to keep it off the plain string decode — otherwise the 16 raw
+        // bytes surface as mojibake instead of the canonical UUID string.
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve("uuid_list_test.parquet")));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            Schema element = resolveNullable(
+                    resolveNullable(reader.getSchema().getField("session_ids").schema()).getElementType());
+            assertThat(element.getType()).isEqualTo(Schema.Type.STRING);
+            assertThat(element.getLogicalType().getName()).isEqualTo("uuid");
+
+            List<GenericRecord> records = readAll(reader);
+            assertThat(records).hasSize(3);
+            List<?> firstIds = (List<?>) records.get(0).get("session_ids");
+            assertThat(firstIds).hasSize(2);
+            assertThat(firstIds.get(0)).isEqualTo("12345678-1234-5678-1234-567812345678");
+            assertThat(firstIds.get(1)).isEqualTo("87654321-4321-8765-4321-876543218765");
+            List<?> secondIds = (List<?>) records.get(1).get("session_ids");
+            assertThat(secondIds).hasSize(1);
+            assertThat(secondIds.get(0)).isNull();
+            assertThat((List<?>) records.get(2).get("session_ids")).isEmpty();
+        }
+    }
+
     private static BigDecimal decimalAt(GenericRecord record, String field, int scale) {
         return new BigDecimal(new BigInteger(bytes(record.get(field))), scale);
     }
@@ -889,17 +917,17 @@ class AvroRowReaderTest {
 
             List<GenericRecord> records = readAll(reader);
             assertThat(records).hasSize(3);
-            for (GenericRecord record : records) {
-                assertThat(record.get("status") == null || record.get("status") instanceof String).isTrue();
-                GenericRecord recordMeta = (GenericRecord) record.get("meta");
-                assertThat(recordMeta.get("kind") == null || recordMeta.get("kind") instanceof String).isTrue();
 
-                List<?> tags = (List<?>) record.get("tags");
-                assertThat(tags).allMatch(value -> value == null || value instanceof String);
-                Map<?, ?> labels = (Map<?, ?>) record.get("labels");
-                assertThat(labels.values()).allMatch(value -> value == null || value instanceof String);
-            }
+            assertThat(records.get(0).get("status")).isEqualTo("ACTIVE");
+            assertThat(((GenericRecord) records.get(0).get("meta")).get("kind")).isEqualTo("PRIMARY");
+            List<?> firstTags = (List<?>) records.get(0).get("tags");
+            assertThat(firstTags).hasSize(2);
+            assertThat(firstTags.get(0)).isEqualTo("RED");
+            assertThat(firstTags.get(1)).isEqualTo("GREEN");
+            assertThat(((Map<?, ?>) records.get(0).get("labels")).get("a")).isEqualTo("ON");
 
+            assertThat(records.get(1).get("status")).isEqualTo("INACTIVE");
+            assertThat(((GenericRecord) records.get(1).get("meta")).get("kind")).isEqualTo("SECONDARY");
             List<?> secondTags = (List<?>) records.get(1).get("tags");
             assertThat(secondTags).hasSize(1);
             assertThat(secondTags.get(0)).isEqualTo("BLUE");
@@ -907,6 +935,7 @@ class AvroRowReaderTest {
             assertThat(secondLabels).hasSize(2);
             assertThat(secondLabels.get("b")).isEqualTo("OFF");
             assertThat(secondLabels.get("c")).isEqualTo("ON");
+
             assertThat(records.get(2).get("status")).isNull();
             GenericRecord thirdMeta = (GenericRecord) records.get(2).get("meta");
             assertThat(thirdMeta.get("kind")).isNull();

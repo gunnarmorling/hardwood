@@ -81,7 +81,7 @@ public interface PqList {
     ///
     /// Returns the value in the same form as the typed accessors below:
     /// `Integer` / `Long` / `Float` / `Double` / `Boolean` for primitives,
-    /// `String` for STRING, [LocalDate] for DATE, [LocalTime] for TIME,
+    /// `String` for STRING / ENUM / JSON, [LocalDate] for DATE, [LocalTime] for TIME,
     /// [Instant] for TIMESTAMP, [BigDecimal] for DECIMAL, [UUID] for UUID,
     /// [PqInterval] for INTERVAL, and `byte[]` for BYTE_ARRAY / FIXED_LEN_BYTE_ARRAY
     /// with no logical-type annotation. Nested groups surface as
@@ -113,7 +113,7 @@ public interface PqList {
     /// Returns `Integer` / `Long` / `Float` / `Double` / `Boolean` / `byte[]`
     /// for the physical storage type — `Long` micros instead of [Instant]
     /// for TIMESTAMP(MICROS), unscaled `byte[]` instead of [BigDecimal] for
-    /// DECIMAL, `byte[]` instead of `String` for STRING / JSON, etc. Nested
+    /// DECIMAL, `byte[]` instead of `String` for STRING / ENUM / JSON, etc. Nested
     /// groups have no distinct raw form and surface as the same
     /// [PqStruct] / [PqList] / [PqMap] flyweight returned by [#get].
     ///
