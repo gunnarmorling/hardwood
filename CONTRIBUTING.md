@@ -54,11 +54,34 @@ Focus the body on **why** the change is being made, with at most a high-level ov
 
 ## Opening a pull request
 
-The PR template checklist ([.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)) covers the basics: build passes, commit message format, test coverage, and documentation updates. Please run through it before requesting review.
+The [PR template](.github/PULL_REQUEST_TEMPLATE.md) covers the basics: build passes, commit message format, test coverage, and documentation updates. Please run through it before requesting review.
 
 ## A note on AI-assisted contributions
 
-LLM-assisted contributions are welcome, but vibe coding — accepting AI-generated changes without understanding them — is not. The aspiration is a high-quality, maintainable codebase; that requires contributors who can explain and defend every line in their PR.
+This project is aiming for a high-quality, maintainable codebase.
+
+This informs our stance on using coding agents:
+LLM assistance is welcome; vibe coding is not.
+Use whatever tools you like, but you are responsible for the changes you submit.
+You must understand at least the key parts of a change and be able to stand behind it in review.
+Built with AI, not by AI.
+
+Specifically, it is not acceptable to point an LLM to an issue from the tracker,
+accept its output without consideration and open a pull request.
+Instead, satisfy yourself a) that the original issue was sensible to begin with,
+b) that the generated code solves that issue, and c) that it does so in line with the
+project's standards for correctness, completeness and performance.
+
+In addition, pull requests opened by autonomous agents, with no person submitting them, are closed without review,
+whether or not the change itself is correct.
+Review here is also how the project gets to know the people it works with,
+and that only works when there is someone on the other side of the conversation.
+Contributing under your real name is encouraged for the same reason, though it is not a requirement.
+
+The PR template asks you to confirm that the change comes from a human
+who understands it and can discuss it in review.
+Ticking it untruthfully is a conduct issue rather than a code-quality one, and accounts that repeat it are blocked.
+If a PR of yours is closed under this policy and that was a misread, say so on the PR and it will be re-evaluated.
 
 ## License
 
