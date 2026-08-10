@@ -74,8 +74,13 @@ project's standards for correctness, completeness and performance.
 
 In addition, pull requests opened by autonomous agents, with no person submitting them, are closed without review,
 whether or not the change itself is correct.
-Review here is also how the project gets to know the people it works with,
-and that only works when there is someone on the other side of the conversation.
+The same applies to unsolicited pull requests from accounts submitting at scale across many unrelated projects,
+whether or not a person is behind them: the project has no review capacity for them,
+and that holds regardless of how good an individual change may be.
+
+Code reviews are also how we get to know the people we're working with,
+and that only works when there is an actual human being on the other side of the conversation,
+who has an interest in this project.
 Contributing under your real name is encouraged for the same reason, though it is not a requirement.
 
 The PR template asks you to confirm that the change comes from a human
