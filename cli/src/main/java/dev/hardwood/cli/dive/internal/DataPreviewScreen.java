@@ -82,9 +82,6 @@ public final class DataPreviewScreen {
             stack.replaceTop(state);
         }
         long total = model.facts().totalRows();
-        // columnNames already carries the top-level-field count (see loadPage —
-        // the reader indexes into fields, not leaves, so leaf count would overshoot).
-        int columnCount = state.columnNames().size();
         if (state.modalRow() >= 0) {
             return handleModal(event, state, stack, model);
         }
@@ -146,8 +143,7 @@ public final class DataPreviewScreen {
             return true;
         }
         if (event.isRight()) {
-            ColumnWindow window = columnWindow(state, Keys.viewportWidth());
-            if (window.end() >= columnCount) {
+            if (!canScrollRight(state, columnWindow(state, Keys.viewportWidth()))) {
                 return false;
             }
             stack.replaceTop(withColumnScroll(state, state.columnScroll() + 1));
@@ -201,9 +197,12 @@ public final class DataPreviewScreen {
         long total = model.facts().totalRows();
         long lastRow = state.firstRow() + state.rows().size();
         String typeMode = state.logicalTypes() ? "" : " · physical";
-        String title = Fmt.fmt(" Data preview (rows %,d–%,d of %,d · cols %d–%d of %d%s) ",
+        // A clipped trailing column is only partly on screen — mark the range
+        // with the same ellipsis the cells use rather than claiming it whole.
+        String clipMark = window.clipped() ? "…" : "";
+        String title = Fmt.fmt(" Data preview (rows %,d–%,d of %,d · cols %d–%d%s of %d%s) ",
                 state.firstRow() + 1, lastRow, total,
-                state.columnScroll() + 1, window.end(), columnCount, typeMode);
+                state.columnScroll() + 1, window.end(), clipMark, columnCount, typeMode);
 
         Block block = Block.builder()
                 .title(title)
@@ -396,10 +395,9 @@ public final class DataPreviewScreen {
         }
         long total = model.facts().totalRows();
         int loaded = state.rows().size();
-        int columnCount = state.columnNames().size();
         boolean canPage = total > state.pageSize();
         ColumnWindow window = columnWindow(state, Keys.viewportWidth());
-        boolean canColumnScroll = state.columnScroll() > 0 || window.end() < columnCount;
+        boolean canColumnScroll = state.columnScroll() > 0 || canScrollRight(state, window);
         boolean anyLogical = false;
         for (SchemaNode child : model.schema().getRootNode().children()) {
             if (child instanceof SchemaNode.PrimitiveNode p && p.logicalType() != null) {
@@ -640,6 +638,7 @@ public final class DataPreviewScreen {
 
         List<String> headers = new ArrayList<>();
         List<Integer> widths = new ArrayList<>();
+        boolean clipped = false;
         int used = 0;
         int column = state.columnScroll();
         while (column < state.columnNames().size()) {
@@ -661,10 +660,26 @@ public final class DataPreviewScreen {
             used += spacing + width;
             column++;
             if (width < naturalWidth) {
+                clipped = true;
                 break;
             }
         }
-        return new ColumnWindow(column, headers, widths);
+        return new ColumnWindow(column, clipped, headers, widths);
+    }
+
+    /// Whether `→` has anything left to reveal. Beyond the obvious case of
+    /// columns past the window, a trailing column clipped for want of budget
+    /// also counts: dropping the column on the left frees the space it needs.
+    /// A column capped at [#VALUE_TRUNCATE] deliberately does not — no amount
+    /// of scrolling widens it, and the record modal is where full values live.
+    /// The `columnScroll` bound terminates the walk when a single column is
+    /// wider than the whole terminal.
+    private static boolean canScrollRight(ScreenState.DataPreview state, ColumnWindow window) {
+        // columnNames already carries the top-level-field count (see loadPage —
+        // the reader indexes into fields, not leaves, so leaf count would overshoot).
+        int columnCount = state.columnNames().size();
+        return window.end() < columnCount
+                || (window.clipped() && state.columnScroll() < columnCount - 1);
     }
 
     private static int columnContentWidth(ScreenState.DataPreview state, int column) {
@@ -679,16 +694,13 @@ public final class DataPreviewScreen {
         if (max < 1) {
             throw new IllegalArgumentException("Maximum width must be positive");
         }
-        if (CharWidth.of(s) <= max) {
-            return s;
-        }
-        if (max == 1) {
-            return "…";
-        }
-        return CharWidth.substringByWidth(s, max - 1) + "…";
+        return CharWidth.truncateWithEllipsis(s, max, "…", CharWidth.TruncatePosition.END);
     }
 
-    private record ColumnWindow(int end, List<String> headers, List<Integer> widths) {
+    /// The columns the current viewport can show, starting at `columnScroll`.
+    /// `end` is exclusive and counts a clipped trailing column; `clipped` says
+    /// whether that last column had to give up width to fit the budget.
+    private record ColumnWindow(int end, boolean clipped, List<String> headers, List<Integer> widths) {
         private ColumnWindow {
             headers = List.copyOf(headers);
             widths = List.copyOf(widths);

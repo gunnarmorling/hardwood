@@ -20,10 +20,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.dive.internal.DataPreviewScreen;
 import dev.hardwood.cli.dive.internal.HelpOverlay;
 import dev.hardwood.cli.dive.internal.Keys;
 import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Rect;
+import dev.tamboui.tui.event.KeyCode;
+import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.KeyModifiers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -208,6 +212,53 @@ class DiveRenderTest {
         assertThat(frame.contains("a b c d e f g h")).isTrue();
     }
 
+    @Test
+    void dataPreviewRightScrollEventuallyRevealsTheLastColumnInFull() throws Exception {
+        // A column clipped by the remaining width budget — as opposed to one
+        // capped at VALUE_TRUNCATE — must always be reachable in full by
+        // scrolling right, including when it is the file's last column.
+        Path file = Path.of(getClass().getResource("/yellow_tripdata_sample.parquet").getPath());
+        try (ParquetModel m = ParquetModel.open(InputFile.of(file), file.toString())) {
+            NavigationStack stack = new NavigationStack(ScreenState.Overview.initial());
+            stack.push(DataPreviewScreen.initialState(m, 5));
+            List<String> names = ((ScreenState.DataPreview) stack.top()).columnNames();
+            String lastColumn = names.get(names.size() - 1);
+
+            RenderHarness.RenderedFrame frame = RenderHarness.render(AREA, stack.top(), m);
+            // Bounded so a regression in the stop condition fails the test
+            // instead of hanging it.
+            int steps = 0;
+            while (DataPreviewScreen.handle(key(KeyCode.RIGHT), m, stack)) {
+                frame = RenderHarness.render(AREA, stack.top(), m);
+                assertThat(++steps).isLessThan(names.size() + 1);
+            }
+
+            assertThat(frame.contains(lastColumn))
+                    .as("right-scroll stopped with '%s' still clipped", lastColumn)
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void dataPreviewKeybarOffersColumnScrollWhileTheLastColumnIsClipped() {
+        // Four columns that all fit the window, but the trailing one is
+        // clipped for want of budget. Scrolling right would drop `a` and
+        // free the space, so the keybar has to advertise it.
+        List<String> columns = List.of("a", "b", "c", "wide");
+        List<String> cells = List.of("1".repeat(10), "2".repeat(10), "3".repeat(10), "D".repeat(30));
+        ScreenState.DataPreview state = new ScreenState.DataPreview(
+                0, 1, columns, List.of(cells), List.of(cells),
+                0, 0, -1, true, Set.of(), 0);
+        Rect area = new Rect(0, 0, 48, 6);
+
+        RenderHarness.RenderedFrame frame = RenderHarness.render(area, state, model);
+
+        assertThat(frame.contains("…"))
+                .as("expected the trailing column to be clipped at this width")
+                .isTrue();
+        assertThat(RenderHarness.keybarFor(state, model)).contains("[←→] columns");
+    }
+
     /// Cross-product smoke render: every screen × every fixture renders
     /// without throwing. Catches data-shape edge cases (no CI, no dict,
     /// nested types, all-null pages) that the handler tests don't
@@ -307,5 +358,9 @@ class DiveRenderTest {
     }
 
     private record ScreenCtor(String name, Function<ParquetModel, ScreenState> ctor) {
+    }
+
+    private static KeyEvent key(KeyCode code) {
+        return new KeyEvent(code, KeyModifiers.NONE, '\0');
     }
 }
