@@ -231,6 +231,14 @@ permits LogicalType.StringType,LogicalType.EnumType,LogicalType.UuidType,Logical
 
     /// Geodesic formulations to model and compute the shortest path on Earth.
     enum EdgeInterpolationAlgorithm {
-        SPHERICAL, VINCENTY, THOMAS, ANDOYER, KARNEY
+        SPHERICAL,
+        VINCENTY,
+        THOMAS,
+        ANDOYER,
+        KARNEY,
+        /// An algorithm added to the format after this release. The column's values are
+        /// unaffected — the algorithm only says how to interpolate between them — so the file
+        /// reads normally and only the name of the model is unavailable.
+        UNKNOWN
     }
 }

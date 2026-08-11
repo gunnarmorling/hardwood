@@ -3307,6 +3307,69 @@ print("  - city_geom column has GeospatialStatistics at field 17")
 print("  - BoundingBox: xmin=-4.0, xmax=7.5, ymin=20.96, ymax=77.08, zmin=10.5, zmax=90.0")
 print("  - geospatial_types: [1, 6]")
 
+# ----------------------------------------------------------------------------
+# geography_algorithm.parquet — GEOGRAPHY logical type carrying a non-default
+# edge-interpolation algorithm. `GeographyType.algorithm` is a Thrift *enum*
+# (SPHERICAL=0 .. KARNEY=4), so it is an i32 field, not a union.
+# ----------------------------------------------------------------------------
+
+def _geography_logical_type(crs, algorithm):
+    # LogicalType union field 18 = GeographyType { 1: crs, 2: algorithm }
+    geography = _ThriftWriter()
+    geography.f(1, _T_BIN).s(crs)
+    geography.f(2, _T_I32).i32(algorithm)
+    geography.end()
+    w = _ThriftWriter()
+    w.f(18, _T_STRUCT).raw(geography.out())
+    w.end()
+    return w.out()
+
+fm = _ThriftWriter()
+fm.f(1, _T_I32).i32(2)
+fm.f(2, _T_LIST).lst(_T_STRUCT, 3)
+fm.raw(_schema_elem("schema", num_children=2))
+fm.raw(_schema_elem("city_name", type_val=6, rep=0))
+fm.raw(_schema_elem("city_geom", type_val=6, rep=1,
+                    logical_type=_geography_logical_type("EPSG:4326", 2)))  # THOMAS
+fm.f(3, _T_I64).i64(3)
+fm.f(4, _T_LIST).lst(_T_STRUCT, 1)
+
+rw = _ThriftWriter()
+rw.f(1, _T_LIST).lst(_T_STRUCT, 2)
+for ci in range(2):
+    col = base_rg.column(ci)
+    encs = [enc_map.get(str(e), 0) for e in col.encodings]
+    cc = _ThriftWriter()
+    cc.f(2, _T_I64).i64(col.file_offset)
+    cc.f(3, _T_STRUCT)
+    md = _ThriftWriter()
+    md.f(1, _T_I32).i32(6)
+    md.f(2, _T_LIST).lst(_T_I32, len(encs))
+    for e in encs: md.i32(e)
+    md.f(3, _T_LIST).lst(_T_BIN, 1).s(col.path_in_schema)
+    md.f(4, _T_I32).i32(0)
+    md.f(5, _T_I64).i64(col.num_values)
+    md.f(6, _T_I64).i64(col.total_uncompressed_size)
+    md.f(7, _T_I64).i64(col.total_compressed_size)
+    md.f(9, _T_I64).i64(col.data_page_offset)
+    md.end()
+    cc.raw(md.out()).end()
+    rw.raw(cc.out())
+rw.f(2, _T_I64).i64(base_rg.total_byte_size)
+rw.f(3, _T_I64).i64(base_rg.num_rows)
+rw.end()
+fm.raw(rw.out())
+fm.f(6, _T_BIN).s("hardwood-test-datagen")
+fm.end()
+
+footer_bytes = fm.out()
+output = pre_footer + footer_bytes + struct.pack('<I', len(footer_bytes)) + b'PAR1'
+with open('core/src/test/resources/geography_algorithm.parquet', 'wb') as f:
+    f.write(output)
+
+print("\nGenerated geography_algorithm.parquet:")
+print("  - city_geom column is GEOGRAPHY(crs=EPSG:4326, algorithm=THOMAS)")
+
 # ============================================================================
 # Geospatial fixtures: variants that exercise optional-field handling
 # ============================================================================

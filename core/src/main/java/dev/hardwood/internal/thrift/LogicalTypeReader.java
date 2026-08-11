@@ -372,9 +372,9 @@ public class LogicalTypeReader {
                         crs = reader.readString();
                     }
                     break;
-                case 2: // EdgeInterpolation
-                    if (reader.acceptField(header, Codes.STRUCT)) {
-                        edgeInterpolation = readEdgeInterpolation(reader);
+                case 2: // algorithm — a Thrift enum, so an i32 rather than a union
+                    if (reader.acceptField(header, Codes.I32)) {
+                        edgeInterpolation = ThriftEnumLookup.edgeInterpolationAlgorithm(reader.readI32());
                     }
                     break;
                 default:
@@ -391,24 +391,6 @@ public class LogicalTypeReader {
         }
 
         return new LogicalType.GeographyType(crs, edgeInterpolation);
-    }
-
-    private static EdgeInterpolationAlgorithm readEdgeInterpolation(ThriftCompactReader reader) throws IOException {
-        short saved = reader.pushFieldIdContext();
-        try {
-            int fieldId = readUnionVariantId(reader, "EdgeInterpolationAlgorithm");
-            return switch (fieldId) {
-                case 1 -> EdgeInterpolationAlgorithm.SPHERICAL;
-                case 2 -> EdgeInterpolationAlgorithm.VINCENTY;
-                case 3 -> EdgeInterpolationAlgorithm.THOMAS;
-                case 4 -> EdgeInterpolationAlgorithm.ANDOYER;
-                case 5 -> EdgeInterpolationAlgorithm.KARNEY;
-                default -> throw new IllegalArgumentException("Unexpected edge interpolation:" + fieldId);
-            };
-        }
-        finally {
-            reader.popFieldIdContext(saved);
-        }
     }
 
     /// Reads the single variant of a Thrift union and returns its field id, leaving the reader on

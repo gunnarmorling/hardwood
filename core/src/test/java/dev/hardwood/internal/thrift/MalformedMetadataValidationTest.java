@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnIndex;
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.metadata.Statistics;
@@ -281,6 +282,52 @@ class MalformedMetadataValidationTest {
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("TimeUnit")
                 .hasMessageContaining("more than one variant");
+    }
+
+    @Test
+    void geographyAlgorithmIsReadAsAnEnumNotAUnion() {
+        // GeographyType.algorithm is `optional EdgeInterpolationAlgorithm`, a Thrift *enum*
+        // (SPHERICAL=0 .. KARNEY=4), so it is an i32 on the wire. Reading it as a struct made
+        // every non-default algorithm fall through to the SPHERICAL default in silence.
+        byte[] geography = new ThriftStructBuilder()
+                .field(2, ThriftStructBuilder.TYPE_I32).i32(2)
+                .stop().build();
+        byte[] logicalType = new ThriftStructBuilder()
+                .field(18, ThriftStructBuilder.TYPE_STRUCT).nested(geography)
+                .stop().build();
+        LogicalType parsed = assertDoesNotThrow(() -> LogicalTypeReader.read(reader(logicalType)));
+        assertThat(parsed).isInstanceOf(LogicalType.GeographyType.class);
+        assertThat(((LogicalType.GeographyType) parsed).edgeInterpolation())
+                .isEqualTo(LogicalType.EdgeInterpolationAlgorithm.THOMAS);
+    }
+
+    @Test
+    void geographyWithoutAlgorithmDefaultsToSpherical() {
+        // The field is optional and the spec names SPHERICAL as its default.
+        byte[] geography = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_BINARY).binary("OGC:CRS84".getBytes(UTF_8))
+                .stop().build();
+        byte[] logicalType = new ThriftStructBuilder()
+                .field(18, ThriftStructBuilder.TYPE_STRUCT).nested(geography)
+                .stop().build();
+        LogicalType parsed = assertDoesNotThrow(() -> LogicalTypeReader.read(reader(logicalType)));
+        assertThat(((LogicalType.GeographyType) parsed).edgeInterpolation())
+                .isEqualTo(LogicalType.EdgeInterpolationAlgorithm.SPHERICAL);
+    }
+
+    @Test
+    void unknownGeographyAlgorithmIsReportedAsUnknown() {
+        // An algorithm the format adds after this release. It says how to interpolate between
+        // the column's values, not how to decode them, so the file stays readable.
+        byte[] geography = new ThriftStructBuilder()
+                .field(2, ThriftStructBuilder.TYPE_I32).i32(5)
+                .stop().build();
+        byte[] logicalType = new ThriftStructBuilder()
+                .field(18, ThriftStructBuilder.TYPE_STRUCT).nested(geography)
+                .stop().build();
+        LogicalType parsed = assertDoesNotThrow(() -> LogicalTypeReader.read(reader(logicalType)));
+        assertThat(((LogicalType.GeographyType) parsed).edgeInterpolation())
+                .isEqualTo(LogicalType.EdgeInterpolationAlgorithm.UNKNOWN);
     }
 
     @Test

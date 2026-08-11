@@ -10,6 +10,7 @@ package dev.hardwood.internal.thrift;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.ConvertedType;
 import dev.hardwood.metadata.Encoding;
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -97,6 +98,31 @@ class ThriftEnumLookup {
             CompressionCodec.ZSTD,          // 6
             CompressionCodec.LZ4_RAW        // 7
     };
+
+    // Indexed by Thrift value (0-4)
+    private static final LogicalType.EdgeInterpolationAlgorithm[] EDGE_INTERPOLATION_ALGORITHMS = {
+            LogicalType.EdgeInterpolationAlgorithm.SPHERICAL,  // 0
+            LogicalType.EdgeInterpolationAlgorithm.VINCENTY,   // 1
+            LogicalType.EdgeInterpolationAlgorithm.THOMAS,     // 2
+            LogicalType.EdgeInterpolationAlgorithm.ANDOYER,    // 3
+            LogicalType.EdgeInterpolationAlgorithm.KARNEY      // 4
+    };
+
+    /// Maps a Thrift `EdgeInterpolationAlgorithm` value. `GeographyType.algorithm` is a Thrift
+    /// enum, so it arrives as an `i32` holding one of these values — not as a union whose set
+    /// variant names the algorithm.
+    ///
+    /// A value this release does not recognize yields
+    /// [LogicalType.EdgeInterpolationAlgorithm#UNKNOWN] rather than failing, as
+    /// [#encoding] and [#pageType] do: the algorithm annotates how to interpolate between
+    /// the column's values and does not bear on decoding them, so a file the format has moved
+    /// past stays readable.
+    static LogicalType.EdgeInterpolationAlgorithm edgeInterpolationAlgorithm(int value) {
+        if (value >= 0 && value < EDGE_INTERPOLATION_ALGORITHMS.length) {
+            return EDGE_INTERPOLATION_ALGORITHMS[value];
+        }
+        return LogicalType.EdgeInterpolationAlgorithm.UNKNOWN;
+    }
 
     static PhysicalType physicalType(int value) {
         if (value >= 0 && value < PHYSICAL_TYPES.length) {

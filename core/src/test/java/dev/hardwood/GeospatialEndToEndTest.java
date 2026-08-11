@@ -21,9 +21,11 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKBReader;
 
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
+import dev.hardwood.schema.ColumnSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,4 +78,20 @@ public class GeospatialEndToEndTest {
         assertThat(totalRows).isEqualTo(9);
         assertThat(filteredRows).isEqualTo(3);
     }
+
+    @Test
+    void geographyColumnCarriesItsEdgeInterpolationAlgorithm() throws IOException {
+        // `GeographyType.algorithm` is a Thrift enum, so an i32 on the wire. Read as anything
+        // else the field never matches and every column reads back as the SPHERICAL default.
+        Path path = Paths.get("src/test/resources/geography_algorithm.parquet");
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
+            ColumnSchema column = reader.getFileSchema().getColumn(1);
+            assertThat(column.logicalType()).isInstanceOf(LogicalType.GeographyType.class);
+            LogicalType.GeographyType geography = (LogicalType.GeographyType) column.logicalType();
+            assertThat(geography.crs()).isEqualTo("EPSG:4326");
+            assertThat(geography.edgeInterpolation())
+                    .isEqualTo(LogicalType.EdgeInterpolationAlgorithm.THOMAS);
+        }
+    }
+
 }

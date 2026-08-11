@@ -208,7 +208,8 @@ Parameterized sub-structs — all fields ✅: `DecimalType` (scale, precision),
 `TimeType` (isAdjustedToUTC, unit), `TimestampType` (isAdjustedToUTC, unit),
 `IntType` (bitWidth, isSigned), `VariantType` (specification_version),
 `GeometryType` (crs), `GeographyType` (crs, algorithm), `TimeUnit` union
-(MILLIS/MICROS/NANOS).
+(MILLIS/MICROS/NANOS). An `EdgeInterpolationAlgorithm` this version does not recognize is
+reported as `UNKNOWN`.
 
 ---
 

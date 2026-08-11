@@ -28,7 +28,7 @@ To use JTS in the examples below, add the `jts-core` dependency:
 
 ### Identifying Geospatial Columns
 
-GEOMETRY (planar) and GEOGRAPHY (geodesic on an ellipsoid) appear as `LogicalType.GeometryType` and `LogicalType.GeographyType` on the column schema. Both carry a CRS (defaulting to `OGC:CRS84`); GEOGRAPHY also carries an edge-interpolation algorithm.
+GEOMETRY (planar) and GEOGRAPHY (geodesic on an ellipsoid) appear as `LogicalType.GeometryType` and `LogicalType.GeographyType` on the column schema. Both carry a CRS (defaulting to `OGC:CRS84`); GEOGRAPHY also carries an edge-interpolation algorithm, defaulting to `SPHERICAL` and reported as `EdgeInterpolationAlgorithm.UNKNOWN` when the file names one this version does not recognize.
 
 ```java
 import dev.hardwood.metadata.LogicalType;
