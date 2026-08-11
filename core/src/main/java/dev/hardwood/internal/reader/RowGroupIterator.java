@@ -10,6 +10,8 @@ package dev.hardwood.internal.reader;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,7 @@ import dev.hardwood.internal.thrift.ThriftCompactReader;
 import dev.hardwood.jfr.FileOpenedEvent;
 import dev.hardwood.jfr.RowGroupFilterEvent;
 import dev.hardwood.metadata.ColumnChunk;
+import dev.hardwood.metadata.FieldPath;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.OffsetIndex;
@@ -93,6 +96,12 @@ public class RowGroupIterator {
     private boolean filterSatisfiedByStatistics;
     private boolean metadataFilteringEnabled = true;
 
+    /// Reference schema leaf ordinals this read touches: every projected column plus
+    /// every column the filter tests — a predicate column need not be projected, but
+    /// pruning still indexes into each file's metadata for it. Exactly the set that
+    /// is validated per file and that [FileColumnOrdinals] resolves an ordinal for.
+    private BitSet touchedColumns;
+
     /// AND-necessary leaves per column index, derived once from `filterPredicate`.
     /// Feeds [SequentialFetchPlan]'s inline-stats page-drop check.
     private Map<Integer, List<ResolvedPredicate>> dropLeavesByColumn = Map.of();
@@ -128,6 +137,7 @@ public class RowGroupIterator {
             InputFile inputFile,
             RowGroup rowGroup,
             FileSchema fileSchema,
+            FileColumnOrdinals columnOrdinals,
             int fileIndex,
             int rowGroupIndex,
             int workItemIndex,
@@ -150,12 +160,20 @@ public class RowGroupIterator {
     ) {}
 
     /// Result of opening and validating a file.
+    /// `columnOrdinals` is `null` for the first file, whose metadata is prepared
+    /// before the projection is known; it is the reference, so its mapping is the
+    /// identity and [#buildWorkList] substitutes that.
     private record PreparedFile(
             InputFile inputFile,
             FileMetaData metaData,
             FileSchema schema,
-            List<RowGroup> rowGroups
-    ) {}
+            List<RowGroup> rowGroups,
+            FileColumnOrdinals columnOrdinals
+    ) {
+        PreparedFile withColumnOrdinals(FileColumnOrdinals ordinals) {
+            return new PreparedFile(inputFile, metaData, schema, rowGroups, ordinals);
+        }
+    }
 
     /// Creates a RowGroupIterator for the given files.
     ///
@@ -238,7 +256,7 @@ public class RowGroupIterator {
     public void setFirstFile(FileSchema schema, List<RowGroup> rowGroups) {
         this.referenceSchema = schema;
         InputFile first = inputFiles.get(0);
-        PreparedFile prepared = new PreparedFile(first, null, schema, rowGroups);
+        PreparedFile prepared = new PreparedFile(first, null, schema, rowGroups, null);
         fileFutures.put(0, CompletableFuture.completedFuture(prepared));
     }
 
@@ -304,6 +322,7 @@ public class RowGroupIterator {
         this.metadataFilteringEnabled = metadataFilteringEnabled;
         this.projectedSchema = projected;
         this.filterPredicate = filter;
+        this.touchedColumns = touchedColumns(projected, filter, referenceSchema.getColumnCount());
         this.dropLeavesByColumn = filter != null && metadataFilteringEnabled
                 ? PageDropPredicates.byColumn(filter) : Map.of();
 
@@ -361,14 +380,14 @@ public class RowGroupIterator {
                 RowRanges matchingRows = RowRanges.ALL;
                 if (pageFiltering) {
                     matchingRows = PageFilterEvaluator.computeMatchingRows(
-                            filterPredicate, workItem.rowGroup(), indexBuffers,
+                            workItem.columnOrdinals().filter(), workItem.rowGroup(), indexBuffers,
                             new PageFilterEvaluator.IndexLocation(
                                     workItem.inputFile().name(), workItem.rowGroupIndex()));
                 }
 
                 MaskCapability maskCapability = masksApplicableForRowGroup(
                         projectedSchema, workItem.rowGroup(), workItem.fileSchema(),
-                        workItem.inputFile())
+                        workItem.columnOrdinals(), workItem.inputFile())
                         ? MaskCapability.YES : MaskCapability.NO;
 
                 return new SharedRowGroupMetadata(indexBuffers, matchingRows, maskCapability);
@@ -559,9 +578,10 @@ public class RowGroupIterator {
 
         for (int projCol = 0; projCol < projectedCount; projCol++) {
             int originalIndex = projectedSchema.toOriginalIndex(projCol);
-            ColumnChunk columnChunk = rowGroup.columns().get(originalIndex);
-            ColumnSchema columnSchema = workItem.fileSchema().getColumn(originalIndex);
-            ColumnIndexBuffers colBuffers = shared.indexBuffers().forColumn(originalIndex);
+            int fileOrdinal = workItem.columnOrdinals().fileOrdinal(originalIndex);
+            ColumnChunk columnChunk = rowGroup.columns().get(fileOrdinal);
+            ColumnSchema columnSchema = workItem.fileSchema().getColumn(fileOrdinal);
+            ColumnIndexBuffers colBuffers = shared.indexBuffers().forColumn(fileOrdinal);
 
             if (colBuffers == null || colBuffers.offsetIndex() == null) {
                 // No OffsetIndex — sequential lazy fetching. Per-page drops via
@@ -873,15 +893,16 @@ public class RowGroupIterator {
     /// here.
     public static boolean masksApplicableForRowGroup(ProjectedSchema projectedSchema,
                                                       RowGroup rowGroup, FileSchema fileSchema,
+                                                      FileColumnOrdinals columnOrdinals,
                                                       InputFile inputFile) throws IOException {
         int projectedCount = projectedSchema.getProjectedColumnCount();
         for (int p = 0; p < projectedCount; p++) {
-            int originalIndex = projectedSchema.toOriginalIndex(p);
-            ColumnChunk columnChunk = rowGroup.columns().get(originalIndex);
+            int fileOrdinal = columnOrdinals.fileOrdinal(projectedSchema.toOriginalIndex(p));
+            ColumnChunk columnChunk = rowGroup.columns().get(fileOrdinal);
             if (columnChunk.offsetIndexOffset() != null) {
                 continue;
             }
-            ColumnSchema columnSchema = fileSchema.getColumn(originalIndex);
+            ColumnSchema columnSchema = fileSchema.getColumn(fileOrdinal);
             if (columnSchema.maxRepetitionLevel() == 0) {
                 continue;
             }
@@ -969,7 +990,22 @@ public class RowGroupIterator {
         boolean allKeptAlwaysMatch = true;
         for (int fileIndex = 0; fileIndex < inputFiles.size() && rowBudget > 0; fileIndex++) {
             PreparedFile prepared = getPreparedFile(fileIndex);
-            List<FilteredRowGroup> rowGroups = filterRowGroups(prepared.rowGroups, prepared.inputFile, prepared.schema);
+            FileColumnOrdinals columnOrdinals = prepared.columnOrdinals() != null
+                    ? prepared.columnOrdinals()
+                    : FileColumnOrdinals.identity(referenceSchema.getColumnCount(), filterPredicate);
+            // Metadata pruning indexes every row group's chunk list by ordinal, so with
+            // it active the cross-check has to cover the whole file before it runs.
+            // Without it, the only row groups ever indexed are those that become work
+            // items, and the ones physicalSkip / maxRows discard are never looked at.
+            ChunkPathCheck chunkPaths = chunkPathCheck(prepared.schema, columnOrdinals);
+            boolean pruningIndexesChunks = filterPredicate != null && metadataFilteringEnabled;
+            if (pruningIndexesChunks) {
+                for (int rgIndex = 0; rgIndex < prepared.rowGroups.size(); rgIndex++) {
+                    chunkPaths.verify(prepared.rowGroups.get(rgIndex), rgIndex, prepared.inputFile);
+                }
+            }
+            List<FilteredRowGroup> rowGroups = filterRowGroups(prepared.rowGroups, prepared.inputFile,
+                    prepared.schema, columnOrdinals);
 
             for (int rgIndex = 0; rgIndex < rowGroups.size() && rowBudget > 0; rgIndex++) {
                 FilteredRowGroup decided = rowGroups.get(rgIndex);
@@ -986,11 +1022,18 @@ public class RowGroupIterator {
                     firstRowGroupSkip = leadingSkip;
                 }
 
+                // Not yet cross-checked when pruning was skipped: filterRowGroups then
+                // returns every row group untouched, so rgIndex is the file's own index.
+                if (!pruningIndexesChunks) {
+                    chunkPaths.verify(rg, rgIndex, prepared.inputFile);
+                }
+
                 allKeptAlwaysMatch &= decided.alwaysMatches();
                 workItems.add(new WorkItem(
                         prepared.inputFile,
                         rg,
                         prepared.schema,
+                        columnOrdinals,
                         fileIndex,
                         rgIndex,
                         workItems.size(),
@@ -1073,11 +1116,11 @@ public class RowGroupIterator {
         PreparedFile prepared = openAndReadMetadata(inputFile);
 
         // Validate schema compatibility (skip first file — it IS the reference)
-        if (fileIndex > 0) {
-            validateSchemaCompatibility(inputFile, prepared.schema);
+        if (fileIndex == 0) {
+            return prepared;
         }
-
-        return prepared;
+        return prepared.withColumnOrdinals(FileColumnOrdinals.of(
+                validateSchemaCompatibility(inputFile, prepared.schema), filterPredicate));
     }
 
     private PreparedFile openAndReadMetadata(InputFile inputFile) {
@@ -1095,7 +1138,7 @@ public class RowGroupIterator {
             event.commit();
 
             // Row groups are stored unfiltered; filtering happens in buildWorkList()
-            return new PreparedFile(inputFile, metaData, schema, metaData.rowGroups());
+            return new PreparedFile(inputFile, metaData, schema, metaData.rowGroups(), null);
         }
         catch (IOException e) {
             throw new UncheckedIOException(
@@ -1109,12 +1152,74 @@ public class RowGroupIterator {
         }
     }
 
+    /// Where each column this read touches sits in one file, and the path the chunk
+    /// at that ordinal must carry. Both are properties of the file, while the chunk
+    /// list that restates them belongs to each row group, so this is resolved once
+    /// per file and each row group is scanned against it by [#verify].
+    ///
+    /// @param fileOrdinals this file's leaf ordinal per touched column
+    /// @param schemaPaths the schema path each of those ordinals was resolved from
+    private record ChunkPathCheck(int[] fileOrdinals, FieldPath[] schemaPaths) {
+
+        /// Asserts that the column chunk found at a touched leaf's ordinal is the
+        /// chunk for that leaf, by comparing the chunk's own `path_in_schema`
+        /// against the schema path the ordinal was resolved from.
+        ///
+        /// The two are independent statements of the same fact — the footer's column
+        /// list is positionally aligned with the flattened schema leaves — so a
+        /// disagreement means the file's metadata is internally inconsistent and any
+        /// bytes read for this column would decode under the wrong column's schema.
+        /// Writers that omit the (Thrift-required) path leave nothing to compare, and
+        /// are left to the type checks alone.
+        ///
+        /// @throws SchemaIncompatibleException if a chunk disagrees with the schema
+        void verify(RowGroup rowGroup, int rowGroupIndex, InputFile inputFile) {
+            List<ColumnChunk> chunks = rowGroup.columns();
+            int chunkCount = chunks.size();
+            for (int i = 0; i < fileOrdinals.length; i++) {
+                int fileOrdinal = fileOrdinals[i];
+                FieldPath schemaPath = schemaPaths[i];
+                if (fileOrdinal >= chunkCount) {
+                    throw new SchemaIncompatibleException(
+                            ExceptionContext.filePrefix(inputFile.name())
+                                    + "Row group " + rowGroupIndex + " lists " + chunkCount
+                                    + " column chunks, but the schema declares '"
+                                    + schemaPath + "' at index " + fileOrdinal);
+                }
+                FieldPath chunkPath = chunks.get(fileOrdinal).metaData().pathInSchema();
+                if (chunkPath.isEmpty() || chunkPath.equals(schemaPath)) {
+                    continue;
+                }
+                throw new SchemaIncompatibleException(
+                        ExceptionContext.filePrefix(inputFile.name())
+                                + "Row group " + rowGroupIndex + " lists column '" + chunkPath
+                                + "' where the schema declares '" + schemaPath + "'");
+            }
+        }
+    }
+
+    /// Resolves the file-level side of the chunk-path cross-check for one file.
+    private ChunkPathCheck chunkPathCheck(FileSchema fileSchema, FileColumnOrdinals columnOrdinals) {
+        int touchedCount = touchedColumns.cardinality();
+        int[] fileOrdinals = new int[touchedCount];
+        FieldPath[] schemaPaths = new FieldPath[touchedCount];
+        int touched = 0;
+        for (int refOrdinal = touchedColumns.nextSetBit(0); refOrdinal >= 0;
+                refOrdinal = touchedColumns.nextSetBit(refOrdinal + 1)) {
+            int fileOrdinal = columnOrdinals.fileOrdinal(refOrdinal);
+            fileOrdinals[touched] = fileOrdinal;
+            schemaPaths[touched] = fileSchema.getColumn(fileOrdinal).fieldPath();
+            touched++;
+        }
+        return new ChunkPathCheck(fileOrdinals, schemaPaths);
+    }
+
     /// A row group surviving predicate push-down, and whether its statistics prove
     /// every row matches (so per-row filtering can be skipped for it).
     private record FilteredRowGroup(RowGroup rowGroup, boolean alwaysMatches) {}
 
     private List<FilteredRowGroup> filterRowGroups(List<RowGroup> rowGroups, InputFile inputFile,
-                                                   FileSchema fileSchema) {
+                                                   FileSchema fileSchema, FileColumnOrdinals columnOrdinals) {
         // The metadata-filtering opt-out (#797) disables every metadata-driven prune,
         // dictionary membership included — with it off, no row group is dropped without
         // reading rows.
@@ -1126,7 +1231,7 @@ public class RowGroupIterator {
         List<FilteredRowGroup> filtered = new ArrayList<>(rowGroups.size());
         int fullyMatching = 0;
         for (RowGroup rg : rowGroups) {
-            FilterDecision decision = RowGroupFilterEvaluator.decideRowGroup(filterPredicate, rg,
+            FilterDecision decision = RowGroupFilterEvaluator.decideRowGroup(columnOrdinals.filter(), rg,
                     new RowGroupBloomFilterSource(inputFile, rg),
                     new RowGroupDictionaryFilterSource(inputFile, rg, fileSchema, context));
             if (decision == FilterDecision.CANNOT_MATCH) {
@@ -1150,48 +1255,120 @@ public class RowGroupIterator {
         return filtered;
     }
 
-    private void validateSchemaCompatibility(InputFile inputFile, FileSchema fileSchema) {
-        int projectedColumnCount = projectedSchema.getProjectedColumnCount();
+    /// The reference leaf ordinals a read with this projection and filter touches.
+    private static BitSet touchedColumns(ProjectedSchema projected, ResolvedPredicate filter,
+                                         int referenceColumnCount) {
+        BitSet touched = new BitSet(referenceColumnCount);
+        int projectedColumnCount = projected.getProjectedColumnCount();
         for (int projectedIndex = 0; projectedIndex < projectedColumnCount; projectedIndex++) {
-            int originalIndex = projectedSchema.toOriginalIndex(projectedIndex);
-            ColumnSchema refColumn = referenceSchema.getColumn(originalIndex);
-
-            ColumnSchema fileColumn;
-            try {
-                fileColumn = fileSchema.getColumn(refColumn.fieldPath());
-            }
-            catch (IllegalArgumentException e) {
-                throw new SchemaIncompatibleException(
-                        ExceptionContext.filePrefix(inputFile.name())
-                                + "Column '" + refColumn.fieldPath() + "' not found");
-            }
-
-            PhysicalType refType = refColumn.type();
-            PhysicalType fileType = fileColumn.type();
-            if (refType != fileType) {
-                throw new SchemaIncompatibleException(
-                        ExceptionContext.filePrefix(inputFile.name())
-                                + "Column '" + refColumn.fieldPath() + "' has incompatible type"
-                                + ": expected " + refType + " but found " + fileType);
-            }
-
-            LogicalType refLogical = refColumn.logicalType();
-            LogicalType fileLogical = fileColumn.logicalType();
-            if (!Objects.equals(refLogical, fileLogical)) {
-                throw new SchemaIncompatibleException(
-                        ExceptionContext.filePrefix(inputFile.name())
-                                + "Column '" + refColumn.fieldPath() + "' has incompatible logical type"
-                                + ": expected " + refLogical + " but found " + fileLogical);
-            }
-
-            RepetitionType refRep = refColumn.repetitionType();
-            RepetitionType fileRep = fileColumn.repetitionType();
-            if (refRep != fileRep) {
-                throw new SchemaIncompatibleException(
-                        ExceptionContext.filePrefix(inputFile.name())
-                                + "Column '" + refColumn.fieldPath() + "' has incompatible repetition type"
-                                + ": expected " + refRep + " but found " + fileRep);
-            }
+            touched.set(projected.toOriginalIndex(projectedIndex));
         }
+        if (filter != null) {
+            ResolvedPredicate.collectColumnIndices(filter, touched);
+        }
+        return touched;
+    }
+
+    /// Validates the columns this read touches ([#touchedColumns]) against the
+    /// reference schema and returns where each of them sits in `fileSchema`.
+    ///
+    /// Untouched columns map to `-1`; a file is free to differ in columns nobody reads.
+    ///
+    /// @return this file's leaf ordinal per reference leaf ordinal, `-1` where unresolved
+    /// @throws SchemaIncompatibleException if a touched column is missing or its leaf
+    ///         differs in a way that changes how its pages decode
+    private int[] validateSchemaCompatibility(InputFile inputFile, FileSchema fileSchema) {
+        int referenceColumnCount = referenceSchema.getColumnCount();
+        int[] fileOrdinals = new int[referenceColumnCount];
+        Arrays.fill(fileOrdinals, -1);
+
+        for (int originalIndex = touchedColumns.nextSetBit(0); originalIndex >= 0;
+                originalIndex = touchedColumns.nextSetBit(originalIndex + 1)) {
+            fileOrdinals[originalIndex] = validateColumn(inputFile, fileSchema, originalIndex);
+        }
+        return fileOrdinals;
+    }
+
+    /// Validates one reference column against its counterpart in `fileSchema`,
+    /// resolved by field path.
+    ///
+    /// @return the column's leaf ordinal in `fileSchema`
+    private int validateColumn(InputFile inputFile, FileSchema fileSchema, int originalIndex) {
+        ColumnSchema refColumn = referenceSchema.getColumn(originalIndex);
+
+        ColumnSchema fileColumn;
+        try {
+            fileColumn = fileSchema.getColumn(refColumn.fieldPath());
+        }
+        catch (IllegalArgumentException e) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath() + "' not found");
+        }
+
+        PhysicalType refType = refColumn.type();
+        PhysicalType fileType = fileColumn.type();
+        if (refType != fileType) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath() + "' has incompatible type"
+                            + ": expected " + refType + " but found " + fileType);
+        }
+
+        LogicalType refLogical = refColumn.logicalType();
+        LogicalType fileLogical = fileColumn.logicalType();
+        if (!Objects.equals(refLogical, fileLogical)) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath() + "' has incompatible logical type"
+                            + ": expected " + refLogical + " but found " + fileLogical);
+        }
+
+        RepetitionType refRep = refColumn.repetitionType();
+        RepetitionType fileRep = fileColumn.repetitionType();
+        if (refRep != fileRep) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath() + "' has incompatible repetition type"
+                            + ": expected " + refRep + " but found " + fileRep);
+        }
+
+        // The FLBA width drives every decode of the column's bytes.
+        Integer refLength = refColumn.typeLength();
+        Integer fileLength = fileColumn.typeLength();
+        if (!Objects.equals(refLength, fileLength)) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath() + "' has incompatible type length"
+                            + ": expected " + refLength + " but found " + fileLength);
+        }
+
+        // The leaf's own repetition type matching does not imply its ancestors' do,
+        // and both levels are read from the per-file leaf when a page is decoded but
+        // from the reference leaf when records are assembled from it (ColumnWorker).
+        // The same leaf path under an optional rather than a required ancestor group
+        // misreads nulls; under a repeated rather than a non-repeated one it misreads
+        // record boundaries.
+        int refMaxDef = refColumn.maxDefinitionLevel();
+        int fileMaxDef = fileColumn.maxDefinitionLevel();
+        if (refMaxDef != fileMaxDef) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath()
+                            + "' has incompatible maximum definition level"
+                            + ": expected " + refMaxDef + " but found " + fileMaxDef);
+        }
+
+        int refMaxRep = refColumn.maxRepetitionLevel();
+        int fileMaxRep = fileColumn.maxRepetitionLevel();
+        if (refMaxRep != fileMaxRep) {
+            throw new SchemaIncompatibleException(
+                    ExceptionContext.filePrefix(inputFile.name())
+                            + "Column '" + refColumn.fieldPath()
+                            + "' has incompatible maximum repetition level"
+                            + ": expected " + refMaxRep + " but found " + fileMaxRep);
+        }
+
+        return fileColumn.columnIndex();
     }
 }
