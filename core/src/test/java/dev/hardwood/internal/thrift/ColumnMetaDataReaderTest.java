@@ -13,12 +13,9 @@ import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.ColumnMetaData;
 
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I32;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I64;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_LIST;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_STRUCT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ColumnMetaDataReaderTest {
@@ -26,13 +23,13 @@ class ColumnMetaDataReaderTest {
     @Test
     void readsSizeStatisticsAtFieldSixteen() throws IOException {
         byte[] sizeStatistics = struct()
-                .field(1, TYPE_I64).i64(2048)
-                .field(2, TYPE_LIST).i64List(6, 3)
-                .field(3, TYPE_LIST).i64List(1, 8)
+                .field(1, FieldType.I64).i64(2048)
+                .field(2, FieldType.LIST).i64List(6, 3)
+                .field(3, FieldType.LIST).i64List(1, 8)
                 .stop().build();
 
         ColumnMetaData metaData = read(baseColumn()
-                .field(16, TYPE_STRUCT).nested(sizeStatistics)
+                .field(16, FieldType.STRUCT).nested(sizeStatistics)
                 .stop().build());
 
         assertThat(metaData.sizeStatistics()).isNotNull();
@@ -46,15 +43,15 @@ class ColumnMetaDataReaderTest {
         // Field ids restart inside a nested struct. If the size-statistics decode leaked its
         // field-id context, the following field 17 would be misread.
         byte[] sizeStatistics = struct()
-                .field(1, TYPE_I64).i64(512)
+                .field(1, FieldType.I64).i64(512)
                 .stop().build();
         byte[] geospatialStatistics = struct()
-                .field(2, TYPE_LIST).i32List(3)
+                .field(2, FieldType.LIST).i32List(3)
                 .stop().build();
 
         ColumnMetaData metaData = read(baseColumn()
-                .field(16, TYPE_STRUCT).nested(sizeStatistics)
-                .field(17, TYPE_STRUCT).nested(geospatialStatistics)
+                .field(16, FieldType.STRUCT).nested(sizeStatistics)
+                .field(17, FieldType.STRUCT).nested(geospatialStatistics)
                 .stop().build());
 
         assertThat(metaData.sizeStatistics().unencodedByteArrayDataBytes()).isEqualTo(512L);
@@ -74,8 +71,8 @@ class ColumnMetaDataReaderTest {
     void skipsWrongTypedSizeStatisticsField() throws IOException {
         // A malformed file types field 16 as an i64 rather than a struct.
         ColumnMetaData metaData = read(baseColumn()
-                .field(16, TYPE_I64).i64(7)
-                .field(17, TYPE_STRUCT).nested(struct().field(2, TYPE_LIST).i32List(1).stop().build())
+                .field(16, FieldType.I64).i64(7)
+                .field(17, FieldType.STRUCT).nested(struct().field(2, FieldType.LIST).i32List(1).stop().build())
                 .stop().build());
 
         assertThat(metaData.sizeStatistics()).isNull();
@@ -87,14 +84,14 @@ class ColumnMetaDataReaderTest {
     /// terminate the struct themselves.
     private static ThriftStructBuilder baseColumn() {
         return struct()
-                .field(1, TYPE_I32).i32(1) // INT32
-                .field(2, TYPE_LIST).i32List(0) // PLAIN
-                .field(3, TYPE_LIST).binaryList("col".getBytes(StandardCharsets.UTF_8))
-                .field(4, TYPE_I32).i32(0) // UNCOMPRESSED
-                .field(5, TYPE_I64).i64(100)
-                .field(6, TYPE_I64).i64(1000)
-                .field(7, TYPE_I64).i64(900)
-                .field(9, TYPE_I64).i64(4);
+                .field(1, FieldType.I32).i32(1) // INT32
+                .field(2, FieldType.LIST).i32List(0) // PLAIN
+                .field(3, FieldType.LIST).binaryList("col".getBytes(StandardCharsets.UTF_8))
+                .field(4, FieldType.I32).i32(0) // UNCOMPRESSED
+                .field(5, FieldType.I64).i64(100)
+                .field(6, FieldType.I64).i64(1000)
+                .field(7, FieldType.I64).i64(900)
+                .field(9, FieldType.I64).i64(4);
     }
 
     private static ColumnMetaData read(byte[] thrift) throws IOException {

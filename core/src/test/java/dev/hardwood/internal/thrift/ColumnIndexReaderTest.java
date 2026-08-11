@@ -12,10 +12,9 @@ import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.ColumnIndex;
 
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I32;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_LIST;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ColumnIndexReaderTest {
@@ -25,14 +24,14 @@ class ColumnIndexReaderTest {
         // Three pages of a maxDef 1 / maxRep 0 column: the definition-level histogram
         // contributes two entries per page, the repetition-level histogram one.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).boolList(false, true, false)
-                .field(2, TYPE_LIST).binaryList(bytes(1), bytes(0), bytes(21))
-                .field(3, TYPE_LIST).binaryList(bytes(10), bytes(0), bytes(30))
-                .field(4, TYPE_I32).i32(1) // ASCENDING
-                .field(5, TYPE_LIST).i64List(0, 3, 0)
-                .field(6, TYPE_LIST).i64List(4, 3, 4)
-                .field(7, TYPE_LIST).i64List(0, 4, 3, 0, 0, 4)
-                .field(8, TYPE_LIST).i64List(0, 0, 1)
+                .field(1, FieldType.LIST).boolList(false, true, false)
+                .field(2, FieldType.LIST).binaryList(bytes(1), bytes(0), bytes(21))
+                .field(3, FieldType.LIST).binaryList(bytes(10), bytes(0), bytes(30))
+                .field(4, FieldType.I32).i32(1) // ASCENDING
+                .field(5, FieldType.LIST).i64List(0, 3, 0)
+                .field(6, FieldType.LIST).i64List(4, 3, 4)
+                .field(7, FieldType.LIST).i64List(0, 4, 3, 0, 0, 4)
+                .field(8, FieldType.LIST).i64List(0, 0, 1)
                 .stop().build();
 
         ColumnIndex index = ColumnIndexReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -54,10 +53,10 @@ class ColumnIndexReaderTest {
         // Only fields 1-4 are required. A writer predating the histograms leaves every
         // optional list absent, which stays distinct from a present but empty one.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).boolList(false, false)
-                .field(2, TYPE_LIST).binaryList(bytes(1), bytes(2))
-                .field(3, TYPE_LIST).binaryList(bytes(9), bytes(9))
-                .field(4, TYPE_I32).i32(0)
+                .field(1, FieldType.LIST).boolList(false, false)
+                .field(2, FieldType.LIST).binaryList(bytes(1), bytes(2))
+                .field(3, FieldType.LIST).binaryList(bytes(9), bytes(9))
+                .field(4, FieldType.I32).i32(0)
                 .stop().build();
 
         ColumnIndex index = ColumnIndexReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -75,13 +74,13 @@ class ColumnIndexReaderTest {
         // list<i64> belongs. The reader must skip them cleanly and still parse the
         // surrounding fields — including field 8, which follows the malformed one.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).boolList(false, false)
-                .field(2, TYPE_LIST).binaryList(bytes(1), bytes(2))
-                .field(3, TYPE_LIST).binaryList(bytes(9), bytes(9))
-                .field(4, TYPE_I32).i32(0)
-                .field(5, TYPE_LIST).i64List(2, 5)
-                .field(7, TYPE_LIST).emptyStructList(2)
-                .field(8, TYPE_LIST).i64List(0, 0)
+                .field(1, FieldType.LIST).boolList(false, false)
+                .field(2, FieldType.LIST).binaryList(bytes(1), bytes(2))
+                .field(3, FieldType.LIST).binaryList(bytes(9), bytes(9))
+                .field(4, FieldType.I32).i32(0)
+                .field(5, FieldType.LIST).i64List(2, 5)
+                .field(7, FieldType.LIST).emptyStructList(2)
+                .field(8, FieldType.LIST).i64List(0, 0)
                 .stop().build();
 
         ColumnIndex index = ColumnIndexReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -99,17 +98,17 @@ class ColumnIndexReaderTest {
         // bytes as varints would leave the cursor mid-struct and shift every later field,
         // so the element type — not just the field type — has to drive the skip.
         byte[] payload = struct()
-                .field(1, TYPE_I32).i32(1234567)
-                .field(2, TYPE_I32).i32(7654321)
+                .field(1, FieldType.I32).i32(1234567)
+                .field(2, FieldType.I32).i32(7654321)
                 .stop().build();
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).boolList(true)
-                .field(2, TYPE_LIST).binaryList(bytes(1))
-                .field(3, TYPE_LIST).binaryList(bytes(2))
-                .field(4, TYPE_I32).i32(0)
-                .field(6, TYPE_LIST).structList(payload, payload)
-                .field(7, TYPE_LIST).i64List(3, 9)
-                .field(8, TYPE_LIST).i64List(11)
+                .field(1, FieldType.LIST).boolList(true)
+                .field(2, FieldType.LIST).binaryList(bytes(1))
+                .field(3, FieldType.LIST).binaryList(bytes(2))
+                .field(4, FieldType.I32).i32(0)
+                .field(6, FieldType.LIST).structList(payload, payload)
+                .field(7, FieldType.LIST).i64List(3, 9)
+                .field(8, FieldType.LIST).i64List(11)
                 .stop().build();
 
         ColumnIndex index = ColumnIndexReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -125,13 +124,13 @@ class ColumnIndexReaderTest {
         // its header's type nibble. Skipping these by field rules would consume nothing and
         // leave the cursor on the first element, losing fields 7 and 8 as well.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).boolList(false, false)
-                .field(2, TYPE_LIST).binaryList(bytes(1), bytes(2))
-                .field(3, TYPE_LIST).binaryList(bytes(9), bytes(9))
-                .field(4, TYPE_I32).i32(0)
-                .field(6, TYPE_LIST).boolList(true, false, true)
-                .field(7, TYPE_LIST).i64List(3, 9)
-                .field(8, TYPE_LIST).i64List(11, 12)
+                .field(1, FieldType.LIST).boolList(false, false)
+                .field(2, FieldType.LIST).binaryList(bytes(1), bytes(2))
+                .field(3, FieldType.LIST).binaryList(bytes(9), bytes(9))
+                .field(4, FieldType.I32).i32(0)
+                .field(6, FieldType.LIST).boolList(true, false, true)
+                .field(7, FieldType.LIST).i64List(3, 9)
+                .field(8, FieldType.LIST).i64List(11, 12)
                 .stop().build();
 
         ColumnIndex index = ColumnIndexReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -146,14 +145,14 @@ class ColumnIndexReaderTest {
         // The same shape one field earlier, where the desync reaches three later fields
         // rather than two.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).boolList(false, false)
-                .field(2, TYPE_LIST).binaryList(bytes(1), bytes(2))
-                .field(3, TYPE_LIST).binaryList(bytes(9), bytes(9))
-                .field(4, TYPE_I32).i32(0)
-                .field(5, TYPE_LIST).boolList(true, false)
-                .field(6, TYPE_LIST).i64List(2, 2)
-                .field(7, TYPE_LIST).i64List(1, 3)
-                .field(8, TYPE_LIST).i64List(0, 0)
+                .field(1, FieldType.LIST).boolList(false, false)
+                .field(2, FieldType.LIST).binaryList(bytes(1), bytes(2))
+                .field(3, FieldType.LIST).binaryList(bytes(9), bytes(9))
+                .field(4, FieldType.I32).i32(0)
+                .field(5, FieldType.LIST).boolList(true, false)
+                .field(6, FieldType.LIST).i64List(2, 2)
+                .field(7, FieldType.LIST).i64List(1, 3)
+                .field(8, FieldType.LIST).i64List(0, 0)
                 .stop().build();
 
         ColumnIndex index = ColumnIndexReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));

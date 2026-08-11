@@ -13,6 +13,8 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.ElementType;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PageEncodingStats;
@@ -22,16 +24,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Verifies how `ColumnMetaData.encoding_stats` (field 13) is decoded, using hand-crafted Thrift
-/// Compact Protocol bytes so each shape can be isolated. Field header byte is
-/// `(fieldIdDelta << 4) | type`; list header byte is `(size << 4) | elementType`; `i32` values are
-/// zigzag varints (`zigzag(-1) = 1`, `zigzag(1) = 2`, `zigzag(2) = 4`, `zigzag(8) = 16`); `0x00` is
-/// STOP.
+/// Compact Protocol bytes so each shape can be isolated. Headers are composed by [#field] and
+/// [#list]; `i32` values are zigzag varints (`zigzag(-1) = 1`, `zigzag(1) = 2`, `zigzag(2) = 4`,
+/// `zigzag(8) = 16`).
 class PageEncodingStatsReaderTest {
 
-    /// Field 13 as a list of structs, i.e. the `encoding_stats` field header (`0xD9`) followed by
-    /// the list header for `count` elements. The trailing `0x00` closing the ColumnMetaData struct
-    /// is supplied by each test.
-    private static final int ENCODING_STATS_FIELD = 0xD9;
+    /// Struct terminator.
+    private static final int STOP = FieldType.Codes.STOP;
+
+    /// A list header whose size nibble is saturated, meaning the real size follows as a varint.
+    private static final int LONG_FORM_SIZE = 15;
+
+    /// The `encoding_stats` field header: field 13 as a list. The trailing [#STOP] closing the
+    /// ColumnMetaData struct is supplied by each test.
+    private static final int ENCODING_STATS_FIELD = field(13, FieldType.LIST);
+
+    /// Field header byte: field-id delta in the high nibble, wire type in the low nibble.
+    private static int field(int fieldIdDelta, FieldType type) {
+        return (fieldIdDelta << 4) | type.code();
+    }
+
+    /// Short-form list header byte: element count in the high nibble, element type in the low.
+    private static int list(int size, ElementType elementType) {
+        return (size << 4) | elementType.code();
+    }
 
     private static ThriftCompactReader reader(int... bytes) {
         byte[] b = new byte[bytes.length];
@@ -45,10 +61,10 @@ class PageEncodingStatsReaderTest {
     void readsEntriesInWrittenOrder() throws IOException {
         // Two entries: (DICTIONARY_PAGE, PLAIN, 1) then (DATA_PAGE, RLE_DICTIONARY, 2).
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x2C,
-                0x15, 0x04, 0x15, 0x00, 0x15, 0x02, 0x00,
-                0x15, 0x00, 0x15, 0x10, 0x15, 0x04, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(2, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x04, field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x02, STOP,
+                field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x10, field(1, FieldType.I32), 0x04, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats()).containsExactly(
                 new PageEncodingStats(PageType.DICTIONARY_PAGE, Encoding.PLAIN, 1),
@@ -57,7 +73,7 @@ class PageEncodingStatsReaderTest {
 
     @Test
     void absentFieldYieldsEmptyList() throws IOException {
-        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(0x00));
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
@@ -67,9 +83,9 @@ class PageEncodingStatsReaderTest {
         // page_type = 7, which no released version of the format defines. The counts are
         // informational, so this must not make the footer unreadable.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x1C,
-                0x15, 0x0E, 0x15, 0x00, 0x15, 0x02, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(1, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x0E, field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x02, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats())
                 .containsExactly(new PageEncodingStats(PageType.UNKNOWN, Encoding.PLAIN, 1));
@@ -80,9 +96,9 @@ class PageEncodingStatsReaderTest {
         // encoding = 10, which no released version of the format defines. Like an unrecognized
         // page type, it must not make the footer unreadable.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x1C,
-                0x15, 0x00, 0x15, 0x14, 0x15, 0x02, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(1, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x14, field(1, FieldType.I32), 0x02, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats())
                 .containsExactly(new PageEncodingStats(PageType.DATA_PAGE, Encoding.UNKNOWN, 1));
@@ -92,7 +108,7 @@ class PageEncodingStatsReaderTest {
     void nonListFieldIsSkipped() throws IOException {
         // Field 13 declared as an i32 rather than a list. The field is optional and informational,
         // so it is skipped rather than failing the footer.
-        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(0xD5, 0x02, 0x00));
+        ColumnMetaData metaData = ColumnMetaDataReader.read(reader(field(13, FieldType.I32), 0x02, STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
@@ -103,9 +119,9 @@ class PageEncodingStatsReaderTest {
         // IllegalArgumentException, which escapes ParquetMetadataReader's catch (IOException) and
         // reaches the caller unchecked and without the file name.
         assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0xFC,
+                ENCODING_STATS_FIELD, list(LONG_FORM_SIZE, ElementType.STRUCT),
                 0x80, 0x80, 0x80, 0x80, 0x08,
-                0x00)))
+                STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("2147483648 elements");
     }
@@ -114,9 +130,10 @@ class PageEncodingStatsReaderTest {
     void unknownStructFieldIsSkipped() throws IOException {
         // A field 4 the format does not define today, appended after count.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x1C,
-                0x15, 0x00, 0x15, 0x00, 0x15, 0x02, 0x15, 0x02, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(1, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x02,
+                field(1, FieldType.I32), 0x02, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats())
                 .containsExactly(new PageEncodingStats(PageType.DATA_PAGE, Encoding.PLAIN, 1));
@@ -128,9 +145,9 @@ class PageEncodingStatsReaderTest {
         // entry cannot be reconstructed — and since the counts only mean anything as a complete
         // partition of the chunk's pages, the whole field is reported as absent.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x1C,
-                0x15, 0x00, 0x15, 0x00, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(1, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x00, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
@@ -138,9 +155,9 @@ class PageEncodingStatsReaderTest {
     @Test
     void negativeCountDropsTheField() throws IOException {
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x1C,
-                0x15, 0x00, 0x15, 0x00, 0x15, 0x01, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(1, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x01, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
@@ -150,34 +167,34 @@ class PageEncodingStatsReaderTest {
         // A well-formed (DATA_PAGE, PLAIN, 1) entry followed by one missing its count. Keeping
         // the first would present 1 page as the chunk's full page inventory when it is not.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x2C,
-                0x15, 0x00, 0x15, 0x00, 0x15, 0x02, 0x00,
-                0x15, 0x04, 0x15, 0x00, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(2, ElementType.STRUCT),
+                field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x02, STOP,
+                field(1, FieldType.I32), 0x04, field(1, FieldType.I32), 0x00, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
 
     @Test
     void nonStructListElementTypeDropsTheField() throws IOException {
-        // Field 13 declared as list<i32> (element type 0x05) carrying the value 1. Elements are
-        // read as structs, so decoding it would misread value bytes as field headers; skipping
-        // by the declared element type consumes it instead.
+        // Field 13 declared as list<i32> carrying the value 1. Elements are read as structs, so
+        // decoding it would misread value bytes as field headers; skipping by the declared
+        // element type consumes it instead.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x15,
+                ENCODING_STATS_FIELD, list(1, ElementType.I32),
                 0x02,
-                0x00));
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
 
     @Test
     void wrongWireTypeOnRequiredFieldDropsTheField() throws IOException {
-        // page_type declared as i64 (0x06) rather than i32.
+        // page_type declared as i64 rather than i32.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x1C,
-                0x16, 0x00, 0x15, 0x00, 0x15, 0x02, 0x00,
-                0x00));
+                ENCODING_STATS_FIELD, list(1, ElementType.STRUCT),
+                field(1, FieldType.I64), 0x00, field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x02, STOP,
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
     }
@@ -187,10 +204,10 @@ class PageEncodingStatsReaderTest {
         // encoding_stats as list<i32>, then field 14 (bloom_filter_offset, i64) = 8. The skip
         // has to leave the reader exactly on the next field header for this to decode.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x15,
+                ENCODING_STATS_FIELD, list(1, ElementType.I32),
                 0x02,
-                0x16, 0x10,
-                0x00));
+                field(1, FieldType.I64), 0x10,
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
         assertThat(metaData.bloomFilterOffset()).isEqualTo(8L);
@@ -198,14 +215,14 @@ class PageEncodingStatsReaderTest {
 
     @Test
     void boolListElementTypeDoesNotDisturbLaterFields() throws IOException {
-        // The same shape with element type bool (0x01), whose elements are a bare byte each
-        // rather than a value carried in a field header. Skipping them by field rules would
-        // consume none of the two element bytes and read them as the next field header.
+        // The same shape with element type bool, whose elements are a bare byte each rather than
+        // a value carried in a field header. Skipping them by field rules would consume none of
+        // the two element bytes and read them as the next field header.
         ColumnMetaData metaData = ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, 0x21,
+                ENCODING_STATS_FIELD, list(2, ElementType.BOOL),
                 0x01, 0x02,
-                0x16, 0x10,
-                0x00));
+                field(1, FieldType.I64), 0x10,
+                STOP));
 
         assertThat(metaData.encodingStats()).isEmpty();
         assertThat(metaData.bloomFilterOffset()).isEqualTo(8L);

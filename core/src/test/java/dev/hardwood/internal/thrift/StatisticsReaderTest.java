@@ -12,11 +12,9 @@ import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.Statistics;
 
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_BINARY;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I64;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_LIST;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class StatisticsReaderTest {
@@ -24,10 +22,10 @@ class StatisticsReaderTest {
     @Test
     void readsNanCountAlongsidePreferredBounds() throws IOException {
         byte[] thrift = struct()
-                .field(3, TYPE_I64).i64(2)
-                .field(5, TYPE_BINARY).binary(bytes(9))
-                .field(6, TYPE_BINARY).binary(bytes(1))
-                .field(9, TYPE_I64).i64(5)
+                .field(3, FieldType.I64).i64(2)
+                .field(5, FieldType.BINARY).binary(bytes(9))
+                .field(6, FieldType.BINARY).binary(bytes(1))
+                .field(9, FieldType.I64).i64(5)
                 .stop().build();
 
         Statistics stats = read(thrift);
@@ -44,9 +42,9 @@ class StatisticsReaderTest {
         // A writer that predates nan_count, or a non-floating-point column, omits it.
         // That is distinct from a column known to hold no NaN values.
         byte[] thrift = struct()
-                .field(3, TYPE_I64).i64(0)
-                .field(5, TYPE_BINARY).binary(bytes(4))
-                .field(6, TYPE_BINARY).binary(bytes(0))
+                .field(3, FieldType.I64).i64(0)
+                .field(5, FieldType.BINARY).binary(bytes(4))
+                .field(6, FieldType.BINARY).binary(bytes(0))
                 .stop().build();
 
         assertThat(read(thrift).nanCount()).isNull();
@@ -56,7 +54,7 @@ class StatisticsReaderTest {
     void readsZeroNanCount() throws IOException {
         // Zero is the value that proves a floating-point chunk holds no NaN.
         byte[] thrift = struct()
-                .field(9, TYPE_I64).i64(0)
+                .field(9, FieldType.I64).i64(0)
                 .stop().build();
 
         assertThat(read(thrift).nanCount()).isEqualTo(0L);
@@ -67,8 +65,8 @@ class StatisticsReaderTest {
         // Field 9 typed as a list rather than an i64 must be skipped, leaving the
         // trailing field to parse.
         byte[] thrift = struct()
-                .field(9, TYPE_LIST).i64List(1, 2)
-                .field(10, TYPE_I64).i64(7)
+                .field(9, FieldType.LIST).i64List(1, 2)
+                .field(10, FieldType.I64).i64(7)
                 .stop().build();
 
         assertThat(read(thrift).nanCount()).isNull();
@@ -77,9 +75,9 @@ class StatisticsReaderTest {
     @Test
     void fallsBackToDeprecatedBoundsWithNanCountPresent() throws IOException {
         byte[] thrift = struct()
-                .field(1, TYPE_BINARY).binary(bytes(8))
-                .field(2, TYPE_BINARY).binary(bytes(2))
-                .field(9, TYPE_I64).i64(3)
+                .field(1, FieldType.BINARY).binary(bytes(8))
+                .field(2, FieldType.BINARY).binary(bytes(2))
+                .field(9, FieldType.I64).i64(3)
                 .stop().build();
 
         Statistics stats = read(thrift);

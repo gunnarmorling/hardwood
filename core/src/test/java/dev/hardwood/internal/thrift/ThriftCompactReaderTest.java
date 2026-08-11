@@ -13,11 +13,39 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.ElementType;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Tests for ThriftCompactReader, particularly field skipping for complex types.
 class ThriftCompactReaderTest {
+
+    /// Struct terminator.
+    private static final byte STOP = FieldType.Codes.STOP;
+
+    /// Marks the end of the meaningful bytes, so a test can assert the reader stopped short of it.
+    private static final int SENTINEL = 0xFF;
+
+    /// A list header whose size nibble is saturated, meaning the real size follows as a varint.
+    private static final int LONG_FORM_SIZE = 15;
+
+    /// Field header byte: field-id delta in the high nibble, wire type in the low nibble.
+    private static byte field(int fieldIdDelta, FieldType type) {
+        return (byte) ((fieldIdDelta << 4) | type.code());
+    }
+
+    /// List header byte: element count in the high nibble, element type in the low nibble.
+    private static byte list(int size, ElementType elementType) {
+        return (byte) ((size << 4) | elementType.code());
+    }
+
+    /// The single byte a map writes after its size: key type in the high nibble, value type in
+    /// the low nibble.
+    private static byte mapTypes(ElementType key, ElementType value) {
+        return (byte) ((key.code() << 4) | value.code());
+    }
 
     /// Verifies that MAP fields are skipped correctly per the Thrift Compact Protocol spec.
     ///
@@ -35,8 +63,7 @@ class ThriftCompactReaderTest {
         // MAP size = 2 (varint)
         buffer.put((byte) 2);
 
-        // Key/value types packed: i32 (0x05) << 4 | i32 (0x05) = 0x55
-        buffer.put((byte) 0x55);
+        buffer.put(mapTypes(ElementType.I32, ElementType.I32));
 
         // Entry 1: key=10 (zigzag=20), value=20 (zigzag=40)
         buffer.put((byte) 20); // zigzag(10) = 20
@@ -47,12 +74,12 @@ class ThriftCompactReaderTest {
         buffer.put((byte) 80); // zigzag(40) = 80
 
         // Sentinel byte to verify we stopped at the right position
-        buffer.put((byte) 0xFF);
+        buffer.put((byte) SENTINEL);
 
         buffer.flip();
 
         ThriftCompactReader reader = new ThriftCompactReader(buffer);
-        reader.skipField((byte) 0x0B); // TYPE_MAP
+        reader.skipField(FieldType.MAP.code());
 
         // Should have consumed exactly 6 bytes: 1 (size) + 1 (types) + 4 (entries)
         assertThat(reader.getBytesRead()).isEqualTo(6);
@@ -68,12 +95,12 @@ class ThriftCompactReaderTest {
         buffer.put((byte) 0);
 
         // Sentinel
-        buffer.put((byte) 0xFF);
+        buffer.put((byte) SENTINEL);
 
         buffer.flip();
 
         ThriftCompactReader reader = new ThriftCompactReader(buffer);
-        reader.skipField((byte) 0x0B); // TYPE_MAP
+        reader.skipField(FieldType.MAP.code());
 
         // Should have consumed exactly 1 byte (the zero size varint)
         assertThat(reader.getBytesRead()).isEqualTo(1);
@@ -88,8 +115,7 @@ class ThriftCompactReaderTest {
         // MAP size = 1
         buffer.put((byte) 1);
 
-        // Key/value types packed: BINARY (0x08) << 4 | STRUCT (0x0C) = 0x8C
-        buffer.put((byte) 0x8C);
+        buffer.put(mapTypes(ElementType.BINARY, ElementType.STRUCT));
 
         // Entry 1 key: binary string "ab" (length=2, then 2 bytes)
         buffer.put((byte) 2); // length varint
@@ -97,18 +123,17 @@ class ThriftCompactReaderTest {
         buffer.put((byte) 'b');
 
         // Entry 1 value: struct with one i32 field (field id=1), then STOP
-        // Field header: delta=1, type=i32(0x05) -> byte = 0x15
-        buffer.put((byte) 0x15);
+        buffer.put(field(1, FieldType.I32));
         buffer.put((byte) 42); // zigzag(21) = 42
-        buffer.put((byte) 0x00); // STOP
+        buffer.put(STOP);
 
         // Sentinel
-        buffer.put((byte) 0xFF);
+        buffer.put((byte) SENTINEL);
 
         buffer.flip();
 
         ThriftCompactReader reader = new ThriftCompactReader(buffer);
-        reader.skipField((byte) 0x0B); // TYPE_MAP
+        reader.skipField(FieldType.MAP.code());
 
         // 1 (size) + 1 (types) + 3 (key) + 3 (struct) = 8 bytes
         assertThat(reader.getBytesRead()).isEqualTo(8);
@@ -120,23 +145,23 @@ class ThriftCompactReaderTest {
         // Build a struct with fields 1 (i32) and 2 (struct with field 1 (i32)) and 3 (i32)
         ByteBuffer buffer = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN);
 
-        // Field 1: type i32 (0x05), delta 1 -> 0x15
-        buffer.put((byte) 0x15);
+        // Field 1
+        buffer.put(field(1, FieldType.I32));
         buffer.put((byte) 10); // zigzag(5) = 10
 
-        // Field 2: type struct (0x0C), delta 1 -> 0x1C
-        buffer.put((byte) 0x1C);
+        // Field 2, a nested struct
+        buffer.put(field(1, FieldType.STRUCT));
         // Nested struct: field 1 i32
-        buffer.put((byte) 0x15);
+        buffer.put(field(1, FieldType.I32));
         buffer.put((byte) 20); // zigzag(10) = 20
-        buffer.put((byte) 0x00); // STOP nested struct
+        buffer.put(STOP); // ends the nested struct
 
-        // Field 3: type i32 (0x05), delta 1 -> 0x15
-        buffer.put((byte) 0x15);
+        // Field 3
+        buffer.put(field(1, FieldType.I32));
         buffer.put((byte) 30); // zigzag(15) = 30
 
-        // STOP outer struct
-        buffer.put((byte) 0x00);
+        // ends the outer struct
+        buffer.put(STOP);
 
         buffer.flip();
 
@@ -169,8 +194,8 @@ class ThriftCompactReaderTest {
     /// collection from it.
     @Test
     void listHeaderRejectsCountLargerThanRemainingBytes() {
-        // List header: size nibble 15 (long form), element type struct (0x0C), then varint(100).
-        ThriftCompactReader reader = reader(0xFC, 0x64, 0x00, 0x00);
+        // Long-form list of structs, then varint(100).
+        ThriftCompactReader reader = reader(list(LONG_FORM_SIZE, ElementType.STRUCT), 0x64, STOP, STOP);
 
         assertThatThrownBy(reader::readListHeader)
                 .isInstanceOf(IOException.class)
@@ -184,7 +209,8 @@ class ThriftCompactReaderTest {
     @Test
     void listHeaderRejectsCountOverflowingInt() {
         // varint 0x80 0x80 0x80 0x80 0x08 encodes 2^31, which casts to Integer.MIN_VALUE.
-        ThriftCompactReader reader = reader(0xFC, 0x80, 0x80, 0x80, 0x80, 0x08, 0x00);
+        ThriftCompactReader reader = reader(
+                list(LONG_FORM_SIZE, ElementType.STRUCT), 0x80, 0x80, 0x80, 0x80, 0x08, STOP);
 
         assertThatThrownBy(reader::readListHeader)
                 .isInstanceOf(IOException.class)
@@ -201,16 +227,16 @@ class ThriftCompactReaderTest {
     void listHeaderAcceptsLongFormCountWithinRemainingBytes() throws IOException {
         // 15 bool elements, each one byte, followed by exactly 15 payload bytes.
         int[] bytes = new int[17];
-        bytes[0] = 0xF1;  // size nibble 15 (long form), element type bool
+        bytes[0] = list(LONG_FORM_SIZE, ElementType.BOOL);
         bytes[1] = 0x0F;  // varint(15)
         for (int i = 0; i < 15; i++) {
-            bytes[i + 2] = 0x01;
+            bytes[i + 2] = ElementType.BOOL.code();
         }
 
         ThriftCompactReader.CollectionHeader header = reader(bytes).readListHeader();
 
         assertThat(header.size()).isEqualTo(15);
-        assertThat(header.elementType()).isEqualTo((byte) 0x01);
+        assertThat(header.elementType()).isEqualTo(ElementType.BOOL.code());
     }
 
     /// A `bool` is the one type encoded differently as a collection element than as a struct
@@ -220,20 +246,26 @@ class ThriftCompactReaderTest {
     /// out of a shifted stream.
     @Test
     void skipFieldConsumesBooleanListElements() throws IOException {
-        // List header: 3 elements, element type bool (0x01), then three value bytes.
-        ThriftCompactReader reader = reader(0x31, 0x01, 0x02, 0x01, 0xFF);
+        // List header: 3 bool elements, then three value bytes.
+        ThriftCompactReader reader = reader(
+                list(3, ElementType.BOOL),
+                FieldType.Codes.BOOLEAN_TRUE, FieldType.Codes.BOOLEAN_FALSE, FieldType.Codes.BOOLEAN_TRUE,
+                SENTINEL);
 
-        reader.skipField((byte) 0x09); // TYPE_LIST
+        reader.skipField(FieldType.LIST.code());
 
         assertThat(reader.getBytesRead()).isEqualTo(4);
     }
 
-    /// `0x02` is the other type code a writer may put in the element nibble for `bool`.
+    /// `BOOLEAN_FALSE` is the other type code a writer may put in the element nibble for `bool`.
     @Test
     void skipFieldConsumesBooleanListElementsDeclaredAsFalse() throws IOException {
-        ThriftCompactReader reader = reader(0x22, 0x02, 0x02, 0xFF);
+        ThriftCompactReader reader = reader(
+                (2 << 4) | FieldType.Codes.BOOLEAN_FALSE,
+                FieldType.Codes.BOOLEAN_FALSE, FieldType.Codes.BOOLEAN_FALSE,
+                SENTINEL);
 
-        reader.skipField((byte) 0x09); // TYPE_LIST
+        reader.skipField(FieldType.LIST.code());
 
         assertThat(reader.getBytesRead()).isEqualTo(3);
     }
@@ -241,10 +273,14 @@ class ThriftCompactReaderTest {
     /// Map keys and values are elements too, so they follow the element encoding.
     @Test
     void skipFieldConsumesBooleanMapEntries() throws IOException {
-        // MAP size = 2, key/value types packed: bool (0x01) << 4 | bool (0x01) = 0x11.
-        ThriftCompactReader reader = reader(0x02, 0x11, 0x01, 0x02, 0x02, 0x01, 0xFF);
+        // MAP size = 2, then the packed bool/bool key-value type byte and the four element bytes.
+        ThriftCompactReader reader = reader(
+                0x02, mapTypes(ElementType.BOOL, ElementType.BOOL),
+                FieldType.Codes.BOOLEAN_TRUE, FieldType.Codes.BOOLEAN_FALSE,
+                FieldType.Codes.BOOLEAN_FALSE, FieldType.Codes.BOOLEAN_TRUE,
+                SENTINEL);
 
-        reader.skipField((byte) 0x0B); // TYPE_MAP
+        reader.skipField(FieldType.MAP.code());
 
         assertThat(reader.getBytesRead()).isEqualTo(6);
     }

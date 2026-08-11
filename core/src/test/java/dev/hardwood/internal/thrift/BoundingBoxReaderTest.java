@@ -13,6 +13,7 @@ import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.BoundingBox;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,17 +21,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BoundingBoxReaderTest {
 
-    private static final byte TYPE_DOUBLE = 0x07;
-
     @Test
     void readsAllFieldsWhenPresent() throws IOException {
         byte[] thrift = bbox()
-                .field(1, TYPE_DOUBLE).doubleValue(-4.0)
-                .field(2, TYPE_DOUBLE).doubleValue(7.5)
-                .field(3, TYPE_DOUBLE).doubleValue(20.96)
-                .field(4, TYPE_DOUBLE).doubleValue(77.08)
-                .field(5, TYPE_DOUBLE).doubleValue(10.5)
-                .field(6, TYPE_DOUBLE).doubleValue(90.0)
+                .field(1, FieldType.DOUBLE).doubleValue(-4.0)
+                .field(2, FieldType.DOUBLE).doubleValue(7.5)
+                .field(3, FieldType.DOUBLE).doubleValue(20.96)
+                .field(4, FieldType.DOUBLE).doubleValue(77.08)
+                .field(5, FieldType.DOUBLE).doubleValue(10.5)
+                .field(6, FieldType.DOUBLE).doubleValue(90.0)
                 .stop().build();
 
         BoundingBox box = BoundingBoxReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -49,9 +48,9 @@ class BoundingBoxReaderTest {
     void throwsWhenRequiredFieldMissing() {
         // Missing field 4 (ymax)
         byte[] thrift = bbox()
-                .field(1, TYPE_DOUBLE).doubleValue(0.0)
-                .field(2, TYPE_DOUBLE).doubleValue(1.0)
-                .field(3, TYPE_DOUBLE).doubleValue(0.0)
+                .field(1, FieldType.DOUBLE).doubleValue(0.0)
+                .field(2, FieldType.DOUBLE).doubleValue(1.0)
+                .field(3, FieldType.DOUBLE).doubleValue(0.0)
                 .stop().build();
 
         assertThatThrownBy(() -> BoundingBoxReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift))))
@@ -61,9 +60,9 @@ class BoundingBoxReaderTest {
 
     @Test
     void throwsOnWrongWireTypeForRequiredField() {
-        // Field 1 (xmin) declared as I32 (0x05) instead of DOUBLE (0x07)
+        // Field 1 (xmin) declared as I32 instead of DOUBLE
         byte[] thrift = bbox()
-                .field(1, (byte) 0x05).i32(0)
+                .field(1, FieldType.I32).i32(0)
                 .stop().build();
 
         assertThatThrownBy(() -> BoundingBoxReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift))))
@@ -81,17 +80,17 @@ class BoundingBoxReaderTest {
         private short lastFieldId;
         private byte pendingFieldType;
 
-        ThriftBuilder field(int id, byte type) {
+        ThriftBuilder field(int id, FieldType type) {
             short delta = (short) (id - lastFieldId);
             if (delta > 0 && delta <= 15) {
-                buffer.put((byte) ((delta << 4) | (type & 0x0F)));
+                buffer.put((byte) ((delta << 4) | (type.code() & 0x0F)));
             }
             else {
-                buffer.put(type);
+                buffer.put(type.code());
                 writeZigzag(id);
             }
             lastFieldId = (short) id;
-            pendingFieldType = type;
+            pendingFieldType = type.code();
             return this;
         }
 

@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.internal.metadata.PageHeader;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.LogicalType;
@@ -31,10 +32,18 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 /// negative value reach a buffer allocation or slice downstream (see the
 /// cross-reader compatibility matrix discussed on dev@parquet, May 2026).
 ///
-/// Inputs are hand-crafted Thrift Compact Protocol bytes. Field header byte is
-/// `(fieldIdDelta << 4) | type`; `i32`/`i64` values are zigzag varints
-/// (`zigzag(-1) = 1`, `zigzag(10) = 20`, `zigzag(8) = 16`); `0x00` is STOP.
+/// Inputs are hand-crafted Thrift Compact Protocol bytes. Field headers are composed by
+/// [#field]; `i32`/`i64` values are zigzag varints (`zigzag(-1) = 1`, `zigzag(10) = 20`,
+/// `zigzag(8) = 16`).
 class MalformedMetadataValidationTest {
+
+    /// Struct terminator.
+    private static final int STOP = FieldType.Codes.STOP;
+
+    /// Field header byte: field-id delta in the high nibble, wire type in the low nibble.
+    private static int field(int fieldIdDelta, FieldType type) {
+        return (fieldIdDelta << 4) | type.code();
+    }
 
     private static ThriftCompactReader reader(int... bytes) {
         byte[] b = new byte[bytes.length];
@@ -52,7 +61,8 @@ class MalformedMetadataValidationTest {
     void negativeCompressedPageSizeRejected() {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=10, field3 compressed=-1
         assertThatThrownBy(() -> PageHeaderReader.read(
-                reader(0x15, 0x00, 0x15, 0x14, 0x15, 0x01, 0x00)))
+                reader(field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x14,
+                        field(1, FieldType.I32), 0x01, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("compressed_page_size");
     }
@@ -61,7 +71,7 @@ class MalformedMetadataValidationTest {
     void negativeUncompressedPageSizeRejected() {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=-1
         assertThatThrownBy(() -> PageHeaderReader.read(
-                reader(0x15, 0x00, 0x15, 0x01, 0x00)))
+                reader(field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x01, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("uncompressed_page_size");
     }
@@ -70,7 +80,7 @@ class MalformedMetadataValidationTest {
     void negativeDataPageOffsetRejected() {
         // ColumnMetaData: field9 data_page_offset (i64) = -1
         assertThatThrownBy(() -> ColumnMetaDataReader.read(
-                reader(0x96, 0x01, 0x00)))
+                reader(field(9, FieldType.I64), 0x01, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("data_page_offset");
     }
@@ -80,7 +90,8 @@ class MalformedMetadataValidationTest {
         // PageHeader: field1 type=4, which no released version of the format defines. Unlike
         // encoding_stats, a page we cannot classify cannot be decoded either, so it must fail.
         assertThatThrownBy(() -> PageHeaderReader.read(
-                reader(0x15, 0x08, 0x15, 0x14, 0x15, 0x10, 0x00)))
+                reader(field(1, FieldType.I32), 0x08, field(1, FieldType.I32), 0x14,
+                        field(1, FieldType.I32), 0x10, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("unknown page type: 4");
     }
@@ -90,7 +101,7 @@ class MalformedMetadataValidationTest {
         // ColumnChunk: field5 offset_index_length (i32) = -1, which RowGroupIndexBuffers would
         // otherwise pass straight to ByteBuffer.slice().
         byte[] chunk = new ThriftStructBuilder()
-                .field(5, ThriftStructBuilder.TYPE_I32).i32(-1)
+                .field(5, FieldType.I32).i32(-1)
                 .stop().build();
         assertThatThrownBy(() -> ColumnChunkReader.read(reader(chunk)))
                 .isInstanceOf(IOException.class)
@@ -103,7 +114,7 @@ class MalformedMetadataValidationTest {
         // read would hand back a two-byte name and leave the cursor inside the field, taking the
         // rest of it for the headers of the fields behind it.
         byte[] element = new ThriftStructBuilder()
-                .field(4, ThriftStructBuilder.TYPE_BINARY).raw(0x82, 0x80, 0x80, 0x80, 0x10)
+                .field(4, FieldType.BINARY).raw(0x82, 0x80, 0x80, 0x80, 0x10)
                 .stop().build();
         assertThatThrownBy(() -> SchemaElementReader.read(reader(element)))
                 .isInstanceOf(IOException.class)
@@ -116,7 +127,7 @@ class MalformedMetadataValidationTest {
         // so it reaches `new byte[length]` intact — this bound is all that stands between a
         // five-byte varint and the allocation.
         byte[] element = new ThriftStructBuilder()
-                .field(4, ThriftStructBuilder.TYPE_BINARY).raw(0x80, 0x80, 0x80, 0x04)
+                .field(4, FieldType.BINARY).raw(0x80, 0x80, 0x80, 0x04)
                 .stop().build();
         assertThatThrownBy(() -> SchemaElementReader.read(reader(element)))
                 .isInstanceOf(IOException.class)
@@ -130,7 +141,7 @@ class MalformedMetadataValidationTest {
         // the metadata of such a file stays inspectable — and the refusal lands where the data
         // would be read.
         byte[] chunk = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_BINARY).binary("data-2.parquet".getBytes(UTF_8))
+                .field(1, FieldType.BINARY).binary("data-2.parquet".getBytes(UTF_8))
                 .stop().build();
         ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
         assertThat(columnChunk.filePath()).isEqualTo("data-2.parquet");
@@ -144,8 +155,8 @@ class MalformedMetadataValidationTest {
     void emptyFilePathIsThisFile() {
         // An empty file_path is the writer naming the file it is writing, not a split layout.
         byte[] chunk = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_BINARY).binary(new byte[0])
-                .field(5, ThriftStructBuilder.TYPE_I32).i32(64)
+                .field(1, FieldType.BINARY).binary(new byte[0])
+                .field(5, FieldType.I32).i32(64)
                 .stop().build();
         ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
         assertThat(columnChunk.offsetIndexLength()).isEqualTo(64);
@@ -156,7 +167,7 @@ class MalformedMetadataValidationTest {
     void absentFilePathIsThisFile() {
         // The field is optional; a chunk that omits it makes no claim about another file.
         byte[] chunk = new ThriftStructBuilder()
-                .field(5, ThriftStructBuilder.TYPE_I32).i32(64)
+                .field(5, FieldType.I32).i32(64)
                 .stop().build();
         ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
         assertThat(columnChunk.filePath()).isEmpty();
@@ -169,7 +180,7 @@ class MalformedMetadataValidationTest {
         // SchemaElement structs would take value bytes for field headers and misparse the
         // rest of the footer, so the whole read fails instead.
         byte[] footer = new ThriftStructBuilder()
-                .field(2, ThriftStructBuilder.TYPE_LIST).i32List(1, 2, 3)
+                .field(2, FieldType.LIST).i32List(1, 2, 3)
                 .stop().build();
         assertThatThrownBy(() -> FileMetaDataReader.read(reader(footer)))
                 .isInstanceOf(IOException.class)
@@ -182,8 +193,8 @@ class MalformedMetadataValidationTest {
         // optional, so it is reported absent — and field3 behind it still parses, which is what
         // skipping the elements by their declared type buys.
         byte[] stats = new ThriftStructBuilder()
-                .field(2, ThriftStructBuilder.TYPE_LIST).i32List(1, 2)
-                .field(3, ThriftStructBuilder.TYPE_LIST).i64List(7L, 8L)
+                .field(2, FieldType.LIST).i32List(1, 2)
+                .field(3, FieldType.LIST).i64List(7L, 8L)
                 .stop().build();
         SizeStatistics sizeStatistics = assertDoesNotThrow(() -> SizeStatisticsReader.read(reader(stats)));
         assertThat(sizeStatistics.repetitionLevelHistogram()).isNull();
@@ -195,7 +206,7 @@ class MalformedMetadataValidationTest {
         // An unknown field of type map declaring 2^32 + 2 entries: truncated to int that is 2,
         // so the skip would stop early and read the remaining entries as fields of this struct.
         byte[] metaData = new ThriftStructBuilder()
-                .field(100, ThriftStructBuilder.TYPE_MAP).raw(0x82, 0x80, 0x80, 0x80, 0x10)
+                .field(100, FieldType.MAP).raw(0x82, 0x80, 0x80, 0x80, 0x10)
                 .stop().build();
         assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(metaData)))
                 .isInstanceOf(IOException.class)
@@ -207,10 +218,10 @@ class MalformedMetadataValidationTest {
         // ColumnIndex: two pages, but only one null count. PageFilterEvaluator indexes
         // null_counts with a page count that comes from elsewhere.
         byte[] index = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, false)
-                .field(2, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
-                .field(3, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
-                .field(5, ThriftStructBuilder.TYPE_LIST).i64List(0L)
+                .field(1, FieldType.LIST).boolList(false, false)
+                .field(2, FieldType.LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
+                .field(3, FieldType.LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
+                .field(5, FieldType.LIST).i64List(0L)
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
                 .isInstanceOf(IOException.class)
@@ -221,10 +232,10 @@ class MalformedMetadataValidationTest {
     @Test
     void columnIndexWithConsistentPerPageArraysParses() {
         byte[] index = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, true)
-                .field(2, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
-                .field(3, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
-                .field(5, ThriftStructBuilder.TYPE_LIST).i64List(0L, 5L)
+                .field(1, FieldType.LIST).boolList(false, true)
+                .field(2, FieldType.LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
+                .field(3, FieldType.LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
+                .field(5, FieldType.LIST).i64List(0L, 5L)
                 .stop().build();
         ColumnIndex columnIndex = assertDoesNotThrow(() -> ColumnIndexReader.read(reader(index)));
         assertThat(columnIndex.nullPages()).containsExactly(false, true);
@@ -237,8 +248,8 @@ class MalformedMetadataValidationTest {
         // carries in its own type nibble. Declared as binary it has a body, and leaving that
         // body unread would take it for the next field header.
         byte[] statistics = new ThriftStructBuilder()
-                .field(7, ThriftStructBuilder.TYPE_BINARY).binary(new byte[]{ 9 })
-                .field(9, ThriftStructBuilder.TYPE_I64).i64(3)
+                .field(7, FieldType.BINARY).binary(new byte[]{ 9 })
+                .field(9, FieldType.I64).i64(3)
                 .stop().build();
         Statistics parsed = assertDoesNotThrow(() -> StatisticsReader.read(reader(statistics)));
         assertThat(parsed.nanCount()).isEqualTo(3L);
@@ -251,10 +262,10 @@ class MalformedMetadataValidationTest {
         // has no default, so there is nothing to report but a failure.
         byte[] unit = new ThriftStructBuilder().stop().build();
         byte[] timeType = new ThriftStructBuilder()
-                .field(2, ThriftStructBuilder.TYPE_STRUCT).nested(unit)
+                .field(2, FieldType.STRUCT).nested(unit)
                 .stop().build();
         byte[] logicalType = new ThriftStructBuilder()
-                .field(7, ThriftStructBuilder.TYPE_STRUCT).nested(timeType)
+                .field(7, FieldType.STRUCT).nested(timeType)
                 .stop().build();
         assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
                 .isInstanceOf(IOException.class)
@@ -269,14 +280,14 @@ class MalformedMetadataValidationTest {
         // TimeType and misparse the rest of the schema element.
         byte[] emptyStruct = new ThriftStructBuilder().stop().build();
         byte[] unit = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_STRUCT).nested(emptyStruct)
-                .field(2, ThriftStructBuilder.TYPE_STRUCT).nested(emptyStruct)
+                .field(1, FieldType.STRUCT).nested(emptyStruct)
+                .field(2, FieldType.STRUCT).nested(emptyStruct)
                 .stop().build();
         byte[] timeType = new ThriftStructBuilder()
-                .field(2, ThriftStructBuilder.TYPE_STRUCT).nested(unit)
+                .field(2, FieldType.STRUCT).nested(unit)
                 .stop().build();
         byte[] logicalType = new ThriftStructBuilder()
-                .field(7, ThriftStructBuilder.TYPE_STRUCT).nested(timeType)
+                .field(7, FieldType.STRUCT).nested(timeType)
                 .stop().build();
         assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
                 .isInstanceOf(IOException.class)
@@ -290,10 +301,10 @@ class MalformedMetadataValidationTest {
         // (SPHERICAL=0 .. KARNEY=4), so it is an i32 on the wire. Reading it as a struct made
         // every non-default algorithm fall through to the SPHERICAL default in silence.
         byte[] geography = new ThriftStructBuilder()
-                .field(2, ThriftStructBuilder.TYPE_I32).i32(2)
+                .field(2, FieldType.I32).i32(2)
                 .stop().build();
         byte[] logicalType = new ThriftStructBuilder()
-                .field(18, ThriftStructBuilder.TYPE_STRUCT).nested(geography)
+                .field(18, FieldType.STRUCT).nested(geography)
                 .stop().build();
         LogicalType parsed = assertDoesNotThrow(() -> LogicalTypeReader.read(reader(logicalType)));
         assertThat(parsed).isInstanceOf(LogicalType.GeographyType.class);
@@ -305,10 +316,10 @@ class MalformedMetadataValidationTest {
     void geographyWithoutAlgorithmDefaultsToSpherical() {
         // The field is optional and the spec names SPHERICAL as its default.
         byte[] geography = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_BINARY).binary("OGC:CRS84".getBytes(UTF_8))
+                .field(1, FieldType.BINARY).binary("OGC:CRS84".getBytes(UTF_8))
                 .stop().build();
         byte[] logicalType = new ThriftStructBuilder()
-                .field(18, ThriftStructBuilder.TYPE_STRUCT).nested(geography)
+                .field(18, FieldType.STRUCT).nested(geography)
                 .stop().build();
         LogicalType parsed = assertDoesNotThrow(() -> LogicalTypeReader.read(reader(logicalType)));
         assertThat(((LogicalType.GeographyType) parsed).edgeInterpolation())
@@ -320,10 +331,10 @@ class MalformedMetadataValidationTest {
         // An algorithm the format adds after this release. It says how to interpolate between
         // the column's values, not how to decode them, so the file stays readable.
         byte[] geography = new ThriftStructBuilder()
-                .field(2, ThriftStructBuilder.TYPE_I32).i32(5)
+                .field(2, FieldType.I32).i32(5)
                 .stop().build();
         byte[] logicalType = new ThriftStructBuilder()
-                .field(18, ThriftStructBuilder.TYPE_STRUCT).nested(geography)
+                .field(18, FieldType.STRUCT).nested(geography)
                 .stop().build();
         LogicalType parsed = assertDoesNotThrow(() -> LogicalTypeReader.read(reader(logicalType)));
         assertThat(((LogicalType.GeographyType) parsed).edgeInterpolation())
@@ -335,10 +346,10 @@ class MalformedMetadataValidationTest {
         // Two pages and five histogram entries: no per-page stride divides that, so
         // ColumnIndex.repetitionLevelHistogram(page) has no slice it could return.
         byte[] index = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, false)
-                .field(2, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
-                .field(3, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
-                .field(6, ThriftStructBuilder.TYPE_LIST).i64List(0L, 1L, 2L, 3L, 4L)
+                .field(1, FieldType.LIST).boolList(false, false)
+                .field(2, FieldType.LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
+                .field(3, FieldType.LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
+                .field(6, FieldType.LIST).i64List(0L, 1L, 2L, 3L, 4L)
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
                 .isInstanceOf(IOException.class)
@@ -353,7 +364,7 @@ class MalformedMetadataValidationTest {
         // back to — and its elements are four bytes where bools are one, which would desync
         // the rest of the struct if decoded anyway.
         byte[] index = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_LIST).i32List(0, 1)
+                .field(1, FieldType.LIST).i32List(0, 1)
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
                 .isInstanceOf(IOException.class)
@@ -365,7 +376,8 @@ class MalformedMetadataValidationTest {
     void validPageHeaderStillParses() {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=10, field3 compressed=8
         PageHeader header = assertDoesNotThrow(() -> PageHeaderReader.read(
-                reader(0x15, 0x00, 0x15, 0x14, 0x15, 0x10, 0x00)));
+                reader(field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x14,
+                        field(1, FieldType.I32), 0x10, STOP)));
         assertThat(header.type()).isEqualTo(PageType.DATA_PAGE);
         assertThat(header.uncompressedPageSize()).isEqualTo(10);
         assertThat(header.compressedPageSize()).isEqualTo(8);

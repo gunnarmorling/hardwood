@@ -7,10 +7,11 @@
  */
 package dev.hardwood.internal.thrift;
 
-/// Thrift Compact Protocol type codes, defined once and shared by the reader and
-/// writer so the wire constants are not duplicated.
+/// Thrift Compact Protocol type codes, defined once and shared by every reader,
+/// writer and test fixture that encodes or decodes the wire format, so the
+/// constants are not duplicated.
 /// Reference: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
-final class ThriftCompactConstants {
+public final class ThriftCompactConstants {
 
     /// Type codes for struct field headers.
     public enum FieldType {
@@ -36,7 +37,7 @@ final class ThriftCompactConstants {
         }
 
         /// The Thrift Compact Protocol wire code for this type.
-        byte code() {
+        public byte code() {
             return code;
         }
 
@@ -44,21 +45,24 @@ final class ThriftCompactConstants {
         /// `switch` on the raw wire byte — notably [ThriftCompactReader] — reference
         /// these so the codes are defined once, without re-declaring the literals.
         /// The [FieldType] and [ElementType] enums are built from them too.
-        static final class Codes {
+        public static final class Codes {
 
-            static final byte BOOLEAN_TRUE = 0x01;
-            static final byte BOOLEAN_FALSE = 0x02;
-            static final byte BYTE = 0x03;
-            static final byte I16 = 0x04;
-            static final byte I32 = 0x05;
-            static final byte I64 = 0x06;
-            static final byte DOUBLE = 0x07;
-            static final byte BINARY = 0x08;
-            static final byte LIST = 0x09;
-            static final byte SET = 0x0A;
-            static final byte MAP = 0x0B;
-            static final byte STRUCT = 0x0C;
-            static final byte UUID = 0x0D;
+            /// Not a type: the field header a struct terminates with.
+            public static final byte STOP = 0x00;
+
+            public static final byte BOOLEAN_TRUE = 0x01;
+            public static final byte BOOLEAN_FALSE = 0x02;
+            public static final byte BYTE = 0x03;
+            public static final byte I16 = 0x04;
+            public static final byte I32 = 0x05;
+            public static final byte I64 = 0x06;
+            public static final byte DOUBLE = 0x07;
+            public static final byte BINARY = 0x08;
+            public static final byte LIST = 0x09;
+            public static final byte SET = 0x0A;
+            public static final byte MAP = 0x0B;
+            public static final byte STRUCT = 0x0C;
+            public static final byte UUID = 0x0D;
 
             private Codes() {
             }
@@ -91,7 +95,7 @@ final class ThriftCompactConstants {
         }
 
         /// The Thrift Compact Protocol wire code for this element type.
-        byte code() {
+        public byte code() {
             return code;
         }
     }

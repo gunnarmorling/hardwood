@@ -37,7 +37,7 @@ public class ThriftCompactWriter {
 
     /// Write the STOP marker that terminates a struct's fields.
     public void writeFieldStop() {
-        out.write(0);
+        out.write(ThriftCompactConstants.FieldType.Codes.STOP);
     }
 
     /// Write a list header.

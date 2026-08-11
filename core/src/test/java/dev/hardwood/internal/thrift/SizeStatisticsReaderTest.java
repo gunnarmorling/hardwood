@@ -12,10 +12,9 @@ import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.SizeStatistics;
 
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I64;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_LIST;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class SizeStatisticsReaderTest {
@@ -23,9 +22,9 @@ class SizeStatisticsReaderTest {
     @Test
     void readsAllFields() throws IOException {
         byte[] thrift = struct()
-                .field(1, TYPE_I64).i64(4096)
-                .field(2, TYPE_LIST).i64List(10, 4)
-                .field(3, TYPE_LIST).i64List(2, 12)
+                .field(1, FieldType.I64).i64(4096)
+                .field(2, FieldType.LIST).i64List(10, 4)
+                .field(3, FieldType.LIST).i64List(2, 12)
                 .stop().build();
 
         SizeStatistics stats = SizeStatisticsReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -40,7 +39,7 @@ class SizeStatisticsReaderTest {
         // Every field is optional. A writer emitting only the definition-level histogram
         // must leave the other two distinguishable from a present-but-empty value.
         byte[] thrift = struct()
-                .field(3, TYPE_LIST).i64List(0, 7)
+                .field(3, FieldType.LIST).i64List(0, 7)
                 .stop().build();
 
         SizeStatistics stats = SizeStatisticsReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -65,7 +64,7 @@ class SizeStatisticsReaderTest {
     void readsPresentButEmptyHistogram() throws IOException {
         // An empty histogram is a legal encoding and stays distinct from an absent one.
         byte[] thrift = struct()
-                .field(2, TYPE_LIST).i64List()
+                .field(2, FieldType.LIST).i64List()
                 .stop().build();
 
         SizeStatistics stats = SizeStatisticsReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -79,9 +78,9 @@ class SizeStatisticsReaderTest {
         // A malformed file types field 1 as a list and field 2 as an i64. Both must be
         // skipped cleanly, leaving field 3 to parse.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).i64List(1, 2, 3)
-                .field(2, TYPE_I64).i64(99)
-                .field(3, TYPE_LIST).i64List(5, 6)
+                .field(1, FieldType.LIST).i64List(1, 2, 3)
+                .field(2, FieldType.I64).i64(99)
+                .field(3, FieldType.LIST).i64List(5, 6)
                 .stop().build();
 
         SizeStatistics stats = SizeStatisticsReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));
@@ -95,8 +94,8 @@ class SizeStatisticsReaderTest {
     void skipsUnknownTrailingField() throws IOException {
         // A field id beyond the struct's definition (a later format revision) is skipped.
         byte[] thrift = struct()
-                .field(1, TYPE_I64).i64(64)
-                .field(9, TYPE_I64).i64(123)
+                .field(1, FieldType.I64).i64(64)
+                .field(9, FieldType.I64).i64(123)
                 .stop().build();
 
         SizeStatistics stats = SizeStatisticsReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift)));

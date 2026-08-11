@@ -26,6 +26,7 @@ import dev.hardwood.InputFile;
 import dev.hardwood.internal.reader.ParquetMetadataReader;
 import dev.hardwood.internal.reader.RowGroupIndexBuffers;
 import dev.hardwood.internal.reader.RowRanges;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.internal.thrift.ThriftStructBuilder;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnIndex;
@@ -604,14 +605,14 @@ class PageFilterEvaluatorTest {
         // walks them with a single index, so this has to fail before it does — naming the file,
         // the row group and the column, none of which the page index itself carries.
         byte[] columnIndex = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, false, false)
-                .field(2, ThriftStructBuilder.TYPE_LIST)
+                .field(1, FieldType.LIST).boolList(false, false, false)
+                .field(2, FieldType.LIST)
                 .binaryList(intBytes(1), intBytes(11), intBytes(21))
-                .field(3, ThriftStructBuilder.TYPE_LIST)
+                .field(3, FieldType.LIST)
                 .binaryList(intBytes(10), intBytes(20), intBytes(30))
                 .stop().build();
         byte[] offsetIndex = new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_LIST)
+                .field(1, FieldType.LIST)
                 .structList(pageLocation(0, 0), pageLocation(100, 30))
                 .stop().build();
 
@@ -637,9 +638,9 @@ class PageFilterEvaluatorTest {
     /// A PageLocation struct body: offset, compressed_page_size, first_row_index.
     private static byte[] pageLocation(long offset, long firstRowIndex) {
         return new ThriftStructBuilder()
-                .field(1, ThriftStructBuilder.TYPE_I64).i64(offset)
-                .field(2, ThriftStructBuilder.TYPE_I32).i32(100)
-                .field(3, ThriftStructBuilder.TYPE_I64).i64(firstRowIndex)
+                .field(1, FieldType.I64).i64(offset)
+                .field(2, FieldType.I32).i32(100)
+                .field(3, FieldType.I64).i64(firstRowIndex)
                 .stop().build();
     }
 

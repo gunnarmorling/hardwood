@@ -32,6 +32,7 @@ public class ThriftCompactReader {
     // The reader dispatches on the raw wire byte in a switch, whose case labels must
     // be compile-time constants, so it references the shared byte codes in
     // [ThriftCompactConstants.FieldType.Codes] rather than the enum values.
+    private static final byte TYPE_STOP = Codes.STOP;
     private static final byte TYPE_BOOLEAN_TRUE = Codes.BOOLEAN_TRUE;
     private static final byte TYPE_BOOLEAN_FALSE = Codes.BOOLEAN_FALSE;
     private static final byte TYPE_BYTE = Codes.BYTE;
@@ -206,8 +207,7 @@ public class ThriftCompactReader {
     public FieldHeader readFieldHeader() throws IOException {
         byte b = readByte();
 
-        if (b == 0) {
-            // STOP field
+        if (b == TYPE_STOP) {
             lastFieldId = 0;
             return null;
         }

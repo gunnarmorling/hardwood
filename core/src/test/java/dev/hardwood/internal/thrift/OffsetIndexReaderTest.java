@@ -12,11 +12,9 @@ import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.OffsetIndex;
 
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I32;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_I64;
-import static dev.hardwood.internal.thrift.ThriftStructBuilder.TYPE_LIST;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class OffsetIndexReaderTest {
@@ -24,8 +22,8 @@ class OffsetIndexReaderTest {
     @Test
     void readsPageLocationsAndUnencodedSizes() throws IOException {
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).structList(pageLocation(100, 40, 0), pageLocation(140, 60, 8))
-                .field(2, TYPE_LIST).i64List(512, 768)
+                .field(1, FieldType.LIST).structList(pageLocation(100, 40, 0), pageLocation(140, 60, 8))
+                .field(2, FieldType.LIST).i64List(512, 768)
                 .stop().build();
 
         OffsetIndex index = read(thrift);
@@ -42,7 +40,7 @@ class OffsetIndexReaderTest {
         // Field 2 is optional and only defined for BYTE_ARRAY data, so a writer leaves it
         // unset on every other column. That must not read back as a zero-length list.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).structList(pageLocation(100, 40, 0))
+                .field(1, FieldType.LIST).structList(pageLocation(100, 40, 0))
                 .stop().build();
 
         assertThat(read(thrift).unencodedByteArrayDataBytes()).isNull();
@@ -51,8 +49,8 @@ class OffsetIndexReaderTest {
     @Test
     void readsPresentButEmptyUnencodedSizes() throws IOException {
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).structList(pageLocation(100, 40, 0))
-                .field(2, TYPE_LIST).i64List()
+                .field(1, FieldType.LIST).structList(pageLocation(100, 40, 0))
+                .field(2, FieldType.LIST).i64List()
                 .stop().build();
 
         assertThat(read(thrift).unencodedByteArrayDataBytes()).isEmpty();
@@ -62,9 +60,9 @@ class OffsetIndexReaderTest {
     void skipsWrongTypedUnencodedSizesField() throws IOException {
         // A malformed file types field 2 as an i64 rather than a list.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).structList(pageLocation(100, 40, 0))
-                .field(2, TYPE_I64).i64(4096)
-                .field(3, TYPE_I64).i64(7)
+                .field(1, FieldType.LIST).structList(pageLocation(100, 40, 0))
+                .field(2, FieldType.I64).i64(4096)
+                .field(3, FieldType.I64).i64(7)
                 .stop().build();
 
         OffsetIndex index = read(thrift);
@@ -78,9 +76,9 @@ class OffsetIndexReaderTest {
         // Field 2 typed list<struct>. Decoding those bytes as varints would leave the
         // cursor mid-struct, so the element type has to drive the skip.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).structList(pageLocation(100, 40, 0))
-                .field(2, TYPE_LIST).structList(pageLocation(1, 2, 3), pageLocation(4, 5, 6))
-                .field(3, TYPE_I64).i64(7)
+                .field(1, FieldType.LIST).structList(pageLocation(100, 40, 0))
+                .field(2, FieldType.LIST).structList(pageLocation(1, 2, 3), pageLocation(4, 5, 6))
+                .field(3, FieldType.I64).i64(7)
                 .stop().build();
 
         OffsetIndex index = read(thrift);
@@ -95,9 +93,9 @@ class OffsetIndexReaderTest {
         // header's type nibble. Skipping these by field rules would consume none of them
         // and read the first element byte as the next field header.
         byte[] thrift = struct()
-                .field(1, TYPE_LIST).structList(pageLocation(100, 40, 0))
-                .field(2, TYPE_LIST).boolList(true, false, true)
-                .field(3, TYPE_I64).i64(7)
+                .field(1, FieldType.LIST).structList(pageLocation(100, 40, 0))
+                .field(2, FieldType.LIST).boolList(true, false, true)
+                .field(3, FieldType.I64).i64(7)
                 .stop().build();
 
         OffsetIndex index = read(thrift);
@@ -110,9 +108,9 @@ class OffsetIndexReaderTest {
     /// A `PageLocation` struct body: offset, compressed_page_size, first_row_index.
     private static byte[] pageLocation(long offset, int compressedPageSize, long firstRowIndex) {
         return struct()
-                .field(1, TYPE_I64).i64(offset)
-                .field(2, TYPE_I32).i32(compressedPageSize)
-                .field(3, TYPE_I64).i64(firstRowIndex)
+                .field(1, FieldType.I64).i64(offset)
+                .field(2, FieldType.I32).i32(compressedPageSize)
+                .field(3, FieldType.I64).i64(firstRowIndex)
                 .stop().build();
     }
 

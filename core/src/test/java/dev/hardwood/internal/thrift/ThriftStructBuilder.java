@@ -10,6 +10,9 @@ package dev.hardwood.internal.thrift;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.ElementType;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
+
 /// Hand-rolled Thrift Compact Protocol struct builder for reader tests.
 ///
 /// Fields are written in ascending id order so the short-form field header
@@ -17,31 +20,16 @@ import java.nio.ByteOrder;
 /// Every struct must be terminated with [#stop()] before [#build()].
 public final class ThriftStructBuilder {
 
-    // Thrift Compact Protocol field type codes.
-    public static final byte TYPE_I32 = 0x05;
-    public static final byte TYPE_I64 = 0x06;
-    public static final byte TYPE_BINARY = 0x08;
-    public static final byte TYPE_LIST = 0x09;
-    public static final byte TYPE_MAP = 0x0B;
-    public static final byte TYPE_STRUCT = 0x0C;
-
-    // Thrift Compact Protocol list element type codes.
-    public static final byte ELEM_BOOL = 0x01;
-    public static final byte ELEM_I32 = 0x05;
-    public static final byte ELEM_I64 = 0x06;
-    public static final byte ELEM_BINARY = 0x08;
-    public static final byte ELEM_STRUCT = 0x0C;
-
     private final ByteBuffer buffer = ByteBuffer.allocate(512).order(ByteOrder.LITTLE_ENDIAN);
     private short lastFieldId;
 
-    public ThriftStructBuilder field(int id, byte type) {
+    public ThriftStructBuilder field(int id, FieldType type) {
         short delta = (short) (id - lastFieldId);
         if (delta > 0 && delta <= 15) {
-            buffer.put((byte) ((delta << 4) | (type & 0x0F)));
+            buffer.put((byte) ((delta << 4) | (type.code() & 0x0F)));
         }
         else {
-            buffer.put(type);
+            buffer.put(type.code());
             writeZigzag(id);
         }
         lastFieldId = (short) id;
@@ -49,15 +37,15 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder boolList(boolean... values) {
-        listHeader(values.length, ELEM_BOOL);
+        listHeader(values.length, ElementType.BOOL);
         for (boolean value : values) {
-            buffer.put((byte) (value ? 0x01 : 0x02));
+            buffer.put(value ? FieldType.Codes.BOOLEAN_TRUE : FieldType.Codes.BOOLEAN_FALSE);
         }
         return this;
     }
 
     public ThriftStructBuilder binaryList(byte[]... values) {
-        listHeader(values.length, ELEM_BINARY);
+        listHeader(values.length, ElementType.BINARY);
         for (byte[] value : values) {
             writeVarint(value.length);
             buffer.put(value);
@@ -66,7 +54,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder i32List(int... values) {
-        listHeader(values.length, ELEM_I32);
+        listHeader(values.length, ElementType.I32);
         for (int value : values) {
             writeZigzag(value);
         }
@@ -74,7 +62,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder i64List(long... values) {
-        listHeader(values.length, ELEM_I64);
+        listHeader(values.length, ElementType.I64);
         for (long value : values) {
             writeZigzag(value);
         }
@@ -83,7 +71,7 @@ public final class ThriftStructBuilder {
 
     /// Writes a `list<struct>` of already-built struct bodies.
     public ThriftStructBuilder structList(byte[]... structs) {
-        listHeader(structs.length, ELEM_STRUCT);
+        listHeader(structs.length, ElementType.STRUCT);
         for (byte[] struct : structs) {
             buffer.put(struct);
         }
@@ -132,7 +120,7 @@ public final class ThriftStructBuilder {
 
     /// Writes a list header without the elements, so a caller can follow it with [#raw] bytes
     /// or with fewer elements than it declares.
-    public ThriftStructBuilder listHeaderOnly(int size, byte elementType) {
+    public ThriftStructBuilder listHeaderOnly(int size, ElementType elementType) {
         listHeader(size, elementType);
         return this;
     }
@@ -149,12 +137,12 @@ public final class ThriftStructBuilder {
         return out;
     }
 
-    private void listHeader(int size, byte elementType) {
+    private void listHeader(int size, ElementType elementType) {
         if (size < 15) {
-            buffer.put((byte) ((size << 4) | (elementType & 0x0F)));
+            buffer.put((byte) ((size << 4) | (elementType.code() & 0x0F)));
         }
         else {
-            buffer.put((byte) (0xF0 | (elementType & 0x0F)));
+            buffer.put((byte) (0xF0 | (elementType.code() & 0x0F)));
             writeVarint(size);
         }
     }

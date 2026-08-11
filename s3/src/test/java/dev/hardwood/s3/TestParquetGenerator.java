@@ -12,6 +12,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.ElementType;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
+
 /// Generates minimal valid Parquet files in pure Java for testing.
 ///
 /// Produces files with REQUIRED INT64 columns, PLAIN encoding, no compression,
@@ -105,14 +108,14 @@ final class TestParquetGenerator {
     /// }
     private static byte[] dataPageHeader(int numValues, int pageSize) {
         ThriftWriter w = new ThriftWriter();
-        w.field(1, T_I32).zigzagI32(0);
-        w.field(2, T_I32).zigzagI32(pageSize);
-        w.field(3, T_I32).zigzagI32(pageSize);
-        w.field(5, T_STRUCT).pushStruct();
-        w.field(1, T_I32).zigzagI32(numValues);
-        w.field(2, T_I32).zigzagI32(0);
-        w.field(3, T_I32).zigzagI32(0);
-        w.field(4, T_I32).zigzagI32(0);
+        w.field(1, FieldType.I32).zigzagI32(0);
+        w.field(2, FieldType.I32).zigzagI32(pageSize);
+        w.field(3, FieldType.I32).zigzagI32(pageSize);
+        w.field(5, FieldType.STRUCT).pushStruct();
+        w.field(1, FieldType.I32).zigzagI32(numValues);
+        w.field(2, FieldType.I32).zigzagI32(0);
+        w.field(3, FieldType.I32).zigzagI32(0);
+        w.field(4, FieldType.I32).zigzagI32(0);
         w.stop();
         w.stop();
         return w.toByteArray();
@@ -135,33 +138,33 @@ final class TestParquetGenerator {
         ThriftWriter w = new ThriftWriter();
 
         // version
-        w.field(1, T_I32).zigzagI32(2);
+        w.field(1, FieldType.I32).zigzagI32(2);
 
         // schema: list<SchemaElement>
-        w.field(2, T_LIST).listHeader(T_STRUCT, numColumns + 1);
+        w.field(2, FieldType.LIST).listHeader(ElementType.STRUCT, numColumns + 1);
         // Root element: name="schema", num_children=N
         w.pushStruct();
-        w.field(4, T_BINARY).binary("schema");
-        w.field(5, T_I32).zigzagI32(numColumns);
+        w.field(4, FieldType.BINARY).binary("schema");
+        w.field(5, FieldType.I32).zigzagI32(numColumns);
         w.stop();
         // Column elements: type=INT64, repetition_type=REQUIRED, name="cN"
         for (int col = 0; col < numColumns; col++) {
             w.pushStruct();
-            w.field(1, T_I32).zigzagI32(2);  // type = INT64
-            w.field(3, T_I32).zigzagI32(0);  // repetition_type = REQUIRED
-            w.field(4, T_BINARY).binary("c" + col);
+            w.field(1, FieldType.I32).zigzagI32(2);  // type = INT64
+            w.field(3, FieldType.I32).zigzagI32(0);  // repetition_type = REQUIRED
+            w.field(4, FieldType.BINARY).binary("c" + col);
             w.stop();
         }
 
         // num_rows
-        w.field(3, T_I64).zigzagI64((long) numRowGroups * rowsPerRowGroup);
+        w.field(3, FieldType.I64).zigzagI64((long) numRowGroups * rowsPerRowGroup);
 
         // row_groups: list<RowGroup>
-        w.field(4, T_LIST).listHeader(T_STRUCT, numRowGroups);
+        w.field(4, FieldType.LIST).listHeader(ElementType.STRUCT, numRowGroups);
         for (int rg = 0; rg < numRowGroups; rg++) {
             w.pushStruct();
             // columns: list<ColumnChunk>
-            w.field(1, T_LIST).listHeader(T_STRUCT, numColumns);
+            w.field(1, FieldType.LIST).listHeader(ElementType.STRUCT, numColumns);
             for (int col = 0; col < numColumns; col++) {
                 w.pushStruct();
                 columnChunk(w, col, chunkOffsets[rg][col], chunkSizes[rg][col], rowsPerRowGroup);
@@ -172,14 +175,14 @@ final class TestParquetGenerator {
             for (int col = 0; col < numColumns; col++) {
                 rgSize += chunkSizes[rg][col];
             }
-            w.field(2, T_I64).zigzagI64(rgSize);
+            w.field(2, FieldType.I64).zigzagI64(rgSize);
             // num_rows
-            w.field(3, T_I64).zigzagI64(rowsPerRowGroup);
+            w.field(3, FieldType.I64).zigzagI64(rowsPerRowGroup);
             w.stop();
         }
 
         // created_by
-        w.field(6, T_BINARY).binary("hardwood-test-generator");
+        w.field(6, FieldType.BINARY).binary("hardwood-test-generator");
         w.stop();
         return w.toByteArray();
     }
@@ -201,29 +204,23 @@ final class TestParquetGenerator {
     /// }
     private static void columnChunk(ThriftWriter w, int colIndex, long offset,
                                      int size, int numValues) {
-        w.field(2, T_I64).zigzagI64(offset);
-        w.field(3, T_STRUCT).pushStruct();
-        w.field(1, T_I32).zigzagI32(2);          // INT64
-        w.field(2, T_LIST).listHeader(T_I32, 1);
+        w.field(2, FieldType.I64).zigzagI64(offset);
+        w.field(3, FieldType.STRUCT).pushStruct();
+        w.field(1, FieldType.I32).zigzagI32(2);          // INT64
+        w.field(2, FieldType.LIST).listHeader(ElementType.I32, 1);
         w.zigzagI32(0);                           // PLAIN
-        w.field(3, T_LIST).listHeader(T_BINARY, 1);
+        w.field(3, FieldType.LIST).listHeader(ElementType.BINARY, 1);
         w.binary("c" + colIndex);
-        w.field(4, T_I32).zigzagI32(0);           // UNCOMPRESSED
-        w.field(5, T_I64).zigzagI64(numValues);
-        w.field(6, T_I64).zigzagI64(size);
-        w.field(7, T_I64).zigzagI64(size);
-        w.field(9, T_I64).zigzagI64(offset);
+        w.field(4, FieldType.I32).zigzagI32(0);           // UNCOMPRESSED
+        w.field(5, FieldType.I64).zigzagI64(numValues);
+        w.field(6, FieldType.I64).zigzagI64(size);
+        w.field(7, FieldType.I64).zigzagI64(size);
+        w.field(9, FieldType.I64).zigzagI64(offset);
         w.stop();
         w.stop();
     }
 
     // ==================== Thrift Compact Protocol ====================
-
-    private static final int T_I32 = 0x05;
-    private static final int T_I64 = 0x06;
-    private static final int T_BINARY = 0x08;
-    private static final int T_LIST = 0x09;
-    private static final int T_STRUCT = 0x0C;
 
     /// Minimal Thrift Compact Protocol writer.
     ///
@@ -233,13 +230,13 @@ final class TestParquetGenerator {
         private int lastFieldId = 0;
         private final java.util.ArrayDeque<Integer> fieldIdStack = new java.util.ArrayDeque<>();
 
-        ThriftWriter field(int fieldId, int typeId) {
+        ThriftWriter field(int fieldId, FieldType type) {
             int delta = fieldId - lastFieldId;
             if (delta > 0 && delta <= 15) {
-                buf.write((delta << 4) | typeId);
+                buf.write((delta << 4) | type.code());
             }
             else {
-                buf.write(typeId);
+                buf.write(type.code());
                 writeVarInt((fieldId << 1) ^ (fieldId >> 31));
             }
             lastFieldId = fieldId;
@@ -263,12 +260,12 @@ final class TestParquetGenerator {
             return this;
         }
 
-        ThriftWriter listHeader(int elementType, int size) {
+        ThriftWriter listHeader(ElementType elementType, int size) {
             if (size <= 14) {
-                buf.write((size << 4) | elementType);
+                buf.write((size << 4) | elementType.code());
             }
             else {
-                buf.write(0xF0 | elementType);
+                buf.write(0xF0 | elementType.code());
                 writeVarInt(size);
             }
             return this;
@@ -277,12 +274,12 @@ final class TestParquetGenerator {
         /// Ends the current struct (writes STOP byte) and restores the enclosing
         /// struct's field ID context from the stack.
         void stop() {
-            buf.write(0x00);
+            buf.write(FieldType.Codes.STOP);
             lastFieldId = fieldIdStack.isEmpty() ? 0 : fieldIdStack.pop();
         }
 
         /// Saves current field context and resets for a new struct scope.
-        /// Call before writing fields of a nested struct (either via `field(N, T_STRUCT)`
+        /// Call before writing fields of a nested struct (either via `field(N, FieldType.STRUCT)`
         /// or as a struct element in a list). The matching `stop()` restores the context.
         ThriftWriter pushStruct() {
             fieldIdStack.push(lastFieldId);
