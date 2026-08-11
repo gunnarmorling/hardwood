@@ -186,6 +186,13 @@ class ThriftEnumLookup {
         return indexOf(CONVERTED_TYPES, type, "converted type");
     }
 
+    /// @throws IllegalArgumentException for
+    ///         [LogicalType.EdgeInterpolationAlgorithm#UNKNOWN], which stands for an algorithm
+    ///         this release cannot name and so has no Thrift value to write
+    static int thriftValue(LogicalType.EdgeInterpolationAlgorithm algorithm) {
+        return indexOf(EDGE_INTERPOLATION_ALGORITHMS, algorithm, "edge interpolation algorithm");
+    }
+
     static int thriftValue(Encoding encoding) {
         return indexOf(ENCODINGS, encoding, "encoding");
     }

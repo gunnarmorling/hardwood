@@ -205,9 +205,9 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Optional field handling
 
 ### 6.4 Logical Type Writing
-- [ ] Implement `LogicalTypeWriter` (`LogicalType` union serialization; inverse of `LogicalTypeReader`)
-- [ ] Serialize legacy `converted_type` / `scale` / `precision` on `SchemaElement`
-- [ ] `FileSchema.Builder` logical-type overload (and `FIXED_LEN_BYTE_ARRAY` type length)
+- [x] Implement `LogicalTypeWriter` (`LogicalType` union serialization; inverse of `LogicalTypeReader`)
+- [x] Serialize legacy `converted_type` / `scale` / `precision` on `SchemaElement`
+- [x] `FileSchema.Builder` logical-type overload (and `FIXED_LEN_BYTE_ARRAY` type length)
 - [ ] Logical-type value conversion in the writer API (inverse of `LogicalTypeConverter`)
 
 ---

@@ -35,6 +35,17 @@ public class ThriftCompactWriter {
         lastFieldId = (short) fieldId;
     }
 
+    /// Write a boolean field. A boolean field carries no payload in the compact protocol:
+    /// the value is the field header's type code, so the header is the whole field.
+    ///
+    /// @param fieldId the Thrift field id
+    /// @param value the boolean value
+    public void writeBool(int fieldId, boolean value) {
+        writeFieldBegin(fieldId, value
+                ? ThriftCompactConstants.FieldType.BOOLEAN_TRUE
+                : ThriftCompactConstants.FieldType.BOOLEAN_FALSE);
+    }
+
     /// Write the STOP marker that terminates a struct's fields.
     public void writeFieldStop() {
         out.write(ThriftCompactConstants.STOP);
@@ -52,6 +63,12 @@ public class ThriftCompactWriter {
             out.write((ThriftCompactConstants.LONG_FORM_SIZE << 4) | elementType.code());
             writeVarint(size);
         }
+    }
+
+    /// Write an i8 value (no field header). An i8 is a single plain byte, not a zigzag
+    /// varint, so [#writeI32] cannot stand in for it.
+    public void writeByte(byte value) {
+        out.write(value);
     }
 
     /// Write a zigzag-encoded i32 value (no field header).

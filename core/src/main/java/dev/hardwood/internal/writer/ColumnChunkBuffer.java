@@ -27,6 +27,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
 
 /// Accumulates one column's level entries for the current row group, packing them into data
@@ -80,6 +81,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     private final CompressionCodec codec;
 
     private final ValueEncoder values;
+    private final boolean boundedStatistics; // whether min/max are well defined for this column's order
     private final int dictionaryLimitBytes;
     private boolean dictionaryActive; // true while pages are still dictionary-encoded
 
@@ -101,6 +103,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         this.pendingDef = maxDefLevel > 0 ? new int[pageValues] : null;
         this.pendingRep = maxRepLevel > 0 ? new int[pageValues] : null;
         this.values = ValueEncoder.forColumn(column, pageValues, enableDictionary, statisticsTruncationLength);
+        this.boundedStatistics = StatisticsOrder.supportsBounds(column);
         this.dictionaryActive = values.dictionaryCapable();
         this.dictionaryLimitBytes = dictionaryLimitBytes;
         this.compressor = compressor;
@@ -201,13 +204,20 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                 Map.of(),
                 dataPageOffset,
                 dictionaryPageOffset,
-                values.statistics(),
+                statistics(),
                 null,
                 null,
                 null,
                 // The writer does not emit encoding_stats or size_statistics yet.
                 List.of(),
                 null);
+    }
+
+    /// The chunk statistics, with the bounds dropped when this column's sort order is not the
+    /// one its collector computes in. See [StatisticsOrder].
+    private Statistics statistics() {
+        Statistics statistics = values.statistics();
+        return boundedStatistics ? statistics : StatisticsOrder.withoutBounds(statistics);
     }
 
     /// Seals the current page as a dictionary-indexed page and switches the rest of the chunk

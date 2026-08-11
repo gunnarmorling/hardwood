@@ -7,12 +7,17 @@
  */
 package dev.hardwood.writer;
 
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Array;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.Statement;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -23,6 +28,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import dev.hardwood.OutputFile;
 import dev.hardwood.Validity;
+import dev.hardwood.metadata.LogicalType;
+import dev.hardwood.metadata.LogicalType.TimeUnit;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
@@ -843,6 +850,71 @@ class WriterDifferentialTest {
         assertThat(actual).hasSize(v.length);
         for (int i = 0; i < v.length; i++) {
             assertThat(actual.get(i)).isEqualToIgnoringCase(HexFormat.of().formatHex(v[i]));
+        }
+    }
+
+    /// Logical type annotations are what make a column's bytes mean something to another
+    /// engine: without them DuckDB sees a `BYTE_ARRAY` as `BLOB`, a `DATE` as `INTEGER`, and a
+    /// `DECIMAL` as `BIGINT`. Asserting the column types DuckDB infers, and the values it
+    /// decodes through them, proves the annotations landed on the wire.
+    @Test
+    void duckDbReadsWrittenLogicalTypes(@TempDir Path dir) throws Exception {
+        int[] r = { 0, 1 };
+        byte[][] names = { "alpha".getBytes(StandardCharsets.UTF_8), "beta".getBytes(StandardCharsets.UTF_8) };
+        int[] days = { 0, 19_000 };
+        long[] micros = { 0L, 1_700_000_000_000_000L };
+        long[] unscaled = { 12_345L, -6_700L };
+        byte[][] uuids = {
+                HexFormat.of().parseHex("0123456789abcdef0123456789abcdef"),
+                HexFormat.of().parseHex("ffffffffffffffffffffffffffffffff") };
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("name", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED, new LogicalType.StringType())
+                .addColumn("d", PhysicalType.INT32, RepetitionType.REQUIRED, new LogicalType.DateType())
+                .addColumn("ts", PhysicalType.INT64, RepetitionType.REQUIRED,
+                        new LogicalType.TimestampType(false, TimeUnit.MICROS))
+                .addColumn("amount", PhysicalType.INT64, RepetitionType.REQUIRED,
+                        new LogicalType.DecimalType(4, 18))
+                .addColumn("id", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 16,
+                        new LogicalType.UuidType())
+                .build();
+
+        Path file = dir.resolve("logical.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
+            writer.writeBatch(batch -> batch
+                    .ints(0, r)
+                    .bytes(1, names)
+                    .ints(2, days)
+                    .longs(3, micros)
+                    .longs(4, unscaled)
+                    .fixed(5, uuids));
+        }
+
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery("SELECT name, d, ts, amount, id FROM read_parquet('"
+                        + file.toAbsolutePath() + "') ORDER BY r")) {
+            ResultSetMetaData meta = rs.getMetaData();
+            assertThat(meta.getColumnTypeName(1)).isEqualTo("VARCHAR");
+            assertThat(meta.getColumnTypeName(2)).isEqualTo("DATE");
+            assertThat(meta.getColumnTypeName(3)).startsWith("TIMESTAMP");
+            assertThat(meta.getColumnTypeName(4)).startsWith("DECIMAL");
+            assertThat(meta.getColumnTypeName(5)).isEqualTo("UUID");
+
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("name")).isEqualTo("alpha");
+            assertThat(rs.getDate("d").toLocalDate()).isEqualTo(LocalDate.of(1970, 1, 1));
+            assertThat(rs.getBigDecimal("amount")).isEqualByComparingTo(new BigDecimal("1.2345"));
+            assertThat(rs.getString("id")).isEqualTo("01234567-89ab-cdef-0123-456789abcdef");
+
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("name")).isEqualTo("beta");
+            assertThat(rs.getDate("d").toLocalDate()).isEqualTo(LocalDate.of(1970, 1, 1).plusDays(19_000));
+            assertThat(rs.getTimestamp("ts").toInstant())
+                    .isEqualTo(Instant.EPOCH.plusSeconds(1_700_000_000L));
+            assertThat(rs.getBigDecimal("amount")).isEqualByComparingTo(new BigDecimal("-0.6700"));
+            assertThat(rs.next()).isFalse();
         }
     }
 }
