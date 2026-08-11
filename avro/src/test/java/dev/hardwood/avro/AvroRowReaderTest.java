@@ -175,7 +175,8 @@ class AvroRowReaderTest {
         try (ParquetFileReader fileReader = ParquetFileReader.open(
                 InputFile.of(TEST_RESOURCES.resolve("nested_struct_test.parquet")))) {
 
-            Schema schema = AvroSchemaConverter.convert(fileReader.getFileSchema());
+            Schema schema = AvroSchemaConverter.plan(
+                    fileReader.getFileSchema(), ColumnProjection.all()).avro();
             assertThat(schema.getType()).isEqualTo(Schema.Type.RECORD);
 
             // id field — INT32 → Avro INT
@@ -393,8 +394,9 @@ class AvroRowReaderTest {
             assertThat(uint32Schema.getType()).isEqualTo(Schema.Type.LONG);
             assertThat(uint64Schema.getType()).isEqualTo(Schema.Type.LONG);
 
-            // UINT_32 schemas carry the marker that routes the reader to getInt + widen;
-            // UINT_64 schemas (already long[]-backed) must not carry it.
+            // The converted schema records the unsignedness Avro cannot express, so a
+            // consumer holding only the schema can still tell a widened UINT_32 from a
+            // UINT_64, which is long[]-backed and carries no marker.
             assertThat(idSchema.getObjectProp(AvroSchemaConverter.UNSIGNED_INT32_PROP))
                     .isEqualTo(Boolean.TRUE);
             assertThat(uint32Schema.getObjectProp(AvroSchemaConverter.UNSIGNED_INT32_PROP))

@@ -31,7 +31,7 @@ class AvroSchemaConverterTest {
     @Test
     void variantGroupBecomesCanonicalMetadataValueRecord() {
         FileSchema schema = buildVariantSchema(/* includeTypedValue= */ false);
-        Schema avroSchema = AvroSchemaConverter.convert(schema);
+        Schema avroSchema = convert(schema);
         Schema.Field varField = avroSchema.getField("var");
         assertThat(varField).isNotNull();
 
@@ -47,7 +47,7 @@ class AvroSchemaConverterTest {
     @Test
     void shreddedVariantAlsoHidesTypedValueFromAvroOutput() {
         FileSchema schema = buildVariantSchema(/* includeTypedValue= */ true);
-        Schema avroSchema = AvroSchemaConverter.convert(schema);
+        Schema avroSchema = convert(schema);
         Schema varRecord = pickRecordBranch(avroSchema.getField("var").schema());
 
         // The physical column carries a typed_value sibling, but the Avro view is
@@ -56,8 +56,33 @@ class AvroSchemaConverterTest {
         assertThat(varRecord.getField("typed_value")).isNull();
     }
 
+    /// The two records convert to the same Avro shape — `{metadata: bytes, value: bytes}` —
+    /// so only the plan distinguishes the annotated group from the ordinary one.
     @Test
-    void classifiesOnlyConverterCreatedVariantRecords() {
+    void planMarksOnlyTheAnnotatedGroupAsVariant() {
+        AvroPlanNode plan = AvroSchemaConverter.plan(variantAndOrdinarySchema(), ColumnProjection.all());
+
+        assertThat(plan.child(0).kind()).isEqualTo(AvroPlanNode.Kind.VARIANT);
+        assertThat(plan.child(1).kind()).isEqualTo(AvroPlanNode.Kind.STRUCT);
+        assertThat(plan.avro().getFields().get(0).name()).isEqualTo("variant_record");
+        assertThat(plan.avro().getFields().get(1).name()).isEqualTo("ordinary_record");
+    }
+
+    /// A projection prunes plan children alongside record fields, so a plan child
+    /// must still describe the field at its own position once fields are dropped.
+    @Test
+    void planChildrenStayAlignedUnderProjection() {
+        AvroPlanNode plan = AvroSchemaConverter.plan(
+                variantAndOrdinarySchema(), ColumnProjection.columns("variant_record"));
+
+        assertThat(plan.avro().getFields()).hasSize(1);
+        assertThat(plan.avro().getFields().getFirst().name()).isEqualTo("variant_record");
+        assertThat(plan.child(0).kind()).isEqualTo(AvroPlanNode.Kind.VARIANT);
+    }
+
+    /// A Variant group and an ordinary group of the identical two-byte-field shape,
+    /// side by side.
+    private static FileSchema variantAndOrdinarySchema() {
         SchemaElement root = new SchemaElement("root", null, null, null, 2, null, null, null, null, null);
         SchemaElement variant = new SchemaElement("variant_record", null, null, RepetitionType.OPTIONAL,
                 2, null, null, null, null, new LogicalType.VariantType(1));
@@ -72,16 +97,9 @@ class AvroSchemaConverterTest {
         SchemaElement ordinaryValue = new SchemaElement("value", PhysicalType.BYTE_ARRAY, null,
                 RepetitionType.REQUIRED, null, null, null, null, null, null);
 
-        FileSchema fileSchema = FileSchema.fromSchemaElements(List.of(
+        return FileSchema.fromSchemaElements(List.of(
                 root, variant, variantMetadata, variantValue,
                 ordinary, ordinaryMetadata, ordinaryValue));
-        AvroSchemaConverter.ConversionResult result =
-                AvroSchemaConverter.convertForReading(fileSchema, ColumnProjection.all());
-
-        Schema variantRecord = pickRecordBranch(result.schema().getField("variant_record").schema());
-        Schema ordinaryRecord = pickRecordBranch(result.schema().getField("ordinary_record").schema());
-        assertThat(result.isVariantRecord(variantRecord)).isTrue();
-        assertThat(result.isVariantRecord(ordinaryRecord)).isFalse();
     }
 
     /// `pa.null()` columns carry the NULL logical type on an OPTIONAL primitive.
@@ -94,7 +112,7 @@ class AvroSchemaConverterTest {
                 RepetitionType.OPTIONAL, null, null, null, null, null, new LogicalType.NullType());
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, nothing));
 
-        Schema avroSchema = AvroSchemaConverter.convert(schema);
+        Schema avroSchema = convert(schema);
         Schema.Field field = avroSchema.getField("nothing");
         assertThat(field).isNotNull();
         assertThat(field.schema().getType()).isEqualTo(Schema.Type.NULL);
@@ -116,7 +134,7 @@ class AvroSchemaConverterTest {
                 RepetitionType.OPTIONAL, null, null, null, null, null, new LogicalType.NullType());
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, listGroup, listInner, element));
 
-        Schema avroSchema = AvroSchemaConverter.convert(schema);
+        Schema avroSchema = convert(schema);
         Schema listField = pickArrayBranch(avroSchema.getField("nulls").schema());
         Schema elementSchema = listField.getElementType();
         assertThat(elementSchema.getType()).isEqualTo(Schema.Type.NULL);
@@ -138,7 +156,7 @@ class AvroSchemaConverterTest {
                 RepetitionType.OPTIONAL, null, null, null, null, null, new LogicalType.NullType());
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, mapGroup, kv, key, value));
 
-        Schema avroSchema = AvroSchemaConverter.convert(schema);
+        Schema avroSchema = convert(schema);
         Schema mapField = pickMapBranch(avroSchema.getField("m").schema());
         Schema valueSchema = mapField.getValueType();
         assertThat(valueSchema.getType()).isEqualTo(Schema.Type.NULL);
@@ -167,6 +185,11 @@ class AvroSchemaConverterTest {
             }
         }
         throw new AssertionError("No map branch in union: " + fieldSchema);
+    }
+
+    /// The converted schema alone, for assertions that do not care about the plan.
+    private static Schema convert(FileSchema fileSchema) {
+        return AvroSchemaConverter.plan(fileSchema, ColumnProjection.all()).avro();
     }
 
     private static Schema pickRecordBranch(Schema fieldSchema) {

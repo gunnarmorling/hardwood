@@ -109,9 +109,8 @@ public final class AvroReaders {
                 underlying.tail(tailRows);
             }
             RowReader rowReader = underlying.build();
-            AvroSchemaConverter.ConversionResult conversionResult =
-                    AvroSchemaConverter.convertForReading(fileReader.getFileSchema(), projection);
-            return new AvroRowReader(rowReader, conversionResult);
+            return new AvroRowReader(rowReader,
+                    AvroSchemaConverter.plan(fileReader.getFileSchema(), projection));
         }
     }
 }
