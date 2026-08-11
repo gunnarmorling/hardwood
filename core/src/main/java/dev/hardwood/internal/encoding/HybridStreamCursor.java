@@ -181,13 +181,75 @@ public final class HybridStreamCursor {
         return toRead;
     }
 
+    /// Zero-copy fused unpack-and-lookup for INT32 dictionary indices.
+    /// Unpacks bit-packed indices and looks up dictionary values directly into `dst`.
+    public int unpackAndLookupInts(int[] dictVals, int[] dst, int offset, int max) {
+        if (rle) {
+            throw new IllegalStateException(
+                    "unpackAndLookupInts() is only valid for bit-packed runs, not RLE runs");
+        }
+        int toRead = Math.min(max, remaining);
+        if (toRead <= 0) {
+            return 0;
+        }
+        decodeBitPackedAndLookupInts(dictVals, dst, offset, toRead);
+        remaining -= toRead;
+        return toRead;
+    }
+
+    /// Zero-copy fused unpack-and-lookup for INT64 dictionary indices.
+    public int unpackAndLookupLongs(long[] dictVals, long[] dst, int offset, int max) {
+        if (rle) {
+            throw new IllegalStateException(
+                    "unpackAndLookupLongs() is only valid for bit-packed runs, not RLE runs");
+        }
+        int toRead = Math.min(max, remaining);
+        if (toRead <= 0) {
+            return 0;
+        }
+        decodeBitPackedAndLookupLongs(dictVals, dst, offset, toRead);
+        remaining -= toRead;
+        return toRead;
+    }
+
+    /// Zero-copy fused unpack-and-lookup for FLOAT dictionary indices.
+    public int unpackAndLookupFloats(float[] dictVals, float[] dst, int offset, int max) {
+        if (rle) {
+            throw new IllegalStateException(
+                    "unpackAndLookupFloats() is only valid for bit-packed runs, not RLE runs");
+        }
+        int toRead = Math.min(max, remaining);
+        if (toRead <= 0) {
+            return 0;
+        }
+        decodeBitPackedAndLookupFloats(dictVals, dst, offset, toRead);
+        remaining -= toRead;
+        return toRead;
+    }
+
+    /// Zero-copy fused unpack-and-lookup for DOUBLE dictionary indices.
+    public int unpackAndLookupDoubles(double[] dictVals, double[] dst, int offset, int max) {
+        if (rle) {
+            throw new IllegalStateException(
+                    "unpackAndLookupDoubles() is only valid for bit-packed runs, not RLE runs");
+        }
+        int toRead = Math.min(max, remaining);
+        if (toRead <= 0) {
+            return 0;
+        }
+        decodeBitPackedAndLookupDoubles(dictVals, dst, offset, toRead);
+        remaining -= toRead;
+        return toRead;
+    }
+
     /// Counts how many of the next `count` bit-packed values in this run equal
     /// `matchValue`, consuming them without writing to an output array.
     ///
     /// This is the no-allocation counterpart of `unpack` for skip paths that
     /// need only a present-count, not the values themselves. For bit width 1
     /// (the definition-level common case), bit counting uses `Integer.bitCount`
-    /// (hardware `POPCNT`), processing 8 values per CPU cycle.
+    /// (hardware `POPCNT`), processing 8 values per CPU cycle. Wider bit widths
+    /// use a scalar extract loop.
     ///
     /// Only valid when [#isRle()] is `false`. Decrements [#remaining()] by
     /// `count`. `count` must be ≤ [#remaining()].
@@ -208,84 +270,82 @@ public final class HybridStreamCursor {
             return 0;
         }
 
+        int matched = (bitWidth == 1 && matchValue <= 1)
+                ? skipCountingWidth1(count, matchValue)
+                : skipCountingGeneric(count, matchValue);
+        remaining -= count;
+        return matched;
+    }
+
+    /// Width-1 fast path: drain any leftover bit, then POPCNT whole bytes.
+    private int skipCountingWidth1(int count, int matchValue) {
+        int matched = 0;
+        int remainingToSkip = count;
+
+        while (bitsInBuffer >= 1 && remainingToSkip > 0) {
+            if (((int) (bitBuffer & 1)) == matchValue) {
+                matched++;
+            }
+            bitBuffer >>>= 1;
+            bitsInBuffer--;
+            remainingToSkip--;
+        }
+
+        if (remainingToSkip > 0 && bitsInBuffer == 0) {
+            if (matchValue == 1) {
+                while (remainingToSkip >= 8 && pos < dataEnd) {
+                    matched += Integer.bitCount(data[pos++] & 0xFF);
+                    remainingToSkip -= 8;
+                }
+            }
+            else {
+                while (remainingToSkip >= 8 && pos < dataEnd) {
+                    matched += 8 - Integer.bitCount(data[pos++] & 0xFF);
+                    remainingToSkip -= 8;
+                }
+            }
+        }
+
+        while (remainingToSkip > 0) {
+            while (bitsInBuffer < 1 && pos < dataEnd) {
+                bitBuffer |= ((long) (data[pos++] & 0xFF)) << bitsInBuffer;
+                bitsInBuffer += 8;
+            }
+            if (bitsInBuffer < 1) {
+                break;
+            }
+            if (((int) (bitBuffer & 1)) == matchValue) {
+                matched++;
+            }
+            bitBuffer >>>= 1;
+            bitsInBuffer--;
+            remainingToSkip--;
+        }
+        return matched;
+    }
+
+    /// Non-width-1 path: scalar bit extract. Rare for def-level skips (almost
+    /// always width 1); keeps the hot path free of scratch fields / allocation.
+    private int skipCountingGeneric(int count, int matchValue) {
         final int width = bitWidth;
         final int mask = bitMask;
         int matched = 0;
         int remainingToSkip = count;
-
-        // Drain leftover bits first
-        while (bitsInBuffer >= width && remainingToSkip > 0) {
-            if (((int) (bitBuffer & mask)) == matchValue) matched++;
+        while (remainingToSkip > 0) {
+            while (bitsInBuffer < width && pos < dataEnd) {
+                bitBuffer |= ((long) (data[pos++] & 0xFF)) << bitsInBuffer;
+                bitsInBuffer += 8;
+            }
+            if (bitsInBuffer < width) {
+                break;
+            }
+            if (((int) (bitBuffer & mask)) == matchValue) {
+                matched++;
+            }
             bitBuffer >>>= width;
             bitsInBuffer -= width;
             remainingToSkip--;
         }
-
-        if (remainingToSkip > 0) {
-            // Ultra-fast path for bit width 1 (definition levels) using hardware POPCNT
-            if (width == 1 && bitsInBuffer == 0) {
-                if (matchValue == 1) {
-                    while (remainingToSkip >= 8 && pos < dataEnd) {
-                        matched += Integer.bitCount(data[pos++] & 0xFF);
-                        remainingToSkip -= 8;
-                    }
-                } else if (matchValue == 0) {
-                    while (remainingToSkip >= 8 && pos < dataEnd) {
-                        matched += 8 - Integer.bitCount(data[pos++] & 0xFF);
-                        remainingToSkip -= 8;
-                    }
-                }
-            }
-            // For widths 2-8: read 8 values per group (width bytes)
-            else if (width <= 8 && bitsInBuffer == 0) {
-                while (remainingToSkip >= 8 && pos + 8 <= dataEnd) {
-                    long bits = dataBuffer.getLong(pos);
-                    pos += width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++;
-                    remainingToSkip -= 8;
-                }
-                // Fallback near end of buffer
-                while (remainingToSkip >= 8 && pos + width <= dataEnd) {
-                    long bits = 0;
-                    for (int i = 0; i < width; i++) {
-                        bits |= ((long) (data[pos++] & 0xFF)) << (i * 8);
-                    }
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++; bits >>>= width;
-                    if (((int) (bits & mask)) == matchValue) matched++;
-                    remainingToSkip -= 8;
-                }
-            }
-
-            // Handle remaining values (generic path shared by all widths)
-            while (remainingToSkip > 0) {
-                while (bitsInBuffer < width && pos < dataEnd) {
-                    bitBuffer |= ((long) (data[pos++] & 0xFF)) << bitsInBuffer;
-                    bitsInBuffer += 8;
-                }
-                if (bitsInBuffer < width) {
-                    break;
-                }
-                if (((int) (bitBuffer & mask)) == matchValue) matched++;
-                bitBuffer >>>= width;
-                bitsInBuffer -= width;
-                remainingToSkip--;
-            }
-        }
-
-        remaining -= count;
         return matched;
     }
 
@@ -300,21 +360,30 @@ public final class HybridStreamCursor {
         return value & bitMask;
     }
 
-    /// Batch decode bit-packed values. Optimized paths for common bit widths.
-    ///
-    /// NOTE: this intentionally duplicates the logic in
-    /// [RleBitPackingHybridDecoder#decodeBitPacked]. The cursor owns its byte
-    /// array so it remains valid after the page-decode call that built it (the
-    /// drain thread consumes it later while the decompression buffer is reused).
-    /// Coupling the two implementations would re-introduce that lifetime
-    /// dependency. If you improve one, update the other and keep them in sync.
-    private void decodeBitPacked(int[] output, int outPos, int count) {
+    @FunctionalInterface
+    private interface ValueWriter {
+        void write(int outPos, int rawValue);
+    }
+
+    private static long extractPackedVal(long w0, long w1, long w2, long w3, int bitOffset, int width, long mask) {
+        int wordIdx = bitOffset >>> 6;
+        int shift = bitOffset & 63;
+        long wordLow = (wordIdx == 0) ? w0 : (wordIdx == 1) ? w1 : (wordIdx == 2) ? w2 : w3;
+        if (shift + width <= 64) {
+            return (wordLow >>> shift) & mask;
+        } else {
+            long wordHigh = (wordIdx == 0) ? w1 : (wordIdx == 1) ? w2 : w3;
+            return ((wordLow >>> shift) | (wordHigh << (64 - shift))) & mask;
+        }
+    }
+
+    private void decodeBitPacked(ValueWriter writer, int outPos, int count) {
         final int width = bitWidth;
         final int mask = bitMask;
 
         // Drain leftover bits first
         while (bitsInBuffer >= width && count > 0) {
-            output[outPos++] = (int) (bitBuffer & mask);
+            writer.write(outPos++, (int) (bitBuffer & mask));
             bitBuffer >>>= width;
             bitsInBuffer -= width;
             count--;
@@ -324,14 +393,14 @@ public final class HybridStreamCursor {
         if (width == 1 && bitsInBuffer == 0) {
             while (count >= 8 && pos < dataEnd) {
                 int b = data[pos++] & 0xFF;
-                output[outPos]     = b & 1;
-                output[outPos + 1] = (b >> 1) & 1;
-                output[outPos + 2] = (b >> 2) & 1;
-                output[outPos + 3] = (b >> 3) & 1;
-                output[outPos + 4] = (b >> 4) & 1;
-                output[outPos + 5] = (b >> 5) & 1;
-                output[outPos + 6] = (b >> 6) & 1;
-                output[outPos + 7] = (b >> 7) & 1;
+                writer.write(outPos,     b & 1);
+                writer.write(outPos + 1, (b >> 1) & 1);
+                writer.write(outPos + 2, (b >> 2) & 1);
+                writer.write(outPos + 3, (b >> 3) & 1);
+                writer.write(outPos + 4, (b >> 4) & 1);
+                writer.write(outPos + 5, (b >> 5) & 1);
+                writer.write(outPos + 6, (b >> 6) & 1);
+                writer.write(outPos + 7, (b >> 7) & 1);
                 outPos += 8;
                 count -= 8;
             }
@@ -339,37 +408,57 @@ public final class HybridStreamCursor {
         // For widths 2-8: read 8 bytes at once when possible, extract 8 values.
         // Each group of 8 values occupies exactly `width` bytes in the stream
         // (width bits × 8 values = width bytes). getLong loads a long for convenient
-        // shifting but only `width` bytes belong to the current group, so pos advances
+        //  shifting, but only `width` bytes belong to the current group, so pos advances
         // by width, not by 8.
         else if (width <= 8 && bitsInBuffer == 0) {
             while (count >= 8 && pos + 8 <= dataEnd) {
                 long bits = dataBuffer.getLong(pos);
                 pos += width;
-                output[outPos]     = (int) (bits & mask); bits >>>= width;
-                output[outPos + 1] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 2] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 3] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 4] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 5] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 6] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 7] = (int) (bits & mask);
+                writer.write(outPos,     (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 1, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 2, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 3, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 4, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 5, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 6, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 7, (int) (bits & mask));
                 outPos += 8;
                 count -= 8;
             }
-            // Fallback when near end of buffer
+            // Fallback when near the end of the buffer
             while (count >= 8 && pos + width <= dataEnd) {
                 long bits = 0;
                 for (int i = 0; i < width; i++) {
                     bits |= ((long) (data[pos++] & 0xFF)) << (i * 8);
                 }
-                output[outPos]     = (int) (bits & mask); bits >>>= width;
-                output[outPos + 1] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 2] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 3] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 4] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 5] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 6] = (int) (bits & mask); bits >>>= width;
-                output[outPos + 7] = (int) (bits & mask);
+                writer.write(outPos,     (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 1, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 2, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 3, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 4, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 5, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 6, (int) (bits & mask)); bits >>>= width;
+                writer.write(outPos + 7, (int) (bits & mask));
+                outPos += 8;
+                count -= 8;
+            }
+        }
+        else if (bitsInBuffer == 0 && pos + width + 7 <= dataEnd) {
+            while (count >= 8 && pos + width + 7 <= dataEnd) {
+                long w0 = dataBuffer.getLong(pos);
+                long w1 = (width > 8)  ? dataBuffer.getLong(pos + 8)  : 0;
+                long w2 = (width > 16) ? dataBuffer.getLong(pos + 16) : 0;
+                long w3 = (width > 24) ? dataBuffer.getLong(pos + 24) : 0;
+                pos += width;
+
+                writer.write(outPos,     (int) extractPackedVal(w0, w1, w2, w3, 0, width, mask));
+                writer.write(outPos + 1, (int) extractPackedVal(w0, w1, w2, w3, width, width, mask));
+                writer.write(outPos + 2, (int) extractPackedVal(w0, w1, w2, w3, 2 * width, width, mask));
+                writer.write(outPos + 3, (int) extractPackedVal(w0, w1, w2, w3, 3 * width, width, mask));
+                writer.write(outPos + 4, (int) extractPackedVal(w0, w1, w2, w3, 4 * width, width, mask));
+                writer.write(outPos + 5, (int) extractPackedVal(w0, w1, w2, w3, 5 * width, width, mask));
+                writer.write(outPos + 6, (int) extractPackedVal(w0, w1, w2, w3, 6 * width, width, mask));
+                writer.write(outPos + 7, (int) extractPackedVal(w0, w1, w2, w3, 7 * width, width, mask));
                 outPos += 8;
                 count -= 8;
             }
@@ -384,11 +473,31 @@ public final class HybridStreamCursor {
             if (bitsInBuffer < width) {
                 break;
             }
-            output[outPos++] = (int) (bitBuffer & mask);
+            writer.write(outPos++, (int) (bitBuffer & mask));
             bitBuffer >>>= width;
             bitsInBuffer -= width;
             count--;
         }
+    }
+
+    private void decodeBitPacked(int[] output, int outPos, int count) {
+        decodeBitPacked((index, val) -> output[index] = val, outPos, count);
+    }
+
+    private void decodeBitPackedAndLookupInts(int[] dictVals, int[] output, int outPos, int count) {
+        decodeBitPacked((index, val) -> output[index] = dictVals[val], outPos, count);
+    }
+
+    private void decodeBitPackedAndLookupLongs(long[] dictVals, long[] output, int outPos, int count) {
+        decodeBitPacked((index, val) -> output[index] = dictVals[val], outPos, count);
+    }
+
+    private void decodeBitPackedAndLookupFloats(float[] dictVals, float[] output, int outPos, int count) {
+        decodeBitPacked((index, val) -> output[index] = dictVals[val], outPos, count);
+    }
+
+    private void decodeBitPackedAndLookupDoubles(double[] dictVals, double[] output, int outPos, int count) {
+        decodeBitPacked((index, val) -> output[index] = dictVals[val], outPos, count);
     }
 
     /// Skips `count` bit-packed values without storing them.

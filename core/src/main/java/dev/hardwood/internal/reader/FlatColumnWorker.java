@@ -414,6 +414,17 @@ public class FlatColumnWorker extends ColumnWorker<BatchExchange.Batch> {
     }
 
     private void copyPageDataFused(Page page, int destPos, int length) {
+        if (currentDefLevelCursor.remaining() == 0) {
+            currentDefLevelCursor.advance();
+        }
+        if (currentDefLevelCursor.isRle()
+                && currentDefLevelCursor.value() == maxDefinitionLevel
+                && currentDefLevelCursor.remaining() >= length) {
+            processPresentRange(page, destPos, length);
+            currentDefLevelCursor.skip(length);
+            return;
+        }
+
         int copied = 0;
         while (copied < length) {
             if (currentDefLevelCursor.remaining() == 0) {
@@ -424,16 +435,9 @@ public class FlatColumnWorker extends ColumnWorker<BatchExchange.Batch> {
             int toCopy = Math.min(length - copied, currentDefLevelCursor.remaining());
             if (currentDefLevelCursor.isRle()) {
                 if (currentDefLevelCursor.value() == maxDefinitionLevel) {
-                    if (currentBatchHasAbsents) {
-                        BitmapWords.setRange(currentValidity, destPos + copied, destPos + copied + toCopy);
-                    }
-                    copyIndexValues(page, destPos + copied, toCopy);
+                    processPresentRange(page, destPos + copied, toCopy);
                 } else {
-                    if (!currentBatchHasAbsents) {
-                        currentBatchHasAbsents = true;
-                        BitmapWords.setRange(currentValidity, 0, destPos + copied);
-                    }
-                    fillNulls(page, destPos + copied, toCopy);
+                    processAbsentRange(page, destPos + copied, toCopy);
                 }
                 currentDefLevelCursor.skip(toCopy);
             } else {
@@ -452,16 +456,9 @@ public class FlatColumnWorker extends ColumnWorker<BatchExchange.Batch> {
                     int runLen = i - runStart;
                     int dst = destPos + copied + runStart;
                     if (present) {
-                        if (currentBatchHasAbsents) {
-                            BitmapWords.setRange(currentValidity, dst, dst + runLen);
-                        }
-                        copyIndexValues(page, dst, runLen);
+                        processPresentRange(page, dst, runLen);
                     } else {
-                        if (!currentBatchHasAbsents) {
-                            currentBatchHasAbsents = true;
-                            BitmapWords.setRange(currentValidity, 0, dst);
-                        }
-                        fillNulls(page, dst, runLen);
+                        processAbsentRange(page, dst, runLen);
                     }
                 }
             }
@@ -471,6 +468,21 @@ public class FlatColumnWorker extends ColumnWorker<BatchExchange.Batch> {
             throw new IllegalStateException("Insufficient RLE/Bit-Packing data: decoded "
                     + copied + " of " + length + " requested values");
         }
+    }
+
+    private void processPresentRange(Page page, int destPos, int count) {
+        if (currentBatchHasAbsents) {
+            BitmapWords.setRange(currentValidity, destPos, destPos + count);
+        }
+        copyIndexValues(page, destPos, count);
+    }
+
+    private void processAbsentRange(Page page, int destPos, int count) {
+        if (!currentBatchHasAbsents) {
+            currentBatchHasAbsents = true;
+            BitmapWords.setRange(currentValidity, 0, destPos);
+        }
+        fillNulls(page, destPos, count);
     }
 
     private void copyIndexValues(Page page, int destPos, int count) {
@@ -499,14 +511,29 @@ public class FlatColumnWorker extends ColumnWorker<BatchExchange.Batch> {
                 copySingleIndexRepeated(page, destPos + copied, indexValue, toCopy);
                 currentIndexCursor.skip(toCopy);
             } else {
-                int unpacked = currentIndexCursor.unpack(tempIndices, 0, toCopy);
-                copyMappedIndices(page, tempIndices, destPos + copied, unpacked);
+                unpackBitPackedIndices(page, destPos + copied, toCopy);
             }
             copied += toCopy;
         }
         if (copied < count) {
             throw new IllegalStateException("Insufficient RLE/Bit-Packing data: decoded "
                     + copied + " of " + count + " requested values");
+        }
+    }
+
+    private void unpackBitPackedIndices(Page page, int destPos, int toCopy) {
+        Object values = currentBatch.values;
+        Dictionary dict = page.dictionary();
+        switch (dict) {
+            case Dictionary.IntDictionary d -> currentIndexCursor.unpackAndLookupInts(d.values(), (int[]) values, destPos, toCopy);
+            case Dictionary.LongDictionary d -> currentIndexCursor.unpackAndLookupLongs(d.values(), (long[]) values, destPos, toCopy);
+            case Dictionary.FloatDictionary d -> currentIndexCursor.unpackAndLookupFloats(d.values(), (float[]) values, destPos, toCopy);
+            case Dictionary.DoubleDictionary d -> currentIndexCursor.unpackAndLookupDoubles(d.values(), (double[]) values, destPos, toCopy);
+            case Dictionary.ByteArrayDictionary d -> {
+                int unpacked = currentIndexCursor.unpack(tempIndices, 0, toCopy);
+                copyMappedByteArrayIndices(d, tempIndices, destPos, unpacked);
+            }
+            case null -> throw new IllegalStateException("Page dictionary is null during index decoding for column '" + column.fieldPath() + "'");
         }
     }
 
@@ -518,61 +545,28 @@ public class FlatColumnWorker extends ColumnWorker<BatchExchange.Batch> {
             case Dictionary.LongDictionary d -> Arrays.fill((long[]) values, destPos, destPos + count, d.values()[index]);
             case Dictionary.FloatDictionary d -> Arrays.fill((float[]) values, destPos, destPos + count, d.values()[index]);
             case Dictionary.DoubleDictionary d -> Arrays.fill((double[]) values, destPos, destPos + count, d.values()[index]);
-            case Dictionary.ByteArrayDictionary d -> {
-                BinaryBatchValues bbv = (BinaryBatchValues) values;
-                byte[] val = d.values()[index];
-                for (int i = 0; i < count; i++) {
-                    bbv.appendAt(destPos + i, val, 0, val.length);
-                }
-                bbv.recordRepeatedDictIndex(d, destPos, count, index);
-            }
+            case Dictionary.ByteArrayDictionary d -> copyRepeatedByteArrayIndex(d, index, destPos, count);
             case null -> throw new IllegalStateException("Page dictionary is null during index decoding for column '" + column.fieldPath() + "'");
         }
     }
 
-    private void copyMappedIndices(Page page, int[] indices, int destPos, int count) {
-        Object values = currentBatch.values;
-        Dictionary dict = page.dictionary();
-        switch (dict) {
-            case Dictionary.IntDictionary d -> {
-                int[] batchVals = (int[]) values;
-                int[] dictVals = d.values();
-                for (int i = 0; i < count; i++) {
-                    batchVals[destPos + i] = dictVals[indices[i]];
-                }
-            }
-            case Dictionary.LongDictionary d -> {
-                long[] batchVals = (long[]) values;
-                long[] dictVals = d.values();
-                for (int i = 0; i < count; i++) {
-                    batchVals[destPos + i] = dictVals[indices[i]];
-                }
-            }
-            case Dictionary.FloatDictionary d -> {
-                float[] batchVals = (float[]) values;
-                float[] dictVals = d.values();
-                for (int i = 0; i < count; i++) {
-                    batchVals[destPos + i] = dictVals[indices[i]];
-                }
-            }
-            case Dictionary.DoubleDictionary d -> {
-                double[] batchVals = (double[]) values;
-                double[] dictVals = d.values();
-                for (int i = 0; i < count; i++) {
-                    batchVals[destPos + i] = dictVals[indices[i]];
-                }
-            }
-            case Dictionary.ByteArrayDictionary d -> {
-                BinaryBatchValues bbv = (BinaryBatchValues) values;
-                byte[][] dictVals = d.values();
-                for (int i = 0; i < count; i++) {
-                    byte[] val = dictVals[indices[i]];
-                    bbv.appendAt(destPos + i, val, 0, val.length);
-                }
-                bbv.recordMappedDictIndices(d, indices, destPos, count);
-            }
-            case null -> throw new IllegalStateException("Page dictionary is null during index decoding for column '" + column.fieldPath() + "'");
+    private void copyRepeatedByteArrayIndex(Dictionary.ByteArrayDictionary d, int index, int destPos, int count) {
+        BinaryBatchValues bbv = (BinaryBatchValues) currentBatch.values;
+        byte[] val = d.values()[index];
+        for (int i = 0; i < count; i++) {
+            bbv.appendAt(destPos + i, val, 0, val.length);
         }
+        bbv.recordRepeatedDictIndex(d, destPos, count, index);
+    }
+
+    private void copyMappedByteArrayIndices(Dictionary.ByteArrayDictionary d, int[] indices, int destPos, int count) {
+        BinaryBatchValues bbv = (BinaryBatchValues) currentBatch.values;
+        byte[][] dictVals = d.values();
+        for (int i = 0; i < count; i++) {
+            byte[] val = dictVals[indices[i]];
+            bbv.appendAt(destPos + i, val, 0, val.length);
+        }
+        bbv.recordMappedDictIndices(d, indices, destPos, count);
     }
 
     /// Writes the null representation for `count` absent leaves at `destPos`.
