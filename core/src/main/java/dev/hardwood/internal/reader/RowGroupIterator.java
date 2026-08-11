@@ -595,8 +595,9 @@ public class RowGroupIterator {
                         context, workItem.rowGroupIndex(), inputFile.name());
             }
             catch (IOException e) {
-                throw new UncheckedIOException("Failed to compute fetch plan for column "
-                        + projCol + " in row group " + workItem.rowGroupIndex(), e);
+                throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+                        + "Failed to compute fetch plan for column " + projCol
+                        + " in row group " + workItem.rowGroupIndex() + ": " + e.getMessage(), e);
             }
         }
 

@@ -86,7 +86,8 @@ public final class ParquetMetadataReader {
         // Validate footer length
         long footerStart = fileSize - MAGIC_SIZE - FOOTER_LENGTH_SIZE - footerLength;
         if (footerStart < MAGIC_SIZE) {
-            throw new IOException("Invalid footer length: " + footerLength);
+            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Invalid footer length: " + footerLength);
         }
 
         // Parse file metadata
