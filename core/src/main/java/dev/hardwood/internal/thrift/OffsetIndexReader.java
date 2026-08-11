@@ -8,9 +8,10 @@
 package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
 
@@ -33,7 +34,7 @@ public class OffsetIndexReader {
     }
 
     private static OffsetIndex readInternal(ThriftCompactReader reader) throws IOException {
-        List<PageLocation> pageLocations = new ArrayList<>();
+        List<PageLocation> pageLocations = Collections.emptyList();
         long[] unencodedByteArrayDataBytes = null;
 
         while (true) {
@@ -43,23 +44,16 @@ public class OffsetIndexReader {
             }
 
             switch (header.fieldId()) {
-                case 1: // page_locations (list<PageLocation>)
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            pageLocations.add(PageLocationReader.read(reader));
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 1: // page_locations (required list<PageLocation>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        pageLocations = reader.readStructList(
+                                "OffsetIndex.page_locations", PageLocationReader::read);
                     }
                     break;
                 case 2: // unencoded_byte_array_data_bytes (list<i64>, optional)
-                    if (header.type() == 0x09) { // LIST
-                        unencodedByteArrayDataBytes = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        unencodedByteArrayDataBytes = reader.readOptionalI64Array(
+                                "OffsetIndex.unencoded_byte_array_data_bytes");
                     }
                     break;
                 default:

@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.List;
 
+import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.reader.ColumnIndexBuffers;
 import dev.hardwood.internal.reader.RowGroupIndexBuffers;
 import dev.hardwood.internal.reader.RowRanges;
@@ -46,44 +47,45 @@ public class PageFilterEvaluator {
     /// @param predicate    the resolved predicate to evaluate
     /// @param rowGroup     the row group to evaluate against
     /// @param indexBuffers pre-fetched index buffers for the row group
+    /// @param location     file and row group being filtered, for error attribution
     /// @return row ranges that might contain matching rows
     public static RowRanges computeMatchingRows(ResolvedPredicate predicate, RowGroup rowGroup,
-            RowGroupIndexBuffers indexBuffers) {
+            RowGroupIndexBuffers indexBuffers, IndexLocation location) {
         long rowCount = rowGroup.numRows();
-        return evaluate(predicate, rowGroup, indexBuffers, rowCount);
+        return evaluate(predicate, rowGroup, indexBuffers, rowCount, location);
     }
 
     private static RowRanges evaluate(ResolvedPredicate predicate, RowGroup rowGroup,
-            RowGroupIndexBuffers indexBuffers, long rowCount) {
+            RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location) {
         return switch (predicate) {
             case ResolvedPredicate.And a -> {
                 RowRanges result = RowRanges.all(rowCount);
                 for (ResolvedPredicate child : a.children()) {
-                    result = result.intersect(evaluate(child, rowGroup, indexBuffers, rowCount));
+                    result = result.intersect(evaluate(child, rowGroup, indexBuffers, rowCount, location));
                 }
                 yield result;
             }
             case ResolvedPredicate.Or o -> {
                 RowRanges result = null;
                 for (ResolvedPredicate child : o.children()) {
-                    RowRanges childRanges = evaluate(child, rowGroup, indexBuffers, rowCount);
+                    RowRanges childRanges = evaluate(child, rowGroup, indexBuffers, rowCount, location);
                     result = (result == null) ? childRanges : result.union(childRanges);
                 }
                 yield (result != null) ? result : RowRanges.all(rowCount);
             }
-            case ResolvedPredicate.IsNullPredicate p -> evaluateNullPages(p.columnIndex(), true, rowGroup, indexBuffers, rowCount);
-            case ResolvedPredicate.IsNotNullPredicate p -> evaluateNullPages(p.columnIndex(), false, rowGroup, indexBuffers, rowCount);
+            case ResolvedPredicate.IsNullPredicate p -> evaluateNullPages(p.columnIndex(), true, rowGroup, indexBuffers, rowCount, location);
+            case ResolvedPredicate.IsNotNullPredicate p -> evaluateNullPages(p.columnIndex(), false, rowGroup, indexBuffers, rowCount, location);
             // Parquet has no per-page geospatial statistics (GeospatialStatistics lives only on
             // ColumnMetaData, applied during row-group filtering), so no page-level pruning is possible.
             case ResolvedPredicate.GeospatialPredicate ignored -> RowRanges.all(rowCount);
-            default -> evaluateLeafPages(predicate, rowGroup, indexBuffers, rowCount);
+            default -> evaluateLeafPages(predicate, rowGroup, indexBuffers, rowCount, location);
         };
     }
 
     /// Evaluates a leaf predicate against per-page Column Index statistics,
     /// using [StatisticsFilterSupport#canDropLeaf] for the actual comparison.
     private static RowRanges evaluateLeafPages(ResolvedPredicate predicate, RowGroup rowGroup,
-            RowGroupIndexBuffers indexBuffers, long rowCount) {
+            RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location) {
 
         int columnIndex = leafColumnIndex(predicate);
         if (columnIndex < 0 || columnIndex >= rowGroup.columns().size()) {
@@ -95,13 +97,7 @@ public class PageFilterEvaluator {
             return RowRanges.all(rowCount);
         }
 
-        IndexPair indexPair;
-        try {
-            indexPair = readIndexPair(colBuffers);
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException("Failed to parse Column/Offset Index for column index " + columnIndex, e);
-        }
+        IndexPair indexPair = readIndexPair(colBuffers, location, columnIndex);
         ColumnIndex columnIdx = indexPair.columnIndex;
         OffsetIndex offsetIdx = indexPair.offsetIndex;
 
@@ -110,7 +106,7 @@ public class PageFilterEvaluator {
         boolean[] keep = new boolean[pageCount];
 
         for (int i = 0; i < pageCount; i++) {
-            if (columnIdx.nullPages().get(i)) {
+            if (columnIdx.nullPages()[i]) {
                 continue;
             }
             keep[i] = !StatisticsFilterSupport.canDropLeaf(predicate, MinMaxStats.ofPage(columnIdx, i));
@@ -128,9 +124,10 @@ public class PageFilterEvaluator {
     /// @param rowGroup     the row group being evaluated
     /// @param indexBuffers pre-fetched index buffers
     /// @param rowCount     total rows in the row group
+    /// @param location     file and row group being filtered, for error attribution
     /// @return row ranges that might contain matching rows
     private static RowRanges evaluateNullPages(int columnIndex, boolean seekingNulls,
-            RowGroup rowGroup, RowGroupIndexBuffers indexBuffers, long rowCount) {
+            RowGroup rowGroup, RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location) {
 
         if (columnIndex < 0 || columnIndex >= rowGroup.columns().size()) {
             return RowRanges.all(rowCount);
@@ -141,13 +138,7 @@ public class PageFilterEvaluator {
             return RowRanges.all(rowCount);
         }
 
-        IndexPair indexPair;
-        try {
-            indexPair = readIndexPair(colBuffers);
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException("Failed to parse Column/Offset Index for column index " + columnIndex, e);
-        }
+        IndexPair indexPair = readIndexPair(colBuffers, location, columnIndex);
         ColumnIndex columnIdx = indexPair.columnIndex;
         OffsetIndex offsetIdx = indexPair.offsetIndex;
 
@@ -170,7 +161,7 @@ public class PageFilterEvaluator {
             else {
                 // IS NOT NULL: keep page if it might contain non-nulls
                 // Drop page if nullPages[i] == true (entire page is null)
-                keep[i] = !columnIdx.nullPages().get(i);
+                keep[i] = !columnIdx.nullPages()[i];
             }
         }
 
@@ -207,7 +198,7 @@ public class PageFilterEvaluator {
         boolean[] keep = new boolean[pageCount];
 
         for (int i = 0; i < pageCount; i++) {
-            if (columnIdx.nullPages().get(i)) {
+            if (columnIdx.nullPages()[i]) {
                 continue;
             }
             keep[i] = !canDropTest.canDrop(columnIdx, i);
@@ -223,11 +214,42 @@ public class PageFilterEvaluator {
         boolean canDrop(ColumnIndex columnIndex, int pageIndex);
     }
 
-    private static IndexPair readIndexPair(ColumnIndexBuffers colBuffers) throws IOException {
-        ColumnIndex columnIdx = ColumnIndexReader.read(new ThriftCompactReader(colBuffers.columnIndex()));
-        OffsetIndex offsetIdx = OffsetIndexReader.read(new ThriftCompactReader(colBuffers.offsetIndex()));
-        return new IndexPair(columnIdx, offsetIdx);
+    /// Parses one column chunk's `ColumnIndex` and `OffsetIndex` together.
+    ///
+    /// The two structs describe the same pages from different angles — one holds the per-page
+    /// statistics, the other the per-page locations — and page filtering walks them with a
+    /// single index. A file where they disagree on the page count is rejected here rather than
+    /// indexing one with the other's length further down.
+    ///
+    /// The page index is read per column chunk, outside the footer parse that
+    /// [dev.hardwood.internal.reader.ParquetMetadataReader] attributes, so failures are named
+    /// here: file, row group and column are all at hand.
+    private static IndexPair readIndexPair(ColumnIndexBuffers colBuffers, IndexLocation location,
+            int columnIndex) {
+        try {
+            ColumnIndex columnIdx = ColumnIndexReader.read(new ThriftCompactReader(colBuffers.columnIndex()));
+            OffsetIndex offsetIdx = OffsetIndexReader.read(new ThriftCompactReader(colBuffers.offsetIndex()));
+            int columnIndexPages = columnIdx.getPageCount();
+            int offsetIndexPages = offsetIdx.pageLocations().size();
+            if (columnIndexPages != offsetIndexPages) {
+                throw new IOException("Malformed Parquet metadata: ColumnIndex describes "
+                        + columnIndexPages + " pages but OffsetIndex locates " + offsetIndexPages);
+            }
+            return new IndexPair(columnIdx, offsetIdx);
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(ExceptionContext.filePrefix(location.fileName())
+                    + "Failed to parse the page index of column " + columnIndex
+                    + " in row group " + location.rowGroupIndex() + ": " + e.getMessage(), e);
+        }
     }
+
+    /// The column chunk whose page index is being parsed, minus the column: file and row group
+    /// are fixed for a whole evaluation, the column varies per leaf predicate.
+    ///
+    /// @param fileName name of the file being read
+    /// @param rowGroupIndex index of the row group being filtered
+    public record IndexLocation(String fileName, int rowGroupIndex) {}
 
     private record IndexPair(ColumnIndex columnIndex, OffsetIndex offsetIndex) {}
 }

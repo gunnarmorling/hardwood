@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ConvertedType;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
@@ -48,83 +49,53 @@ public class SchemaElementReader {
 
             switch (header.fieldId()) {
                 case 1: // type (optional)
-                    if (header.type() == 0x05) { // I32
+                    if (reader.acceptField(header, Codes.I32)) { // I32
                         type = ThriftEnumLookup.physicalType(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // type_length (optional)
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         typeLength = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 3: // repetition_type (optional)
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         repetitionType = ThriftEnumLookup.repetitionType(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 4: // name (required)
-                    if (header.type() == 0x08) { // BINARY
+                    if (reader.acceptField(header, Codes.BINARY)) { // BINARY
                         name = reader.readString();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 5: // num_children (optional)
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         numChildren = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 6: // converted_type (optional)
-                    if (header.type() == 0x05) { // I32
+                    if (reader.acceptField(header, Codes.I32)) { // I32
                         convertedType = ThriftEnumLookup.convertedType(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 7: // scale (optional) - for legacy DECIMAL support
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         scale = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 8: // precision (optional) - for legacy DECIMAL support
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         precision = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 9: // field_id (optional)
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         fieldId = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 10: // logicalType (optional)
-                    if (header.type() == 0x0C) { // STRUCT
+                    if (reader.acceptField(header, Codes.STRUCT)) { // STRUCT
                         logicalType = LogicalTypeReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:

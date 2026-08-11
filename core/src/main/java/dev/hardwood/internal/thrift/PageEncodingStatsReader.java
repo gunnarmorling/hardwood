@@ -34,15 +34,9 @@ class PageEncodingStatsReader {
     /// The reader is always left positioned on the byte after the list, so the rest of the
     /// footer parses regardless of what this field contained.
     static List<PageEncodingStats> read(ThriftCompactReader reader) throws IOException {
-        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-        // Elements are read as structs, so a list declaring anything else would have its value
-        // bytes misread as field headers. Skipping by the declared element type consumes it
-        // without that risk.
-        if (listHeader.elementType() != Codes.STRUCT) {
-            reader.skipElements(listHeader);
-            LOG.log(System.Logger.Level.WARNING,
-                    "Ignoring ColumnMetaData.encoding_stats: wrong Thrift element type 0x"
-                            + Integer.toHexString(listHeader.elementType() & 0xFF) + " (expected struct)");
+        ThriftCompactReader.CollectionHeader listHeader =
+                reader.acceptListHeader(Codes.STRUCT, "ColumnMetaData.encoding_stats");
+        if (listHeader == null) {
             return List.of();
         }
         List<PageEncodingStats> result = new ArrayList<>(listHeader.size());

@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.LogicalType.EdgeInterpolationAlgorithm;
 import dev.hardwood.metadata.LogicalType.TimeUnit;
@@ -125,19 +126,13 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // scale (required)
-                    if (header.type() == 0x05) { // I32
+                    if (reader.acceptField(header, Codes.I32)) { // I32
                         scale = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // precision (required)
-                    if (header.type() == 0x05) { // I32
+                    if (reader.acceptField(header, Codes.I32)) { // I32
                         precision = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
@@ -177,15 +172,7 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // isAdjustedToUTC (required)
-                    if (header.type() == 0x01) { // TYPE_BOOLEAN_TRUE
-                        isAdjustedToUTC = true;
-                    }
-                    else if (header.type() == 0x02) { // TYPE_BOOLEAN_FALSE
-                        isAdjustedToUTC = false;
-                    }
-                    else {
-                        reader.skipField(header.type());
-                    }
+                    isAdjustedToUTC = reader.readBooleanField(header, isAdjustedToUTC);
                     break;
                 case 2: // unit (required)
                     unit = readTimeUnit(reader);
@@ -221,15 +208,7 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // isAdjustedToUTC (required)
-                    if (header.type() == 0x01) { // TYPE_BOOLEAN_TRUE
-                        isAdjustedToUTC = true;
-                    }
-                    else if (header.type() == 0x02) { // TYPE_BOOLEAN_FALSE
-                        isAdjustedToUTC = false;
-                    }
-                    else {
-                        reader.skipField(header.type());
-                    }
+                    isAdjustedToUTC = reader.readBooleanField(header, isAdjustedToUTC);
                     break;
                 case 2: // unit (required)
                     unit = readTimeUnit(reader);
@@ -265,23 +244,12 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // bitWidth (required)
-                    if (header.type() == 0x03) { // I8 (byte)
+                    if (reader.acceptField(header, Codes.BYTE)) { // I8 (byte)
                         bitWidth = reader.readByte();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // isSigned (required)
-                    if (header.type() == 0x01) { // TYPE_BOOLEAN_TRUE
-                        isSigned = true;
-                    }
-                    else if (header.type() == 0x02) { // TYPE_BOOLEAN_FALSE
-                        isSigned = false;
-                    }
-                    else {
-                        reader.skipField(header.type());
-                    }
+                    isSigned = reader.readBooleanField(header, isSigned);
                     break;
                 default:
                     reader.skipField(header.type());
@@ -313,11 +281,8 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // specification_version (optional i8)
-                    if (header.type() == 0x03) { // I8
+                    if (reader.acceptField(header, Codes.BYTE)) { // I8
                         specVersion = reader.readByte();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
@@ -333,6 +298,9 @@ public class LogicalTypeReader {
         short saved = reader.pushFieldIdContext();
         try {
             ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
+            if (header == null) {
+                throw new IOException("Malformed Parquet metadata: TimeUnit union has no variant set");
+            }
             int fieldId = header.fieldId();
             reader.skipField(header.type());
             reader.readFieldHeader(); // Consume STOP
@@ -369,11 +337,8 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // CRS
-                    if (header.type() == 0x08) { // TYPE_BINARY
+                    if (reader.acceptField(header, Codes.BINARY)) { // TYPE_BINARY
                         crs = reader.readString();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
@@ -410,19 +375,13 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // CRS
-                    if (header.type() == 0x08) { // TYPE_BINARY
+                    if (reader.acceptField(header, Codes.BINARY)) { // TYPE_BINARY
                         crs = reader.readString();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // EdgeInterpolation
-                    if (header.type() == 0x0C) { // TYPE_STRUCT
+                    if (reader.acceptField(header, Codes.STRUCT)) { // TYPE_STRUCT
                         edgeInterpolation = readEdgeInterpolation(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
@@ -445,6 +404,9 @@ public class LogicalTypeReader {
         short saved = reader.pushFieldIdContext();
         try {
             ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
+            if (header == null) {
+                throw new IOException("Malformed Parquet metadata: EdgeInterpolationAlgorithm union has no variant set");
+            }
             int fieldId = header.fieldId();
             reader.skipField(header.type());
             reader.readFieldHeader(); // Consume STOP

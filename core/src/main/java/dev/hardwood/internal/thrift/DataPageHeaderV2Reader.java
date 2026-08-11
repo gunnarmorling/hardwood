@@ -10,6 +10,7 @@ package dev.hardwood.internal.thrift;
 import java.io.IOException;
 
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.Statistics;
 
@@ -44,40 +45,41 @@ public class DataPageHeaderV2Reader {
 
             switch (header.fieldId()) {
                 case 1: // num_values
-                    numValues = reader.readNonNegativeI32("DataPageHeaderV2.num_values");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numValues = reader.readNonNegativeI32("DataPageHeaderV2.num_values");
+                    }
                     break;
                 case 2: // num_nulls
-                    numNulls = reader.readNonNegativeI32("DataPageHeaderV2.num_nulls");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numNulls = reader.readNonNegativeI32("DataPageHeaderV2.num_nulls");
+                    }
                     break;
                 case 3: // num_rows
-                    numRows = reader.readNonNegativeI32("DataPageHeaderV2.num_rows");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numRows = reader.readNonNegativeI32("DataPageHeaderV2.num_rows");
+                    }
                     break;
                 case 4: // encoding
-                    encoding = ThriftEnumLookup.encoding(reader.readI32());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        encoding = ThriftEnumLookup.encoding(reader.readI32());
+                    }
                     break;
                 case 5: // definition_levels_byte_length
-                    definitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.definition_levels_byte_length");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        definitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.definition_levels_byte_length");
+                    }
                     break;
                 case 6: // repetition_levels_byte_length
-                    repetitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.repetition_levels_byte_length");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        repetitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.repetition_levels_byte_length");
+                    }
                     break;
-                case 7: // is_compressed (boolean encoded in type: 0x01=true, 0x02=false)
-                    if (header.type() == 0x01) {
-                        isCompressed = true;
-                    }
-                    else if (header.type() == 0x02) {
-                        isCompressed = false;
-                    }
-                    else {
-                        reader.skipField(header.type());
-                    }
+                case 7: // is_compressed
+                    isCompressed = reader.readBooleanField(header, isCompressed);
                     break;
                 case 8: // statistics
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         statistics = StatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:

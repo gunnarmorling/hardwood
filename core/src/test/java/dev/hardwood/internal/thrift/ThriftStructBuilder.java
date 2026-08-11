@@ -15,26 +15,27 @@ import java.nio.ByteOrder;
 /// Fields are written in ascending id order so the short-form field header
 /// (delta-encoded id) applies; a gap larger than 15 falls back to the long form.
 /// Every struct must be terminated with [#stop()] before [#build()].
-final class ThriftStructBuilder {
+public final class ThriftStructBuilder {
 
     // Thrift Compact Protocol field type codes.
-    static final byte TYPE_I32 = 0x05;
-    static final byte TYPE_I64 = 0x06;
-    static final byte TYPE_BINARY = 0x08;
-    static final byte TYPE_LIST = 0x09;
-    static final byte TYPE_STRUCT = 0x0C;
+    public static final byte TYPE_I32 = 0x05;
+    public static final byte TYPE_I64 = 0x06;
+    public static final byte TYPE_BINARY = 0x08;
+    public static final byte TYPE_LIST = 0x09;
+    public static final byte TYPE_MAP = 0x0B;
+    public static final byte TYPE_STRUCT = 0x0C;
 
     // Thrift Compact Protocol list element type codes.
-    private static final byte ELEM_BOOL = 0x01;
-    private static final byte ELEM_I32 = 0x05;
-    private static final byte ELEM_I64 = 0x06;
-    private static final byte ELEM_BINARY = 0x08;
-    private static final byte ELEM_STRUCT = 0x0C;
+    public static final byte ELEM_BOOL = 0x01;
+    public static final byte ELEM_I32 = 0x05;
+    public static final byte ELEM_I64 = 0x06;
+    public static final byte ELEM_BINARY = 0x08;
+    public static final byte ELEM_STRUCT = 0x0C;
 
     private final ByteBuffer buffer = ByteBuffer.allocate(512).order(ByteOrder.LITTLE_ENDIAN);
     private short lastFieldId;
 
-    ThriftStructBuilder field(int id, byte type) {
+    public ThriftStructBuilder field(int id, byte type) {
         short delta = (short) (id - lastFieldId);
         if (delta > 0 && delta <= 15) {
             buffer.put((byte) ((delta << 4) | (type & 0x0F)));
@@ -47,7 +48,7 @@ final class ThriftStructBuilder {
         return this;
     }
 
-    ThriftStructBuilder boolList(boolean... values) {
+    public ThriftStructBuilder boolList(boolean... values) {
         listHeader(values.length, ELEM_BOOL);
         for (boolean value : values) {
             buffer.put((byte) (value ? 0x01 : 0x02));
@@ -55,7 +56,7 @@ final class ThriftStructBuilder {
         return this;
     }
 
-    ThriftStructBuilder binaryList(byte[]... values) {
+    public ThriftStructBuilder binaryList(byte[]... values) {
         listHeader(values.length, ELEM_BINARY);
         for (byte[] value : values) {
             writeVarint(value.length);
@@ -64,7 +65,7 @@ final class ThriftStructBuilder {
         return this;
     }
 
-    ThriftStructBuilder i32List(int... values) {
+    public ThriftStructBuilder i32List(int... values) {
         listHeader(values.length, ELEM_I32);
         for (int value : values) {
             writeZigzag(value);
@@ -72,7 +73,7 @@ final class ThriftStructBuilder {
         return this;
     }
 
-    ThriftStructBuilder i64List(long... values) {
+    public ThriftStructBuilder i64List(long... values) {
         listHeader(values.length, ELEM_I64);
         for (long value : values) {
             writeZigzag(value);
@@ -81,7 +82,7 @@ final class ThriftStructBuilder {
     }
 
     /// Writes a `list<struct>` of already-built struct bodies.
-    ThriftStructBuilder structList(byte[]... structs) {
+    public ThriftStructBuilder structList(byte[]... structs) {
         listHeader(structs.length, ELEM_STRUCT);
         for (byte[] struct : structs) {
             buffer.put(struct);
@@ -89,7 +90,7 @@ final class ThriftStructBuilder {
         return this;
     }
 
-    ThriftStructBuilder emptyStructList(int count) {
+    public ThriftStructBuilder emptyStructList(int count) {
         byte[][] structs = new byte[count][];
         for (int i = 0; i < count; i++) {
             structs[i] = new byte[]{ 0 }; // empty struct: immediate STOP
@@ -97,17 +98,17 @@ final class ThriftStructBuilder {
         return structList(structs);
     }
 
-    ThriftStructBuilder i32(int value) {
+    public ThriftStructBuilder i32(int value) {
         writeZigzag(value);
         return this;
     }
 
-    ThriftStructBuilder i64(long value) {
+    public ThriftStructBuilder i64(long value) {
         writeZigzag(value);
         return this;
     }
 
-    ThriftStructBuilder binary(byte[] value) {
+    public ThriftStructBuilder binary(byte[] value) {
         writeVarint(value.length);
         buffer.put(value);
         return this;
@@ -115,17 +116,33 @@ final class ThriftStructBuilder {
 
     /// Writes an already-built struct as the value of the field just opened. Field ids
     /// restart within a nested struct, so the nested body is built by its own builder.
-    ThriftStructBuilder nested(byte[] struct) {
+    public ThriftStructBuilder nested(byte[] struct) {
         buffer.put(struct);
         return this;
     }
 
-    ThriftStructBuilder stop() {
+    /// Writes bytes verbatim, for wire shapes no typed writer here produces — a list header
+    /// with a size the elements do not back, a map body, an oversized varint.
+    public ThriftStructBuilder raw(int... bytes) {
+        for (int b : bytes) {
+            buffer.put((byte) b);
+        }
+        return this;
+    }
+
+    /// Writes a list header without the elements, so a caller can follow it with [#raw] bytes
+    /// or with fewer elements than it declares.
+    public ThriftStructBuilder listHeaderOnly(int size, byte elementType) {
+        listHeader(size, elementType);
+        return this;
+    }
+
+    public ThriftStructBuilder stop() {
         buffer.put((byte) 0);
         return this;
     }
 
-    byte[] build() {
+    public byte[] build() {
         byte[] out = new byte[buffer.position()];
         buffer.flip();
         buffer.get(out);

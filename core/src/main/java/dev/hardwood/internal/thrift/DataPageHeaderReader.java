@@ -10,6 +10,7 @@ package dev.hardwood.internal.thrift;
 import java.io.IOException;
 
 import dev.hardwood.internal.metadata.DataPageHeader;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.Statistics;
 
@@ -41,43 +42,28 @@ public class DataPageHeaderReader {
 
             switch (header.fieldId()) {
                 case 1: // num_values
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         numValues = reader.readNonNegativeI32("DataPageHeader.num_values");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // encoding
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         encoding = ThriftEnumLookup.encoding(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 3: // definition_level_encoding
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         definitionLevelEncoding = ThriftEnumLookup.encoding(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 4: // repetition_level_encoding
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         repetitionLevelEncoding = ThriftEnumLookup.encoding(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 5: // statistics
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         statistics = StatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:

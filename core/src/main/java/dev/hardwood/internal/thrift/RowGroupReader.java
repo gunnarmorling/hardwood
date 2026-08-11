@@ -8,9 +8,10 @@
 package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.RowGroup;
 
@@ -28,7 +29,7 @@ public class RowGroupReader {
     }
 
     private static RowGroup readInternal(ThriftCompactReader reader) throws IOException {
-        List<ColumnChunk> columns = new ArrayList<>();
+        List<ColumnChunk> columns = Collections.emptyList();
         long totalByteSize = 0;
         long numRows = 0;
 
@@ -39,31 +40,19 @@ public class RowGroupReader {
             }
 
             switch (header.fieldId()) {
-                case 1: // columns
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            columns.add(ColumnChunkReader.read(reader));
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 1: // columns (required list<ColumnChunk>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        columns = reader.readStructList("RowGroup.columns", ColumnChunkReader::read);
                     }
                     break;
                 case 2: // total_byte_size
-                    if (header.type() == 0x06) {
-                        totalByteSize = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I64)) {
+                        totalByteSize = reader.readNonNegativeI64("RowGroup.total_byte_size");
                     }
                     break;
                 case 3: // num_rows
-                    if (header.type() == 0x06) {
-                        numRows = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I64)) {
+                        numRows = reader.readNonNegativeI64("RowGroup.num_rows");
                     }
                     break;
                 default:

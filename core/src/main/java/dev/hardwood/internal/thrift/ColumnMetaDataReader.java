@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.Encoding;
@@ -38,8 +39,8 @@ public class ColumnMetaDataReader {
 
     private static ColumnMetaData readInternal(ThriftCompactReader reader) throws IOException {
         PhysicalType type = null;
-        List<Encoding> encodings = new ArrayList<>();
-        List<String> pathInSchema = new ArrayList<>();
+        List<Encoding> encodings = Collections.emptyList();
+        List<String> pathInSchema = Collections.emptyList();
         CompressionCodec codec = null;
         long numValues = 0;
         long totalUncompressedSize = 0;
@@ -62,140 +63,86 @@ public class ColumnMetaDataReader {
 
             switch (header.fieldId()) {
                 case 1: // type
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         type = ThriftEnumLookup.physicalType(reader.readI32());
                     }
-                    else {
-                        reader.skipField(header.type());
+                    break;
+                case 2: // encodings (required list<Encoding>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        encodings = readEncodings(reader);
                     }
                     break;
-                case 2: // encodings
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            encodings.add(ThriftEnumLookup.encoding(reader.readI32()));
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
-                    }
-                    break;
-                case 3: // path_in_schema
-                    if (header.type() == 0x09) {
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            pathInSchema.add(reader.readString());
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 3: // path_in_schema (required list<string>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        pathInSchema = reader.readStringList("ColumnMetaData.path_in_schema");
                     }
                     break;
                 case 4: // codec
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         codec = ThriftEnumLookup.compressionCodec(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 5: // num_values
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         numValues = reader.readNonNegativeI64("ColumnMetaData.num_values");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 6: // total_uncompressed_size
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         totalUncompressedSize = reader.readNonNegativeI64("ColumnMetaData.total_uncompressed_size");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 7: // total_compressed_size
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         totalCompressedSize = reader.readNonNegativeI64("ColumnMetaData.total_compressed_size");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 8: // key_value_metadata (optional list<KeyValue>)
-                    if (header.type() == 0x09) { // LIST
-                        keyValueMetadata = KeyValueMetadataReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        keyValueMetadata = KeyValueMetadataReader.read(reader, "ColumnMetaData.key_value_metadata");
                     }
                     break;
                 case 9: // data_page_offset
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         dataPageOffset = reader.readNonNegativeI64("ColumnMetaData.data_page_offset");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 10: // index_page_offset (optional) - skipped for now
                     reader.skipField(header.type());
                     break;
                 case 11: // dictionary_page_offset (optional)
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         dictionaryPageOffset = reader.readNonNegativeI64("ColumnMetaData.dictionary_page_offset");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 12: // statistics (optional)
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         statistics = StatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 13: // encoding_stats (optional list<PageEncodingStats>)
-                    if (header.type() == 0x09) { // LIST
+                    if (reader.acceptField(header, Codes.LIST)) {
                         encodingStats = PageEncodingStatsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 14: // bloom_filter_offset (optional i64)
-                    if (header.type() == 0x06) {
-                        bloomFilterOffset = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I64)) {
+                        bloomFilterOffset = reader.readNonNegativeI64("ColumnMetaData.bloom_filter_offset");
                     }
                     break;
                 case 15: // bloom_filter_length (optional i32)
-                    if (header.type() == 0x05) {
-                        bloomFilterLength = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        bloomFilterLength = reader.readNonNegativeI32("ColumnMetaData.bloom_filter_length");
                     }
                     break;
                 case 16: // size_statistics (optional)
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         sizeStatistics = SizeStatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 17: // geospatial statistics (optional)
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         geospatialStatistics = GeospatialStatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
@@ -204,9 +151,21 @@ public class ColumnMetaDataReader {
             }
         }
 
-        return new ColumnMetaData(type, encodings, new FieldPath(List.copyOf(pathInSchema)), codec,
+        return new ColumnMetaData(type, encodings, new FieldPath(pathInSchema), codec,
                 numValues, totalUncompressedSize, totalCompressedSize, keyValueMetadata, dataPageOffset,
                 dictionaryPageOffset, statistics, geospatialStatistics, bloomFilterOffset, bloomFilterLength,
                 encodingStats, sizeStatistics);
+    }
+
+    /// `Encoding` is a Thrift enum, so its list elements are `i32` on the wire and are mapped
+    /// to the enum one by one.
+    private static List<Encoding> readEncodings(ThriftCompactReader reader) throws IOException {
+        ThriftCompactReader.CollectionHeader listHeader =
+                reader.requireListHeader(Codes.I32, "ColumnMetaData.encodings");
+        List<Encoding> encodings = new ArrayList<>(listHeader.size());
+        for (int i = 0; i < listHeader.size(); i++) {
+            encodings.add(ThriftEnumLookup.encoding(reader.readI32()));
+        }
+        return Collections.unmodifiableList(encodings);
     }
 }

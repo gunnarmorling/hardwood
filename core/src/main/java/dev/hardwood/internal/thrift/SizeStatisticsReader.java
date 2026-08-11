@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.SizeStatistics;
 
 /// Reader for the Thrift SizeStatistics struct from Parquet metadata.
@@ -43,27 +44,20 @@ public class SizeStatisticsReader {
 
             switch (header.fieldId()) {
                 case 1: // unencoded_byte_array_data_bytes (optional i64)
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         unencodedByteArrayDataBytes = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // repetition_level_histogram (optional list<i64>)
-                    if (header.type() == 0x09) { // LIST
-                        repetitionLevelHistogram = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        repetitionLevelHistogram = reader.readOptionalI64Array(
+                                "SizeStatistics.repetition_level_histogram");
                     }
                     break;
                 case 3: // definition_level_histogram (optional list<i64>)
-                    if (header.type() == 0x09) { // LIST
-                        definitionLevelHistogram = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        definitionLevelHistogram = reader.readOptionalI64Array(
+                                "SizeStatistics.definition_level_histogram");
                     }
                     break;
                 default:

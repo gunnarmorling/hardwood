@@ -12,12 +12,22 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 
 /// Reader for Thrift Compact Protocol using direct ByteBuffer access.
 /// Reference: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
+///
+/// The readers built on this class share one policy for input that does not match the
+/// format: a field whose wire type disagrees is skipped ([#acceptField]), while a collection
+/// whose element type disagrees is never decoded as if it did ([#requireListHeader],
+/// [#acceptListHeader]).
 public class ThriftCompactReader {
+
+    private static final System.Logger LOG = System.getLogger(ThriftCompactReader.class.getName());
 
     // The reader dispatches on the raw wire byte in a switch, whose case labels must
     // be compile-time constants, so it references the shared byte codes in
@@ -216,6 +226,42 @@ public class ThriftCompactReader {
         return new FieldHeader(fieldId, type);
     }
 
+    /// Gate a struct field on its declared wire type: returns `true` with the reader positioned
+    /// on the value when the field is of `expectedType`, and otherwise skips the field and
+    /// returns `false`.
+    ///
+    /// A field of an unexpected type is skipped rather than rejected because its declared type
+    /// is enough to consume it correctly whatever it holds, so the cost stays bounded to that
+    /// one field and the rest of the struct still parses — Thrift's own rule for fields a reader
+    /// does not recognise.
+    ///
+    /// @param header the field header just read
+    /// @param expectedType wire code the field must declare, from [ThriftCompactConstants.FieldType.Codes]
+    public boolean acceptField(FieldHeader header, byte expectedType) throws IOException {
+        if (header.type() == expectedType) {
+            return true;
+        }
+        skipField(header.type());
+        return false;
+    }
+
+    /// Read a `bool` field, whose value the field header carries in its own type nibble rather
+    /// than in a body of its own.
+    ///
+    /// @param header the field header just read
+    /// @param fallback value to report for a field declared as anything but `bool`, which is
+    ///     skipped as [#acceptField] would
+    public boolean readBooleanField(FieldHeader header, boolean fallback) throws IOException {
+        if (header.type() == TYPE_BOOLEAN_TRUE) {
+            return true;
+        }
+        if (header.type() == TYPE_BOOLEAN_FALSE) {
+            return false;
+        }
+        skipField(header.type());
+        return fallback;
+    }
+
     /// Read a list/set header.
     ///
     /// A long-form element count is validated against the bytes still in the buffer. Every Thrift
@@ -231,37 +277,147 @@ public class ThriftCompactReader {
 
         if (size == 15) {
             // Size is encoded separately
-            long declaredSize = readVarint();
-            if (declaredSize < 0 || declaredSize > buffer.remaining()) {
-                throw new IOException("Malformed Parquet metadata: collection declares "
-                        + declaredSize + " elements but only " + buffer.remaining() + " bytes remain");
-            }
-            size = (int) declaredSize;
+            size = checkedCollectionSize(readVarint());
         }
 
         return new CollectionHeader(elementType, size);
     }
 
-    /// Read a `list<i64>` in full: the collection header followed by its elements.
+    /// Read the header of a **required** list field and check its declared element type.
     ///
-    /// A list declaring any other element type is skipped element-wise and reported as
-    /// `null`. Its elements are not varints, so decoding them as such would desynchronise
-    /// the stream and corrupt every field that follows; a file that mistypes a list loses
-    /// only that field.
+    /// See [#acceptListHeader] for why elements of the wrong type cannot be decoded. A required
+    /// field has no representation for absent, so reporting an empty collection would answer
+    /// with wrong data where a failed read is the honest outcome.
+    ///
+    /// @param expectedElementType wire code the elements must declare
+    /// @param fieldName fully-qualified field name for the error message
+    /// @throws IOException if the list declares a different element type
+    public CollectionHeader requireListHeader(byte expectedElementType, String fieldName) throws IOException {
+        CollectionHeader header = readListHeader();
+        if (header.elementType() != expectedElementType) {
+            throw wrongElementType(fieldName, header.elementType(), hex(expectedElementType));
+        }
+        return header;
+    }
+
+    /// Read the header of an **optional** list field and check its declared element type,
+    /// reporting `null` for a list this reader will not decode.
+    ///
+    /// Elements of the declared type occupy a different number of bytes than the ones the field
+    /// is defined to hold, so decoding them anyway would desynchronise the stream and corrupt
+    /// every field that follows. They are instead skipped by the type they declare, leaving the
+    /// reader on the byte after the list: the file loses one optional field and stays readable.
+    ///
+    /// @param expectedElementType wire code the elements must declare
+    /// @param fieldName fully-qualified field name for the log message
+    /// @return the header, or `null` if the list declares a different element type and has been
+    ///     skipped
+    public CollectionHeader acceptListHeader(byte expectedElementType, String fieldName) throws IOException {
+        CollectionHeader header = readListHeader();
+        if (header.elementType() != expectedElementType) {
+            skipElements(header);
+            LOG.log(System.Logger.Level.WARNING, "Ignoring " + fieldName + ": wrong Thrift element type "
+                    + hex(header.elementType()) + " (expected " + hex(expectedElementType) + ")");
+            return null;
+        }
+        return header;
+    }
+
+    /// Read a required `list<struct>` in full: the collection header followed by every element,
+    /// each decoded by `elementReader`.
+    ///
+    /// @param fieldName fully-qualified field name for the error message
+    /// @param elementReader reader for one element
+    public <T> List<T> readStructList(String fieldName, StructReader<T> elementReader) throws IOException {
+        CollectionHeader header = requireListHeader(Codes.STRUCT, fieldName);
+        List<T> values = new ArrayList<>(header.size());
+        for (int i = 0; i < header.size(); i++) {
+            values.add(elementReader.read(this));
+        }
+        return Collections.unmodifiableList(values);
+    }
+
+    /// Read a required `list<string>` in full.
+    ///
+    /// @param fieldName fully-qualified field name for the error message
+    public List<String> readStringList(String fieldName) throws IOException {
+        CollectionHeader header = requireListHeader(Codes.BINARY, fieldName);
+        List<String> values = new ArrayList<>(header.size());
+        for (int i = 0; i < header.size(); i++) {
+            values.add(readString());
+        }
+        return Collections.unmodifiableList(values);
+    }
+
+    /// Read a required `list<binary>` in full.
+    ///
+    /// @param fieldName fully-qualified field name for the error message
+    public List<byte[]> readBinaryList(String fieldName) throws IOException {
+        CollectionHeader header = requireListHeader(Codes.BINARY, fieldName);
+        List<byte[]> values = new ArrayList<>(header.size());
+        for (int i = 0; i < header.size(); i++) {
+            values.add(readBinary());
+        }
+        return Collections.unmodifiableList(values);
+    }
+
+    /// Read a required `list<bool>` in full.
+    ///
+    /// The element type nibble carries `0x01` or `0x02` for `bool` depending on the writer, so
+    /// both are accepted — see [ThriftCompactConstants.ElementType].
+    ///
+    /// @param fieldName fully-qualified field name for the error message
+    public boolean[] readBoolArray(String fieldName) throws IOException {
+        CollectionHeader header = readListHeader();
+        if (header.elementType() != TYPE_BOOLEAN_TRUE && header.elementType() != TYPE_BOOLEAN_FALSE) {
+            throw wrongElementType(fieldName, header.elementType(), "bool");
+        }
+        boolean[] values = new boolean[header.size()];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = readBoolean();
+        }
+        return values;
+    }
+
+    /// Read an optional `list<i64>` in full: the collection header followed by its elements.
+    ///
+    /// A list declaring any other element type is skipped and reported as `null`; see
+    /// [#acceptListHeader].
     ///
     /// An absent list is `null` and a present but empty one is a zero-length array, a
     /// distinction the metadata records carry through to their callers.
-    public long[] readI64Array() throws IOException {
-        CollectionHeader listHeader = readListHeader();
-        if (listHeader.elementType() != TYPE_I64) {
-            skipElements(listHeader);
+    ///
+    /// @param fieldName fully-qualified field name for the log message
+    public long[] readOptionalI64Array(String fieldName) throws IOException {
+        CollectionHeader header = acceptListHeader(Codes.I64, fieldName);
+        if (header == null) {
             return null;
         }
-        long[] values = new long[listHeader.size()];
+        long[] values = new long[header.size()];
         for (int i = 0; i < values.length; i++) {
             values[i] = readI64();
         }
         return values;
+    }
+
+    /// Validate a declared collection size against the bytes still in the buffer: every Thrift
+    /// element occupies at least one byte on the wire, so a larger count cannot describe real
+    /// data. See [#readListHeader] for what an unvalidated count would drive.
+    private int checkedCollectionSize(long declaredSize) throws IOException {
+        if (declaredSize < 0 || declaredSize > buffer.remaining()) {
+            throw new IOException("Malformed Parquet metadata: collection declares "
+                    + declaredSize + " elements but only " + buffer.remaining() + " bytes remain");
+        }
+        return (int) declaredSize;
+    }
+
+    private static IOException wrongElementType(String fieldName, byte actual, String expected) {
+        return new IOException("Malformed Parquet metadata: " + fieldName
+                + " declares Thrift element type " + hex(actual) + " but must be a list of " + expected);
+    }
+
+    private static String hex(byte type) {
+        return "0x" + Integer.toHexString(type & 0xFF);
     }
 
     /// Skip every element of a list, set or map whose header has just been read.
@@ -319,7 +475,10 @@ public class ThriftCompactReader {
                 skipElements(readListHeader());
                 break;
             case TYPE_MAP:
-                int mapSize = (int) readVarint();
+                // Bounded against the buffer for the same reason a long-form list count is: an
+                // unchecked size truncates to a smaller count (under-skipping, which desyncs the
+                // stream) or to a negative one (skipping nothing at all).
+                int mapSize = checkedCollectionSize(readVarint());
                 if (mapSize > 0) {
                     byte kvTypes = readByte();
                     byte keyType = (byte) ((kvTypes >> 4) & 0x0F);
@@ -356,11 +515,6 @@ public class ThriftCompactReader {
         }
     }
 
-    /// Reset the last field ID (call when starting to read a new struct).
-    public void resetLastFieldId() {
-        lastFieldId = 0;
-    }
-
     /// Save the current last field ID and reset it for reading a nested struct.
     public short pushFieldIdContext() {
         short saved = lastFieldId;
@@ -371,6 +525,13 @@ public class ThriftCompactReader {
     /// Restore the last field ID after reading a nested struct.
     public void popFieldIdContext(short savedFieldId) {
         lastFieldId = savedFieldId;
+    }
+
+    /// Decodes one element of a `list<struct>` from the reader it is given, which is positioned
+    /// on the element's first field header.
+    @FunctionalInterface
+    public interface StructReader<T> {
+        T read(ThriftCompactReader reader) throws IOException;
     }
 
     public static record FieldHeader(short fieldId, byte type) {

@@ -81,10 +81,9 @@ class ColumnIndexTest {
 
     private static ColumnIndex columnIndex(int pageCount, long[] repetitionLevelHistograms,
                                            long[] definitionLevelHistograms, long[] nanCounts) {
-        List<Boolean> nullPages = new ArrayList<>(pageCount);
+        boolean[] nullPages = new boolean[pageCount];
         List<byte[]> bounds = new ArrayList<>(pageCount);
         for (int i = 0; i < pageCount; i++) {
-            nullPages.add(false);
             bounds.add(new byte[]{ 0 });
         }
         return new ColumnIndex(nullPages, bounds, bounds, ColumnIndex.BoundaryOrder.UNORDERED,

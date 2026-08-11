@@ -14,8 +14,13 @@ import java.nio.ByteOrder;
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.internal.metadata.PageHeader;
+import dev.hardwood.metadata.ColumnChunk;
+import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.PageType;
+import dev.hardwood.metadata.SizeStatistics;
+import dev.hardwood.metadata.Statistics;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -35,7 +40,11 @@ class MalformedMetadataValidationTest {
         for (int i = 0; i < bytes.length; i++) {
             b[i] = (byte) bytes[i];
         }
-        return new ThriftCompactReader(ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN));
+        return reader(b);
+    }
+
+    private static ThriftCompactReader reader(byte[] bytes) {
+        return new ThriftCompactReader(ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN));
     }
 
     @Test
@@ -73,6 +82,140 @@ class MalformedMetadataValidationTest {
                 reader(0x15, 0x08, 0x15, 0x14, 0x15, 0x10, 0x00)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("unknown page type: 4");
+    }
+
+    @Test
+    void negativeOffsetIndexLengthRejected() {
+        // ColumnChunk: field5 offset_index_length (i32) = -1, which RowGroupIndexBuffers would
+        // otherwise pass straight to ByteBuffer.slice().
+        byte[] chunk = new ThriftStructBuilder()
+                .field(5, ThriftStructBuilder.TYPE_I32).i32(-1)
+                .stop().build();
+        assertThatThrownBy(() -> ColumnChunkReader.read(reader(chunk)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("ColumnChunk.offset_index_length");
+    }
+
+    @Test
+    void splitFileColumnChunkRejected() {
+        // ColumnChunk: field1 file_path names another file, so every offset in this chunk's
+        // metadata addresses that file rather than the one being read.
+        byte[] chunk = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_BINARY).binary("data-2.parquet".getBytes(UTF_8))
+                .stop().build();
+        assertThatThrownBy(() -> ColumnChunkReader.read(reader(chunk)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("data-2.parquet")
+                .hasMessageContaining("separate file");
+    }
+
+    @Test
+    void emptyFilePathIsThisFile() {
+        // An empty file_path is the writer naming the file it is writing, not a split layout.
+        byte[] chunk = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_BINARY).binary(new byte[0])
+                .field(5, ThriftStructBuilder.TYPE_I32).i32(64)
+                .stop().build();
+        ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
+        assertThat(columnChunk.offsetIndexLength()).isEqualTo(64);
+    }
+
+    @Test
+    void requiredListOfWrongElementTypeRejected() {
+        // FileMetaData: field2 schema declared as list<i32>. Reading the elements as
+        // SchemaElement structs would take value bytes for field headers and misparse the
+        // rest of the footer, so the whole read fails instead.
+        byte[] footer = new ThriftStructBuilder()
+                .field(2, ThriftStructBuilder.TYPE_LIST).i32List(1, 2, 3)
+                .stop().build();
+        assertThatThrownBy(() -> FileMetaDataReader.read(reader(footer)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("FileMetaData.schema");
+    }
+
+    @Test
+    void optionalListOfWrongElementTypeIsSkipped() {
+        // SizeStatistics: field2 repetition_level_histogram declared as list<i32>. The field is
+        // optional, so it is reported absent — and field3 behind it still parses, which is what
+        // skipping the elements by their declared type buys.
+        byte[] stats = new ThriftStructBuilder()
+                .field(2, ThriftStructBuilder.TYPE_LIST).i32List(1, 2)
+                .field(3, ThriftStructBuilder.TYPE_LIST).i64List(7L, 8L)
+                .stop().build();
+        SizeStatistics sizeStatistics = assertDoesNotThrow(() -> SizeStatisticsReader.read(reader(stats)));
+        assertThat(sizeStatistics.repetitionLevelHistogram()).isNull();
+        assertThat(sizeStatistics.definitionLevelHistogram()).containsExactly(7L, 8L);
+    }
+
+    @Test
+    void oversizedMapSizeRejected() {
+        // An unknown field of type map declaring 2^32 + 2 entries: truncated to int that is 2,
+        // so the skip would stop early and read the remaining entries as fields of this struct.
+        byte[] metaData = new ThriftStructBuilder()
+                .field(100, ThriftStructBuilder.TYPE_MAP).raw(0x82, 0x80, 0x80, 0x80, 0x10)
+                .stop().build();
+        assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(metaData)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("4294967298");
+    }
+
+    @Test
+    void columnIndexWithShortPerPageArrayRejected() {
+        // ColumnIndex: two pages, but only one null count. PageFilterEvaluator indexes
+        // null_counts with a page count that comes from elsewhere.
+        byte[] index = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, false)
+                .field(2, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
+                .field(3, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
+                .field(5, ThriftStructBuilder.TYPE_LIST).i64List(0L)
+                .stop().build();
+        assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("ColumnIndex.null_counts")
+                .hasMessageContaining("2 pages");
+    }
+
+    @Test
+    void columnIndexWithConsistentPerPageArraysParses() {
+        byte[] index = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, true)
+                .field(2, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
+                .field(3, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
+                .field(5, ThriftStructBuilder.TYPE_LIST).i64List(0L, 5L)
+                .stop().build();
+        ColumnIndex columnIndex = assertDoesNotThrow(() -> ColumnIndexReader.read(reader(index)));
+        assertThat(columnIndex.nullPages()).containsExactly(false, true);
+        assertThat(columnIndex.nullCounts()).containsExactly(0L, 5L);
+    }
+
+    @Test
+    void mistypedBooleanFieldDoesNotDesyncTheStruct() {
+        // Statistics: field7 is_max_value_exact is a bool, whose value a compact field header
+        // carries in its own type nibble. Declared as binary it has a body, and leaving that
+        // body unread would take it for the next field header.
+        byte[] statistics = new ThriftStructBuilder()
+                .field(7, ThriftStructBuilder.TYPE_BINARY).binary(new byte[]{ 9 })
+                .field(9, ThriftStructBuilder.TYPE_I64).i64(3)
+                .stop().build();
+        Statistics parsed = assertDoesNotThrow(() -> StatisticsReader.read(reader(statistics)));
+        assertThat(parsed.nanCount()).isEqualTo(3L);
+        assertThat(parsed.isMaxValueExact()).isTrue();
+    }
+
+    @Test
+    void logicalTypeUnionWithoutVariantRejected() {
+        // SchemaElement.logicalType = TimeType whose `unit` union has no member set. The union
+        // has no default, so there is nothing to report but a failure.
+        byte[] unit = new ThriftStructBuilder().stop().build();
+        byte[] timeType = new ThriftStructBuilder()
+                .field(2, ThriftStructBuilder.TYPE_STRUCT).nested(unit)
+                .stop().build();
+        byte[] logicalType = new ThriftStructBuilder()
+                .field(7, ThriftStructBuilder.TYPE_STRUCT).nested(timeType)
+                .stop().build();
+        assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("TimeUnit");
     }
 
     @Test

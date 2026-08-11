@@ -360,7 +360,9 @@ public class RowGroupIterator {
                 RowRanges matchingRows = RowRanges.ALL;
                 if (pageFiltering) {
                     matchingRows = PageFilterEvaluator.computeMatchingRows(
-                            filterPredicate, workItem.rowGroup(), indexBuffers);
+                            filterPredicate, workItem.rowGroup(), indexBuffers,
+                            new PageFilterEvaluator.IndexLocation(
+                                    workItem.inputFile().name(), workItem.rowGroupIndex()));
                 }
 
                 MaskCapability maskCapability = masksApplicableForRowGroup(

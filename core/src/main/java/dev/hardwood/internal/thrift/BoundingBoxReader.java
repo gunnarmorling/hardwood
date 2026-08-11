@@ -9,12 +9,11 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.BoundingBox;
 
 /// Reader for the Thrift BoundingBox struct from Parquet metadata.
 public class BoundingBoxReader {
-
-    private static final int TYPE_DOUBLE = 0x07;
 
     public static BoundingBox read(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
@@ -69,7 +68,7 @@ public class BoundingBoxReader {
 
     private static double readRequiredDouble(ThriftCompactReader reader, byte type, String name)
             throws IOException {
-        if (type != TYPE_DOUBLE) {
+        if (type != Codes.DOUBLE) {
             throw new IllegalStateException(
                     "Invalid BoundingBox: required field '" + name
                             + "' has wrong wire type 0x" + Integer.toHexString(type & 0xFF));
@@ -78,7 +77,7 @@ public class BoundingBoxReader {
     }
 
     private static Double readOptionalDouble(ThriftCompactReader reader, byte type) throws IOException {
-        if (type == TYPE_DOUBLE) {
+        if (type == Codes.DOUBLE) {
             return reader.readDouble();
         }
         reader.skipField(type);

@@ -10,6 +10,7 @@ package dev.hardwood.internal.thrift;
 import java.io.IOException;
 
 import dev.hardwood.internal.metadata.DictionaryPageHeader;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 
 /// Reader for DictionaryPageHeader from Thrift Compact Protocol.
@@ -37,10 +38,14 @@ public class DictionaryPageHeaderReader {
 
             switch (header.fieldId()) {
                 case 1: // num_values
-                    numValues = reader.readNonNegativeI32("DictionaryPageHeader.num_values");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numValues = reader.readNonNegativeI32("DictionaryPageHeader.num_values");
+                    }
                     break;
                 case 2: // encoding
-                    encoding = ThriftEnumLookup.encoding(reader.readI32());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        encoding = ThriftEnumLookup.encoding(reader.readI32());
+                    }
                     break;
                 default:
                     reader.skipField(header.type());

@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Statistics;
 
 /// Reader for the Thrift Statistics struct from Parquet metadata.
@@ -47,65 +48,44 @@ public class StatisticsReader {
 
             switch (header.fieldId()) {
                 case 1: // max (deprecated)
-                    if (header.type() == 0x08) {
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         deprecatedMax = reader.readBinary();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // min (deprecated)
-                    if (header.type() == 0x08) {
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         deprecatedMin = reader.readBinary();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 3: // null_count
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         nullCount = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 4: // distinct_count
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         distinctCount = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 5: // max_value (preferred)
-                    if (header.type() == 0x08) {
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         maxValue = reader.readBinary();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 6: // min_value (preferred)
-                    if (header.type() == 0x08) {
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         minValue = reader.readBinary();
                     }
-                    else {
-                        reader.skipField(header.type());
-                    }
                     break;
-                case 7: // is_max_value_exact — a compact bool carries its value in the type nibble
-                    maxValueExact = isBooleanTrue(header.type());
+                case 7: // is_max_value_exact
+                    maxValueExact = reader.readBooleanField(header, maxValueExact);
                     break;
                 case 8: // is_min_value_exact
-                    minValueExact = isBooleanTrue(header.type());
+                    minValueExact = reader.readBooleanField(header, minValueExact);
                     break;
                 case 9: // nan_count (optional)
-                    if (header.type() == 0x06) {
+                    if (reader.acceptField(header, Codes.I64)) {
                         nanCount = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
@@ -121,11 +101,5 @@ public class StatisticsReader {
 
         return new Statistics(resolvedMin, resolvedMax, nullCount, distinctCount, deprecated,
                 minValueExact, maxValueExact, nanCount);
-    }
-
-    /// A Thrift compact bool field carries its value in the field-type nibble: `0x01` is true,
-    /// `0x02` is false. There is no separate body to consume.
-    private static boolean isBooleanTrue(byte fieldType) {
-        return fieldType == ThriftCompactConstants.FieldType.BOOLEAN_TRUE.code();
     }
 }

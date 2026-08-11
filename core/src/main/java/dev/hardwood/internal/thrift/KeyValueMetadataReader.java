@@ -12,13 +12,23 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
+
 /// Reads a Thrift-encoded `list<KeyValue>` into an unmodifiable `Map<String, String>`.
 class KeyValueMetadataReader {
 
     /// Reads a key-value metadata list from the given reader, which must be positioned
     /// right after the list field header has been consumed (i.e. ready to read the list header).
-    static Map<String, String> read(ThriftCompactReader reader) throws IOException {
-        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
+    ///
+    /// The field is optional wherever it appears, so a list declaring anything but struct
+    /// elements is skipped and reported as an empty map.
+    ///
+    /// @param fieldName fully-qualified name of the field being read, for the log message
+    static Map<String, String> read(ThriftCompactReader reader, String fieldName) throws IOException {
+        ThriftCompactReader.CollectionHeader listHeader = reader.acceptListHeader(Codes.STRUCT, fieldName);
+        if (listHeader == null) {
+            return Map.of();
+        }
         Map<String, String> result = new LinkedHashMap<>(listHeader.size());
         for (int i = 0; i < listHeader.size(); i++) {
             readKeyValue(reader, result);
@@ -41,19 +51,13 @@ class KeyValueMetadataReader {
 
                 switch (header.fieldId()) {
                     case 1: // key (required string)
-                        if (header.type() == 0x08) {
+                        if (reader.acceptField(header, Codes.BINARY)) {
                             key = reader.readString();
-                        }
-                        else {
-                            reader.skipField(header.type());
                         }
                         break;
                     case 2: // value (optional string)
-                        if (header.type() == 0x08) {
+                        if (reader.acceptField(header, Codes.BINARY)) {
                             value = reader.readString();
-                        }
-                        else {
-                            reader.skipField(header.type());
                         }
                         break;
                     default:

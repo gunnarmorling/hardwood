@@ -195,7 +195,7 @@ public final class ColumnIndexScreen {
                     : "—";
             rows.add(Row.from(
                     String.valueOf(idx),
-                    Boolean.TRUE.equals(ci.nullPages().get(idx)) ? "yes" : "no",
+                    ci.nullPages()[idx] ? "yes" : "no",
                     nulls,
                     formatStat(ci.minValues().get(idx), col, state.logicalTypes()),
                     formatStat(ci.maxValues().get(idx), col, state.logicalTypes())));

@@ -18,11 +18,11 @@ import java.util.Objects;
 /// `p * (maxLevel + 1)` up to `(p + 1) * (maxLevel + 1)`.
 /// [#repetitionLevelHistogram(int)] and [#definitionLevelHistogram(int)] slice one page out.
 ///
-/// The per-page count arrays are the values as the file recorded them and are not copied
-/// on the way in or out. An absent array is `null`, which stays distinct from a
+/// The per-page arrays are the values as the file recorded them and are not copied
+/// on the way in or out. An absent optional array is `null`, which stays distinct from a
 /// zero-length one the writer recorded as empty.
 ///
-/// @param nullPages boolean list indicating which pages contain only null values
+/// @param nullPages one flag per page, set for a page that contains only null values
 /// @param minValues per-page minimum values in the column's physical sort order
 /// @param maxValues per-page maximum values in the column's physical sort order
 /// @param boundaryOrder ordering of min/max values: UNORDERED, ASCENDING, or DESCENDING
@@ -37,7 +37,7 @@ import java.util.Objects;
 /// @see <a href="https://parquet.apache.org/docs/file-format/pageindex/">File Format – Page Index</a>
 /// @see <a href="https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift">parquet.thrift</a>
 public record ColumnIndex(
-        List<Boolean> nullPages,
+        boolean[] nullPages,
         List<byte[]> minValues,
         List<byte[]> maxValues,
         BoundaryOrder boundaryOrder,
@@ -55,7 +55,7 @@ public record ColumnIndex(
 
     /// Returns the number of pages described by this index.
     public int getPageCount() {
-        return nullPages.size();
+        return nullPages.length;
     }
 
     /// Returns one page's slice of [#repetitionLevelHistograms()], or `null` if the file

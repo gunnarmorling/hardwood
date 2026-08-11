@@ -308,7 +308,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
         String firstRow = String.valueOf(oi.pageLocations().get(dataPageCounter).firstRowIndex());
         String min;
         String max;
-        if (ci.nullPages().get(dataPageCounter)) {
+        if (ci.nullPages()[dataPageCounter]) {
             min = "(null page)";
             max = "(null page)";
         }

@@ -8,9 +8,10 @@
 package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnIndex;
 
 /// Reader for ColumnIndex from Thrift Compact Protocol.
@@ -28,6 +29,9 @@ import dev.hardwood.metadata.ColumnIndex;
 ///
 /// The histograms of fields 6 and 7 are stored one per page, concatenated page-major;
 /// they are surfaced in that layout.
+///
+/// Every member is indexed by page, so they only describe a column chunk together. The
+/// lengths are cross-checked once the struct has been read — see [#checkPageCounts].
 public class ColumnIndexReader {
 
     public static ColumnIndex read(ThriftCompactReader reader) throws IOException {
@@ -41,9 +45,9 @@ public class ColumnIndexReader {
     }
 
     private static ColumnIndex readInternal(ThriftCompactReader reader) throws IOException {
-        List<Boolean> nullPages = new ArrayList<>();
-        List<byte[]> minValues = new ArrayList<>();
-        List<byte[]> maxValues = new ArrayList<>();
+        boolean[] nullPages = new boolean[0];
+        List<byte[]> minValues = Collections.emptyList();
+        List<byte[]> maxValues = Collections.emptyList();
         ColumnIndex.BoundaryOrder boundaryOrder = ColumnIndex.BoundaryOrder.UNORDERED;
         long[] nullCounts = null;
         long[] repetitionLevelHistograms = null;
@@ -57,82 +61,46 @@ public class ColumnIndexReader {
             }
 
             switch (header.fieldId()) {
-                case 1: // null_pages (list<bool>)
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            nullPages.add(reader.readBoolean());
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 1: // null_pages (required list<bool>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        nullPages = reader.readBoolArray("ColumnIndex.null_pages");
                     }
                     break;
-                case 2: // min_values (list<binary>)
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            minValues.add(reader.readBinary());
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 2: // min_values (required list<binary>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        minValues = reader.readBinaryList("ColumnIndex.min_values");
                     }
                     break;
-                case 3: // max_values (list<binary>)
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            maxValues.add(reader.readBinary());
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 3: // max_values (required list<binary>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        maxValues = reader.readBinaryList("ColumnIndex.max_values");
                     }
                     break;
                 case 4: // boundary_order (enum)
-                    if (header.type() == 0x05) { // I32
-                        int val = reader.readI32();
-                        boundaryOrder = switch (val) {
-                            case 1 -> ColumnIndex.BoundaryOrder.ASCENDING;
-                            case 2 -> ColumnIndex.BoundaryOrder.DESCENDING;
-                            default -> ColumnIndex.BoundaryOrder.UNORDERED;
-                        };
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        boundaryOrder = boundaryOrder(reader.readI32());
                     }
                     break;
                 case 5: // null_counts (list<i64>, optional)
-                    if (header.type() == 0x09) { // LIST
-                        nullCounts = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        nullCounts = reader.readOptionalI64Array("ColumnIndex.null_counts");
                     }
                     break;
                 case 6: // repetition_level_histograms (list<i64>, optional)
-                    if (header.type() == 0x09) { // LIST
-                        repetitionLevelHistograms = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        repetitionLevelHistograms = reader.readOptionalI64Array(
+                                "ColumnIndex.repetition_level_histograms");
                     }
                     break;
                 case 7: // definition_level_histograms (list<i64>, optional)
-                    if (header.type() == 0x09) { // LIST
-                        definitionLevelHistograms = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        definitionLevelHistograms = reader.readOptionalI64Array(
+                                "ColumnIndex.definition_level_histograms");
                     }
                     break;
                 case 8: // nan_counts (list<i64>, optional)
-                    if (header.type() == 0x09) { // LIST
-                        nanCounts = reader.readI64Array();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        nanCounts = reader.readOptionalI64Array("ColumnIndex.nan_counts");
                     }
                     break;
                 default:
@@ -141,7 +109,62 @@ public class ColumnIndexReader {
             }
         }
 
+        checkPageCounts(nullPages.length, minValues.size(), maxValues.size(), nullCounts, nanCounts,
+                repetitionLevelHistograms, definitionLevelHistograms);
+
         return new ColumnIndex(nullPages, minValues, maxValues, boundaryOrder, nullCounts,
                 repetitionLevelHistograms, definitionLevelHistograms, nanCounts);
+    }
+
+    private static ColumnIndex.BoundaryOrder boundaryOrder(int value) {
+        return switch (value) {
+            case 1 -> ColumnIndex.BoundaryOrder.ASCENDING;
+            case 2 -> ColumnIndex.BoundaryOrder.DESCENDING;
+            default -> ColumnIndex.BoundaryOrder.UNORDERED;
+        };
+    }
+
+    /// Checks that every per-page member describes the same number of pages.
+    ///
+    /// `null_pages` is required and defines the page count. Page filtering indexes the other
+    /// members with a count taken from elsewhere — from `OffsetIndex.page_locations`, or from
+    /// `null_pages` for the arrays read here — so lengths that disagree surface as an unchecked
+    /// `IndexOutOfBoundsException` thrown from inside the filter, naming neither the file nor
+    /// the column. Rejecting the chunk here keeps that a controlled, attributable failure.
+    ///
+    /// The histograms hold `maxLevel + 1` entries per page rather than one, so only their
+    /// divisibility by the page count can be checked.
+    private static void checkPageCounts(int pageCount, int minValueCount, int maxValueCount,
+            long[] nullCounts, long[] nanCounts, long[] repetitionLevelHistograms,
+            long[] definitionLevelHistograms) throws IOException {
+
+        checkPerPageLength("min_values", minValueCount, pageCount);
+        checkPerPageLength("max_values", maxValueCount, pageCount);
+        if (nullCounts != null) {
+            checkPerPageLength("null_counts", nullCounts.length, pageCount);
+        }
+        if (nanCounts != null) {
+            checkPerPageLength("nan_counts", nanCounts.length, pageCount);
+        }
+        checkHistogramLength("repetition_level_histograms", repetitionLevelHistograms, pageCount);
+        checkHistogramLength("definition_level_histograms", definitionLevelHistograms, pageCount);
+    }
+
+    private static void checkPerPageLength(String field, int length, int pageCount) throws IOException {
+        if (length != pageCount) {
+            throw new IOException("Malformed Parquet metadata: ColumnIndex." + field + " has length "
+                    + length + " but the index describes " + pageCount + " pages");
+        }
+    }
+
+    private static void checkHistogramLength(String field, long[] histograms, int pageCount) throws IOException {
+        if (histograms == null) {
+            return;
+        }
+        if (pageCount == 0 ? histograms.length != 0 : histograms.length % pageCount != 0) {
+            throw new IOException("Malformed Parquet metadata: ColumnIndex." + field + " has length "
+                    + histograms.length + " for " + pageCount
+                    + " pages, which is not a whole number of entries per page");
+        }
     }
 }

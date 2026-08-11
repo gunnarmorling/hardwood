@@ -10,11 +10,9 @@ package dev.hardwood.internal.thrift;
 import java.io.IOException;
 
 import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 
 public class BloomFilterHeaderReader {
-
-    private static final int TYPE_INT_32 = 0x05;
-    private static final int TYPE_STRUCT = 0x0C;
 
     public static BloomFilterHeader read(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
@@ -69,14 +67,14 @@ public class BloomFilterHeaderReader {
     }
 
     private static int readRequiredBitsetSize(ThriftCompactReader reader, byte type) throws IOException {
-        if (type != TYPE_INT_32) {
+        if (type != Codes.I32) {
             throw wrongWireType("required field 'numBytes'", type);
         }
         return reader.readNonNegativeI32("BloomFilterHeader.numBytes");
     }
 
     private static short readUnionVariant(ThriftCompactReader reader, byte type, String name) throws IOException {
-        if (type != TYPE_STRUCT) {
+        if (type != Codes.STRUCT) {
             throw wrongWireType("union field '" + name + "'", type);
         }
         short saved = reader.pushFieldIdContext();
@@ -87,7 +85,7 @@ public class BloomFilterHeaderReader {
             }
             // The variant's value is an empty struct; a different wire type would make skipField
             // consume the wrong number of bytes and desync the rest of the header.
-            if (variant.type() != TYPE_STRUCT) {
+            if (variant.type() != Codes.STRUCT) {
                 throw wrongWireType("union field '" + name + "' variant " + variant.fieldId(), variant.type());
             }
             reader.skipField(variant.type()); // consume the variant's value (the empty inner struct)
