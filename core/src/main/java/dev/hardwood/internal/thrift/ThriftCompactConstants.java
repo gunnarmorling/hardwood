@@ -13,6 +13,10 @@ package dev.hardwood.internal.thrift;
 /// Reference: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
 public final class ThriftCompactConstants {
 
+    /// The byte a struct terminates with, where a field header would otherwise start. It is
+    /// not a type code, so it belongs to neither [FieldType] nor [ElementType].
+    public static final byte STOP = 0x00;
+
     /// Type codes for struct field headers.
     public enum FieldType {
 
@@ -47,9 +51,6 @@ public final class ThriftCompactConstants {
         /// The [FieldType] and [ElementType] enums are built from them too.
         public static final class Codes {
 
-            /// Not a type: the field header a struct terminates with.
-            public static final byte STOP = 0x00;
-
             public static final byte BOOLEAN_TRUE = 0x01;
             public static final byte BOOLEAN_FALSE = 0x02;
             public static final byte BYTE = 0x03;
@@ -70,12 +71,13 @@ public final class ThriftCompactConstants {
     }
 
     /// Type codes for list/set/map elements. These mirror [FieldType] except boolean:
-    /// a collection has a single [#BOOL] element type, whereas a field packs
-    /// true/false into the type. `BOOL` is written as `1` — the de-facto standard;
-    /// the spec's original code was `2` and readers should accept either.
+    /// a collection has a single element type for `bool`, whereas a field packs
+    /// true/false into the type. [#BOOL] is written as `1` — the de-facto standard;
+    /// [#BOOL_LEGACY] is the spec's original `2`, and readers accept either.
     public enum ElementType {
 
         BOOL(FieldType.Codes.BOOLEAN_TRUE),
+        BOOL_LEGACY(FieldType.Codes.BOOLEAN_FALSE),
         BYTE(FieldType.Codes.BYTE),
         I16(FieldType.Codes.I16),
         I32(FieldType.Codes.I32),

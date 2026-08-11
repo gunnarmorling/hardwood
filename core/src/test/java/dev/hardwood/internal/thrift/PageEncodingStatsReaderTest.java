@@ -30,9 +30,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PageEncodingStatsReaderTest {
 
     /// Struct terminator.
-    private static final int STOP = FieldType.Codes.STOP;
+    private static final int STOP = ThriftCompactConstants.STOP;
 
-    /// A list header whose size nibble is saturated, meaning the real size follows as a varint.
+    /// The size nibble that saturates, at which point the count no longer fits the header.
     private static final int LONG_FORM_SIZE = 15;
 
     /// The `encoding_stats` field header: field 13 as a list. The trailing [#STOP] closing the
@@ -45,8 +45,18 @@ class PageEncodingStatsReaderTest {
     }
 
     /// Short-form list header byte: element count in the high nibble, element type in the low.
+    /// A count of [#LONG_FORM_SIZE] or more does not fit the nibble — see [#longFormList].
     private static int list(int size, ElementType elementType) {
+        if (size >= LONG_FORM_SIZE) {
+            throw new IllegalArgumentException(size + " elements need the long form, not the size nibble");
+        }
         return (size << 4) | elementType.code();
+    }
+
+    /// Long-form list header byte: the size nibble saturated, so the count follows as a varint
+    /// the caller writes itself.
+    private static int longFormList(ElementType elementType) {
+        return (LONG_FORM_SIZE << 4) | elementType.code();
     }
 
     private static ThriftCompactReader reader(int... bytes) {
@@ -119,7 +129,7 @@ class PageEncodingStatsReaderTest {
         // IllegalArgumentException, which escapes ParquetMetadataReader's catch (IOException) and
         // reaches the caller unchecked and without the file name.
         assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(
-                ENCODING_STATS_FIELD, list(LONG_FORM_SIZE, ElementType.STRUCT),
+                ENCODING_STATS_FIELD, longFormList(ElementType.STRUCT),
                 0x80, 0x80, 0x80, 0x80, 0x08,
                 STOP)))
                 .isInstanceOf(IOException.class)

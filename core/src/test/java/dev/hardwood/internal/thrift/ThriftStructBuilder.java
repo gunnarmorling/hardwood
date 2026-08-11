@@ -20,13 +20,17 @@ import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 /// Every struct must be terminated with [#stop()] before [#build()].
 public final class ThriftStructBuilder {
 
+    /// The list-header size nibble that saturates, meaning the real element count follows as a
+    /// varint rather than fitting in the nibble.
+    private static final int LONG_FORM_SIZE = 15;
+
     private final ByteBuffer buffer = ByteBuffer.allocate(512).order(ByteOrder.LITTLE_ENDIAN);
     private short lastFieldId;
 
     public ThriftStructBuilder field(int id, FieldType type) {
         short delta = (short) (id - lastFieldId);
         if (delta > 0 && delta <= 15) {
-            buffer.put((byte) ((delta << 4) | (type.code() & 0x0F)));
+            buffer.put((byte) ((delta << 4) | type.code()));
         }
         else {
             buffer.put(type.code());
@@ -81,13 +85,18 @@ public final class ThriftStructBuilder {
     public ThriftStructBuilder emptyStructList(int count) {
         byte[][] structs = new byte[count][];
         for (int i = 0; i < count; i++) {
-            structs[i] = new byte[]{ 0 }; // empty struct: immediate STOP
+            structs[i] = new byte[]{ ThriftCompactConstants.STOP }; // empty struct: immediate STOP
         }
         return structList(structs);
     }
 
     public ThriftStructBuilder i32(int value) {
         writeZigzag(value);
+        return this;
+    }
+
+    public ThriftStructBuilder doubleValue(double value) {
+        buffer.putDouble(value);
         return this;
     }
 
@@ -126,7 +135,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder stop() {
-        buffer.put((byte) 0);
+        buffer.put(ThriftCompactConstants.STOP);
         return this;
     }
 
@@ -138,11 +147,11 @@ public final class ThriftStructBuilder {
     }
 
     private void listHeader(int size, ElementType elementType) {
-        if (size < 15) {
-            buffer.put((byte) ((size << 4) | (elementType.code() & 0x0F)));
+        if (size < LONG_FORM_SIZE) {
+            buffer.put((byte) ((size << 4) | elementType.code()));
         }
         else {
-            buffer.put((byte) (0xF0 | (elementType.code() & 0x0F)));
+            buffer.put((byte) ((LONG_FORM_SIZE << 4) | elementType.code()));
             writeVarint(size);
         }
     }

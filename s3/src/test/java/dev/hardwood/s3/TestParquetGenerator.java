@@ -12,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.ElementType;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 
@@ -274,7 +275,7 @@ final class TestParquetGenerator {
         /// Ends the current struct (writes STOP byte) and restores the enclosing
         /// struct's field ID context from the stack.
         void stop() {
-            buf.write(FieldType.Codes.STOP);
+            buf.write(ThriftCompactConstants.STOP);
             lastFieldId = fieldIdStack.isEmpty() ? 0 : fieldIdStack.pop();
         }
 

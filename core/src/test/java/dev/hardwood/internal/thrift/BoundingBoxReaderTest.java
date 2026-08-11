@@ -9,7 +9,6 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 import org.junit.jupiter.api.Test;
 
@@ -70,61 +69,7 @@ class BoundingBoxReaderTest {
                 .hasMessageContaining("xmin");
     }
 
-    private static ThriftBuilder bbox() {
-        return new ThriftBuilder();
-    }
-
-    /// Hand-rolled Thrift Compact Protocol struct builder for tests.
-    private static final class ThriftBuilder {
-        private final ByteBuffer buffer = ByteBuffer.allocate(256).order(ByteOrder.LITTLE_ENDIAN);
-        private short lastFieldId;
-        private byte pendingFieldType;
-
-        ThriftBuilder field(int id, FieldType type) {
-            short delta = (short) (id - lastFieldId);
-            if (delta > 0 && delta <= 15) {
-                buffer.put((byte) ((delta << 4) | (type.code() & 0x0F)));
-            }
-            else {
-                buffer.put(type.code());
-                writeZigzag(id);
-            }
-            lastFieldId = (short) id;
-            pendingFieldType = type.code();
-            return this;
-        }
-
-        ThriftBuilder doubleValue(double v) {
-            buffer.putDouble(v);
-            pendingFieldType = 0;
-            return this;
-        }
-
-        ThriftBuilder i32(int v) {
-            writeZigzag(v);
-            pendingFieldType = 0;
-            return this;
-        }
-
-        ThriftBuilder stop() {
-            buffer.put((byte) 0);
-            return this;
-        }
-
-        byte[] build() {
-            byte[] out = new byte[buffer.position()];
-            buffer.flip();
-            buffer.get(out);
-            return out;
-        }
-
-        private void writeZigzag(long v) {
-            long zz = (v << 1) ^ (v >> 63);
-            while ((zz & ~0x7FL) != 0) {
-                buffer.put((byte) ((zz & 0x7F) | 0x80));
-                zz >>>= 7;
-            }
-            buffer.put((byte) (zz & 0x7F));
-        }
+    private static ThriftStructBuilder bbox() {
+        return new ThriftStructBuilder();
     }
 }

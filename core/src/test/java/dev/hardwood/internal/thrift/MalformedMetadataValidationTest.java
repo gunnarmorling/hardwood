@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 class MalformedMetadataValidationTest {
 
     /// Struct terminator.
-    private static final int STOP = FieldType.Codes.STOP;
+    private static final int STOP = ThriftCompactConstants.STOP;
 
     /// Field header byte: field-id delta in the high nibble, wire type in the low nibble.
     private static int field(int fieldIdDelta, FieldType type) {

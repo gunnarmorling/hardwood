@@ -23,12 +23,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ThriftCompactReaderTest {
 
     /// Struct terminator.
-    private static final byte STOP = FieldType.Codes.STOP;
+    private static final byte STOP = ThriftCompactConstants.STOP;
 
     /// Marks the end of the meaningful bytes, so a test can assert the reader stopped short of it.
     private static final int SENTINEL = 0xFF;
 
-    /// A list header whose size nibble is saturated, meaning the real size follows as a varint.
+    /// The size nibble that saturates, at which point the count no longer fits the header.
     private static final int LONG_FORM_SIZE = 15;
 
     /// Field header byte: field-id delta in the high nibble, wire type in the low nibble.
@@ -36,9 +36,19 @@ class ThriftCompactReaderTest {
         return (byte) ((fieldIdDelta << 4) | type.code());
     }
 
-    /// List header byte: element count in the high nibble, element type in the low nibble.
+    /// Short-form list header byte: element count in the high nibble, element type in the low.
+    /// A count of [#LONG_FORM_SIZE] or more does not fit the nibble — see [#longFormList].
     private static byte list(int size, ElementType elementType) {
+        if (size >= LONG_FORM_SIZE) {
+            throw new IllegalArgumentException(size + " elements need the long form, not the size nibble");
+        }
         return (byte) ((size << 4) | elementType.code());
+    }
+
+    /// Long-form list header byte: the size nibble saturated, so the count follows as a varint
+    /// the caller writes itself.
+    private static byte longFormList(ElementType elementType) {
+        return (byte) ((LONG_FORM_SIZE << 4) | elementType.code());
     }
 
     /// The single byte a map writes after its size: key type in the high nibble, value type in
@@ -195,7 +205,7 @@ class ThriftCompactReaderTest {
     @Test
     void listHeaderRejectsCountLargerThanRemainingBytes() {
         // Long-form list of structs, then varint(100).
-        ThriftCompactReader reader = reader(list(LONG_FORM_SIZE, ElementType.STRUCT), 0x64, STOP, STOP);
+        ThriftCompactReader reader = reader(longFormList(ElementType.STRUCT), 0x64, STOP, STOP);
 
         assertThatThrownBy(reader::readListHeader)
                 .isInstanceOf(IOException.class)
@@ -210,7 +220,7 @@ class ThriftCompactReaderTest {
     void listHeaderRejectsCountOverflowingInt() {
         // varint 0x80 0x80 0x80 0x80 0x08 encodes 2^31, which casts to Integer.MIN_VALUE.
         ThriftCompactReader reader = reader(
-                list(LONG_FORM_SIZE, ElementType.STRUCT), 0x80, 0x80, 0x80, 0x80, 0x08, STOP);
+                longFormList(ElementType.STRUCT), 0x80, 0x80, 0x80, 0x80, 0x08, STOP);
 
         assertThatThrownBy(reader::readListHeader)
                 .isInstanceOf(IOException.class)
@@ -227,10 +237,10 @@ class ThriftCompactReaderTest {
     void listHeaderAcceptsLongFormCountWithinRemainingBytes() throws IOException {
         // 15 bool elements, each one byte, followed by exactly 15 payload bytes.
         int[] bytes = new int[17];
-        bytes[0] = list(LONG_FORM_SIZE, ElementType.BOOL);
+        bytes[0] = longFormList(ElementType.BOOL);
         bytes[1] = 0x0F;  // varint(15)
         for (int i = 0; i < 15; i++) {
-            bytes[i + 2] = ElementType.BOOL.code();
+            bytes[i + 2] = FieldType.Codes.BOOLEAN_TRUE;
         }
 
         ThriftCompactReader.CollectionHeader header = reader(bytes).readListHeader();
@@ -257,11 +267,12 @@ class ThriftCompactReaderTest {
         assertThat(reader.getBytesRead()).isEqualTo(4);
     }
 
-    /// `BOOLEAN_FALSE` is the other type code a writer may put in the element nibble for `bool`.
+    /// [ElementType#BOOL_LEGACY] is the other type code a writer may put in the element nibble
+    /// for `bool`.
     @Test
     void skipFieldConsumesBooleanListElementsDeclaredAsFalse() throws IOException {
         ThriftCompactReader reader = reader(
-                (2 << 4) | FieldType.Codes.BOOLEAN_FALSE,
+                list(2, ElementType.BOOL_LEGACY),
                 FieldType.Codes.BOOLEAN_FALSE, FieldType.Codes.BOOLEAN_FALSE,
                 SENTINEL);
 

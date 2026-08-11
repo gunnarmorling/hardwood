@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ColumnOrderReaderTest {
 
     /// Struct terminator.
-    private static final byte STOP = FieldType.Codes.STOP;
+    private static final byte STOP = ThriftCompactConstants.STOP;
 
     /// The header byte of a union member: the field-id delta in the high nibble, and STRUCT in
     /// the low nibble because every member is an empty marker struct.
