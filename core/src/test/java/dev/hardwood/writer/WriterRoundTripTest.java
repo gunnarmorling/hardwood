@@ -568,8 +568,7 @@ class WriterRoundTripTest {
         Arrays.fill(values, -99);
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
-        try (ParquetFileWriter writer = ParquetFileWriter.create(out,
-                oneColumn(), WriterConfig.builder().codec(CompressionCodec.UNCOMPRESSED).build())) {
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
             writer.writeBatch(batch -> batch.ints(0, values));
         }
 
@@ -587,8 +586,8 @@ class WriterRoundTripTest {
     }
 
     /// Length in bytes of the RLE index stream of the first data page at `dataPageOffset`,
-    /// which for an unlevelled, uncompressed `RLE_DICTIONARY` page is the body past its
-    /// leading bit-width byte.
+    /// which for an unlevelled `RLE_DICTIONARY` page is the uncompressed body past its leading
+    /// bit-width byte. Taken from the page header, so the chunk's codec does not matter.
     private static int indexStreamLength(byte[] file, long dataPageOffset) throws Exception {
         ThriftCompactReader reader = new ThriftCompactReader(ByteBuffer.wrap(file),
                 Math.toIntExact(dataPageOffset));

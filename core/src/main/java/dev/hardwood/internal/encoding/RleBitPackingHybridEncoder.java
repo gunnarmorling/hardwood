@@ -11,7 +11,7 @@ import java.util.Arrays;
 
 /// Encoder for RLE/Bit-Packing Hybrid encoding, the inverse of
 /// [RleBitPackingHybridDecoder]. Used for definition/repetition levels (via
-/// [LevelEncoder]) and, later, dictionary indices.
+/// [LevelEncoder]) and for a data page's dictionary index stream.
 ///
 /// Values that repeat at least eight times in a row are emitted as an RLE run; shorter
 /// stretches are bit-packed in groups of eight. Emitting a single RLE run for a constant
