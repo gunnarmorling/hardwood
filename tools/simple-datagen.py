@@ -2256,6 +2256,254 @@ pq.write_table(plain_int_table, 'core/src/test/resources/compat_plain_int64.parq
                use_dictionary=False, compression=None, data_page_version='1.0')
 print("Generated compat_plain_int64.parquet (ts is plain INT64, no logical type)")
 
+# --- Cross-file leaf ordering (#903) ---
+# Same two columns, opposite leaf order. Physical, logical and repetition types
+# match per column name, so path-based schema validation accepts the pair; only
+# the leaf ordinal differs.
+order_ab_schema = pa.schema([
+    ('a', pa.int64(), False),
+    ('b', pa.int64(), False),
+])
+order_ab_table = pa.table({
+    'a': [1, 2, 3],
+    'b': [101, 102, 103],
+}, schema=order_ab_schema)
+pq.write_table(order_ab_table, 'core/src/test/resources/compat_order_ab.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("\nGenerated compat_order_ab.parquet (leaves a, b)")
+
+order_ba_schema = pa.schema([
+    ('b', pa.int64(), False),
+    ('a', pa.int64(), False),
+])
+order_ba_table = pa.table({
+    'b': [104, 105, 106],
+    'a': [4, 5, 6],
+}, schema=order_ba_schema)
+pq.write_table(order_ba_table, 'core/src/test/resources/compat_order_ba.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_ba.parquet (leaves b, a - reordered)")
+
+# Same reordering, but the two columns have different physical types, so reading
+# the wrong ordinal yields a type mismatch rather than plausible values.
+order_ab_mixed_schema = pa.schema([
+    ('a', pa.int64(), False),
+    ('b', pa.float64(), False),
+])
+order_ab_mixed_table = pa.table({
+    'a': [1, 2, 3],
+    'b': [1.5, 2.5, 3.5],
+}, schema=order_ab_mixed_schema)
+pq.write_table(order_ab_mixed_table, 'core/src/test/resources/compat_order_ab_mixed.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_ab_mixed.parquet (leaves a:INT64, b:DOUBLE)")
+
+order_ba_mixed_schema = pa.schema([
+    ('b', pa.float64(), False),
+    ('a', pa.int64(), False),
+])
+order_ba_mixed_table = pa.table({
+    'b': [4.5, 5.5, 6.5],
+    'a': [4, 5, 6],
+}, schema=order_ba_mixed_schema)
+pq.write_table(order_ba_mixed_table, 'core/src/test/resources/compat_order_ba_mixed.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_ba_mixed.parquet (leaves b:DOUBLE, a:INT64 - reordered)")
+
+# Extra leading column: 'a' and 'b' are present with matching types but shifted
+# one ordinal to the right by a column the projection never asks for.
+order_x_ab_schema = pa.schema([
+    ('x', pa.int64(), False),
+    ('a', pa.int64(), False),
+    ('b', pa.int64(), False),
+])
+order_x_ab_table = pa.table({
+    'x': [900, 901, 902],
+    'a': [4, 5, 6],
+    'b': [104, 105, 106],
+}, schema=order_x_ab_schema)
+pq.write_table(order_x_ab_table, 'core/src/test/resources/compat_order_x_ab.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_x_ab.parquet (leaves x, a, b - extra leading column)")
+
+# Fewer columns than the reference schema: 'b' exists and matches, but sits at an
+# ordinal the reference schema does not have.
+order_b_only_schema = pa.schema([
+    ('b', pa.int64(), False),
+])
+order_b_only_table = pa.table({
+    'b': [104, 105, 106],
+}, schema=order_b_only_schema)
+pq.write_table(order_b_only_table, 'core/src/test/resources/compat_order_b_only.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_b_only.parquet (leaf b only)")
+
+# FIXED_LEN_BYTE_ARRAY columns differing only in width. Physical, logical and
+# repetition types are identical; typeLength is not.
+flba_4_schema = pa.schema([('v', pa.binary(4), False)])
+flba_4_table = pa.table({'v': [b'aaaa', b'bbbb']}, schema=flba_4_schema)
+pq.write_table(flba_4_table, 'core/src/test/resources/compat_flba_4.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_flba_4.parquet (FIXED_LEN_BYTE_ARRAY(4))")
+
+flba_8_schema = pa.schema([('v', pa.binary(8), False)])
+flba_8_table = pa.table({'v': [b'cccccccc', b'dddddddd']}, schema=flba_8_schema)
+pq.write_table(flba_8_table, 'core/src/test/resources/compat_flba_8.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_flba_8.parquet (FIXED_LEN_BYTE_ARRAY(8))")
+
+# Same leaf path 'g.v' under a required vs an optional group. The leaf's own
+# repetition type is REQUIRED in both; only the ancestor differs, so the max
+# definition level differs.
+nested_req_schema = pa.schema([
+    ('g', pa.struct([pa.field('v', pa.int64(), False)]), False),
+])
+nested_req_table = pa.table({'g': [{'v': 1}, {'v': 2}]}, schema=nested_req_schema)
+pq.write_table(nested_req_table, 'core/src/test/resources/compat_nested_req_group.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_nested_req_group.parquet (required group g)")
+
+nested_opt_schema = pa.schema([
+    ('g', pa.struct([pa.field('v', pa.int64(), False)]), True),
+])
+nested_opt_table = pa.table({'g': [{'v': 3}, None]}, schema=nested_opt_schema)
+pq.write_table(nested_opt_table, 'core/src/test/resources/compat_nested_opt_group.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_nested_opt_group.parquet (optional group g)")
+
+# Same leaf path 'g.list.element' under a repeated vs a non-repeated ancestor.
+# Physical, logical and repetition types match, and so does the maximum
+# definition level (three optional/repeated ancestors either way); only the
+# maximum repetition level differs.
+maxrep_list_schema = pa.schema([
+    pa.field('g', pa.list_(pa.field('element', pa.int64(), nullable=True)), nullable=True),
+])
+maxrep_list_table = pa.table({'g': [[1, 2], [3]]}, schema=maxrep_list_schema)
+pq.write_table(maxrep_list_table, 'core/src/test/resources/compat_maxrep_list.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_maxrep_list.parquet (g is a LIST - maxRepetitionLevel 1)")
+
+maxrep_struct_schema = pa.schema([
+    pa.field('g', pa.struct([
+        pa.field('list', pa.struct([pa.field('element', pa.int64(), nullable=True)]), nullable=True),
+    ]), nullable=True),
+])
+maxrep_struct_table = pa.table(
+    {'g': [{'list': {'element': 7}}, {'list': {'element': 8}}]}, schema=maxrep_struct_schema)
+pq.write_table(maxrep_struct_table, 'core/src/test/resources/compat_maxrep_struct.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_maxrep_struct.parquet (g is nested groups - maxRepetitionLevel 0)")
+
+# Reordered leaves with dictionary pages, bloom filters and a page index, so that
+# the dictionary, bloom and page-index pruning sources are all addressed per file.
+# The two files' 'a' statistics overlap, so only the dictionary can decide.
+order_ab_dict_table = pa.table({
+    'a': [1, 3, 5, 7],
+    'b': [201, 203, 205, 207],
+}, schema=pa.schema([('a', pa.int64(), False), ('b', pa.int64(), False)]))
+pq.write_table(order_ab_dict_table, 'core/src/test/resources/compat_order_ab_dict.parquet',
+               use_dictionary=True, compression=None, data_page_version='1.0',
+               write_page_index=True,
+               bloom_filter_options={'a': {'ndv': 4, 'fpp': 0.05}, 'b': {'ndv': 4, 'fpp': 0.05}})
+print("Generated compat_order_ab_dict.parquet (leaves a, b - dictionary, bloom, page index)")
+
+order_ba_dict_table = pa.table({
+    'b': [202, 204, 206, 208],
+    'a': [2, 4, 6, 8],
+}, schema=pa.schema([('b', pa.int64(), False), ('a', pa.int64(), False)]))
+pq.write_table(order_ba_dict_table, 'core/src/test/resources/compat_order_ba_dict.parquet',
+               use_dictionary=True, compression=None, data_page_version='1.0',
+               write_page_index=True,
+               bloom_filter_options={'b': {'ndv': 4, 'fpp': 0.05}, 'a': {'ndv': 4, 'fpp': 0.05}})
+print("Generated compat_order_ba_dict.parquet (leaves b, a - reordered)")
+
+# Reordered leaves that are nested and repeated, so the leaf paths have more than
+# one element and the per-page mask gate has to resolve an ordinal rather than
+# short-circuiting on maxRepetitionLevel 0.
+order_nested_ab_schema = pa.schema([
+    ('l1', pa.list_(pa.int64()), True),
+    ('l2', pa.list_(pa.int64()), True),
+])
+order_nested_ab_table = pa.table({
+    'l1': [[1, 2], [3]],
+    'l2': [[101], [102, 103]],
+}, schema=order_nested_ab_schema)
+pq.write_table(order_nested_ab_table, 'core/src/test/resources/compat_order_nested_ab.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_nested_ab.parquet (leaves l1.list.element, l2.list.element)")
+
+order_nested_ba_schema = pa.schema([
+    ('l2', pa.list_(pa.int64()), True),
+    ('l1', pa.list_(pa.int64()), True),
+])
+order_nested_ba_table = pa.table({
+    'l2': [[104, 105], [106]],
+    'l1': [[4], [5, 6]],
+}, schema=order_nested_ba_schema)
+pq.write_table(order_nested_ba_table, 'core/src/test/resources/compat_order_nested_ba.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_nested_ba.parquet (leaves l2.list.element, l1.list.element - reordered)")
+
+# Internally inconsistent footer: the schema declares leaves (a, b), but the row
+# group lists the two column chunks with their path_in_schema swapped. Reading
+# either column by its schema ordinal picks up the other column's chunk.
+swapped_base_path = '/tmp/_chunk_path_swapped_base.parquet'
+pq.write_table(
+    pa.table({'a': [1, 2, 3], 'b': [101, 102, 103]},
+             schema=pa.schema([('a', pa.int64(), False), ('b', pa.int64(), False)])),
+    swapped_base_path, use_dictionary=False, compression=None, data_page_version='1.0')
+
+with open(swapped_base_path, 'rb') as f:
+    swapped_base_data = f.read()
+swapped_footer_len = struct.unpack('<I', swapped_base_data[-8:-4])[0]
+swapped_pre_footer = swapped_base_data[:len(swapped_base_data) - 8 - swapped_footer_len]
+swapped_base_rg = pq.ParquetFile(swapped_base_path).metadata.row_group(0)
+
+fm = _ThriftWriter()
+fm.f(1, _T_I32).i32(2)
+fm.f(2, _T_LIST).lst(_T_STRUCT, 3)
+fm.raw(_schema_elem("schema", num_children=2))
+fm.raw(_schema_elem("a", type_val=2, rep=0))
+fm.raw(_schema_elem("b", type_val=2, rep=0))
+fm.f(3, _T_I64).i64(swapped_base_rg.num_rows)
+fm.f(4, _T_LIST).lst(_T_STRUCT, 1)
+
+rw = _ThriftWriter()
+rw.f(1, _T_LIST).lst(_T_STRUCT, 2)
+for ci in range(2):
+    col = swapped_base_rg.column(ci)
+    cc = _ThriftWriter()
+    cc.f(2, _T_I64).i64(col.file_offset)
+    cc.f(3, _T_STRUCT)
+
+    md = _ThriftWriter()
+    md.f(1, _T_I32).i32(2)
+    md.f(2, _T_LIST).lst(_T_I32, 1).i32(0)
+    # The swap: chunk 0 claims to be 'b', chunk 1 claims to be 'a'.
+    md.f(3, _T_LIST).lst(_T_BIN, 1).s('b' if ci == 0 else 'a')
+    md.f(4, _T_I32).i32(0)
+    md.f(5, _T_I64).i64(col.num_values)
+    md.f(6, _T_I64).i64(col.total_uncompressed_size)
+    md.f(7, _T_I64).i64(col.total_compressed_size)
+    md.f(9, _T_I64).i64(col.data_page_offset)
+    md.end()
+
+    cc.raw(md.out()).end()
+    rw.raw(cc.out())
+
+rw.f(2, _T_I64).i64(swapped_base_rg.total_byte_size)
+rw.f(3, _T_I64).i64(swapped_base_rg.num_rows)
+rw.end()
+fm.raw(rw.out())
+fm.f(6, _T_BIN).s("hardwood-test-datagen")
+fm.end()
+
+swapped_footer = fm.out()
+with open('core/src/test/resources/compat_chunk_path_swapped.parquet', 'wb') as f:
+    f.write(swapped_pre_footer + swapped_footer
+            + struct.pack('<I', len(swapped_footer)) + b'PAR1')
+print("Generated compat_chunk_path_swapped.parquet (chunk path_in_schema swapped vs schema order)")
+
 # Nullable primitives test: all primitive types with null values
 nullable_primitives_schema = pa.schema([
     ('id', pa.int32(), False),           # REQUIRED - row identifier
