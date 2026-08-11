@@ -241,7 +241,7 @@ class BloomFilterPushDownTest {
                 md.keyValueMetadata(), md.dataPageOffset(), md.dictionaryPageOffset(),
                 md.statistics(), md.geospatialStatistics(), md.bloomFilterOffset(), null, md.encodingStats(), md.sizeStatistics());
         ColumnChunk patched = new ColumnChunk(withoutLength, original.offsetIndexOffset(),
-                original.offsetIndexLength(), original.columnIndexOffset(), original.columnIndexLength());
+                original.offsetIndexLength(), original.columnIndexOffset(), original.columnIndexLength(), "");
 
         List<ColumnChunk> columns = new ArrayList<>(rowGroup.columns());
         columns.set(NAME_COLUMN, patched);
@@ -339,7 +339,7 @@ class BloomFilterPushDownTest {
                 md.keyValueMetadata(), md.dataPageOffset(), md.dictionaryPageOffset(),
                 md.statistics(), md.geospatialStatistics(), bloomOffset, null, md.encodingStats(), md.sizeStatistics());
         ColumnChunk chunk = new ColumnChunk(withBloom, template.offsetIndexOffset(),
-                template.offsetIndexLength(), template.columnIndexOffset(), template.columnIndexLength());
+                template.offsetIndexLength(), template.columnIndexOffset(), template.columnIndexLength(), "");
         return new RowGroup(List.of(chunk), rowGroup.totalByteSize(), rowGroup.numRows());
     }
 }

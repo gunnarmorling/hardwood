@@ -69,7 +69,7 @@ All fields (column_idx, descending, nulls_first) ❌ — struct not read.
 ### ColumnChunk
 | id | field | status | notes |
 |----|-------|--------|-------|
-| 1 | file_path | ❌ | legacy split-file layout unsupported; a non-empty value is rejected |
+| 1 | file_path | ✅ | parsed and surfaced; reading a chunk with a non-empty value fails (split-file layout unsupported) |
 | 2 | file_offset | ❌ | |
 | 3 | meta_data | ✅ | |
 | 4 | offset_index_offset | ✅ | `RowGroupIndexBuffers` |
@@ -232,4 +232,4 @@ The ❌ rows cluster into a handful of capabilities, cross-referenced to ROADMAP
 - **Statistics completeness** — distinct_count, nan_count and the exactness flags are parsed but drive no filtering (#483).
 - **Declared sort order** — `sorting_columns`, `is_sorted`; ROADMAP 4.2.
 - **Column orders** — float total-order vs type-defined; #483.
-- **Deprecated / niche** — split-file `file_path` (rejected rather than ignored, since the data lives elsewhere), index pages, encoding_stats, row-group ordinals: no planned support.
+- **Deprecated / niche** — split-file `file_path` (surfaced, and reading such a chunk fails rather than decoding this file's bytes), index pages, encoding_stats, row-group ordinals: no planned support.

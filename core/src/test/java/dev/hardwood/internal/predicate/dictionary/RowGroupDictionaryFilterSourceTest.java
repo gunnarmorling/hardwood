@@ -263,7 +263,7 @@ class RowGroupDictionaryFilterSourceTest {
             ColumnChunk original = rowGroup.columns().get(DICTIONARY_COLUMN);
             ColumnChunk replacement = new ColumnChunk(patched, original.offsetIndexOffset(),
                     original.offsetIndexLength(), original.columnIndexOffset(),
-                    original.columnIndexLength());
+                    original.columnIndexLength(), "");
             List<ColumnChunk> columns = rowGroup.columns().stream()
                     .map(chunk -> chunk == original ? replacement : chunk)
                     .toList();

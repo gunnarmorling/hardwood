@@ -32,6 +32,8 @@ public class ColumnChunkReader {
         Integer offsetIndexLength = null;
         Long columnIndexOffset = null;
         Integer columnIndexLength = null;
+        // Absent means this file, and so does the empty string the spec allows for it.
+        String filePath = "";
 
         while (true) {
             ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
@@ -42,7 +44,7 @@ public class ColumnChunkReader {
             switch (header.fieldId()) {
                 case 1: // file_path (optional string - deprecated)
                     if (reader.acceptField(header, Codes.BINARY)) {
-                        checkSameFile(reader.readString());
+                        filePath = reader.readString();
                     }
                     break;
                 case 2: // file_offset (required i64)
@@ -79,20 +81,7 @@ public class ColumnChunkReader {
             }
         }
 
-        return new ColumnChunk(metaData, offsetIndexOffset, offsetIndexLength, columnIndexOffset, columnIndexLength);
-    }
-
-    /// A `file_path` puts this column's data in a different file — the legacy split-file layout,
-    /// which Hardwood does not read. Every offset in the chunk's metadata then addresses that
-    /// other file, so continuing would decode whatever happens to sit at those offsets in this
-    /// one and return it as data. Fail instead, as the reader does for the other layouts it
-    /// cannot decode.
-    ///
-    /// An empty string carries no such claim: it names this file.
-    private static void checkSameFile(String filePath) throws IOException {
-        if (!filePath.isEmpty()) {
-            throw new IOException("Column chunk stores its data in a separate file ('" + filePath
-                    + "'); the split-file layout is not supported");
-        }
+        return new ColumnChunk(metaData, offsetIndexOffset, offsetIndexLength, columnIndexOffset,
+                columnIndexLength, filePath);
     }
 }

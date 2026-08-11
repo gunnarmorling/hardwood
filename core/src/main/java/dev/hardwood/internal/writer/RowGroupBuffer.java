@@ -86,7 +86,7 @@ public final class RowGroupBuffer {
         for (int c = 0; c < columns.length; c++) {
             long chunkStartOffset = out.position();
             ColumnMetaData meta = columns[c].flushTo(out, schema.getColumn(c), chunkStartOffset);
-            chunks.add(new ColumnChunk(meta, null, null, null, null));
+            chunks.add(new ColumnChunk(meta, null, null, null, null, ""));
             totalByteSize += meta.totalUncompressedSize();
         }
         return new RowGroup(chunks, totalByteSize, rowCount);

@@ -352,6 +352,7 @@ public class RowGroupIterator {
         return metadataCache.computeIfAbsent(workItem.workItemIndex(), idx -> {
             try (FetchReason.Scope ignored = FetchReason.set(
                     "rg=" + workItem.rowGroupIndex() + " indexes")) {
+                requireSameFile(workItem);
                 boolean pageFiltering = filterPredicate != null && metadataFilteringEnabled;
                 RowGroupIndexBuffers indexBuffers = RowGroupIndexBuffers.fetch(
                         workItem.inputFile(), workItem.rowGroup(),
@@ -378,6 +379,29 @@ public class RowGroupIterator {
                         + "Failed to fetch metadata for row group " + workItem.rowGroupIndex(), e);
             }
         });
+    }
+
+    /// Fails unless every chunk of the work item's row group stores its data in the file being
+    /// read.
+    ///
+    /// This is the first thing [#getSharedMetadata] does, so it precedes every read the row group
+    /// drives: the page index fetched right below, the dictionary and bloom-filter reads that
+    /// prune it, and the fetch plans built from it. The index region alone would already be wrong
+    /// — [RowGroupIndexBuffers#fetch] spans the offsets of *all* the row group's columns, so one
+    /// chunk pointing elsewhere misplaces the region for the rest.
+    ///
+    /// @throws IOException if any chunk names another file
+    private static void requireSameFile(WorkItem workItem) throws IOException {
+        List<ColumnChunk> columns = workItem.rowGroup().columns();
+        for (int i = 0; i < columns.size(); i++) {
+            try {
+                columns.get(i).requireSameFile();
+            }
+            catch (IOException e) {
+                throw new IOException("Cannot read column " + i + " in row group "
+                        + workItem.rowGroupIndex() + ": " + e.getMessage(), e);
+            }
+        }
     }
 
     /// Sets the tail-skip budget for the first row group's fetch plans.

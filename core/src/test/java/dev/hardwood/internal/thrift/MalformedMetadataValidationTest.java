@@ -123,13 +123,17 @@ class MalformedMetadataValidationTest {
     }
 
     @Test
-    void splitFileColumnChunkRejected() {
+    void splitFileColumnChunkParsesButCannotBeRead() {
         // ColumnChunk: field1 file_path names another file, so every offset in this chunk's
-        // metadata addresses that file rather than the one being read.
+        // metadata addresses that file rather than the one being read. The footer still parses —
+        // the metadata of such a file stays inspectable — and the refusal lands where the data
+        // would be read.
         byte[] chunk = new ThriftStructBuilder()
                 .field(1, ThriftStructBuilder.TYPE_BINARY).binary("data-2.parquet".getBytes(UTF_8))
                 .stop().build();
-        assertThatThrownBy(() -> ColumnChunkReader.read(reader(chunk)))
+        ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
+        assertThat(columnChunk.filePath()).isEqualTo("data-2.parquet");
+        assertThatThrownBy(columnChunk::requireSameFile)
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("data-2.parquet")
                 .hasMessageContaining("separate file");
@@ -144,6 +148,18 @@ class MalformedMetadataValidationTest {
                 .stop().build();
         ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
         assertThat(columnChunk.offsetIndexLength()).isEqualTo(64);
+        assertDoesNotThrow(columnChunk::requireSameFile);
+    }
+
+    @Test
+    void absentFilePathIsThisFile() {
+        // The field is optional; a chunk that omits it makes no claim about another file.
+        byte[] chunk = new ThriftStructBuilder()
+                .field(5, ThriftStructBuilder.TYPE_I32).i32(64)
+                .stop().build();
+        ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
+        assertThat(columnChunk.filePath()).isEmpty();
+        assertDoesNotThrow(columnChunk::requireSameFile);
     }
 
     @Test

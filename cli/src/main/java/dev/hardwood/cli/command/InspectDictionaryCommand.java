@@ -114,6 +114,7 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
             ColumnChunk chunk = rg.columns().get(columnSchema.columnIndex());
 
             // Read just the dictionary prefix of the column chunk
+            chunk.requireSameFile();
             Long dictOffset = chunk.metaData().dictionaryPageOffset();
             long chunkStart = (dictOffset != null && dictOffset > 0)
                     ? dictOffset

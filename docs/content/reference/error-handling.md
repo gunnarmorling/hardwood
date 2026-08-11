@@ -15,7 +15,7 @@ Hardwood throws specific exceptions for common error conditions:
 
 | Exception | When |
 |-----------|------|
-| `IOException` | Any I/O error: invalid Parquet file (bad magic number, corrupt footer, malformed page index), files using the split-file layout (a column chunk whose `file_path` points at another file), encrypted files (Parquet Modular Encryption is not supported), local-disk read errors, S3 transport failures (after retry exhaustion — see [Read from S3](../how-to/s3.md)) |
+| `IOException` | Any I/O error: invalid Parquet file (bad magic number, corrupt footer, malformed page index), reading a column chunk whose `file_path` points at another file (the split-file layout is not supported; such a file's metadata still reads), encrypted files (Parquet Modular Encryption is not supported), local-disk read errors, S3 transport failures (after retry exhaustion — see [Read from S3](../how-to/s3.md)) |
 | `UnsupportedOperationException` | Compression codec library not on classpath — the message names the required dependency |
 | `IllegalArgumentException` | Accessing a column not in the projection, or invalid column name |
 | `NullPointerException` | Calling a primitive accessor (`getInt`, `getLong`, etc.) on a null field without checking `isNull()` first |

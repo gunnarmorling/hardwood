@@ -108,8 +108,20 @@ that `OffsetIndex` locates. The two are parsed together in
 
 `ColumnChunk.file_path` places a column's data in a different file. Hardwood does not
 support the split-file layout; reading its own file at `data_page_offset` regardless would
-return whatever happens to sit at that offset. A non-empty `file_path` therefore throws,
-matching how the neighbouring unsupported feature — modular encryption — behaves.
+return whatever happens to sit at that offset. The reader therefore carries `file_path` on
+`ColumnChunk` and refuses at the point the chunk's bytes would be read: `requireSameFile()` on
+the record, called before the scan takes its first look at a row group, before the dictionary
+and bloom-filter sources that prune it, and in the CLI's page and dictionary readers.
+
+The scan checks every chunk of a row group at once, not the projected ones one at a time,
+because the page-index region is fetched as a single span across all of them: one chunk
+pointing elsewhere misplaces the region for the rest.
+
+The refusal sits there rather than in the footer parse so that the metadata of such a file
+stays readable. Its schema, row groups and statistics are all decodable and describe the file
+correctly; only the data lives elsewhere. Failing the parse would take a file that `hardwood
+inspect` can explain and make it unopenable, which is the opposite of what a diagnostic tool
+is for.
 
 ### Failures name the file, the row group and the column
 

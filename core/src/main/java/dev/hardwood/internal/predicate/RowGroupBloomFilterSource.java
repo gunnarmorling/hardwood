@@ -18,6 +18,7 @@ import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
 import dev.hardwood.internal.thrift.BloomFilterHeaderReader;
 import dev.hardwood.internal.thrift.BloomFilterReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
+import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.RowGroup;
 
@@ -70,11 +71,15 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
     }
 
     private BloomFilter readFilter(int columnIndex) {
-        ColumnMetaData metaData = rowGroup.columns().get(columnIndex).metaData();
+        ColumnChunk columnChunk = rowGroup.columns().get(columnIndex);
+        ColumnMetaData metaData = columnChunk.metaData();
         Long offset = metaData.bloomFilterOffset();
         if (offset == null) {
             return null;
         }
+        // The offset addresses the file named by file_path, not this one. Pruning on whatever
+        // sits there would drop row groups that match.
+        requireSameFile(columnChunk, columnIndex);
         if (offset <= 0) {
             // The offset is present but points at or before the file's magic header, so it cannot
             // name a real filter. Treat it as corruption but stay conservative — decline to prune
@@ -127,5 +132,19 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
             fileLength = inputFile.length();
         }
         return fileLength;
+    }
+
+    /// Fails unless this chunk stores its data in the file being read.
+    ///
+    /// Unchecked because the pruning path this sits on cannot throw a checked exception; the
+    /// cause is the [IOException] the metadata contract advertises for the split-file layout.
+    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) {
+        try {
+            columnChunk.requireSameFile();
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Cannot read column " + columnIndex + ": " + e.getMessage(), e);
+        }
     }
 }

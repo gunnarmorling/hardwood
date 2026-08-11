@@ -618,7 +618,7 @@ class PageFilterEvaluatorTest {
         ByteBuffer file = ByteBuffer.allocate(offsetIndex.length + columnIndex.length);
         file.put(offsetIndex).put(columnIndex).flip();
         ColumnChunk chunk = new ColumnChunk(null, 0L, offsetIndex.length,
-                (long) offsetIndex.length, columnIndex.length);
+                (long) offsetIndex.length, columnIndex.length, "");
         RowGroup rowGroup = new RowGroup(List.of(chunk), 1000, 60);
 
         try (InputFile inputFile = InputFile.of(file)) {

@@ -156,7 +156,7 @@ class RowGroupDecideTest {
                 type, List.of(Encoding.PLAIN), FieldPath.of("col"),
                 CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats,
                 null, null, null, List.of(), null);
-        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null);
+        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null, "");
         return new RowGroup(List.of(chunk), 1000, numRows);
     }
 

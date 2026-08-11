@@ -251,6 +251,9 @@ public final class ParquetModel implements AutoCloseable {
         long totalBytes = cmd.totalCompressedSize();
         List<PageHeader> headers = new ArrayList<>();
         try {
+            // The offsets address the file named by file_path, not this one; the pages this
+            // would walk are whatever happens to sit there.
+            cc.requireSameFile();
             ByteBuffer buffer = inputFile.readRange(start, Math.toIntExact(totalBytes));
             int position = 0;
             while (position < buffer.limit()) {
@@ -316,6 +319,7 @@ public final class ParquetModel implements AutoCloseable {
         long chunkStart = dictOffset != null && dictOffset > 0 ? dictOffset : cmd.dataPageOffset();
         int readSize = Math.toIntExact(cmd.totalCompressedSize());
         try (HardwoodContextImpl context = HardwoodContextImpl.create(1)) {
+            cc.requireSameFile();
             ByteBuffer region = inputFile.readRange(chunkStart, readSize);
             Dictionary dict = DictionaryParser.parse(region, schema.getColumn(columnIndex), cmd, context);
             if (dict != null) {

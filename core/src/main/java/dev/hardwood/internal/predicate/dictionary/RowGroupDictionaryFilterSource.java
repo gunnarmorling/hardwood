@@ -106,6 +106,11 @@ public final class RowGroupDictionaryFilterSource {
             return null;
         }
 
+        // Reading this chunk's dictionary from the file being read would decode bytes belonging
+        // to some other column, and prune row groups on them. Fail rather than degrade to
+        // "no dictionary": the scan cannot read the chunk either.
+        requireSameFile(columnChunk, columnIndex);
+
         Long dictionaryOffset = metaData.dictionaryPageOffset();
         long dataPageOffset = metaData.dataPageOffset();
 
@@ -181,4 +186,18 @@ public final class RowGroupDictionaryFilterSource {
                 : region;
     }
 
+
+    /// Fails unless this chunk stores its data in the file being read.
+    ///
+    /// Unchecked because the pruning path this sits on cannot throw a checked exception; the
+    /// cause is the [IOException] the metadata contract advertises for the split-file layout.
+    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) {
+        try {
+            columnChunk.requireSameFile();
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Cannot read column " + columnIndex + ": " + e.getMessage(), e);
+        }
+    }
 }

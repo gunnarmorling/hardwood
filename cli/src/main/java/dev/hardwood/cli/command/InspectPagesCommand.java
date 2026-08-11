@@ -145,7 +145,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             }
 
             boolean trackRowIndex = chunk.metaData().numValues() == rg.numRows();
-            List<PageInfo> pages = collectPageHeaders(chunk.metaData(), inputFile, trackRowIndex);
+            List<PageInfo> pages = collectPageHeaders(chunk, inputFile, trackRowIndex);
 
             boolean rgHasIndex = columnIndex != null && offsetIndex != null;
             boolean rgHasInline = !noStats && hasInlineStats(pages);
@@ -387,7 +387,11 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             boolean isDictionary, Long firstRowIndex, Statistics inlineStats) {
     }
 
-    private List<PageInfo> collectPageHeaders(ColumnMetaData cmd, InputFile inputFile, boolean trackRowIndex) throws IOException {
+    private List<PageInfo> collectPageHeaders(ColumnChunk chunk, InputFile inputFile, boolean trackRowIndex) throws IOException {
+        // Under the split-file layout the offsets below address a different file, so scanning
+        // this one at them would print page headers decoded from unrelated bytes.
+        chunk.requireSameFile();
+        ColumnMetaData cmd = chunk.metaData();
         Long dictOffset = cmd.dictionaryPageOffset();
         long chunkStart = (dictOffset != null && dictOffset > 0) ? dictOffset : cmd.dataPageOffset();
         long chunkSize = cmd.totalCompressedSize();
