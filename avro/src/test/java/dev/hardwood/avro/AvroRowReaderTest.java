@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -271,6 +272,47 @@ class AvroRowReaderTest {
                     .containsExactly(0x09, 'h', 'i');
 
             assertThatCode(() -> serialize(schema, rows)).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    void ordinaryVariantShapedRecordsKeepStructIdentity() throws Exception {
+        Path fixture = TEST_RESOURCES.resolve("avro_variant_identity_test.parquet");
+
+        try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(fixture));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            List<GenericRecord> rows = readAll(reader);
+            assertThat(rows).hasSize(1);
+            GenericRecord row = rows.get(0);
+
+            GenericRecord plainTop = (GenericRecord) row.get("plain_top");
+            assertThat(bytes(plainTop.get("metadata"))).containsExactly("plain-top-metadata".getBytes(StandardCharsets.UTF_8));
+            assertThat(bytes(plainTop.get("value"))).containsExactly("plain-top-value".getBytes(StandardCharsets.UTF_8));
+
+            GenericRecord plainContainer = (GenericRecord) row.get("plain_container");
+            GenericRecord plainNested = (GenericRecord) plainContainer.get("plain_nested");
+            assertThat(bytes(plainNested.get("metadata"))).containsExactly("plain-nested-metadata".getBytes(StandardCharsets.UTF_8));
+            assertThat(bytes(plainNested.get("value"))).containsExactly("plain-nested-value".getBytes(StandardCharsets.UTF_8));
+
+            GenericRecord plainListElement = (GenericRecord) ((List<?>) row.get("plain_list")).get(0);
+            assertThat(bytes(plainListElement.get("metadata"))).containsExactly("plain-list-metadata".getBytes(StandardCharsets.UTF_8));
+            assertThat(bytes(plainListElement.get("value"))).containsExactly("plain-list-value".getBytes(StandardCharsets.UTF_8));
+
+            GenericRecord plainMapValue = (GenericRecord) ((Map<?, ?>) row.get("plain_map")).get("plain-key");
+            assertThat(bytes(plainMapValue.get("metadata"))).containsExactly("plain-map-metadata".getBytes(StandardCharsets.UTF_8));
+            assertThat(bytes(plainMapValue.get("value"))).containsExactly("plain-map-value".getBytes(StandardCharsets.UTF_8));
+
+            GenericRecord realVariant = (GenericRecord) row.get("real_variant");
+            assertThat(bytes(realVariant.get("metadata"))).containsExactly(0x01, 0x00, 0x00);
+            assertThat(bytes(realVariant.get("value"))).containsExactly(0x04);
+
+            GenericRecord variantContainer = (GenericRecord) row.get("variant_container");
+            GenericRecord realNestedVariant = (GenericRecord) variantContainer.get("real_nested_variant");
+            assertThat(bytes(realNestedVariant.get("metadata"))).containsExactly(0x01, 0x00, 0x00);
+            assertThat(bytes(realNestedVariant.get("value"))).containsExactly(0x14, 42, 0, 0, 0);
+
+            assertThatCode(() -> serialize(reader.getSchema(), rows)).doesNotThrowAnyException();
         }
     }
 

@@ -8,7 +8,10 @@
 package dev.hardwood.avro.internal;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
@@ -39,6 +42,12 @@ public final class AvroSchemaConverter {
     /// The projection to narrow to, or `null` to retain every field.
     private final ProjectedSchema projected;
 
+    /// Variant records encountered during conversion, indexed by identity. Equality-based lookup
+    /// would misclassify a same-named ordinary record as a Variant (the #895 shape), reintroducing
+    /// #896; identity is the reliable discriminator, since the converter creates exactly one Schema
+    /// object per Variant and consumers receive that object from the converted graph.
+    private final Set<Schema> variantRecords = Collections.newSetFromMap(new IdentityHashMap<>());
+
     private AvroSchemaConverter(FileSchema fileSchema, ProjectedSchema projected) {
         this.fileSchema = fileSchema;
         this.projected = projected;
@@ -49,25 +58,47 @@ public final class AvroSchemaConverter {
     /// @param fileSchema the Parquet file schema
     /// @return the equivalent Avro record schema
     public static Schema convert(FileSchema fileSchema) {
-        return new AvroSchemaConverter(fileSchema, null).convertRoot();
+        return convertForReading(fileSchema, ColumnProjection.all()).schema();
     }
 
-    /// Convert a Hardwood FileSchema to an Avro record Schema, narrowed to the
-    /// given column projection. Only projected fields appear in the result, with
-    /// pruning applied recursively through structs, list elements, and map values
-    /// — so `address.city` yields an `address` record carrying only `city`, and
-    /// `items.list.element.quantity` yields a list whose element record carries
-    /// only `quantity`, mirroring the partial rows the row reader serves.
+    /// Convert a Hardwood FileSchema and retain the identity of every canonical
+    /// Variant record emitted during conversion for the Avro reader.
     ///
     /// @param fileSchema the Parquet file schema
     /// @param projection the columns to retain
-    /// @return the equivalent Avro record schema, restricted to projected fields
-    public static Schema convert(FileSchema fileSchema, ColumnProjection projection) {
-        if (projection.projectsAll()) {
-            return convert(fileSchema);
+    /// @return the converted schema and its Variant-record classifier
+    public static ConversionResult convertForReading(FileSchema fileSchema, ColumnProjection projection) {
+        ProjectedSchema projected = projection.projectsAll()
+                ? null
+                : ProjectedSchema.create(fileSchema, projection);
+        AvroSchemaConverter converter = new AvroSchemaConverter(fileSchema, projected);
+        return new ConversionResult(converter.convertRoot(), converter.variantRecords);
+    }
+
+    /// The converted schema and the identity-based Variant records it contains.
+    public static final class ConversionResult {
+
+        private final Schema schema;
+        private final Set<Schema> variantRecords;
+
+        private ConversionResult(Schema schema, Set<Schema> variantRecords) {
+            this.schema = schema;
+            this.variantRecords = variantRecords;
         }
-        ProjectedSchema projected = ProjectedSchema.create(fileSchema, projection);
-        return new AvroSchemaConverter(fileSchema, projected).convertRoot();
+
+        /// @return the converted Avro schema
+        public Schema schema() {
+            return schema;
+        }
+
+        /// Return whether `candidate` is one of the canonical Variant records emitted
+        /// by this conversion.
+        ///
+        /// @param candidate an Avro schema from the converted root schema
+        /// @return true only for a converted Variant record with the same identity
+        public boolean isVariantRecord(Schema candidate) {
+            return variantRecords.contains(candidate);
+        }
     }
 
     private Schema convertRoot() {
@@ -136,11 +167,13 @@ public final class AvroSchemaConverter {
     /// surface works unchanged. Callers who want typed access to the Variant
     /// payload use [dev.hardwood.reader.RowReader#getVariant] on the file
     /// reader and the [dev.hardwood.row.PqVariant] API.
-    private static Schema convertVariant(SchemaNode.GroupNode group) {
+    private Schema convertVariant(SchemaNode.GroupNode group) {
         List<Schema.Field> fields = List.of(
                 new Schema.Field("metadata", Schema.create(Schema.Type.BYTES), null, null),
                 new Schema.Field("value", Schema.create(Schema.Type.BYTES), null, null));
-        return Schema.createRecord(group.name(), null, null, false, new ArrayList<>(fields));
+        Schema schema = Schema.createRecord(group.name(), null, null, false, new ArrayList<>(fields));
+        variantRecords.add(schema);
+        return schema;
     }
 
     private Schema convertList(SchemaNode.GroupNode listGroup) {

@@ -2647,6 +2647,75 @@ print("  - 2 rows covering top-level Variant, Map<String, Variant>, List<Variant
 print("  - All unshredded; payloads: BOOLEAN_TRUE, INT32(7), short string 'hi'")
 
 # ============================================================================
+# Variant logical type — identity versus ordinary {metadata, value} records
+# ============================================================================
+#
+# The ordinary records deliberately have the same required two-byte-field shape
+# as a canonical Variant.  Only the two real Variant groups are annotated in the
+# footer; the Avro reader must preserve that distinction from schema conversion.
+
+variant_identity_schema = pa.schema([
+    ('plain_top', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), False),
+    ('plain_container', pa.struct([
+        pa.field('plain_nested', pa.struct([
+            pa.field('metadata', pa.binary(), False),
+            pa.field('value', pa.binary(), False),
+        ]), False),
+    ]), False),
+    ('plain_list', pa.list_(pa.field('element', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), nullable=False)), False),
+    ('plain_map', pa.map_(pa.string(), pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), keys_sorted=False), False),
+    ('real_variant', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), False),
+    ('variant_container', pa.struct([
+        pa.field('real_nested_variant', pa.struct([
+            pa.field('metadata', pa.binary(), False),
+            pa.field('value', pa.binary(), False),
+        ]), False),
+    ]), False),
+])
+
+variant_identity_table = pa.table({
+    'plain_top': [{'metadata': b'plain-top-metadata', 'value': b'plain-top-value'}],
+    'plain_container': [{'plain_nested': {
+        'metadata': b'plain-nested-metadata', 'value': b'plain-nested-value'}}],
+    'plain_list': [[
+        {'metadata': b'plain-list-metadata', 'value': b'plain-list-value'}]],
+    'plain_map': [[
+        ('plain-key', {'metadata': b'plain-map-metadata', 'value': b'plain-map-value'})]],
+    'real_variant': [{'metadata': _empty_metadata, 'value': bytes([0x04])}],
+    'variant_container': [{'real_nested_variant': {
+        'metadata': _empty_metadata, 'value': bytes([0x14, 42, 0, 0, 0])}}],
+}, schema=variant_identity_schema)
+
+pq.write_table(
+    variant_identity_table,
+    'core/src/test/resources/avro_variant_identity_test.parquet',
+    compression='NONE',
+    use_dictionary=False,
+    data_page_version='1.0',
+)
+annotate_group_as_variant(
+    'core/src/test/resources/avro_variant_identity_test.parquet', 'real_variant')
+annotate_group_at_path_as_variant(
+    'core/src/test/resources/avro_variant_identity_test.parquet',
+    ['variant_container', 'real_nested_variant'])
+
+print("\nGenerated avro_variant_identity_test.parquet:")
+print("  - Ordinary required {metadata, value} records at top, nested, list, and map positions")
+print("  - Variant annotations only on real_variant and variant_container.real_nested_variant")
+
+# ============================================================================
 # Variant attributes example — EAV table backing the docs/tweet snippet
 # ============================================================================
 #

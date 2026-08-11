@@ -16,6 +16,7 @@ import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.metadata.SchemaElement;
+import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.FileSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,6 +54,34 @@ class AvroSchemaConverterTest {
         // always the canonical {metadata, value} pair.
         assertThat(varRecord.getFields()).hasSize(2);
         assertThat(varRecord.getField("typed_value")).isNull();
+    }
+
+    @Test
+    void classifiesOnlyConverterCreatedVariantRecords() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 2, null, null, null, null, null);
+        SchemaElement variant = new SchemaElement("variant_record", null, null, RepetitionType.OPTIONAL,
+                2, null, null, null, null, new LogicalType.VariantType(1));
+        SchemaElement variantMetadata = new SchemaElement("metadata", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement variantValue = new SchemaElement("value", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement ordinary = new SchemaElement("ordinary_record", null, null, RepetitionType.OPTIONAL,
+                2, null, null, null, null, null);
+        SchemaElement ordinaryMetadata = new SchemaElement("metadata", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement ordinaryValue = new SchemaElement("value", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+
+        FileSchema fileSchema = FileSchema.fromSchemaElements(List.of(
+                root, variant, variantMetadata, variantValue,
+                ordinary, ordinaryMetadata, ordinaryValue));
+        AvroSchemaConverter.ConversionResult result =
+                AvroSchemaConverter.convertForReading(fileSchema, ColumnProjection.all());
+
+        Schema variantRecord = pickRecordBranch(result.schema().getField("variant_record").schema());
+        Schema ordinaryRecord = pickRecordBranch(result.schema().getField("ordinary_record").schema());
+        assertThat(result.isVariantRecord(variantRecord)).isTrue();
+        assertThat(result.isVariantRecord(ordinaryRecord)).isFalse();
     }
 
     /// `pa.null()` columns carry the NULL logical type on an OPTIONAL primitive.

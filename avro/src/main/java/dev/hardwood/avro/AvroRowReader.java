@@ -47,11 +47,13 @@ import dev.hardwood.row.PqVariant;
 public class AvroRowReader implements AutoCloseable {
 
     private final RowReader rowReader;
+    private final AvroSchemaConverter.ConversionResult conversionResult;
     private final Schema avroSchema;
 
-    AvroRowReader(RowReader rowReader, Schema avroSchema) {
+    AvroRowReader(RowReader rowReader, AvroSchemaConverter.ConversionResult conversionResult) {
         this.rowReader = rowReader;
-        this.avroSchema = avroSchema;
+        this.conversionResult = conversionResult;
+        this.avroSchema = conversionResult.schema();
     }
 
     /// Check if there are more rows to read.
@@ -109,29 +111,13 @@ public class AvroRowReader implements AutoCloseable {
                     ? decimalBytes(reader.getDecimal(name))
                     : wrapBytes(reader.getBinary(name));
             case FIXED -> wrapFixed(reader.getBinary(name), resolved);
-            case RECORD -> isVariantShape(resolved)
+            case RECORD -> conversionResult.isVariantRecord(resolved)
                     ? materializeVariant(reader.getVariant(name), resolved)
                     : materializeStruct(reader.getStruct(name), resolved);
             case ARRAY -> materializeList(reader.getList(name), resolved.getElementType());
             case MAP -> materializeMap(reader.getMap(name), resolved.getValueType());
             default -> reader.getValue(name);
         };
-    }
-
-    /// Detect the two-field `{metadata: bytes, value: bytes}` RECORD shape
-    /// emitted by [dev.hardwood.avro.internal.AvroSchemaConverter#convertVariant]
-    /// for Variant-annotated columns.
-    private static boolean isVariantShape(Schema recordSchema) {
-        List<Schema.Field> fields = recordSchema.getFields();
-        if (fields.size() != 2) {
-            return false;
-        }
-        Schema.Field first = fields.get(0);
-        Schema.Field second = fields.get(1);
-        return "metadata".equals(first.name())
-                && first.schema().getType() == Schema.Type.BYTES
-                && "value".equals(second.name())
-                && second.schema().getType() == Schema.Type.BYTES;
     }
 
     private static GenericRecord materializeVariant(PqVariant variant, Schema recordSchema) {
@@ -159,7 +145,7 @@ public class AvroRowReader implements AutoCloseable {
                     ? decimalBytes(struct.getDecimal(name))
                     : wrapBytes(struct.getBinary(name));
             case FIXED -> wrapFixed(struct.getBinary(name), resolved);
-            case RECORD -> isVariantShape(resolved)
+            case RECORD -> conversionResult.isVariantRecord(resolved)
                     ? materializeVariant(struct.getVariant(name), resolved)
                     : materializeStruct(struct.getStruct(name), resolved);
             case ARRAY -> materializeList(struct.getList(name), resolved.getElementType());
@@ -227,8 +213,7 @@ public class AvroRowReader implements AutoCloseable {
             }
             case RECORD -> {
                 // A VARIANT-annotated element group surfaces as PqVariant rather than
-                // PqStruct, so the value itself selects the materializer here — no
-                // need for the isVariantShape sniff the schema-driven paths use.
+                // PqStruct, so the value itself selects the materializer here.
                 Object val = pqList.get(index);
                 if (val instanceof PqVariant variant) {
                     yield materializeVariant(variant, elementSchema);
@@ -279,7 +264,7 @@ public class AvroRowReader implements AutoCloseable {
                     ? decimalBytes(entry.getDecimalValue())
                     : wrapBytes(entry.getBinaryValue());
             case FIXED -> wrapFixed(entry.getBinaryValue(), valueSchema);
-            case RECORD -> isVariantShape(valueSchema)
+            case RECORD -> conversionResult.isVariantRecord(valueSchema)
                     ? materializeVariant(entry.getVariantValue(), valueSchema)
                     : materializeStruct(entry.getStructValue(), valueSchema);
             case ARRAY -> materializeList(entry.getListValue(), valueSchema.getElementType());
