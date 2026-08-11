@@ -19,6 +19,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /// share no code, so agreement pins the encoded byte layout to what the reader decodes.
 class RleBitPackingHybridEncoderTest {
 
+    /// A zero-bit stream still needs its RLE run header. Hardwood's own decoder short-circuits
+    /// on the bit width and never reads the bytes, but parquet-java and Arrow C++ drive the
+    /// decode from the stream itself and read past its end if the header is missing, so a
+    /// single-entry dictionary produced an index page they could not decode (#901).
+    ///
+    /// The run is `<varint (count << 1)>` with no value bytes, since a zero-bit value occupies
+    /// `ceil(0 / 8) == 0` bytes.
+    @Test
+    void encodesZeroBitStreamAsAnRleRunHeader() {
+        byte[] encoded = encode(new int[300], 0);
+
+        // 300 << 1 == 600, a two-byte unsigned varint.
+        assertThat(encoded).containsExactly(0xD8, 0x04);
+    }
+
+    @Test
+    void encodesEmptyZeroBitStreamAsNoBytes() {
+        assertThat(encode(new int[0], 0)).isEmpty();
+    }
+
     @Test
     void encodesConstantStreamAsSingleRleRun() {
         int[] values = new int[1000];
@@ -109,12 +129,6 @@ class RleBitPackingHybridEncoderTest {
             values[i] = random.nextInt(8);
         }
         assertRoundTrip(values, 3);
-    }
-
-    @Test
-    void bitWidthZeroEncodesNothing() {
-        byte[] encoded = encode(new int[] { 0, 0, 0 }, 0);
-        assertThat(encoded).isEmpty();
     }
 
     @Test

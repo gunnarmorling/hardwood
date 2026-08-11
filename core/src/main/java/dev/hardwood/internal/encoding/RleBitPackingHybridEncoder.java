@@ -18,6 +18,11 @@ import java.util.Arrays;
 /// stream is what lets the reader take its all-present fast path on a fully-populated
 /// optional column. The bit-packed byte layout is little-endian bit order, matching the
 /// decoder: value `i` of a group occupies bits `[i·bitWidth, (i+1)·bitWidth)`.
+///
+/// A zero-bit stream — the dictionary indices of a chunk whose dictionary holds a single
+/// entry — is one RLE run whose values occupy no bytes, so only the run header is written.
+/// The header cannot be skipped even though it carries no value: a decoder reads the run
+/// length from the stream rather than from the page's value count.
 public final class RleBitPackingHybridEncoder {
 
     private final int bitWidth;
@@ -63,8 +68,11 @@ public final class RleBitPackingHybridEncoder {
             throw new IllegalStateException("Encoder already finished");
         }
         if (bitWidth == 0) {
-            // A 0-bit stream carries no information — the decoder reads nothing — so there
-            // is nothing to buffer or emit.
+            // Zero bits leave only one representable value, so the whole stream is one RLE
+            // run and the value itself needs no bytes. The run header is still required: a
+            // decoder takes the run length from the stream rather than from the page's value
+            // count, and reads past the end without it.
+            repeatCount++;
             return;
         }
         if (value == previousValue) {
@@ -92,7 +100,12 @@ public final class RleBitPackingHybridEncoder {
     /// to afterwards.
     public byte[] toByteArray() {
         if (!finished) {
-            if (repeatCount >= 8) {
+            if (bitWidth == 0) {
+                if (repeatCount > 0) {
+                    writeRleRun();
+                }
+            }
+            else if (repeatCount >= 8) {
                 writeRleRun();
             }
             else if (numBufferedValues > 0) {
