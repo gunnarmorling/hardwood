@@ -198,7 +198,7 @@ public final class AvroSchemaConverter {
         if (mapGroup.children().isEmpty()) {
             return Schema.createMap(Schema.create(Schema.Type.NULL));
         }
-        SchemaNode inner = mapGroup.children().get(0);
+        SchemaNode inner = mapGroup.children().getFirst();
         if (inner instanceof SchemaNode.GroupNode kvGroup && kvGroup.children().size() >= 2) {
             SchemaNode valueNode = kvGroup.children().get(1);
             // Prune the value subtree so a map<_, struct> with a sub-field
