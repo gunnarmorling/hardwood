@@ -97,6 +97,32 @@ class MalformedMetadataValidationTest {
     }
 
     @Test
+    void oversizedBinaryLengthRejected() {
+        // SchemaElement: field4 name declares 2^32 + 2 bytes. Truncated to int that is 2, so the
+        // read would hand back a two-byte name and leave the cursor inside the field, taking the
+        // rest of it for the headers of the fields behind it.
+        byte[] element = new ThriftStructBuilder()
+                .field(4, ThriftStructBuilder.TYPE_BINARY).raw(0x82, 0x80, 0x80, 0x80, 0x10)
+                .stop().build();
+        assertThatThrownBy(() -> SchemaElementReader.read(reader(element)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("4294967298");
+    }
+
+    @Test
+    void binaryLengthPastTheBufferRejected() {
+        // The same field declaring 8 MiB in a footer of a few bytes. The length is a valid int,
+        // so it reaches `new byte[length]` intact — this bound is all that stands between a
+        // five-byte varint and the allocation.
+        byte[] element = new ThriftStructBuilder()
+                .field(4, ThriftStructBuilder.TYPE_BINARY).raw(0x80, 0x80, 0x80, 0x04)
+                .stop().build();
+        assertThatThrownBy(() -> SchemaElementReader.read(reader(element)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("8388608");
+    }
+
+    @Test
     void splitFileColumnChunkRejected() {
         // ColumnChunk: field1 file_path names another file, so every offset in this chunk's
         // metadata addresses that file rather than the one being read.
@@ -216,6 +242,60 @@ class MalformedMetadataValidationTest {
         assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("TimeUnit");
+    }
+
+    @Test
+    void logicalTypeUnionWithTwoVariantsRejected() {
+        // The same union with both MILLIS and MICROS set. Which unit the column uses is then
+        // ambiguous, and the byte after the first variant is another field header rather than
+        // STOP — reading on would take the second variant's value for a field of the enclosing
+        // TimeType and misparse the rest of the schema element.
+        byte[] emptyStruct = new ThriftStructBuilder().stop().build();
+        byte[] unit = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_STRUCT).nested(emptyStruct)
+                .field(2, ThriftStructBuilder.TYPE_STRUCT).nested(emptyStruct)
+                .stop().build();
+        byte[] timeType = new ThriftStructBuilder()
+                .field(2, ThriftStructBuilder.TYPE_STRUCT).nested(unit)
+                .stop().build();
+        byte[] logicalType = new ThriftStructBuilder()
+                .field(7, ThriftStructBuilder.TYPE_STRUCT).nested(timeType)
+                .stop().build();
+        assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("TimeUnit")
+                .hasMessageContaining("more than one variant");
+    }
+
+    @Test
+    void columnIndexWithRaggedHistogramRejected() {
+        // Two pages and five histogram entries: no per-page stride divides that, so
+        // ColumnIndex.repetitionLevelHistogram(page) has no slice it could return.
+        byte[] index = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_LIST).boolList(false, false)
+                .field(2, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 1 }, new byte[]{ 2 })
+                .field(3, ThriftStructBuilder.TYPE_LIST).binaryList(new byte[]{ 3 }, new byte[]{ 4 })
+                .field(6, ThriftStructBuilder.TYPE_LIST).i64List(0L, 1L, 2L, 3L, 4L)
+                .stop().build();
+        assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("ColumnIndex.repetition_level_histograms")
+                .hasMessageContaining("not a whole number of entries per page");
+    }
+
+    @Test
+    void nullPagesOfWrongElementTypeRejected() {
+        // ColumnIndex.null_pages declared as list<i32>. It is required and its length defines
+        // the page count every other member is checked against, so there is nothing to fall
+        // back to — and its elements are four bytes where bools are one, which would desync
+        // the rest of the struct if decoded anyway.
+        byte[] index = new ThriftStructBuilder()
+                .field(1, ThriftStructBuilder.TYPE_LIST).i32List(0, 1)
+                .stop().build();
+        assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("ColumnIndex.null_pages")
+                .hasMessageContaining("bool");
     }
 
     @Test

@@ -186,8 +186,11 @@ public class ThriftCompactReader {
     }
 
     /// Read a binary/string value (length-prefixed).
+    ///
+    /// The declared length is validated against the bytes still in the buffer before it reaches
+    /// the allocation — see [#checkedBinaryLength].
     public byte[] readBinary() throws IOException {
-        int length = (int) readVarint();
+        int length = checkedBinaryLength(readVarint());
         byte[] data = new byte[length];
         readBytes(data);
         return data;
@@ -237,7 +240,7 @@ public class ThriftCompactReader {
     ///
     /// @param header the field header just read
     /// @param expectedType wire code the field must declare, from [ThriftCompactConstants.FieldType.Codes]
-    public boolean acceptField(FieldHeader header, byte expectedType) throws IOException {
+    boolean acceptField(FieldHeader header, byte expectedType) throws IOException {
         if (header.type() == expectedType) {
             return true;
         }
@@ -251,7 +254,7 @@ public class ThriftCompactReader {
     /// @param header the field header just read
     /// @param fallback value to report for a field declared as anything but `bool`, which is
     ///     skipped as [#acceptField] would
-    public boolean readBooleanField(FieldHeader header, boolean fallback) throws IOException {
+    boolean readBooleanField(FieldHeader header, boolean fallback) throws IOException {
         if (header.type() == TYPE_BOOLEAN_TRUE) {
             return true;
         }
@@ -292,7 +295,7 @@ public class ThriftCompactReader {
     /// @param expectedElementType wire code the elements must declare
     /// @param fieldName fully-qualified field name for the error message
     /// @throws IOException if the list declares a different element type
-    public CollectionHeader requireListHeader(byte expectedElementType, String fieldName) throws IOException {
+    CollectionHeader requireListHeader(byte expectedElementType, String fieldName) throws IOException {
         CollectionHeader header = readListHeader();
         if (header.elementType() != expectedElementType) {
             throw wrongElementType(fieldName, header.elementType(), hex(expectedElementType));
@@ -312,7 +315,7 @@ public class ThriftCompactReader {
     /// @param fieldName fully-qualified field name for the log message
     /// @return the header, or `null` if the list declares a different element type and has been
     ///     skipped
-    public CollectionHeader acceptListHeader(byte expectedElementType, String fieldName) throws IOException {
+    CollectionHeader acceptListHeader(byte expectedElementType, String fieldName) throws IOException {
         CollectionHeader header = readListHeader();
         if (header.elementType() != expectedElementType) {
             skipElements(header);
@@ -328,7 +331,7 @@ public class ThriftCompactReader {
     ///
     /// @param fieldName fully-qualified field name for the error message
     /// @param elementReader reader for one element
-    public <T> List<T> readStructList(String fieldName, StructReader<T> elementReader) throws IOException {
+    <T> List<T> readStructList(String fieldName, StructReader<T> elementReader) throws IOException {
         CollectionHeader header = requireListHeader(Codes.STRUCT, fieldName);
         List<T> values = new ArrayList<>(header.size());
         for (int i = 0; i < header.size(); i++) {
@@ -340,7 +343,7 @@ public class ThriftCompactReader {
     /// Read a required `list<string>` in full.
     ///
     /// @param fieldName fully-qualified field name for the error message
-    public List<String> readStringList(String fieldName) throws IOException {
+    List<String> readStringList(String fieldName) throws IOException {
         CollectionHeader header = requireListHeader(Codes.BINARY, fieldName);
         List<String> values = new ArrayList<>(header.size());
         for (int i = 0; i < header.size(); i++) {
@@ -352,7 +355,7 @@ public class ThriftCompactReader {
     /// Read a required `list<binary>` in full.
     ///
     /// @param fieldName fully-qualified field name for the error message
-    public List<byte[]> readBinaryList(String fieldName) throws IOException {
+    List<byte[]> readBinaryList(String fieldName) throws IOException {
         CollectionHeader header = requireListHeader(Codes.BINARY, fieldName);
         List<byte[]> values = new ArrayList<>(header.size());
         for (int i = 0; i < header.size(); i++) {
@@ -367,7 +370,7 @@ public class ThriftCompactReader {
     /// both are accepted — see [ThriftCompactConstants.ElementType].
     ///
     /// @param fieldName fully-qualified field name for the error message
-    public boolean[] readBoolArray(String fieldName) throws IOException {
+    boolean[] readBoolArray(String fieldName) throws IOException {
         CollectionHeader header = readListHeader();
         if (header.elementType() != TYPE_BOOLEAN_TRUE && header.elementType() != TYPE_BOOLEAN_FALSE) {
             throw wrongElementType(fieldName, header.elementType(), "bool");
@@ -388,7 +391,7 @@ public class ThriftCompactReader {
     /// distinction the metadata records carry through to their callers.
     ///
     /// @param fieldName fully-qualified field name for the log message
-    public long[] readOptionalI64Array(String fieldName) throws IOException {
+    long[] readOptionalI64Array(String fieldName) throws IOException {
         CollectionHeader header = acceptListHeader(Codes.I64, fieldName);
         if (header == null) {
             return null;
@@ -400,6 +403,25 @@ public class ThriftCompactReader {
         return values;
     }
 
+    /// Validate a declared binary length against the bytes still in the buffer, before it reaches
+    /// the allocation in [#readBinary].
+    ///
+    /// The length is a varint, so it can name a value the buffer cannot hold and one the `int`
+    /// range cannot hold. Truncating it to `int` yields a negative length — a
+    /// `NegativeArraySizeException`, unchecked and outside the `IOException` contract the
+    /// metadata path advertises — or a smaller one, which reads a silently truncated value and
+    /// leaves the cursor mid-field. A length inside the `int` range but past the buffer allocates
+    /// gigabytes before [#readBytes] gets to reject it. Every string and binary in the footer is
+    /// read through here, including each `ColumnIndex.min_values` and `max_values` element, so
+    /// this is the one bound between a file-supplied length and an allocation.
+    private int checkedBinaryLength(long declaredLength) throws IOException {
+        if (declaredLength < 0 || declaredLength > buffer.remaining()) {
+            throw new IOException("Malformed Parquet metadata: binary value declares "
+                    + declaredLength + " bytes but only " + buffer.remaining() + " remain");
+        }
+        return Math.toIntExact(declaredLength);
+    }
+
     /// Validate a declared collection size against the bytes still in the buffer: every Thrift
     /// element occupies at least one byte on the wire, so a larger count cannot describe real
     /// data. See [#readListHeader] for what an unvalidated count would drive.
@@ -408,7 +430,7 @@ public class ThriftCompactReader {
             throw new IOException("Malformed Parquet metadata: collection declares "
                     + declaredSize + " elements but only " + buffer.remaining() + " bytes remain");
         }
-        return (int) declaredSize;
+        return Math.toIntExact(declaredSize);
     }
 
     private static IOException wrongElementType(String fieldName, byte actual, String expected) {

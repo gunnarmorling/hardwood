@@ -49,7 +49,7 @@ public class SchemaElementReader {
 
             switch (header.fieldId()) {
                 case 1: // type (optional)
-                    if (reader.acceptField(header, Codes.I32)) { // I32
+                    if (reader.acceptField(header, Codes.I32)) {
                         type = ThriftEnumLookup.physicalType(reader.readI32());
                     }
                     break;
@@ -64,7 +64,7 @@ public class SchemaElementReader {
                     }
                     break;
                 case 4: // name (required)
-                    if (reader.acceptField(header, Codes.BINARY)) { // BINARY
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         name = reader.readString();
                     }
                     break;
@@ -74,7 +74,7 @@ public class SchemaElementReader {
                     }
                     break;
                 case 6: // converted_type (optional)
-                    if (reader.acceptField(header, Codes.I32)) { // I32
+                    if (reader.acceptField(header, Codes.I32)) {
                         convertedType = ThriftEnumLookup.convertedType(reader.readI32());
                     }
                     break;
@@ -94,7 +94,7 @@ public class SchemaElementReader {
                     }
                     break;
                 case 10: // logicalType (optional)
-                    if (reader.acceptField(header, Codes.STRUCT)) { // STRUCT
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         logicalType = LogicalTypeReader.read(reader);
                     }
                     break;

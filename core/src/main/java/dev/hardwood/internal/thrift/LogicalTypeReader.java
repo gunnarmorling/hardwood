@@ -126,12 +126,12 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // scale (required)
-                    if (reader.acceptField(header, Codes.I32)) { // I32
+                    if (reader.acceptField(header, Codes.I32)) {
                         scale = reader.readI32();
                     }
                     break;
                 case 2: // precision (required)
-                    if (reader.acceptField(header, Codes.I32)) { // I32
+                    if (reader.acceptField(header, Codes.I32)) {
                         precision = reader.readI32();
                     }
                     break;
@@ -244,7 +244,7 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // bitWidth (required)
-                    if (reader.acceptField(header, Codes.BYTE)) { // I8 (byte)
+                    if (reader.acceptField(header, Codes.BYTE)) {
                         bitWidth = reader.readByte();
                     }
                     break;
@@ -281,7 +281,7 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // specification_version (optional i8)
-                    if (reader.acceptField(header, Codes.BYTE)) { // I8
+                    if (reader.acceptField(header, Codes.BYTE)) {
                         specVersion = reader.readByte();
                     }
                     break;
@@ -297,14 +297,7 @@ public class LogicalTypeReader {
     private static TimeUnit readTimeUnit(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
-                throw new IOException("Malformed Parquet metadata: TimeUnit union has no variant set");
-            }
-            int fieldId = header.fieldId();
-            reader.skipField(header.type());
-            reader.readFieldHeader(); // Consume STOP
-
+            int fieldId = readUnionVariantId(reader, "TimeUnit");
             return switch (fieldId) {
                 case 1 -> TimeUnit.MILLIS;
                 case 2 -> TimeUnit.MICROS;
@@ -337,7 +330,7 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // CRS
-                    if (reader.acceptField(header, Codes.BINARY)) { // TYPE_BINARY
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         crs = reader.readString();
                     }
                     break;
@@ -375,12 +368,12 @@ public class LogicalTypeReader {
 
             switch (header.fieldId()) {
                 case 1: // CRS
-                    if (reader.acceptField(header, Codes.BINARY)) { // TYPE_BINARY
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         crs = reader.readString();
                     }
                     break;
                 case 2: // EdgeInterpolation
-                    if (reader.acceptField(header, Codes.STRUCT)) { // TYPE_STRUCT
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         edgeInterpolation = readEdgeInterpolation(reader);
                     }
                     break;
@@ -403,14 +396,7 @@ public class LogicalTypeReader {
     private static EdgeInterpolationAlgorithm readEdgeInterpolation(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
-                throw new IOException("Malformed Parquet metadata: EdgeInterpolationAlgorithm union has no variant set");
-            }
-            int fieldId = header.fieldId();
-            reader.skipField(header.type());
-            reader.readFieldHeader(); // Consume STOP
-
+            int fieldId = readUnionVariantId(reader, "EdgeInterpolationAlgorithm");
             return switch (fieldId) {
                 case 1 -> EdgeInterpolationAlgorithm.SPHERICAL;
                 case 2 -> EdgeInterpolationAlgorithm.VINCENTY;
@@ -423,5 +409,30 @@ public class LogicalTypeReader {
         finally {
             reader.popFieldIdContext(saved);
         }
+    }
+
+    /// Reads the single variant of a Thrift union and returns its field id, leaving the reader on
+    /// the byte after the union's STOP. The variant's value is consumed but not decoded: which
+    /// variant is set is the whole of the union's meaning here.
+    ///
+    /// A union carries exactly one variant. None leaves nothing to report, and the field it
+    /// stands for — a timestamp's unit, a geography's edge model — has no default that could
+    /// stand in for it. More than one is worse than ambiguous: the byte after the first variant
+    /// is then another field header rather than STOP, so reading on would take the second
+    /// variant's value for a field of the enclosing struct and misparse the rest of it.
+    ///
+    /// @param unionName name of the union, for the error message
+    private static int readUnionVariantId(ThriftCompactReader reader, String unionName) throws IOException {
+        ThriftCompactReader.FieldHeader variant = reader.readFieldHeader();
+        if (variant == null) {
+            throw new IOException("Malformed Parquet metadata: " + unionName
+                    + " union has no variant set");
+        }
+        reader.skipField(variant.type());
+        if (reader.readFieldHeader() != null) {
+            throw new IOException("Malformed Parquet metadata: " + unionName
+                    + " union has more than one variant set");
+        }
+        return variant.fieldId();
     }
 }
