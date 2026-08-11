@@ -1,6 +1,6 @@
 # Logical-type write support (#9, stage 13)
 
-**Status: In progress.** Tracking issue: #9. Delivery stage 13 (Breadth) of
+**Status: Complete.** Tracking issue: #9. Delivery stage 13 (Breadth) of
 [WRITER_SUPPORT.md](WRITER_SUPPORT.md), delivered in increments 13a (annotations) and 13b
 (order-correct statistics). This document is the reference the logical-type increments
 implement against.
@@ -272,9 +272,8 @@ Two consequences beyond the comparator itself:
   value — a shorter byte string is a numerically different value there, in either direction.
   A binary `DECIMAL` column's bounds are therefore never truncated.
 
-In 13a every row marked "13b" above, and every undefined-order row, writes `null_count` only.
-13b replaces the "13b" rows with their collectors and leaves the undefined-order rows suppressed
-permanently.
+13a writes `null_count` alone for every row marked "13b" above and every undefined-order row;
+13b adds the marked collectors, leaving only the undefined-order rows without bounds.
 
 ## `column_orders`
 

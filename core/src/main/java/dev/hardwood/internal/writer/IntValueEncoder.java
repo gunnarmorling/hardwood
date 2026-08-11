@@ -17,14 +17,15 @@ final class IntValueEncoder extends ValueEncoder {
     private final int[] plain;
     private final int[] window;
     private final DictionaryEncoder dictionary; // null when dictionary encoding is disabled
-    private final IntStatisticsCollector statistics = new IntStatisticsCollector();
+    private final IntStatisticsCollector statistics;
 
     private IntColumnSource source;
     private int size;
     private int windowBase;
     private int windowLength;
 
-    IntValueEncoder(int pageValues, boolean enableDictionary) {
+    IntValueEncoder(int pageValues, boolean enableDictionary, boolean unsignedOrder) {
+        this.statistics = new IntStatisticsCollector(unsignedOrder);
         this.plain = new int[pageValues];
         this.window = new int[Math.max(1, pageValues)];
         this.dictionary = enableDictionary ? new DictionaryEncoder() : null;

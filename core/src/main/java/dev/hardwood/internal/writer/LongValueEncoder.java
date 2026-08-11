@@ -17,14 +17,15 @@ final class LongValueEncoder extends ValueEncoder {
     private final long[] plain;
     private final long[] window;
     private final LongDictionaryEncoder dictionary; // null when dictionary encoding is disabled
-    private final LongStatisticsCollector statistics = new LongStatisticsCollector();
+    private final LongStatisticsCollector statistics;
 
     private LongColumnSource source;
     private int size;
     private int windowBase;
     private int windowLength;
 
-    LongValueEncoder(int pageValues, boolean enableDictionary) {
+    LongValueEncoder(int pageValues, boolean enableDictionary, boolean unsignedOrder) {
+        this.statistics = new LongStatisticsCollector(unsignedOrder);
         this.plain = new long[pageValues];
         this.window = new long[Math.max(1, pageValues)];
         this.dictionary = enableDictionary ? new LongDictionaryEncoder() : null;

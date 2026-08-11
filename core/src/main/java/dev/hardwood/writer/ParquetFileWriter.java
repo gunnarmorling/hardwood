@@ -13,6 +13,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -26,6 +27,7 @@ import dev.hardwood.internal.thrift.ThriftCompactWriter;
 import dev.hardwood.internal.writer.ColumnSource;
 import dev.hardwood.internal.writer.RecordShredder;
 import dev.hardwood.internal.writer.RowGroupBuffer;
+import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RowGroup;
@@ -221,6 +223,18 @@ public final class ParquetFileWriter implements Closeable {
         current = newRowGroupBuffer();
     }
 
+    /// One `ColumnOrder` per leaf column, in schema order. The format requires the list wherever
+    /// `Statistics` bounds are written, without which their meaning is undefined.
+    ///
+    /// Every column declares the type-defined order — the one every statistics collector
+    /// computes in, floats included: their NaN exclusion and signed-zero normalization are the
+    /// type-defined convention, and under the IEEE 754 total order a NaN is an ordinary value
+    /// sorting beyond the infinities, so bounds that exclude it would let a total-order reader
+    /// drop a page that holds one.
+    private List<ColumnOrder> columnOrders() {
+        return Collections.nCopies(schema.getColumnCount(), ColumnOrder.TYPE_DEFINED_ORDER);
+    }
+
     private void writeFooter() throws IOException {
         FileMetaData metaData = new FileMetaData(
                 FORMAT_VERSION,
@@ -229,7 +243,7 @@ public final class ParquetFileWriter implements Closeable {
                 List.copyOf(rowGroups),
                 Map.of(),
                 config.createdBy(),
-                List.of());
+                columnOrders());
 
         ThriftCompactWriter footer = new ThriftCompactWriter();
         FileMetaDataWriter.write(footer, metaData);

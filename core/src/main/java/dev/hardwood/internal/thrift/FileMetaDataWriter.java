@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.thrift;
 
+import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.metadata.SchemaElement;
@@ -44,6 +45,17 @@ public class FileMetaDataWriter {
         if (metaData.createdBy() != null) {
             writer.writeFieldBegin(6, ThriftCompactConstants.FieldType.BINARY);
             writer.writeString(metaData.createdBy());
+        }
+
+        // 7: column_orders (optional list<ColumnOrder>), one entry per leaf column. Required by
+        // the format wherever Statistics min_value / max_value are written, which would
+        // otherwise have no defined meaning.
+        if (!metaData.columnOrders().isEmpty()) {
+            writer.writeFieldBegin(7, ThriftCompactConstants.FieldType.LIST);
+            writer.writeListBegin(metaData.columnOrders().size(), ThriftCompactConstants.ElementType.STRUCT);
+            for (ColumnOrder order : metaData.columnOrders()) {
+                ColumnOrderWriter.write(writer, order);
+            }
         }
 
         writer.writeFieldStop();

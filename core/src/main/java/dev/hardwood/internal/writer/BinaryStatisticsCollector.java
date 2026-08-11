@@ -11,9 +11,11 @@ import java.util.Arrays;
 
 import dev.hardwood.metadata.Statistics;
 
-/// Accumulates a binary column chunk's `min` / `max` / `null_count` in unsigned lexicographic
-/// order (the type-defined order for unannotated `BYTE_ARRAY` / `FIXED_LEN_BYTE_ARRAY`),
-/// matching the reader's `BinaryComparator`.
+/// Accumulates a binary column chunk's `min` / `max` / `null_count` in one of the two orders a
+/// byte string is compared in: unsigned lexicographic — the type-defined order for an
+/// unannotated `BYTE_ARRAY` / `FIXED_LEN_BYTE_ARRAY` and for the string-like annotations,
+/// matching the reader's `BinaryComparator` — or signed big-endian two's complement, the order
+/// of a `DECIMAL`'s represented value.
 ///
 /// Bounds are **truncated** to at most `truncationLength` bytes so a chunk of long values does
 /// not bloat the footer. A truncated `min` keeps the value's first *N* bytes — a prefix is `<=`
@@ -24,38 +26,82 @@ import dev.hardwood.metadata.Statistics;
 /// inexact; an untruncated bound stays exact. The `min` / `max` references are copied on update,
 /// so a caller that mutates a written batch's arrays before the row group flushes cannot corrupt
 /// the bounds.
-final class BinaryStatisticsCollector {
+final class BinaryStatisticsCollector implements BinaryStatistics {
 
+    /// The orders a byte string is compared in.
+    enum Order {
+        /// Unsigned byte-wise comparison.
+        LEXICOGRAPHIC,
+        /// Signed big-endian two's complement comparison of the represented value.
+        SIGNED_BIG_ENDIAN
+    }
+
+    private final Order order;
     private final int truncationLength;
     private byte[] min;
     private byte[] max;
     private long nullCount;
     private boolean hasValues;
 
-    BinaryStatisticsCollector(int truncationLength) {
+    BinaryStatisticsCollector(Order order, int truncationLength) {
+        this.order = order;
         this.truncationLength = truncationLength;
     }
 
-    void accept(byte[] value) {
+    @Override
+    public void accept(byte[] value) {
         if (!hasValues) {
             min = value.clone();
             max = value.clone();
             hasValues = true;
             return;
         }
-        if (Arrays.compareUnsigned(value, min) < 0) {
+        if (compare(value, min) < 0) {
             min = value.clone();
         }
-        if (Arrays.compareUnsigned(value, max) > 0) {
+        if (compare(value, max) > 0) {
             max = value.clone();
         }
     }
 
-    void acceptNull() {
+    private int compare(byte[] left, byte[] right) {
+        return order == Order.LEXICOGRAPHIC
+                ? Arrays.compareUnsigned(left, right)
+                : compareSignedBigEndian(left, right);
+    }
+
+    /// Compares two big-endian two's complement integers that may differ in length, as a
+    /// `DECIMAL`'s unscaled values do. A negative value is below every non-negative one; within
+    /// a sign, the shorter value is sign-extended to the longer and the bytes compare unsigned.
+    /// An empty array is the value zero.
+    private static int compareSignedBigEndian(byte[] left, byte[] right) {
+        boolean leftNegative = left.length > 0 && left[0] < 0;
+        boolean rightNegative = right.length > 0 && right[0] < 0;
+        if (leftNegative != rightNegative) {
+            return leftNegative ? -1 : 1;
+        }
+        int length = Math.max(left.length, right.length);
+        int leftPad = leftNegative ? 0xFF : 0x00;
+        int rightPad = rightNegative ? 0xFF : 0x00;
+        int leftOffset = length - left.length;
+        int rightOffset = length - right.length;
+        for (int i = 0; i < length; i++) {
+            int leftByte = i < leftOffset ? leftPad : left[i - leftOffset] & 0xFF;
+            int rightByte = i < rightOffset ? rightPad : right[i - rightOffset] & 0xFF;
+            if (leftByte != rightByte) {
+                return leftByte - rightByte;
+            }
+        }
+        return 0;
+    }
+
+    @Override
+    public void acceptNull() {
         nullCount++;
     }
 
-    Statistics toStatistics() {
+    @Override
+    public Statistics toStatistics() {
         if (!hasValues) {
             return new Statistics(null, null, nullCount, null, false);
         }

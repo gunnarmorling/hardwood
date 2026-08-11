@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.writer;
 
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
@@ -33,19 +34,26 @@ abstract class ValueEncoder {
     static ValueEncoder forColumn(ColumnSchema column, int pageValues, boolean enableDictionary,
                                   int statisticsTruncationLength) {
         PhysicalType type = column.type();
+        boolean unsigned = isUnsigned(column);
         return switch (type) {
-            case INT32 -> new IntValueEncoder(pageValues, enableDictionary);
-            case INT64 -> new LongValueEncoder(pageValues, enableDictionary);
+            case INT32 -> new IntValueEncoder(pageValues, enableDictionary, unsigned);
+            case INT64 -> new LongValueEncoder(pageValues, enableDictionary, unsigned);
             case FLOAT -> new FloatValueEncoder(pageValues, enableDictionary);
             case DOUBLE -> new DoubleValueEncoder(pageValues, enableDictionary);
             case BOOLEAN -> new BooleanValueEncoder(pageValues);
-            case BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary,
-                    null, statisticsTruncationLength);
+            case BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary, null,
+                    BinaryStatistics.forColumn(column, statisticsTruncationLength));
             case FIXED_LEN_BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary,
-                    requireTypeLength(column), statisticsTruncationLength);
+                    requireTypeLength(column),
+                    BinaryStatistics.forColumn(column, statisticsTruncationLength));
             default -> throw new IllegalArgumentException(
                     "Writer does not support physical type " + type + " for column " + column.name());
         };
+    }
+
+    /// Whether the column's statistics compare unsigned: only the `UINT_*` annotations do.
+    private static boolean isUnsigned(ColumnSchema column) {
+        return column.logicalType() instanceof LogicalType.IntType integer && !integer.isSigned();
     }
 
     private static int requireTypeLength(ColumnSchema column) {

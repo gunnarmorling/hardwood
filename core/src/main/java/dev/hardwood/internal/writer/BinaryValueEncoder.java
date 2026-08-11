@@ -21,7 +21,7 @@ final class BinaryValueEncoder extends ValueEncoder {
     private final byte[][] plain;
     private final byte[][] window;
     private final BinaryDictionaryEncoder dictionary; // null when dictionary encoding is disabled
-    private final BinaryStatisticsCollector statistics;
+    private final BinaryStatistics statistics;
     private final Integer typeLength; // null for BYTE_ARRAY, the fixed width for FIXED_LEN_BYTE_ARRAY
 
     private BinaryColumnSource source;
@@ -30,15 +30,14 @@ final class BinaryValueEncoder extends ValueEncoder {
     private int windowLength;
 
     BinaryValueEncoder(int pageValues, boolean enableDictionary, Integer typeLength,
-                       int statisticsTruncationLength) {
+                       BinaryStatistics statistics) {
         this.plain = new byte[pageValues][];
         this.window = new byte[pageValues][];
         this.dictionary = enableDictionary ? new BinaryDictionaryEncoder() : null;
         // FIXED_LEN_BYTE_ARRAY bounds are written whole and always exact — a fixed width already
         // bounds them — so only BYTE_ARRAY truncates. Integer.MAX_VALUE disables truncation, since
         // no value can be longer than that.
-        this.statistics = new BinaryStatisticsCollector(
-                typeLength == null ? statisticsTruncationLength : Integer.MAX_VALUE);
+        this.statistics = statistics;
         this.typeLength = typeLength;
     }
 

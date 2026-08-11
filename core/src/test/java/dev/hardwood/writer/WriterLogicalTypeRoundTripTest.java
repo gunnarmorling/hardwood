@@ -136,10 +136,9 @@ class WriterLogicalTypeRoundTripTest {
         }
     }
 
-    /// parquet-format leaves the ordering of these annotations undefined, and an unsigned
-    /// integer, a binary decimal, and a half-precision float each order differently from the
-    /// collector selected for their physical type. Rather than write a bound computed in the
-    /// wrong order, the writer writes none — the null count still supports pushdown.
+    /// parquet-format leaves the ordering of these annotations undefined, so no `min` / `max`
+    /// can be written for them — a reader has no way to interpret a bound. The null count still
+    /// supports pushdown.
     @ParameterizedTest
     @MethodSource("unorderedAnnotations")
     void columnsWithoutAWellDefinedOrderWriteNoBounds(Annotated annotated) throws Exception {
@@ -155,13 +154,10 @@ class WriterLogicalTypeRoundTripTest {
 
     static Stream<Annotated> unorderedAnnotations() {
         return Stream.of(
-                new Annotated(PhysicalType.INT32, null, new LogicalType.IntType(32, false)),
-                new Annotated(PhysicalType.INT64, null, new LogicalType.IntType(64, false)),
-                new Annotated(PhysicalType.BYTE_ARRAY, null, new LogicalType.DecimalType(2, 20)),
-                new Annotated(PhysicalType.FIXED_LEN_BYTE_ARRAY, 8, new LogicalType.DecimalType(3, 18)),
-                new Annotated(PhysicalType.FIXED_LEN_BYTE_ARRAY, 2, new LogicalType.Float16Type()),
                 new Annotated(PhysicalType.FIXED_LEN_BYTE_ARRAY, 12, new LogicalType.IntervalType()),
-                new Annotated(PhysicalType.BYTE_ARRAY, null, new LogicalType.GeometryType("EPSG:4326")));
+                new Annotated(PhysicalType.BYTE_ARRAY, null, new LogicalType.GeometryType("EPSG:4326")),
+                new Annotated(PhysicalType.BYTE_ARRAY, null,
+                        new LogicalType.GeographyType("EPSG:4326", EdgeInterpolationAlgorithm.KARNEY)));
     }
 
     /// `UNKNOWN` describes a column holding only nulls, so its ordering is undefined and it
