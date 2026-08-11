@@ -8,15 +8,11 @@
 package dev.hardwood.reader;
 
 import java.util.Arrays;
-import java.util.List;
 
 import dev.hardwood.Experimental;
-import dev.hardwood.InputFile;
 import dev.hardwood.Validity;
 import dev.hardwood.internal.ExceptionContext;
-import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.reader.BatchExchange;
-import dev.hardwood.internal.reader.BatchSizing;
 import dev.hardwood.internal.reader.BinaryBatchValues;
 import dev.hardwood.internal.reader.FlatColumnWorker;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
@@ -26,9 +22,6 @@ import dev.hardwood.internal.reader.NestedColumnWorker;
 import dev.hardwood.internal.reader.NestedLevelComputer;
 import dev.hardwood.internal.reader.PageSource;
 import dev.hardwood.internal.reader.RowGroupIterator;
-import dev.hardwood.internal.schema.ProjectedSchema;
-import dev.hardwood.metadata.RowGroup;
-import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
@@ -846,47 +839,6 @@ public class ColumnReader implements AutoCloseable {
     }
 
     // ==================== Factory ====================
-
-    /// Create a ColumnReader for a named column with optional page-level
-    /// filtering. `filter` may be `null`.
-    static ColumnReader create(String columnName, FileSchema schema,
-                               InputFile inputFile, List<RowGroup> rowGroups,
-                               HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                               ResolvedPredicate filter, int batchSize) {
-        return create(schema.getColumn(columnName), schema, inputFile, rowGroups, context,
-                fixedListFastPathEnabled, filter, batchSize);
-    }
-
-    /// Create a ColumnReader for a column by index with optional page-level
-    /// filtering. `filter` may be `null`.
-    static ColumnReader create(int columnIndex, FileSchema schema,
-                               InputFile inputFile, List<RowGroup> rowGroups,
-                               HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                               ResolvedPredicate filter, int batchSize) {
-        return create(schema.getColumn(columnIndex), schema, inputFile, rowGroups, context,
-                fixedListFastPathEnabled, filter, batchSize);
-    }
-
-    private static ColumnReader create(ColumnSchema columnSchema, FileSchema schema,
-                                       InputFile inputFile, List<RowGroup> rowGroups,
-                                       HardwoodContextImpl context, boolean fixedListFastPathEnabled,
-                                       ResolvedPredicate filter, int batchSize) {
-        ProjectedSchema projectedSchema = ProjectedSchema.create(schema,
-                ColumnProjection.columns(columnSchema.fieldPath().toString()));
-
-        int resolvedBatchSize = batchSize > 0
-                ? batchSize
-                : BatchSizing.computeOptimalBatchSize(projectedSchema,
-                        BatchSizing.valuesPerRow(projectedSchema, rowGroups));
-
-        RowGroupIterator rowGroupIterator = new RowGroupIterator(
-                List.of(inputFile), context, 0);
-        rowGroupIterator.setFirstFile(schema, rowGroups);
-        rowGroupIterator.initialize(projectedSchema, filter);
-
-        return createFromIterator(columnSchema, schema, rowGroupIterator, context, fixedListFastPathEnabled,
-                0, rowGroupIterator, resolvedBatchSize, NestedColumnWorker.IndexMode.REAL_VIEW);
-    }
 
     /// Creates a ColumnReader from a pre-configured RowGroupIterator.
     /// Used by both single-file and multi-file paths.

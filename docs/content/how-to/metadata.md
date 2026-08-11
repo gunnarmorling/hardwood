@@ -89,6 +89,31 @@ try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
 }
 ```
 
+## Metadata for multiple files
+
+For a multi-file reader, use `getFileCount()` and `getFileMetaData(int)` to inspect each
+physical input file in order. The first file's footer is read when the reader is opened.
+Later footers are read when indexed metadata access or data-reader prefetch first needs them.
+In-progress, successful, and failed loads are cached for the lifetime of the parent reader, so
+metadata, row, and column access all reuse the same parsed footer.
+
+```java
+try (Hardwood hardwood = Hardwood.create();
+     ParquetFileReader reader = hardwood.openAll(files)) {
+    long totalRows = 0;
+    for (int fileIndex = 0; fileIndex < reader.getFileCount(); fileIndex++) {
+        totalRows = Math.addExact(
+            totalRows,
+            reader.getFileMetaData(fileIndex).numRows());
+    }
+}
+```
+
+Indexed metadata access reports the physical file's footer; it does not validate that file against
+the first file for a particular projection or filter. Cross-file schema validation happens when a
+row or column reader is planned. Keep every input file unchanged until the parent reader is closed.
+Close and reopen the parent reader to retry a failed footer load or inspect a changed file.
+
 ## Size statistics and level histograms
 
 `ColumnMetaData.sizeStatistics()` reports how much data a column chunk holds, without reading any of it:

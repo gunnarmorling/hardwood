@@ -10,9 +10,11 @@ package dev.hardwood;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.EncryptedParquetException;
 import dev.hardwood.reader.ParquetFileReader;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,5 +44,19 @@ class EncryptedFileTest {
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("encrypted_plaintext_footer.parquet")
                 .hasMessageContaining("Encrypted Parquet files are not supported");
+    }
+
+    @Test
+    void encryptedLaterFilePreservesSpecificCheckedException() throws Exception {
+        Path first = Paths.get("src/test/resources/plain_uncompressed.parquet");
+        Path encrypted = Paths.get("src/test/resources/encrypted_footer.parquet");
+
+        try (ParquetFileReader reader = ParquetFileReader.openAll(
+                List.of(InputFile.of(first), InputFile.of(encrypted)))) {
+            assertThatThrownBy(() -> reader.getFileMetaData(1))
+                    .isInstanceOf(EncryptedParquetException.class)
+                    .hasMessageContaining("encrypted_footer.parquet")
+                    .hasMessageContaining("Encrypted Parquet files are not supported");
+        }
     }
 }

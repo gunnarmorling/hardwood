@@ -24,6 +24,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SchemaCompatibilityTest {
 
     @Test
+    void metadataAccessDoesNotValidateSchemaCompatibility() throws Exception {
+        Path micros = Paths.get("src/test/resources/compat_ts_micros.parquet");
+        Path millis = Paths.get("src/test/resources/compat_ts_millis.parquet");
+
+        try (Hardwood hardwood = Hardwood.create();
+             ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(micros, millis))) {
+            assertThat(parquet.getFileMetaData(1).numRows()).isEqualTo(2);
+            assertThatThrownBy(parquet::rowReader)
+                    .isInstanceOf(SchemaIncompatibleException.class);
+        }
+    }
+
+    @Test
     void rejectTimestampUnitMismatch() {
         Path micros = Paths.get("src/test/resources/compat_ts_micros.parquet");
         Path millis = Paths.get("src/test/resources/compat_ts_millis.parquet");

@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 
@@ -31,14 +30,13 @@ import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.predicate.RowGroupBloomFilterSource;
 import dev.hardwood.internal.predicate.RowGroupFilterEvaluator;
 import dev.hardwood.internal.predicate.dictionary.RowGroupDictionaryFilterSource;
+import dev.hardwood.internal.reader.FileMetadataCache.PreparedFile;
 import dev.hardwood.internal.schema.ProjectedSchema;
 import dev.hardwood.internal.thrift.OffsetIndexReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
-import dev.hardwood.jfr.FileOpenedEvent;
 import dev.hardwood.jfr.RowGroupFilterEvent;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.FieldPath;
-import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
@@ -53,9 +51,8 @@ import dev.hardwood.schema.FileSchema;
 
 /// Shared iterator over `(InputFile, RowGroup)` pairs across one or more files.
 ///
-/// Handles file lifecycle (open, metadata read, schema validation, close),
-/// row-group filtering by statistics, `maxRows` limiting at the row-group level,
-/// and async prefetching of the next file.
+/// Handles schema validation, row-group filtering by statistics,
+/// `maxRows` limiting at the row-group level, and async prefetching of the next file.
 ///
 /// Each [PageSource] maintains its own cursor into the work list exposed by
 /// this iterator. Shared per-row-group metadata (index buffers, matching rows)
@@ -76,6 +73,8 @@ public class RowGroupIterator {
             Integer.getInteger("hardwood.internal.maxCoalescedBytes", 128 * 1024 * 1024);
 
     private final List<InputFile> inputFiles;
+    private final FileMetadataCache fileMetadataCache;
+    private final boolean ownsFileMetadataCache;
     private final HardwoodContextImpl context;
     private final long maxRows;
     private final long physicalSkip;
@@ -108,9 +107,6 @@ public class RowGroupIterator {
 
     // Work list: all (file, rowGroup) pairs to process, built during initialize()
     private final List<WorkItem> workItems = new ArrayList<>();
-
-    // Prefetch state
-    private final ConcurrentHashMap<Integer, CompletableFuture<PreparedFile>> fileFutures = new ConcurrentHashMap<>();
 
     // Per-row-group shared metadata cache (keyed by work item index)
     private final ConcurrentHashMap<Integer, SharedRowGroupMetadata> metadataCache = new ConcurrentHashMap<>();
@@ -159,21 +155,7 @@ public class RowGroupIterator {
             MaskCapability maskCapability
     ) {}
 
-    /// Result of opening and validating a file.
-    /// `columnOrdinals` is `null` for the first file, whose metadata is prepared
-    /// before the projection is known; it is the reference, so its mapping is the
-    /// identity and [#buildWorkList] substitutes that.
-    private record PreparedFile(
-            InputFile inputFile,
-            FileMetaData metaData,
-            FileSchema schema,
-            List<RowGroup> rowGroups,
-            FileColumnOrdinals columnOrdinals
-    ) {
-        PreparedFile withColumnOrdinals(FileColumnOrdinals ordinals) {
-            return new PreparedFile(inputFile, metaData, schema, rowGroups, ordinals);
-        }
-    }
+    private List<RowGroup> firstFileRowGroups;
 
     /// Creates a RowGroupIterator for the given files.
     ///
@@ -215,9 +197,18 @@ public class RowGroupIterator {
     ///        semantics.
     public RowGroupIterator(List<InputFile> inputFiles, HardwoodContextImpl context,
                             long maxRows, long tailSkip, long physicalSkip) {
-        if (inputFiles.isEmpty()) {
-            throw new IllegalArgumentException("At least one file must be provided");
-        }
+        this(new FileMetadataCache(inputFiles), true, context, maxRows, tailSkip, physicalSkip);
+    }
+
+    /// Creates a RowGroupIterator sharing file metadata with its parent reader.
+    public RowGroupIterator(FileMetadataCache fileMetadataCache, HardwoodContextImpl context,
+                            long maxRows, long tailSkip, long physicalSkip) {
+        this(fileMetadataCache, false, context, maxRows, tailSkip, physicalSkip);
+    }
+
+    private RowGroupIterator(FileMetadataCache fileMetadataCache, boolean ownsFileMetadataCache,
+                             HardwoodContextImpl context, long maxRows, long tailSkip,
+                             long physicalSkip) {
         if (tailSkip < 0) {
             throw new IllegalArgumentException("tailSkip must be non-negative, got " + tailSkip);
         }
@@ -229,7 +220,9 @@ public class RowGroupIterator {
                     "tailSkip and physicalSkip are mutually exclusive, got tailSkip=" + tailSkip
                             + ", physicalSkip=" + physicalSkip);
         }
-        this.inputFiles = new ArrayList<>(inputFiles);
+        this.fileMetadataCache = fileMetadataCache;
+        this.ownsFileMetadataCache = ownsFileMetadataCache;
+        this.inputFiles = fileMetadataCache.inputFiles();
         this.context = context;
         this.maxRows = maxRows;
         this.tailSkip = tailSkip;
@@ -255,18 +248,14 @@ public class RowGroupIterator {
     /// @param rowGroups the (already filtered) row groups from the first file
     public void setFirstFile(FileSchema schema, List<RowGroup> rowGroups) {
         this.referenceSchema = schema;
-        InputFile first = inputFiles.get(0);
-        PreparedFile prepared = new PreparedFile(first, null, schema, rowGroups, null);
-        fileFutures.put(0, CompletableFuture.completedFuture(prepared));
+        this.firstFileRowGroups = rowGroups;
+        fileMetadataCache.setFirstFile(schema, rowGroups);
     }
 
     /// Opens the first file and returns its schema.
     public FileSchema openFirst() throws IOException {
-        InputFile first = inputFiles.get(0);
-        first.open();
-        PreparedFile prepared = openAndReadMetadata(first);
-        referenceSchema = prepared.schema;
-        fileFutures.put(0, CompletableFuture.completedFuture(prepared));
+        PreparedFile prepared = fileMetadataCache.getFileChecked(0);
+        referenceSchema = prepared.schema();
         return referenceSchema;
     }
 
@@ -955,25 +944,22 @@ public class RowGroupIterator {
         return context;
     }
 
-    /// Waits for in-flight prefetches and closes all files.
+    /// Releases iterator-local caches. Standalone iterators also wait for
+    /// in-flight metadata loads and close their input files; iterators owned by
+    /// ParquetFileReader leave those shared resources to the parent.
     public void close() {
-        for (CompletableFuture<PreparedFile> future : fileFutures.values()) {
-            try {
-                future.join();
-            }
-            catch (Exception ignored) {
-            }
-        }
-        fileFutures.clear();
         metadataCache.clear();
         fetchPlanCache.clear();
 
-        for (InputFile file : inputFiles) {
-            try {
-                file.close();
-            }
-            catch (IOException e) {
-                LOG.log(System.Logger.Level.WARNING, "Failed to close file: " + file.name(), e);
+        if (ownsFileMetadataCache) {
+            fileMetadataCache.close();
+            for (InputFile file : inputFiles) {
+                try {
+                    file.close();
+                }
+                catch (IOException e) {
+                    LOG.log(System.Logger.Level.WARNING, "Failed to close file: " + file.name(), e);
+                }
             }
         }
     }
@@ -990,22 +976,26 @@ public class RowGroupIterator {
         boolean allKeptAlwaysMatch = true;
         for (int fileIndex = 0; fileIndex < inputFiles.size() && rowBudget > 0; fileIndex++) {
             PreparedFile prepared = getPreparedFile(fileIndex);
-            FileColumnOrdinals columnOrdinals = prepared.columnOrdinals() != null
-                    ? prepared.columnOrdinals()
-                    : FileColumnOrdinals.identity(referenceSchema.getColumnCount(), filterPredicate);
+            FileColumnOrdinals columnOrdinals = fileIndex == 0
+                    ? FileColumnOrdinals.identity(referenceSchema.getColumnCount(), filterPredicate)
+                    : FileColumnOrdinals.of(
+                            validateSchemaCompatibility(prepared.inputFile(), prepared.schema()),
+                            filterPredicate);
+            List<RowGroup> sourceRowGroups = fileIndex == 0 && firstFileRowGroups != null
+                    ? firstFileRowGroups : prepared.rowGroups();
             // Metadata pruning indexes every row group's chunk list by ordinal, so with
             // it active the cross-check has to cover the whole file before it runs.
             // Without it, the only row groups ever indexed are those that become work
             // items, and the ones physicalSkip / maxRows discard are never looked at.
-            ChunkPathCheck chunkPaths = chunkPathCheck(prepared.schema, columnOrdinals);
+            ChunkPathCheck chunkPaths = chunkPathCheck(prepared.schema(), columnOrdinals);
             boolean pruningIndexesChunks = filterPredicate != null && metadataFilteringEnabled;
             if (pruningIndexesChunks) {
-                for (int rgIndex = 0; rgIndex < prepared.rowGroups.size(); rgIndex++) {
-                    chunkPaths.verify(prepared.rowGroups.get(rgIndex), rgIndex, prepared.inputFile);
+                for (int rgIndex = 0; rgIndex < sourceRowGroups.size(); rgIndex++) {
+                    chunkPaths.verify(sourceRowGroups.get(rgIndex), rgIndex, prepared.inputFile());
                 }
             }
-            List<FilteredRowGroup> rowGroups = filterRowGroups(prepared.rowGroups, prepared.inputFile,
-                    prepared.schema, columnOrdinals);
+            List<FilteredRowGroup> rowGroups = filterRowGroups(
+                    sourceRowGroups, prepared.inputFile(), prepared.schema(), columnOrdinals);
 
             for (int rgIndex = 0; rgIndex < rowGroups.size() && rowBudget > 0; rgIndex++) {
                 FilteredRowGroup decided = rowGroups.get(rgIndex);
@@ -1025,14 +1015,14 @@ public class RowGroupIterator {
                 // Not yet cross-checked when pruning was skipped: filterRowGroups then
                 // returns every row group untouched, so rgIndex is the file's own index.
                 if (!pruningIndexesChunks) {
-                    chunkPaths.verify(rg, rgIndex, prepared.inputFile);
+                    chunkPaths.verify(rg, rgIndex, prepared.inputFile());
                 }
 
                 allKeptAlwaysMatch &= decided.alwaysMatches();
                 workItems.add(new WorkItem(
-                        prepared.inputFile,
+                        prepared.inputFile(),
                         rg,
-                        prepared.schema,
+                        prepared.schema(),
                         columnOrdinals,
                         fileIndex,
                         rgIndex,
@@ -1068,88 +1058,15 @@ public class RowGroupIterator {
         return filterSatisfiedByStatistics;
     }
 
-    /// Gets or loads a prepared file, blocking if necessary.
-    ///
-    /// Unwraps the [CompletionException] that [CompletableFuture#join] would
-    /// otherwise wrap around the load failure, so callers see the original
-    /// exception (e.g. [SchemaIncompatibleException], [UncheckedIOException])
-    /// directly rather than as a `CompletionException` cause.
+    /// Gets or loads file-wide metadata. Projection-specific validation remains
+    /// local to [#buildWorkList].
     private PreparedFile getPreparedFile(int fileIndex) {
-        CompletableFuture<PreparedFile> future = fileFutures.computeIfAbsent(
-                fileIndex, this::loadFileAsync);
-        try {
-            return future.join();
-        }
-        catch (CompletionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException re) {
-                throw re;
-            }
-            if (cause instanceof Error err) {
-                throw err;
-            }
-            throw e;
-        }
+        return fileMetadataCache.getFile(fileIndex);
     }
 
     /// Triggers async loading of the file at the given index.
     private void triggerPrefetch(int fileIndex) {
-        if (fileIndex >= 0 && fileIndex < inputFiles.size()) {
-            fileFutures.computeIfAbsent(fileIndex, this::loadFileAsync);
-        }
-    }
-
-    private CompletableFuture<PreparedFile> loadFileAsync(int fileIndex) {
-        return CompletableFuture.supplyAsync(() -> loadFile(fileIndex));
-    }
-
-    private PreparedFile loadFile(int fileIndex) {
-        InputFile inputFile = inputFiles.get(fileIndex);
-        try {
-            inputFile.open();
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException(
-                    ExceptionContext.filePrefix(inputFile.name()) + "Failed to open file", e);
-        }
-
-        PreparedFile prepared = openAndReadMetadata(inputFile);
-
-        // Validate schema compatibility (skip first file — it IS the reference)
-        if (fileIndex == 0) {
-            return prepared;
-        }
-        return prepared.withColumnOrdinals(FileColumnOrdinals.of(
-                validateSchemaCompatibility(inputFile, prepared.schema), filterPredicate));
-    }
-
-    private PreparedFile openAndReadMetadata(InputFile inputFile) {
-        FileOpenedEvent event = new FileOpenedEvent();
-        event.begin();
-
-        try {
-            FileMetaData metaData = ParquetMetadataReader.readMetadata(inputFile);
-            FileSchema schema = FileSchema.fromSchemaElements(metaData.schema());
-
-            event.file = inputFile.name();
-            event.fileSize = inputFile.length();
-            event.rowGroupCount = metaData.rowGroups().size();
-            event.columnCount = schema.getColumnCount();
-            event.commit();
-
-            // Row groups are stored unfiltered; filtering happens in buildWorkList()
-            return new PreparedFile(inputFile, metaData, schema, metaData.rowGroups(), null);
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException(
-                    ExceptionContext.filePrefix(inputFile.name()) + "Failed to read metadata", e);
-        }
-        catch (RuntimeException e) {
-            // RuntimeExceptions thrown during Thrift parsing (e.g. ThriftEnumLookup
-            // for corrupt enum values) escape the IOException catch above — enrich
-            // them with file context so they're attributable.
-            throw ExceptionContext.addFileContext(inputFile.name(), e);
-        }
+        fileMetadataCache.prefetch(fileIndex);
     }
 
     /// Where each column this read touches sits in one file, and the path the chunk

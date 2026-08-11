@@ -26,7 +26,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 ///
 /// The decode-pipeline rework in v1.0.0.Beta2 turned `close()` from a single
 /// boolean write into a per-column worker quiesce (virtual-thread joins,
-/// in-flight decode draining) plus, on the column path, an [InputFile] close.
+/// in-flight decode draining) plus, on the column path, iterator-local cache
+/// teardown.
 /// Without an idempotency guard every redundant `close()` re-ran that work
 /// (issue #659).
 class RowReaderCloseIdempotencyTest {
@@ -69,25 +70,34 @@ class RowReaderCloseIdempotencyTest {
     }
 
     @Test
-    void columnReaderClosesUnderlyingFileExactlyOnce() throws Exception {
+    void columnReaderLeavesInputLifecycleToParent() throws Exception {
         CountingInputFile file = new CountingInputFile(
                 InputFile.of(Paths.get("src/test/resources/page_index_test.parquet")));
 
         ParquetFileReader fileReader = ParquetFileReader.open(file);
-        ColumnReader columnReader = fileReader.columnReader(0);
-        while (columnReader.nextBatch()) {
-            // drain
-        }
+        try {
+            ColumnReader columnReader = fileReader.columnReader(0);
+            for (int i = 0; i < 5; i++) {
+                columnReader.close();
+            }
 
-        for (int i = 0; i < 5; i++) {
-            columnReader.close();
+            assertThat(file.closeCount.get())
+                    .as("ColumnReader.close() must leave the parent-owned input open")
+                    .isZero();
+
+            try (RowReader rowReader = fileReader.rowReader()) {
+                assertThat(rowReader.hasNext()).isTrue();
+                rowReader.next();
+            }
+            assertThat(file.closeCount.get()).isZero();
+        }
+        finally {
+            fileReader.close();
         }
 
         assertThat(file.closeCount.get())
-                .as("redundant ColumnReader.close() must not re-close the input file")
+                .as("ParquetFileReader.close() must close its input exactly once")
                 .isEqualTo(1);
-
-        fileReader.close();
     }
 
     @Test

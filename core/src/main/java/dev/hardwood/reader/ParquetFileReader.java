@@ -19,8 +19,10 @@ import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.predicate.FilterPredicateResolver;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.reader.BatchSizing;
+import dev.hardwood.internal.reader.FileMetadataCache;
 import dev.hardwood.internal.reader.FlatRowReader;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
+import dev.hardwood.internal.reader.NestedColumnWorker;
 import dev.hardwood.internal.reader.NestedRowReader;
 import dev.hardwood.internal.reader.ParquetMetadataReader;
 import dev.hardwood.internal.reader.RowGroupIterator;
@@ -30,6 +32,7 @@ import dev.hardwood.jfr.RowGroupByteRangeFilterEvent;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.schema.ColumnProjection;
+import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
 /// Reader for one or more Parquet files.
@@ -69,10 +72,8 @@ public class ParquetFileReader implements AutoCloseable {
     private static final int AUTO_BATCH_SIZE = 0;
 
     private final List<InputFile> inputFiles;
-    /// Metadata of the first file. For single-file readers this is the
-    /// file's metadata; for multi-file readers callers wanting per-file
-    /// metadata must open each file individually.
     private final FileMetaData firstFileMetaData;
+    private final FileMetadataCache fileMetadataCache;
     private final FileSchema schema;
     private final HardwoodContextImpl context;
     private final boolean fixedListFastPathEnabled;
@@ -80,12 +81,14 @@ public class ParquetFileReader implements AutoCloseable {
     private final boolean ownsContext;
     private final boolean ownsInputFiles;
     private final List<RowGroupIterator> rowGroupIterators = new ArrayList<>();
+    private boolean closed;
 
     private ParquetFileReader(List<InputFile> inputFiles, FileMetaData firstFileMetaData,
                               FileSchema schema, HardwoodContextImpl context, boolean fixedListFastPathEnabled,
                               boolean metadataFilteringEnabled, boolean ownsContext, boolean ownsInputFiles) {
         this.inputFiles = inputFiles;
         this.firstFileMetaData = firstFileMetaData;
+        this.fileMetadataCache = new FileMetadataCache(inputFiles, firstFileMetaData, schema);
         this.schema = schema;
         this.context = context;
         this.fixedListFastPathEnabled = fixedListFastPathEnabled;
@@ -241,11 +244,44 @@ public class ParquetFileReader implements AutoCloseable {
         }
     }
 
-    /// File metadata of the first input file. For multi-file readers,
-    /// per-file metadata for files beyond the first is not exposed; open
-    /// those files individually to inspect their metadata.
+    /// File metadata of the first input file.
     public FileMetaData getFileMetaData() {
         return firstFileMetaData;
+    }
+
+    /// Number of physical input files represented by this reader.
+    ///
+    /// This method performs no I/O.
+    public int getFileCount() {
+        return inputFiles.size();
+    }
+
+    /// Returns the metadata of one physical input file.
+    ///
+    /// Files are indexed in the order supplied to [#openAll(List)]. Metadata
+    /// for the first file is read when the reader is opened; metadata for later
+    /// files is read on first access or data-reader prefetch. In-progress,
+    /// successful, and failed loads are cached for this reader's lifetime, and
+    /// this synchronous accessor joins a load already in progress. Close and
+    /// reopen the reader to retry a failed load or inspect a changed file.
+    ///
+    /// This method returns the physical file's footer without performing
+    /// projection- or filter-specific cross-file schema validation. That
+    /// validation occurs when a row or column reader is planned.
+    ///
+    /// Input files must not be modified while this reader is open.
+    ///
+    /// @param fileIndex zero-based physical input file index
+    /// @return metadata parsed from that file's footer
+    /// @throws IndexOutOfBoundsException if `fileIndex` is outside
+    ///         `[0, getFileCount())`
+    /// @throws IllegalStateException if this reader is closed
+    /// @throws IOException if the file cannot be opened or its footer cannot be read
+    public FileMetaData getFileMetaData(int fileIndex) throws IOException {
+        if (closed) {
+            throw new IllegalStateException("ParquetFileReader is closed");
+        }
+        return fileMetadataCache.getFileMetaData(fileIndex);
     }
 
     public FileSchema getFileSchema() {
@@ -401,7 +437,7 @@ public class ParquetFileReader implements AutoCloseable {
         // where canFastSkipTail and computeFetchPlans both ran the same
         // page-format check per row group.
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema, projection, true);
-        RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, 0L, 0L);
+        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0L, 0L, 0L);
         iterator.setFirstFile(schema, subset);
         iterator.initialize(projectedSchema, null);
         rowGroupIterators.add(iterator);
@@ -442,7 +478,8 @@ public class ParquetFileReader implements AutoCloseable {
 
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema, projection, true);
 
-        RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, maxRows, tailSkip, physicalSkip);
+        RowGroupIterator iterator = new RowGroupIterator(
+                fileMetadataCache, context, maxRows, tailSkip, physicalSkip);
         iterator.setFirstFile(schema, firstFileRowGroups);
         iterator.initialize(projectedSchema, resolved, metadataFilteringEnabled);
         rowGroupIterators.add(iterator);
@@ -500,9 +537,8 @@ public class ParquetFileReader implements AutoCloseable {
             return buildColumnReaders(ColumnProjection.columns(columnName), filter, rowGroupFilter, batchSize)
                     .getColumnReader(0);
         }
-        InputFile inputFile = inputFiles.get(0);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
-        return ColumnReader.create(columnName, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, null, batchSize);
+        return buildColumnReader(schema.getColumn(columnName), rowGroups, batchSize);
     }
 
     ColumnReader buildColumnReader(int columnIndex, FilterPredicate filter) {
@@ -517,9 +553,21 @@ public class ParquetFileReader implements AutoCloseable {
             return buildColumnReaders(ColumnProjection.columns(columnName), filter, rowGroupFilter, batchSize)
                     .getColumnReader(0);
         }
-        InputFile inputFile = inputFiles.get(0);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
-        return ColumnReader.create(columnIndex, schema, inputFile, rowGroups, context, fixedListFastPathEnabled, null, batchSize);
+        return buildColumnReader(schema.getColumn(columnIndex), rowGroups, batchSize);
+    }
+
+    private ColumnReader buildColumnReader(
+            ColumnSchema column, List<RowGroup> rowGroups, int batchSize) {
+        ProjectedSchema projected = ProjectedSchema.create(schema,
+                ColumnProjection.columns(column.fieldPath().toString()));
+        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0, 0, 0);
+        iterator.setFirstFile(schema, rowGroups);
+        iterator.initialize(projected, null);
+        rowGroupIterators.add(iterator);
+        return ColumnReader.createFromIterator(
+                column, schema, iterator, context, fixedListFastPathEnabled, 0, iterator,
+                resolveBatchSize(batchSize, projected, rowGroups), NestedColumnWorker.IndexMode.REAL_VIEW);
     }
 
     ColumnReaders buildColumnReaders(ColumnProjection projection, FilterPredicate filter) {
@@ -536,7 +584,7 @@ public class ParquetFileReader implements AutoCloseable {
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
 
         if (resolved == null) {
-            RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, 0);
+            RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0, 0, 0);
             iterator.setFirstFile(schema, rowGroups);
             ProjectedSchema projected = iterator.initialize(projection, null);
             rowGroupIterators.add(iterator);
@@ -554,7 +602,7 @@ public class ParquetFileReader implements AutoCloseable {
         // stay row-aligned regardless of per-column page-skip capability), then
         // compact each exposed column to the matching records per batch.
         ColumnProjection augmented = augmentWithPredicateColumns(projection, resolved);
-        RowGroupIterator iterator = new RowGroupIterator(inputFiles, context, 0);
+        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0, 0, 0);
         iterator.setFirstFile(schema, rowGroups);
         ProjectedSchema augProjected = iterator.initialize(augmented, resolved, metadataFilteringEnabled);
         ProjectedSchema payloadProjected = ProjectedSchema.create(schema, projection);
@@ -969,10 +1017,13 @@ public class ParquetFileReader implements AutoCloseable {
 
     @Override
     public void close() throws IOException {
+        closed = true;
         for (RowGroupIterator iterator : rowGroupIterators) {
             iterator.close();
         }
         rowGroupIterators.clear();
+
+        fileMetadataCache.close();
 
         if (ownsContext) {
             context.close();

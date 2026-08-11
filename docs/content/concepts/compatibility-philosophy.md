@@ -68,12 +68,13 @@ point — the reader can see in the code which rows the filter admits.
 
 ### Schema validation across multiple files
 
-When a reader spans multiple files, the first file's schema is the reference, and every
-subsequent file is validated against it *as it is opened*: each column the read touches — the
-projected ones plus any a filter tests — must exist with a matching physical type, logical type,
-repetition type, fixed byte length, and enclosing groups of the same nullability and
-repeatedness, or a `SchemaIncompatibleException` is thrown up front. A silently mismatched
-column that produced garbage values mid-stream would be the worse outcome.
+When a data reader spans multiple files, the first file's schema is the reference, and each
+subsequent file reached by the data-reader plan is validated against it: every column the read
+touches — the projected ones plus any a filter tests — must exist with a matching physical type,
+logical type, repetition type, fixed byte length, and enclosing groups of the same nullability and
+repeatedness, or a `SchemaIncompatibleException` is thrown up front. Metadata inspection alone
+does not perform this projection-specific validation. A silently mismatched column that produced
+garbage values mid-stream would be the worse outcome.
 
 The match is by field path, never by position. A Parquet footer lists column chunks in the order
 of the schema's flattened leaves, so a column's ordinal belongs to the file that was written, not
