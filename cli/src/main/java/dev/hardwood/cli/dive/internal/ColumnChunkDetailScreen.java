@@ -372,15 +372,16 @@ public final class ColumnChunkDetailScreen {
             boolean enabled = itemEnabled(item, model, state);
             boolean selected = focused && i == effectiveSelection && enabled;
             String cursor = selected ? "▶ " : "  ";
-            String hint = menuHint(item, model, state);
             Style labelStyle = selected
                     ? Theme.selection()
                     : Theme.primary();
-            Style hintStyle = Style.EMPTY;
+            // The hint carries a fact and, where the page index holds size
+            // statistics, an annotation: fact at default fg, annotation dim.
             lines.add(Line.from(
                     new Span(cursor, labelStyle),
                     new Span(padRight(item.label, 16), labelStyle),
-                    new Span(hint, hintStyle)));
+                    new Span(menuHint(item, model, state), Style.EMPTY),
+                    new Span(menuAnnotation(item, model, state), Theme.dim())));
         }
         Paragraph.builder().block(block).text(Text.from(lines)).left().build().render(area, buffer);
     }
@@ -395,6 +396,29 @@ public final class ColumnChunkDetailScreen {
             case COLUMN_INDEX -> chunk.columnIndexOffset() != null ? "present" : "n/a";
             case OFFSET_INDEX -> chunk.offsetIndexOffset() != null ? "present" : "n/a";
             case DICTIONARY -> chunk.metaData().dictionaryPageOffset() != null ? "present" : "n/a";
+        };
+    }
+
+    /// Says whether an index carries the per-page size statistics, so the
+    /// reader knows what drilling in will show before going. Empty when it
+    /// does not, or when the item has nothing to annotate.
+    private static String menuAnnotation(MenuItem item, ParquetModel model, ScreenState.ColumnChunkDetail state) {
+        return switch (item) {
+            case COLUMN_INDEX -> {
+                ColumnIndex columnIndex = model.columnIndex(state.rowGroupIndex(), state.columnIndex());
+                yield columnIndex != null
+                        && (columnIndex.definitionLevelHistograms() != null
+                                || columnIndex.repetitionLevelHistograms() != null)
+                        ? " · levels"
+                        : "";
+            }
+            case OFFSET_INDEX -> {
+                OffsetIndex offsetIndex = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
+                yield offsetIndex != null && offsetIndex.unencodedByteArrayDataBytes() != null
+                        ? " · unencoded"
+                        : "";
+            }
+            case PAGES, DICTIONARY -> "";
         };
     }
 

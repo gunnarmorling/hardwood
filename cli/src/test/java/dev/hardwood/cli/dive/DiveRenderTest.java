@@ -380,6 +380,35 @@ class DiveRenderTest {
         }
     }
 
+    /// Whether the column index holds per-page histograms is already in the
+    /// metadata the menu has loaded, so the hint answers it before the reader
+    /// spends a keystroke finding out.
+    @Test
+    void menuHintsAnnotatePageLevelSizeStatisticsWhenPresent() throws Exception {
+        Path path = Path.of(getClass().getResource("/size_statistics_test.parquet").toURI());
+        try (ParquetModel pageIndexModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            RenderHarness.RenderedFrame frame = RenderHarness.render(AREA,
+                    new ScreenState.ColumnChunkDetail(0, columnIndexOf(pageIndexModel, "name"),
+                            ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false), pageIndexModel);
+
+            assertThat(frame.contains("present · levels")).isTrue();
+            assertThat(frame.contains("present · unencoded")).isTrue();
+        }
+    }
+
+    /// A page index that predates the size-statistics fields still reads
+    /// `present`; the annotation is what distinguishes the two.
+    @Test
+    void menuHintsOmitTheAnnotationWhenThePageIndexCarriesNoSizeStatistics() {
+        RenderHarness.RenderedFrame frame = RenderHarness.render(AREA,
+                new ScreenState.ColumnChunkDetail(0, 0,
+                        ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false), model);
+
+        assertThat(frame.contains("present")).isTrue();
+        assertThat(frame.contains("· levels")).isFalse();
+        assertThat(frame.contains("· unencoded")).isFalse();
+    }
+
     /// Collapsed is the default: the derived rows are the summary worth
     /// seeing at a glance, and the pane does not scroll.
     @Test
