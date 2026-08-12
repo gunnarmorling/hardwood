@@ -262,11 +262,11 @@ final class TestParquetGenerator {
         }
 
         ThriftWriter listHeader(ElementType elementType, int size) {
-            if (size <= 14) {
+            if (size < ThriftCompactConstants.LONG_FORM_SIZE) {
                 buf.write((size << 4) | elementType.code());
             }
             else {
-                buf.write(0xF0 | elementType.code());
+                buf.write((ThriftCompactConstants.LONG_FORM_SIZE << 4) | elementType.code());
                 writeVarInt(size);
             }
             return this;

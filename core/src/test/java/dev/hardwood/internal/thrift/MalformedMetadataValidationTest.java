@@ -22,6 +22,8 @@ import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.metadata.Statistics;
 
+import static dev.hardwood.internal.thrift.ThriftCompactConstants.STOP;
+import static dev.hardwood.internal.thrift.ThriftStructBuilder.fieldHeader;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,17 +35,12 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 /// cross-reader compatibility matrix discussed on dev@parquet, May 2026).
 ///
 /// Inputs are hand-crafted Thrift Compact Protocol bytes. Field headers are composed by
-/// [#field]; `i32`/`i64` values are zigzag varints (`zigzag(-1) = 1`, `zigzag(10) = 20`,
-/// `zigzag(8) = 16`).
+/// [ThriftStructBuilder#fieldHeader]; `i32`/`i64` values are zigzag varints (`zigzag(-1) = 1`,
+/// `zigzag(10) = 20`, `zigzag(8) = 16`).
 class MalformedMetadataValidationTest {
 
-    /// Struct terminator.
-    private static final int STOP = ThriftCompactConstants.STOP;
-
-    /// Field header byte: field-id delta in the high nibble, wire type in the low nibble.
-    private static int field(int fieldIdDelta, FieldType type) {
-        return (fieldIdDelta << 4) | type.code();
-    }
+    /// The header of the next `i32` field, which every `PageHeader` shape below steps through.
+    private static final byte NEXT_I32 = fieldHeader(1, FieldType.I32);
 
     private static ThriftCompactReader reader(int... bytes) {
         byte[] b = new byte[bytes.length];
@@ -61,8 +58,8 @@ class MalformedMetadataValidationTest {
     void negativeCompressedPageSizeRejected() {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=10, field3 compressed=-1
         assertThatThrownBy(() -> PageHeaderReader.read(
-                reader(field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x14,
-                        field(1, FieldType.I32), 0x01, STOP)))
+                reader(NEXT_I32, 0x00, NEXT_I32, 0x14,
+                        NEXT_I32, 0x01, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("compressed_page_size");
     }
@@ -71,7 +68,7 @@ class MalformedMetadataValidationTest {
     void negativeUncompressedPageSizeRejected() {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=-1
         assertThatThrownBy(() -> PageHeaderReader.read(
-                reader(field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x01, STOP)))
+                reader(NEXT_I32, 0x00, NEXT_I32, 0x01, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("uncompressed_page_size");
     }
@@ -80,7 +77,7 @@ class MalformedMetadataValidationTest {
     void negativeDataPageOffsetRejected() {
         // ColumnMetaData: field9 data_page_offset (i64) = -1
         assertThatThrownBy(() -> ColumnMetaDataReader.read(
-                reader(field(9, FieldType.I64), 0x01, STOP)))
+                reader(fieldHeader(9, FieldType.I64), 0x01, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("data_page_offset");
     }
@@ -90,8 +87,8 @@ class MalformedMetadataValidationTest {
         // PageHeader: field1 type=4, which no released version of the format defines. Unlike
         // encoding_stats, a page we cannot classify cannot be decoded either, so it must fail.
         assertThatThrownBy(() -> PageHeaderReader.read(
-                reader(field(1, FieldType.I32), 0x08, field(1, FieldType.I32), 0x14,
-                        field(1, FieldType.I32), 0x10, STOP)))
+                reader(NEXT_I32, 0x08, NEXT_I32, 0x14,
+                        NEXT_I32, 0x10, STOP)))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("unknown page type: 4");
     }
@@ -376,8 +373,8 @@ class MalformedMetadataValidationTest {
     void validPageHeaderStillParses() {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=10, field3 compressed=8
         PageHeader header = assertDoesNotThrow(() -> PageHeaderReader.read(
-                reader(field(1, FieldType.I32), 0x00, field(1, FieldType.I32), 0x14,
-                        field(1, FieldType.I32), 0x10, STOP)));
+                reader(NEXT_I32, 0x00, NEXT_I32, 0x14,
+                        NEXT_I32, 0x10, STOP)));
         assertThat(header.type()).isEqualTo(PageType.DATA_PAGE);
         assertThat(header.uncompressedPageSize()).isEqualTo(10);
         assertThat(header.compressedPageSize()).isEqualTo(8);

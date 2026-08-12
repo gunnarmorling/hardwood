@@ -18,19 +18,52 @@ import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 /// Fields are written in ascending id order so the short-form field header
 /// (delta-encoded id) applies; a gap larger than 15 falls back to the long form.
 /// Every struct must be terminated with [#stop()] before [#build()].
+///
+/// The static header composers — [#fieldHeader], [#listHeader], [#longFormListHeader] and
+/// [#mapTypes] — are the same nibble packing exposed on its own, for tests that hand a reader
+/// a byte sequence rather than building a struct.
 public final class ThriftStructBuilder {
-
-    /// The list-header size nibble that saturates, meaning the real element count follows as a
-    /// varint rather than fitting in the nibble.
-    private static final int LONG_FORM_SIZE = 15;
 
     private final ByteBuffer buffer = ByteBuffer.allocate(512).order(ByteOrder.LITTLE_ENDIAN);
     private short lastFieldId;
 
+    /// Field header byte: the field-id delta in the high nibble, the wire type in the low nibble.
+    public static byte fieldHeader(int fieldIdDelta, FieldType type) {
+        return (byte) ((fieldIdDelta << 4) | type.code());
+    }
+
+    /// Short-form list header byte: the element count in the high nibble, the element type in the
+    /// low. A count of [ThriftCompactConstants#LONG_FORM_SIZE] or more does not fit the nibble —
+    /// see [#longFormListHeader].
+    public static byte listHeader(int size, ElementType elementType) {
+        return listHeader(size, elementType.code());
+    }
+
+    /// The same for an element type [ElementType] does not name, such as the `2` a writer may put
+    /// in the element nibble for `bool` instead of the de-facto standard `1`.
+    public static byte listHeader(int size, byte elementCode) {
+        if (size >= ThriftCompactConstants.LONG_FORM_SIZE) {
+            throw new IllegalArgumentException(size + " elements need the long form, not the size nibble");
+        }
+        return (byte) ((size << 4) | elementCode);
+    }
+
+    /// Long-form list header byte: the size nibble saturated, so the count follows as a varint the
+    /// caller writes itself.
+    public static byte longFormListHeader(ElementType elementType) {
+        return (byte) ((ThriftCompactConstants.LONG_FORM_SIZE << 4) | elementType.code());
+    }
+
+    /// The single byte a map writes after its size: the key type in the high nibble, the value
+    /// type in the low nibble.
+    public static byte mapTypes(ElementType key, ElementType value) {
+        return (byte) ((key.code() << 4) | value.code());
+    }
+
     public ThriftStructBuilder field(int id, FieldType type) {
         short delta = (short) (id - lastFieldId);
         if (delta > 0 && delta <= 15) {
-            buffer.put((byte) ((delta << 4) | type.code()));
+            buffer.put(fieldHeader(delta, type));
         }
         else {
             buffer.put(type.code());
@@ -41,7 +74,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder boolList(boolean... values) {
-        listHeader(values.length, ElementType.BOOL);
+        putListHeader(values.length, ElementType.BOOL);
         for (boolean value : values) {
             buffer.put(value ? FieldType.Codes.BOOLEAN_TRUE : FieldType.Codes.BOOLEAN_FALSE);
         }
@@ -49,7 +82,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder binaryList(byte[]... values) {
-        listHeader(values.length, ElementType.BINARY);
+        putListHeader(values.length, ElementType.BINARY);
         for (byte[] value : values) {
             writeVarint(value.length);
             buffer.put(value);
@@ -58,7 +91,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder i32List(int... values) {
-        listHeader(values.length, ElementType.I32);
+        putListHeader(values.length, ElementType.I32);
         for (int value : values) {
             writeZigzag(value);
         }
@@ -66,7 +99,7 @@ public final class ThriftStructBuilder {
     }
 
     public ThriftStructBuilder i64List(long... values) {
-        listHeader(values.length, ElementType.I64);
+        putListHeader(values.length, ElementType.I64);
         for (long value : values) {
             writeZigzag(value);
         }
@@ -75,7 +108,7 @@ public final class ThriftStructBuilder {
 
     /// Writes a `list<struct>` of already-built struct bodies.
     public ThriftStructBuilder structList(byte[]... structs) {
-        listHeader(structs.length, ElementType.STRUCT);
+        putListHeader(structs.length, ElementType.STRUCT);
         for (byte[] struct : structs) {
             buffer.put(struct);
         }
@@ -130,7 +163,7 @@ public final class ThriftStructBuilder {
     /// Writes a list header without the elements, so a caller can follow it with [#raw] bytes
     /// or with fewer elements than it declares.
     public ThriftStructBuilder listHeaderOnly(int size, ElementType elementType) {
-        listHeader(size, elementType);
+        putListHeader(size, elementType);
         return this;
     }
 
@@ -146,12 +179,12 @@ public final class ThriftStructBuilder {
         return out;
     }
 
-    private void listHeader(int size, ElementType elementType) {
-        if (size < LONG_FORM_SIZE) {
-            buffer.put((byte) ((size << 4) | elementType.code()));
+    private void putListHeader(int size, ElementType elementType) {
+        if (size < ThriftCompactConstants.LONG_FORM_SIZE) {
+            buffer.put(listHeader(size, elementType));
         }
         else {
-            buffer.put((byte) ((LONG_FORM_SIZE << 4) | elementType.code()));
+            buffer.put(longFormListHeader(elementType));
             writeVarint(size);
         }
     }

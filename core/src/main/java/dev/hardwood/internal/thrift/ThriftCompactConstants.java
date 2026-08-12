@@ -17,6 +17,10 @@ public final class ThriftCompactConstants {
     /// not a type code, so it belongs to neither [FieldType] nor [ElementType].
     public static final byte STOP = 0x00;
 
+    /// The list-header size nibble that saturates, meaning the real element count follows the
+    /// header as a varint rather than fitting in the nibble.
+    public static final int LONG_FORM_SIZE = 15;
+
     /// Type codes for struct field headers.
     public enum FieldType {
 
@@ -49,21 +53,21 @@ public final class ThriftCompactConstants {
         /// `switch` on the raw wire byte — notably [ThriftCompactReader] — reference
         /// these so the codes are defined once, without re-declaring the literals.
         /// The [FieldType] and [ElementType] enums are built from them too.
-        public static final class Codes {
+        static final class Codes {
 
-            public static final byte BOOLEAN_TRUE = 0x01;
-            public static final byte BOOLEAN_FALSE = 0x02;
-            public static final byte BYTE = 0x03;
-            public static final byte I16 = 0x04;
-            public static final byte I32 = 0x05;
-            public static final byte I64 = 0x06;
-            public static final byte DOUBLE = 0x07;
-            public static final byte BINARY = 0x08;
-            public static final byte LIST = 0x09;
-            public static final byte SET = 0x0A;
-            public static final byte MAP = 0x0B;
-            public static final byte STRUCT = 0x0C;
-            public static final byte UUID = 0x0D;
+            static final byte BOOLEAN_TRUE = 0x01;
+            static final byte BOOLEAN_FALSE = 0x02;
+            static final byte BYTE = 0x03;
+            static final byte I16 = 0x04;
+            static final byte I32 = 0x05;
+            static final byte I64 = 0x06;
+            static final byte DOUBLE = 0x07;
+            static final byte BINARY = 0x08;
+            static final byte LIST = 0x09;
+            static final byte SET = 0x0A;
+            static final byte MAP = 0x0B;
+            static final byte STRUCT = 0x0C;
+            static final byte UUID = 0x0D;
 
             private Codes() {
             }
@@ -72,12 +76,11 @@ public final class ThriftCompactConstants {
 
     /// Type codes for list/set/map elements. These mirror [FieldType] except boolean:
     /// a collection has a single element type for `bool`, whereas a field packs
-    /// true/false into the type. [#BOOL] is written as `1` — the de-facto standard;
-    /// [#BOOL_LEGACY] is the spec's original `2`, and readers accept either.
+    /// true/false into the type. [#BOOL] is written as `1` — the de-facto standard; the spec's
+    /// original code is `2`, which readers accept as well.
     public enum ElementType {
 
         BOOL(FieldType.Codes.BOOLEAN_TRUE),
-        BOOL_LEGACY(FieldType.Codes.BOOLEAN_FALSE),
         BYTE(FieldType.Codes.BYTE),
         I16(FieldType.Codes.I16),
         I32(FieldType.Codes.I32),

@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.ColumnOrder;
 
+import static dev.hardwood.internal.thrift.ThriftCompactConstants.STOP;
+import static dev.hardwood.internal.thrift.ThriftStructBuilder.fieldHeader;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// Unit tests for [ColumnOrderReader], decoding the `ColumnOrder` Thrift union.
@@ -22,13 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// STOP byte.
 class ColumnOrderReaderTest {
 
-    /// Struct terminator.
-    private static final byte STOP = ThriftCompactConstants.STOP;
-
-    /// The header byte of a union member: the field-id delta in the high nibble, and STRUCT in
-    /// the low nibble because every member is an empty marker struct.
+    /// The header byte of a union member. Every member is an empty marker struct, so the wire
+    /// type is always STRUCT and only the field id tells the members apart.
     private static byte member(int fieldId) {
-        return (byte) ((fieldId << 4) | FieldType.Codes.STRUCT);
+        return fieldHeader(fieldId, FieldType.STRUCT);
     }
 
     private static ColumnOrder decode(byte... bytes) throws Exception {
