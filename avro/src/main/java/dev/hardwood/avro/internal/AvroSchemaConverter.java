@@ -9,7 +9,6 @@ package dev.hardwood.avro.internal;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.UnaryOperator;
 
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
@@ -177,8 +176,8 @@ public final class AvroSchemaConverter {
     private AvroPlanNode convertList(SchemaNode.GroupNode listGroup) {
         SchemaNode element = listGroup.getListElement();
         if (element == null) {
-            // Fallback for malformed list
-            return untypedContainer(Schema::createArray, Kind.LIST, listGroup);
+            throw new IllegalArgumentException("LIST group '" + listGroup.name()
+                    + "' has no element");
         }
         // The list column is only reached when it has a projected leaf; prune the
         // element subtree so a list<struct> with a sub-field projection narrows to
@@ -190,28 +189,17 @@ public final class AvroSchemaConverter {
 
     private AvroPlanNode convertMap(SchemaNode.GroupNode mapGroup) {
         // MAP -> key_value (repeated) -> key, value
-        if (mapGroup.children().isEmpty()) {
-            return untypedContainer(Schema::createMap, Kind.MAP, mapGroup);
+        SchemaNode keyNode = mapGroup.getMapKey();
+        SchemaNode valueNode = mapGroup.getMapValue();
+        if (keyNode == null || valueNode == null) {
+            throw new IllegalArgumentException("MAP group '" + mapGroup.name()
+                    + "' must contain a complete key/value group");
         }
-        SchemaNode inner = mapGroup.children().getFirst();
-        if (inner instanceof SchemaNode.GroupNode kvGroup && kvGroup.children().size() >= 2) {
-            SchemaNode valueNode = kvGroup.children().get(1);
-            // Prune the value subtree so a map<_, struct> with a sub-field
-            // projection narrows to the served fields (the key is always read).
-            AvroPlanNode value = convertNode(valueNode);
-            return AvroPlanNode.container(
-                    Schema.createMap(fieldSchema(value, valueNode)), Kind.MAP, mapGroup, value);
-        }
-        return untypedContainer(Schema::createMap, Kind.MAP, mapGroup);
-    }
-
-    /// A list or map whose element type the schema does not describe: the container
-    /// materializes, and its values come back through the generic accessor.
-    private static AvroPlanNode untypedContainer(UnaryOperator<Schema> container, Kind kind,
-            SchemaNode.GroupNode group) {
-        Schema nullSchema = Schema.create(Schema.Type.NULL);
-        return AvroPlanNode.container(container.apply(nullSchema), kind, group,
-                AvroPlanNode.leaf(nullSchema, Kind.OTHER, group));
+        // Prune the value subtree so a map<_, struct> with a sub-field
+        // projection narrows to the served fields (the key is always read).
+        AvroPlanNode value = convertNode(valueNode);
+        return AvroPlanNode.container(
+                Schema.createMap(fieldSchema(value, valueNode)), Kind.MAP, mapGroup, value);
     }
 
     private AvroPlanNode convertPrimitive(SchemaNode.PrimitiveNode prim) {
@@ -261,7 +249,7 @@ public final class AvroSchemaConverter {
             case LogicalType.GeometryType g -> binary(prim);
             case LogicalType.GeographyType g -> binary(prim);
             case LogicalType.NullType n -> AvroPlanNode.leaf(
-                    Schema.create(Schema.Type.NULL), Kind.OTHER, prim);
+                    Schema.create(Schema.Type.NULL), Kind.NULL, prim);
         };
     }
 

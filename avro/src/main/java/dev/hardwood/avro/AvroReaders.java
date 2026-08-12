@@ -7,6 +7,9 @@
  */
 package dev.hardwood.avro;
 
+import java.util.function.Supplier;
+
+import dev.hardwood.avro.internal.AvroPlanNode;
 import dev.hardwood.avro.internal.AvroSchemaConverter;
 import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.ParquetFileReader;
@@ -108,9 +111,16 @@ public final class AvroReaders {
             if (tailRows > 0) {
                 underlying.tail(tailRows);
             }
-            RowReader rowReader = underlying.build();
-            return new AvroRowReader(rowReader,
-                    AvroSchemaConverter.plan(fileReader.getFileSchema(), projection));
+            return buildReader(
+                    () -> AvroSchemaConverter.plan(fileReader.getFileSchema(), projection),
+                    underlying::build);
         }
+    }
+
+    static AvroRowReader buildReader(Supplier<AvroPlanNode> planSupplier,
+            Supplier<RowReader> rowReaderSupplier) {
+        AvroPlanNode plan = planSupplier.get();
+        RowReader rowReader = rowReaderSupplier.get();
+        return new AvroRowReader(rowReader, plan);
     }
 }

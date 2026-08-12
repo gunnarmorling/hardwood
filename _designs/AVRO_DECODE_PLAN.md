@@ -46,7 +46,7 @@ plan.child(0);      // plan for the first field of the record
 | `VARIANT` | `getVariant` | two-field `GenericRecord` of the canonical Variant bytes |
 | `LIST` | `getList` | `java.util.List` |
 | `MAP` | `getMap` | `java.util.Map` |
-| `OTHER` | `getValue` | whatever the row reader yields |
+| `NULL` | no non-null value is valid | a non-null value is an invariant failure |
 
 Children are positional:
 
@@ -91,15 +91,26 @@ private Object materializeField(StructAccessor accessor, String name, AvroPlanNo
 nested struct are the same traversal; the plan node supplies what used to differ.
 List elements and map entries keep their own switch — `PqList` and `PqMap.Entry`
 expose positional and value accessors rather than name-based ones — but they switch
-on the same `Kind`, and the kinds Avro represents physically — the numerics, `bytes`
-and `fixed` — go through one shared step at all three positions, reached by each
-position's raw accessor. Only the kinds whose Avro form is the *logical* value (a uuid
-string, a decimal's unscaled bytes, an interned string) and the group kinds read
-per-position. Values are cast to the type their `Kind` implies rather than sniffed:
-the accessors and the plan classify from the same schema node, so the two agree by
-construction and no file can make them disagree.
+on the same `Kind`. Values obtained through generic `Object` accessors are validated
+against the representation their `Kind` requires before conversion; typed object
+accessors are checked for an unexpected null after the enclosing null guard. Field and
+map positions use typed accessors for logical and group kinds, while list elements use
+`PqList.get(index)` and validate its returned object. Physical kinds use raw accessors
+at all three positions and share the same type and fixed-width checks. Every mismatch
+throws an `IllegalArgumentException` naming the flat materialization position, Avro
+type, and actual Java value type. The location model is intentionally flat: nested
+failures name the innermost field, list element, or map value.
+
+The `NULL` kind represents a Parquet NULL logical type. A null value is consumed by
+the enclosing null guard; reaching a `NULL` node with a non-null value is an invariant
+failure. LIST and MAP groups must have a discoverable element or complete key/value
+group during planning; malformed containers are rejected instead of receiving an
+untyped child plan.
 
 No logical-type lookup, property read, or union resolution happens per value.
+
+The complete plan is built before the underlying `RowReader` is acquired. This keeps
+planning failures from opening and then stranding a row-reader resource.
 
 Where Avro's type system cannot carry a Parquet distinction, the converted schema is
 annotated from the node's `Kind` — an unsigned `INT32` widens to Avro `LONG` and its

@@ -139,6 +139,38 @@ class AvroSchemaConverterTest {
         // Guard against regressing to `union [null, null]` — still NULL on the
         // top branch but illegal Avro that would throw at schema construction.
         assertThat(field.schema().isUnion()).isFalse();
+        assertThat(AvroSchemaConverter.plan(schema, ColumnProjection.all()).child(0).kind())
+                .isEqualTo(AvroPlanNode.Kind.NULL);
+    }
+
+    @Test
+    void rejectsListWithoutElementDuringPlanning() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement list = new SchemaElement("items", null, null, RepetitionType.OPTIONAL,
+                0, null, null, null, null, new LogicalType.ListType());
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, list));
+
+        assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("items")
+                .hasMessageContaining("element");
+    }
+
+    @Test
+    void rejectsMapWithoutCompleteKeyValueGroupDuringPlanning() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement map = new SchemaElement("attributes", null, null, RepetitionType.OPTIONAL,
+                1, null, null, null, null, new LogicalType.MapType());
+        SchemaElement keyValue = new SchemaElement("key_value", null, null, RepetitionType.REPEATED,
+                1, null, null, null, null, null);
+        SchemaElement key = new SchemaElement("key", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, new LogicalType.StringType());
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, map, keyValue, key));
+
+        assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("attributes")
+                .hasMessageContaining("key/value");
     }
 
     /// `list<null>` with an OPTIONAL element must produce `array<null>`, not

@@ -8,12 +8,14 @@
 package dev.hardwood.avro;
 
 import java.io.ByteArrayOutputStream;
+import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,21 +31,143 @@ import org.apache.avro.io.EncoderFactory;
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.avro.internal.AvroPlanNode;
 import dev.hardwood.avro.internal.AvroSchemaConverter;
+import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.metadata.SchemaElement;
 import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
+import dev.hardwood.row.PqList;
+import dev.hardwood.row.PqMap;
+import dev.hardwood.row.PqStruct;
 import dev.hardwood.row.PqVariant;
 import dev.hardwood.row.VariantType;
 import dev.hardwood.schema.ColumnProjection;
+import dev.hardwood.schema.FileSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AvroRowReaderTest {
 
     private static final Path TEST_RESOURCES = Path.of("").toAbsolutePath()
             .resolve("../core/src/test/resources").normalize();
+
+    @Test
+    void planFailurePreventsRowReaderAcquisition() {
+        boolean[] acquired = { false };
+
+        assertThatThrownBy(() -> AvroReaders.buildReader(
+                () -> {
+                    throw new IllegalArgumentException("plan failed");
+                },
+                () -> {
+                    acquired[0] = true;
+                    throw new AssertionError("row reader must not be acquired");
+                }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("plan failed");
+        assertThat(acquired[0]).isFalse();
+    }
+
+    @Test
+    void wrongRawTypeNamesRootFieldAndAvroType() {
+        FileSchema schema = primitiveSchema("value", PhysicalType.INT32, RepetitionType.REQUIRED);
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        RowReader rows = proxy(RowReader.class, values(
+                "next", null,
+                "isNull", false,
+                "getRawValue", "wrong"));
+
+        assertThatThrownBy(() -> new AvroRowReader(rows, plan).next())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("field 'value'")
+                .hasMessageContaining("Avro INT")
+                .hasMessageContaining("java.lang.String");
+    }
+
+    @Test
+    void wrongRawTypeNamesNestedStructField() {
+        FileSchema schema = nestedPrimitiveSchema();
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        PqStruct struct = proxy(PqStruct.class, values(
+                "isNull", false,
+                "getRawValue", "wrong"));
+        RowReader rows = proxy(RowReader.class, values(
+                "next", null,
+                "isNull", false,
+                "getStruct", struct));
+
+        assertThatThrownBy(() -> new AvroRowReader(rows, plan).next())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("struct field 'value'")
+                .hasMessageContaining("Avro INT")
+                .hasMessageContaining("java.lang.String");
+    }
+
+    @Test
+    void wrongDecodedTypeNamesListElement() {
+        FileSchema schema = listStringSchema();
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        PqList list = proxy(PqList.class, values(
+                "size", 1,
+                "isNull", false,
+                "get", 42));
+        RowReader rows = proxy(RowReader.class, values(
+                "next", null,
+                "isNull", false,
+                "getList", list));
+
+        assertThatThrownBy(() -> new AvroRowReader(rows, plan).next())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("list element 0")
+                .hasMessageContaining("Avro STRING")
+                .hasMessageContaining("java.lang.Integer");
+    }
+
+    @Test
+    void wrongFixedWidthNamesRootField() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement value = new SchemaElement("value", PhysicalType.FIXED_LEN_BYTE_ARRAY, 4,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, value));
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        RowReader rows = proxy(RowReader.class, values(
+                "next", null,
+                "isNull", false,
+                "getRawValue", new byte[] { 1, 2 }));
+
+        assertThatThrownBy(() -> new AvroRowReader(rows, plan).next())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("field 'value'")
+                .hasMessageContaining("Avro FIXED")
+                .hasMessageContaining("required fixed width 4")
+                .hasMessageContaining("byte[]");
+    }
+
+    @Test
+    void nullDecodedTypeNamesMapValue() {
+        FileSchema schema = mapStringSchema();
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        PqMap.Entry entry = proxy(PqMap.Entry.class, values(
+                "getStringKey", "key",
+                "isValueNull", false,
+                "getStringValue", null));
+        PqMap map = proxy(PqMap.class, values("getEntries", List.of(entry), "size", 1));
+        RowReader rows = proxy(RowReader.class, values(
+                "next", null,
+                "isNull", false,
+                "getMap", map));
+
+        assertThatThrownBy(() -> new AvroRowReader(rows, plan).next())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("map value for key 'key'")
+                .hasMessageContaining("Avro STRING")
+                .hasMessageContaining("actual Java value type null");
+    }
 
     @Test
     void readFlatSchema() throws Exception {
@@ -1152,6 +1276,79 @@ class AvroRowReaderTest {
 
     private static BigDecimal decimalFromFixed(Object fixed) {
         return new BigDecimal(new BigInteger(((GenericData.Fixed) fixed).bytes()), 2);
+    }
+
+    private static FileSchema primitiveSchema(String name, PhysicalType type, RepetitionType repetition) {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement value = new SchemaElement(name, type, null, repetition,
+                null, null, null, null, null, null);
+        return FileSchema.fromSchemaElements(List.of(root, value));
+    }
+
+    private static FileSchema nestedPrimitiveSchema() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement struct = new SchemaElement("record", null, null, RepetitionType.REQUIRED,
+                1, null, null, null, null, null);
+        SchemaElement value = new SchemaElement("value", PhysicalType.INT32, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        return FileSchema.fromSchemaElements(List.of(root, struct, value));
+    }
+
+    private static FileSchema listStringSchema() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement list = new SchemaElement("items", null, null, RepetitionType.REQUIRED,
+                1, null, null, null, null, new dev.hardwood.metadata.LogicalType.ListType());
+        SchemaElement repeated = new SchemaElement("list", null, null, RepetitionType.REPEATED,
+                1, null, null, null, null, null);
+        SchemaElement element = new SchemaElement("element", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null,
+                new dev.hardwood.metadata.LogicalType.StringType());
+        return FileSchema.fromSchemaElements(List.of(root, list, repeated, element));
+    }
+
+    private static FileSchema mapStringSchema() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement map = new SchemaElement("attributes", null, null, RepetitionType.REQUIRED,
+                1, null, null, null, null, new dev.hardwood.metadata.LogicalType.MapType());
+        SchemaElement keyValue = new SchemaElement("key_value", null, null, RepetitionType.REPEATED,
+                2, null, null, null, null, null);
+        SchemaElement key = new SchemaElement("key", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null,
+                new dev.hardwood.metadata.LogicalType.StringType());
+        SchemaElement value = new SchemaElement("value", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null,
+                new dev.hardwood.metadata.LogicalType.StringType());
+        return FileSchema.fromSchemaElements(List.of(root, map, keyValue, key, value));
+    }
+
+    private static Map<String, Object> values(Object... entries) {
+        Map<String, Object> values = new HashMap<>();
+        for (int i = 0; i < entries.length; i += 2) {
+            values.put((String) entries[i], entries[i + 1]);
+        }
+        return values;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T proxy(Class<T> type, Map<String, Object> values) {
+        return (T) Proxy.newProxyInstance(
+                type.getClassLoader(),
+                new Class<?>[] { type },
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("toString")) {
+                        return type.getSimpleName() + " proxy";
+                    }
+                    if (method.getName().equals("hashCode")) {
+                        return System.identityHashCode(proxy);
+                    }
+                    if (method.getName().equals("equals")) {
+                        return proxy == arguments[0];
+                    }
+                    if (values.containsKey(method.getName())) {
+                        return values.get(method.getName());
+                    }
+                    throw new AssertionError("Unexpected accessor: " + method.getName());
+                });
     }
 
     private static Schema resolveNullable(Schema schema) {

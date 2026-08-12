@@ -44,8 +44,9 @@ public final class AvroPlanNode {
         VARIANT,
         LIST,
         MAP,
-        /// No typed accessor applies — read through the generic `getValue` path.
-        OTHER
+        /// The Parquet NULL logical type. A non-null value at this position is
+        /// always a materialization invariant failure.
+        NULL
     }
 
     private static final AvroPlanNode[] NO_CHILDREN = new AvroPlanNode[0];
