@@ -58,6 +58,17 @@ public record LevelSummary(
     public record LevelRow(int level, String label, long count, double share) {
     }
 
+    private static final char[] EIGHTHS = {'▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'};
+
+    private static final int LABEL_WIDTH = 20;
+    private static final int COUNT_WIDTH = 10;
+
+    /// Inner widths at which a rendered level row still has room for the
+    /// percentage, and for the percentage plus a bar. Below the first, the
+    /// level, label and count are all that fit.
+    private static final int PERCENTAGE_WIDTH_FLOOR = 44;
+    private static final int BAR_WIDTH_FLOOR = 56;
+
     /// A node along a column's path that raises the definition level,
     /// paired with the name of the field enclosing it. The enclosing name
     /// is what a `REPEATED` node is labelled with.
@@ -167,6 +178,52 @@ public record LevelSummary(
     /// the real PLAIN size.
     public long lengthPrefixBytes() {
         return 4L * presentValues();
+    }
+
+    /// Renders `share` as a bar `cells` wide. Eighth-block characters give
+    /// sub-cell resolution, so a bucket holding a thousandth of the values
+    /// still reads as present instead of rounding away to nothing. Only a
+    /// share of exactly zero renders empty.
+    public static String bar(double share, int cells) {
+        if (share <= 0 || cells <= 0) {
+            return "";
+        }
+        int eighths = Math.max(1, Math.toIntExact(Math.round(share * cells * 8)));
+        StringBuilder bar = new StringBuilder();
+        bar.append("█".repeat(eighths / 8));
+        int remainder = eighths % 8;
+        if (remainder > 0) {
+            bar.append(EIGHTHS[remainder - 1]);
+        }
+        return bar.toString();
+    }
+
+    /// Renders the level rows as plain text, one line each, so `dive` and
+    /// `inspect` show the same characters. Columns drop as the pane narrows:
+    /// the bar first, then the percentage, leaving the level, its label and
+    /// the count at any width.
+    public static List<String> renderLevels(List<LevelRow> rows, int innerWidth) {
+        boolean showPercentage = innerWidth >= PERCENTAGE_WIDTH_FLOOR;
+        int barCells = innerWidth >= BAR_WIDTH_FLOOR ? innerWidth - PERCENTAGE_WIDTH_FLOOR : 0;
+        List<String> lines = new ArrayList<>(rows.size());
+        for (LevelRow row : rows) {
+            StringBuilder line = new StringBuilder();
+            line.append("  ").append(row.level()).append("  ");
+            line.append(padRight(row.label(), LABEL_WIDTH));
+            line.append(Fmt.fmt("%" + COUNT_WIDTH + "s", Fmt.fmt("%,d", row.count())));
+            if (showPercentage) {
+                line.append(Fmt.fmt("  %5.1f%%", row.share() * 100));
+            }
+            if (barCells > 0) {
+                line.append(' ').append(bar(row.share(), barCells));
+            }
+            lines.add(line.toString());
+        }
+        return lines;
+    }
+
+    private static String padRight(String value, int width) {
+        return value.length() >= width ? value : value + " ".repeat(width - value.length());
     }
 
     /// Values counted below the outermost repeated node — the records whose

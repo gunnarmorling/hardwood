@@ -8,6 +8,7 @@
 package dev.hardwood.cli.internal;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -191,6 +192,30 @@ class LevelSummaryTest {
         assertThat(summary.repetitionLevels())
                 .extracting(LevelSummary.LevelRow::label, LevelSummary.LevelRow::count)
                 .containsExactly(tuple("new record", 150L), tuple("websites.list", 150L));
+    }
+
+    /// A bucket holding one value in a million still has to read as
+    /// present, so a non-zero share never rounds away to an empty bar.
+    @Test
+    void barUsesEighthBlocksForSubCellResolution() {
+        assertThat(LevelSummary.bar(1.0, 4)).isEqualTo("████");
+        assertThat(LevelSummary.bar(0.5, 4)).isEqualTo("██");
+        assertThat(LevelSummary.bar(0.0, 4)).isEmpty();
+        assertThat(LevelSummary.bar(0.03, 4)).isEqualTo("▏");
+    }
+
+    /// The bar is the first thing worth dropping on a narrow pane and the
+    /// count the last, so the level and its label survive every width.
+    @Test
+    void narrowWidthsDropTheBarThenThePercentage() {
+        List<LevelSummary.LevelRow> rows = List.of(
+                new LevelSummary.LevelRow(0, "websites null", 0L, 0.0),
+                new LevelSummary.LevelRow(1, "element present", 300L, 1.0));
+
+        assertThat(LevelSummary.renderLevels(rows, 60).get(1)).contains("█").contains("100.0%");
+        assertThat(LevelSummary.renderLevels(rows, 50).get(1)).doesNotContain("█").contains("100.0%");
+        assertThat(LevelSummary.renderLevels(rows, 40).get(1)).doesNotContain("%").contains("300");
+        assertThat(LevelSummary.renderLevels(rows, 40).get(1)).contains("element present");
     }
 
     /// The check is what makes the screen worth opening on a suspect
