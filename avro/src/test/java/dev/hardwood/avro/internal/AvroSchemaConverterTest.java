@@ -157,7 +157,7 @@ class AvroSchemaConverterTest {
     }
 
     @Test
-    void rejectsMapWithoutCompleteKeyValueGroupDuringPlanning() {
+    void keyOnlyMapBecomesMapOfBareNull() {
         SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
         SchemaElement map = new SchemaElement("attributes", null, null, RepetitionType.OPTIONAL,
                 1, null, null, null, null, new LogicalType.MapType());
@@ -167,10 +167,10 @@ class AvroSchemaConverterTest {
                 RepetitionType.REQUIRED, null, null, null, null, null, new LogicalType.StringType());
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, map, keyValue, key));
 
-        assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("attributes")
-                .hasMessageContaining("key/value");
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        Schema mapSchema = pickMapBranch(plan.avro().getField("attributes").schema());
+        assertThat(mapSchema.getValueType().getType()).isEqualTo(Schema.Type.NULL);
+        assertThat(plan.child(0).mapValue().kind()).isEqualTo(AvroPlanNode.Kind.NULL);
     }
 
     /// `list<null>` with an OPTIONAL element must produce `array<null>`, not

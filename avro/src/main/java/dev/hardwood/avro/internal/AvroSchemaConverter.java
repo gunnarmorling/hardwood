@@ -191,9 +191,15 @@ public final class AvroSchemaConverter {
         // MAP -> key_value (repeated) -> key, value
         SchemaNode keyNode = mapGroup.getMapKey();
         SchemaNode valueNode = mapGroup.getMapValue();
-        if (keyNode == null || valueNode == null) {
+        if (keyNode == null) {
             throw new IllegalArgumentException("MAP group '" + mapGroup.name()
-                    + "' must contain a complete key/value group");
+                    + "' must contain a repeated key/value group with a key");
+        }
+        if (valueNode == null) {
+            Schema nullSchema = Schema.create(Schema.Type.NULL);
+            AvroPlanNode value = AvroPlanNode.leaf(nullSchema, Kind.NULL, mapGroup);
+            return AvroPlanNode.container(
+                    Schema.createMap(nullSchema), Kind.MAP, mapGroup, value);
         }
         // Prune the value subtree so a map<_, struct> with a sub-field
         // projection narrows to the served fields (the key is always read).

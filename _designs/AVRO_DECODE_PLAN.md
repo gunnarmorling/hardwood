@@ -52,7 +52,8 @@ Children are positional:
 
 - a `STRUCT` node has one child per field of its record, at the field's Avro position;
 - a `LIST` node has one child, the element plan, reached through `listElement()`;
-- a `MAP` node has one child, the value plan, reached through `mapValue()`;
+- a `MAP` node has one child, the value plan, reached through `mapValue()`; a
+  key-only map uses a `NULL` value plan because every entry has a null value;
 - every other node is a leaf.
 
 Building the plan and building the schema is one traversal, because the pairing is
@@ -101,11 +102,15 @@ throws an `IllegalArgumentException` naming the flat materialization position, A
 type, and actual Java value type. The location model is intentionally flat: nested
 failures name the innermost field, list element, or map value.
 
+Parquet `ENUM` materializes through the `STRING` kind. The Parquet annotation carries
+no declared symbol set, so materialization validates the Java representation as a
+non-null `String`; membership validation is not defined for this schema shape.
+
 The `NULL` kind represents a Parquet NULL logical type. A null value is consumed by
 the enclosing null guard; reaching a `NULL` node with a non-null value is an invariant
-failure. LIST and MAP groups must have a discoverable element or complete key/value
-group during planning; malformed containers are rejected instead of receiving an
-untyped child plan.
+failure. A key-only MAP produces a `map<null>` schema and `NULL` value plan. LIST groups
+without a discoverable element and MAP groups without a discoverable key are malformed
+and rejected instead of receiving an untyped child plan.
 
 No logical-type lookup, property read, or union resolution happens per value.
 

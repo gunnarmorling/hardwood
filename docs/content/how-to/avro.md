@@ -78,6 +78,10 @@ Values are stored in Avro's standard representations: timestamps as `Long` (mill
 
 A Parquet column annotated with the `NULL` logical type (e.g. PyArrow's `pa.null()` columns) maps to a bare Avro `null` field — not the usual `union [null, T]` nullable wrap, which is illegal when `T` is itself `null`. The same collapse applies inside lists and maps: a `list<null>` element or `map<string, null>` value position becomes a bare `null` in the corresponding Avro `array` / `map` schema.
 
+A key-only Parquet MAP, whose repeated `key_value` group has no value column, also maps to an Avro `map` with bare `null` values. Each decoded key is present in the Java map with a `null` value.
+
+Reader construction validates container schemas before acquiring the underlying row reader. It throws `IllegalArgumentException` when a LIST group has no discoverable element or a MAP group has no discoverable key; these malformed schemas cannot be materialized consistently with an Avro schema.
+
 ## Lifecycle
 
 `AvroRowReader` does **not** take ownership of the `ParquetFileReader` it wraps — closing the `AvroRowReader` releases the inner readers and column workers, but the underlying `ParquetFileReader` must be closed separately by the caller. The two-`try`-with-resources pattern in the examples above reflects this.

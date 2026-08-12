@@ -33,6 +33,10 @@ import org.junit.jupiter.api.Test;
 import dev.hardwood.InputFile;
 import dev.hardwood.avro.internal.AvroPlanNode;
 import dev.hardwood.avro.internal.AvroSchemaConverter;
+import dev.hardwood.metadata.LogicalType.ListType;
+import dev.hardwood.metadata.LogicalType.MapType;
+import dev.hardwood.metadata.LogicalType.NullType;
+import dev.hardwood.metadata.LogicalType.StringType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.metadata.SchemaElement;
@@ -170,6 +174,26 @@ class AvroRowReaderTest {
     }
 
     @Test
+    void nonNullValueForNullLogicalTypeFailsAtRootField() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement value = new SchemaElement("value", PhysicalType.INT32, null,
+                RepetitionType.OPTIONAL, null, null, null, null, null, new NullType());
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, value));
+        AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
+        RowReader rows = proxy(RowReader.class, values(
+                "next", null,
+                "isNull", false,
+                "getValue", 42));
+
+        assertThatThrownBy(() -> new AvroRowReader(rows, plan).next())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("field 'value'")
+                .hasMessageContaining("Avro NULL")
+                .hasMessageContaining("java.lang.Integer")
+                .hasMessageContaining("NULL has no non-null materialization");
+    }
+
+    @Test
     void readFlatSchema() throws Exception {
         // plain_uncompressed.parquet: id INT64, value INT64 — 3 rows
         try (ParquetFileReader fileReader = ParquetFileReader.open(
@@ -274,6 +298,29 @@ class AvroRowReaderTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> attrMap = (Map<String, Object>) attrs;
             assertThat(attrMap).isNotEmpty();
+        }
+    }
+
+    @Test
+    void readKeyOnlyMapAsNullValuedMap() throws Exception {
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve("map_key_only_test.parquet")));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            Schema mapSchema = resolveNullable(reader.getSchema().getField("tags").schema());
+            assertThat(mapSchema.getType()).isEqualTo(Schema.Type.MAP);
+            assertThat(mapSchema.getValueType().getType()).isEqualTo(Schema.Type.NULL);
+
+            List<GenericRecord> records = readAll(reader);
+            assertThat(records).hasSize(2);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> firstTags = (Map<String, Object>) records.get(0).get("tags");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> secondTags = (Map<String, Object>) records.get(1).get("tags");
+            assertThat(firstTags)
+                    .containsEntry("a", null)
+                    .containsEntry("b", null);
+            assertThat(secondTags).containsEntry("c", null);
         }
     }
 
@@ -1297,27 +1344,27 @@ class AvroRowReaderTest {
     private static FileSchema listStringSchema() {
         SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
         SchemaElement list = new SchemaElement("items", null, null, RepetitionType.REQUIRED,
-                1, null, null, null, null, new dev.hardwood.metadata.LogicalType.ListType());
+                1, null, null, null, null, new ListType());
         SchemaElement repeated = new SchemaElement("list", null, null, RepetitionType.REPEATED,
                 1, null, null, null, null, null);
         SchemaElement element = new SchemaElement("element", PhysicalType.BYTE_ARRAY, null,
                 RepetitionType.REQUIRED, null, null, null, null, null,
-                new dev.hardwood.metadata.LogicalType.StringType());
+                new StringType());
         return FileSchema.fromSchemaElements(List.of(root, list, repeated, element));
     }
 
     private static FileSchema mapStringSchema() {
         SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
         SchemaElement map = new SchemaElement("attributes", null, null, RepetitionType.REQUIRED,
-                1, null, null, null, null, new dev.hardwood.metadata.LogicalType.MapType());
+                1, null, null, null, null, new MapType());
         SchemaElement keyValue = new SchemaElement("key_value", null, null, RepetitionType.REPEATED,
                 2, null, null, null, null, null);
         SchemaElement key = new SchemaElement("key", PhysicalType.BYTE_ARRAY, null,
                 RepetitionType.REQUIRED, null, null, null, null, null,
-                new dev.hardwood.metadata.LogicalType.StringType());
+                new StringType());
         SchemaElement value = new SchemaElement("value", PhysicalType.BYTE_ARRAY, null,
                 RepetitionType.REQUIRED, null, null, null, null, null,
-                new dev.hardwood.metadata.LogicalType.StringType());
+                new StringType());
         return FileSchema.fromSchemaElements(List.of(root, map, keyValue, key, value));
     }
 

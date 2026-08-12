@@ -176,6 +176,7 @@ public class AvroRowReader implements AutoCloseable {
     ///
     /// @param raw the value in its physical representation
     /// @param node the plan node for the value's position
+    /// @param location the value's position for a materialization failure
     /// @return the value as its Avro schema requires
     private static Object rawToAvro(Object raw, AvroPlanNode node, ValueLocation location) {
         return switch (node.kind()) {
@@ -189,7 +190,7 @@ public class AvroRowReader implements AutoCloseable {
             case LONG -> requireValueType(raw, Long.class, node, location);
             case FLOAT -> requireValueType(raw, Float.class, node, location);
             case DOUBLE -> requireValueType(raw, Double.class, node, location);
-            default -> throw new IllegalStateException(
+            case STRING, UUID, DECIMAL, STRUCT, VARIANT, LIST, MAP, NULL -> throw new IllegalStateException(
                     "Not a physically represented kind: " + node.kind());
         };
     }
@@ -219,31 +220,28 @@ public class AvroRowReader implements AutoCloseable {
     /// each kind takes whichever its Avro representation is defined in terms of — the
     /// same split the field and map paths make between their raw and typed accessors.
     ///
-    /// The casts hold by construction: the accessors and the plan classify the element
-    /// from the same [dev.hardwood.schema.SchemaNode], so a value that contradicts its
-    /// [AvroPlanNode.Kind] means the two have diverged — a bug in Hardwood, not
-    /// something a file can provoke.
+    /// Each accessor result is validated against the planned representation. A mismatch
+    /// throws an `IllegalArgumentException` naming the element index, Avro type, and
+    /// actual Java value type.
     private Object materializeListElement(PqList pqList, int index, AvroPlanNode node) {
+        ValueLocation location = new ListElementLocation(index);
         return switch (node.kind()) {
             case BOOLEAN, INT, LONG, FLOAT, DOUBLE, UNSIGNED_INT32, BINARY, FIXED ->
-                    rawToAvro(pqList.getRaw(index), node, new ListElementLocation(index));
+                    rawToAvro(pqList.getRaw(index), node, location);
             // Decoded value: the Avro representation is defined in terms of the logical
             // value, which the raw physical bytes or number do not carry.
-            case UUID -> uuidString(requireValueType(pqList.get(index), UUID.class, node,
-                    new ListElementLocation(index)));
-            case DECIMAL -> decimalBytes(requireValueType(pqList.get(index), BigDecimal.class, node,
-                    new ListElementLocation(index)));
-            case STRING -> requireValueType(pqList.get(index), String.class, node,
-                    new ListElementLocation(index));
-            case STRUCT -> materializeRecord(requireValueType(pqList.get(index), PqStruct.class, node,
-                    new ListElementLocation(index)), node, RecordPosition.STRUCT);
-            case VARIANT -> materializeVariant(requireValueType(pqList.get(index), PqVariant.class, node,
-                    new ListElementLocation(index)), node.avro());
-            case LIST -> materializeList(requireValueType(pqList.get(index), PqList.class, node,
-                    new ListElementLocation(index)), node.listElement());
-            case MAP -> materializeMap(requireValueType(pqList.get(index), PqMap.class, node,
-                    new ListElementLocation(index)), node.mapValue());
-            case NULL -> throw materializationFailure(node, new ListElementLocation(index), pqList.get(index),
+            case UUID -> uuidString(requireValueType(pqList.get(index), UUID.class, node, location));
+            case DECIMAL -> decimalBytes(requireValueType(pqList.get(index), BigDecimal.class, node, location));
+            case STRING -> requireValueType(pqList.get(index), String.class, node, location);
+            case STRUCT -> materializeRecord(requireValueType(pqList.get(index), PqStruct.class, node, location),
+                    node, RecordPosition.STRUCT);
+            case VARIANT -> materializeVariant(requireValueType(pqList.get(index), PqVariant.class, node, location),
+                    node.avro());
+            case LIST -> materializeList(requireValueType(pqList.get(index), PqList.class, node, location),
+                    node.listElement());
+            case MAP -> materializeMap(requireValueType(pqList.get(index), PqMap.class, node, location),
+                    node.mapValue());
+            case NULL -> throw materializationFailure(node, location, pqList.get(index),
                     "NULL has no non-null materialization");
         };
     }
@@ -256,13 +254,12 @@ public class AvroRowReader implements AutoCloseable {
                 result.put(key, null);
                 continue;
             }
-            result.put(key, materializeMapValue(entry, value));
+            result.put(key, materializeMapValue(entry, key, value));
         }
         return result;
     }
 
-    private Object materializeMapValue(PqMap.Entry entry, AvroPlanNode node) {
-        String key = entry.getStringKey();
+    private Object materializeMapValue(PqMap.Entry entry, String key, AvroPlanNode node) {
         ValueLocation location = new MapValueLocation(key);
         return switch (node.kind()) {
             case BOOLEAN, INT, LONG, FLOAT, DOUBLE, UNSIGNED_INT32, BINARY, FIXED ->
@@ -286,15 +283,15 @@ public class AvroRowReader implements AutoCloseable {
     /// Encode a decimal as the two's-complement big-endian unscaled bytes Avro's
     /// `decimal` logical type expects on a `BYTES` schema.
     private static ByteBuffer decimalBytes(BigDecimal value) {
-        return value == null ? null : ByteBuffer.wrap(value.unscaledValue().toByteArray());
+        return ByteBuffer.wrap(value.unscaledValue().toByteArray());
     }
 
     private static String uuidString(UUID value) {
-        return value == null ? null : value.toString();
+        return value.toString();
     }
 
     private static ByteBuffer wrapBytes(byte[] bytes) {
-        return bytes != null ? ByteBuffer.wrap(bytes) : null;
+        return ByteBuffer.wrap(bytes);
     }
 
     /// Wrap raw bytes as a [GenericData.Fixed] of the schema's declared size.
@@ -305,9 +302,6 @@ public class AvroRowReader implements AutoCloseable {
     /// column stores exactly `type_length` bytes per value, so a payload whose width
     /// does not match the declared `fixed` size is malformed and rejected.
     private static GenericData.Fixed wrapFixed(byte[] bytes, AvroPlanNode node, ValueLocation location) {
-        if (bytes == null) {
-            return null;
-        }
         Schema fixedSchema = node.avro();
         int size = fixedSchema.getFixedSize();
         if (bytes.length != size) {

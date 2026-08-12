@@ -117,6 +117,7 @@ public final class AvroReaders {
         }
     }
 
+    /// Builds the plan before acquiring the row reader so a planning failure cannot strand it.
     static AvroRowReader buildReader(Supplier<AvroPlanNode> planSupplier,
             Supplier<RowReader> rowReaderSupplier) {
         AvroPlanNode plan = planSupplier.get();
