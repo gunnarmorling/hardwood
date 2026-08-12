@@ -32,9 +32,10 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.reader.ParquetFileReader;
 
-@CommandDefinition(name = "columns", description = "Show compressed and uncompressed byte sizes per column, ranked.", generateHelp = true)
+@CommandDefinition(name = "columns", description = "Show compressed, uncompressed and unencoded byte sizes per column, ranked.", generateHelp = true)
 public class InspectColumnsCommand implements Command<CommandInvocation> {
 
     @Mixin
@@ -75,10 +76,12 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
                 ColumnMetaData cmd = cc.metaData();
                 String path = Sizes.columnPath(cmd);
                 int pageCount = countPages(cc, inputFile);
+                long unencoded = unencodedSize(cmd);
                 ColumnSize existing = byColumn.get(path);
                 if (existing == null) {
                     byColumn.put(path, new ColumnSize(path, cmd.type().name(), cmd.codec().name(),
-                            cmd.totalCompressedSize(), cmd.totalUncompressedSize(), pageCount, pageCount >= 0));
+                            cmd.totalCompressedSize(), cmd.totalUncompressedSize(), pageCount, pageCount >= 0,
+                            Math.max(unencoded, 0), unencoded >= 0));
                 }
                 else {
                     int combinedPages = (existing.pageCountAvailable() && pageCount >= 0)
@@ -88,12 +91,25 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
                             existing.compressed() + cmd.totalCompressedSize(),
                             existing.uncompressed() + cmd.totalUncompressedSize(),
                             combinedPages,
-                            existing.pageCountAvailable() && pageCount >= 0));
+                            existing.pageCountAvailable() && pageCount >= 0,
+                            existing.unencoded() + Math.max(unencoded, 0),
+                            existing.unencodedAvailable() && unencoded >= 0));
                 }
             }
         }
 
         return new ArrayList<>(byColumn.values());
+    }
+
+    /// The chunk's unencoded `BYTE_ARRAY` size, or -1 when the writer records
+    /// none. A column is only reported as a whole if every one of its chunks
+    /// has the field: a partial sum reads as a real total and understates it.
+    private static long unencodedSize(ColumnMetaData cmd) {
+        SizeStatistics sizeStatistics = cmd.sizeStatistics();
+        if (sizeStatistics == null || sizeStatistics.unencodedByteArrayDataBytes() == null) {
+            return -1;
+        }
+        return sizeStatistics.unencodedByteArrayDataBytes();
     }
 
     private static int countPages(ColumnChunk cc, InputFile inputFile) {
@@ -113,7 +129,7 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
     }
 
     private void printRanked(List<ColumnSize> sizes) {
-        String[] headers = {"Rank", "Column", "Type", "Compressed", "Uncompressed", "Ratio", "# Pages"};
+        String[] headers = {"Rank", "Column", "Type", "Compressed", "Uncompressed", "Unencoded", "Ratio", "# Pages"};
         List<String[]> rows = new ArrayList<>();
         for (int i = 0; i < sizes.size(); i++) {
             ColumnSize s = sizes.get(i);
@@ -124,6 +140,7 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
                     s.type(),
                     Sizes.format(s.compressed()),
                     Sizes.format(s.uncompressed()),
+                    s.unencodedAvailable() ? Sizes.format(s.unencoded()) : "-",
                     Fmt.fmt("%.1f%%", ratio),
                     s.pageCountAvailable() ? String.valueOf(s.pageCount()) : "-"
             });
@@ -132,6 +149,7 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
     }
 
     private record ColumnSize(String path, String type, String codec, long compressed, long uncompressed,
-                              int pageCount, boolean pageCountAvailable) {
+                              int pageCount, boolean pageCountAvailable, long unencoded,
+                              boolean unencodedAvailable) {
     }
 }

@@ -34,7 +34,7 @@ run the CLI via Docker without installing it locally — see the [Docker section
 | `hardwood footer` | Print decoded footer length, offset, and file structure |
 | `hardwood inspect pages` | List data and dictionary pages per column chunk; includes per-page min/max when the file has a page index |
 | `hardwood inspect dictionary` | Print dictionary entries for a column |
-| `hardwood inspect columns` | Show compressed and uncompressed byte sizes per column, ranked |
+| `hardwood inspect columns` | Show compressed, uncompressed and unencoded byte sizes per column, ranked |
 | `hardwood inspect rowgroups` | Display per-row-group column chunk metadata (sizes, codec) |
 | `hardwood dive` | Interactively explore a file's structure in a TUI |
 
