@@ -180,6 +180,47 @@ public record LevelSummary(
         return 4L * presentValues();
     }
 
+    /// Adds level histograms together across chunks. Counts at the same level
+    /// sum, so a file-wide histogram is exact rather than a sample of one row
+    /// group; shares are recomputed against the combined total. Chunks whose
+    /// histogram the file does not record contribute nothing.
+    ///
+    /// @throws IllegalArgumentException if two chunks disagree on how many
+    ///         levels the column has, which no file for one column should
+    public static List<LevelRow> combineLevels(List<List<LevelRow>> perChunk) {
+        long[] counts = null;
+        List<LevelRow> labels = null;
+        for (List<LevelRow> rows : perChunk) {
+            if (rows.isEmpty()) {
+                continue;
+            }
+            if (counts == null) {
+                counts = new long[rows.size()];
+                labels = rows;
+            }
+            else if (rows.size() != counts.length) {
+                throw new IllegalArgumentException("chunks of one column disagree on level count: "
+                        + counts.length + " and " + rows.size());
+            }
+            for (int level = 0; level < rows.size(); level++) {
+                counts[level] += rows.get(level).count();
+            }
+        }
+        if (counts == null) {
+            return List.of();
+        }
+        long total = 0;
+        for (long count : counts) {
+            total += count;
+        }
+        List<LevelRow> combined = new ArrayList<>(counts.length);
+        for (int level = 0; level < counts.length; level++) {
+            double share = total > 0 ? counts[level] / (double) total : 0.0;
+            combined.add(new LevelRow(level, labels.get(level).label(), counts[level], share));
+        }
+        return combined;
+    }
+
     /// Renders `share` as a bar `cells` wide. Eighth-block characters give
     /// sub-cell resolution, so a bucket holding a thousandth of the values
     /// still reads as present instead of rounding away to nothing. Only a
@@ -214,8 +255,9 @@ public record LevelSummary(
             if (showPercentage) {
                 line.append(Fmt.fmt("  %5.1f%%", row.share() * 100));
             }
-            if (barCells > 0) {
-                line.append(' ').append(bar(row.share(), barCells));
+            String bar = barCells > 0 ? bar(row.share(), barCells) : "";
+            if (!bar.isEmpty()) {
+                line.append(' ').append(bar);
             }
             lines.add(line.toString());
         }
