@@ -49,6 +49,21 @@ class ThemeTest {
         }
     }
 
+    /// Error is the only tone that marks content as wrong rather than
+    /// as structure, so it carries a hue but no bold — bold would make
+    /// a mismatch row read as the selected row.
+    @Test
+    void errorIsRed() {
+        assertThat(Theme.error().effectiveModifiers()).doesNotContain(Modifier.BOLD);
+        Color fg = Theme.error().fg().orElseThrow();
+        if (Theme.supportsTruecolor(System.getenv("COLORTERM"))) {
+            assertThat(fg).isEqualTo(Color.rgb(220, 50, 47));
+        }
+        else {
+            assertThat(fg).isSameAs(Color.RED);
+        }
+    }
+
     /// Pins both branches of the `$COLORTERM` probe deterministically.
     /// [#accentIsBlue] can only cover whichever branch matches the
     /// test process's actual environment, so it would not have caught

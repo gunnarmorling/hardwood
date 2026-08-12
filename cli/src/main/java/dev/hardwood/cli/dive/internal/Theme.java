@@ -10,10 +10,13 @@ package dev.hardwood.cli.dive.internal;
 import dev.tamboui.style.Color;
 import dev.tamboui.style.Style;
 
-/// Centralised visual hierarchy for the `dive` TUI. Four roles named
+/// Centralised visual hierarchy for the `dive` TUI. Five roles named
 /// for what they mark rather than for a specific colour, so call
 /// sites stay stable when the implementations are retargeted.
 ///
+/// - [#error] — red. The one role that marks content as wrong rather
+///   than as structure: a declared-vs-actual mismatch between
+///   metadata fields.
 /// - [#selection] — bold yellow. Active row in a navigable list:
 ///   table-row highlight, selected drill-into menu row, selected
 ///   schema name, footer active anchor, modal cursor.
@@ -33,7 +36,7 @@ import dev.tamboui.style.Style;
 /// should follow when adding new content. Direct use of `Color.*`
 /// constants or literal modifier styles outside this class is
 /// reserved for `Theme` itself; everything else routes through one
-/// of the four methods or stays unstyled.
+/// of the five methods or stays unstyled.
 public final class Theme {
 
     private Theme() {
@@ -48,6 +51,7 @@ public final class Theme {
     /// every variant.
     private static final Color SOLARIZED_BLUE = Color.rgb(38, 139, 210);
     private static final Color SOLARIZED_YELLOW = Color.rgb(181, 137, 0);
+    private static final Color SOLARIZED_RED = Color.rgb(220, 50, 47);
 
     /// Bold default foreground — labels, breadcrumb leaf, enabled
     /// drill-into menu labels, the `/` search prompt, and other
@@ -94,6 +98,18 @@ public final class Theme {
     /// named `Color.YELLOW` otherwise.
     public static Style selection() {
         return Style.EMPTY.bold().fg(supportsTruecolor(System.getenv("COLORTERM")) ? SOLARIZED_YELLOW : Color.YELLOW);
+    }
+
+    /// Validation-error tone — the only role that marks content as
+    /// wrong rather than as structure. Used for the declared-vs-actual
+    /// mismatch between a column chunk's `num_values` and its level
+    /// histograms. Unbolded, so a mismatch row is not mistaken for the
+    /// selected one; red carries the signal on its own.
+    ///
+    /// Solarized red (`#dc322f`) on truecolor terminals, named
+    /// `Color.RED` otherwise.
+    public static Style error() {
+        return Style.EMPTY.fg(supportsTruecolor(System.getenv("COLORTERM")) ? SOLARIZED_RED : Color.RED);
     }
 
     /// Whether the given `$COLORTERM` value advertises 24-bit
