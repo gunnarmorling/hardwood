@@ -23,6 +23,7 @@ import dev.hardwood.InputFile;
 import dev.hardwood.cli.dive.internal.DataPreviewScreen;
 import dev.hardwood.cli.dive.internal.HelpOverlay;
 import dev.hardwood.cli.dive.internal.Keys;
+import dev.hardwood.schema.ColumnSchema;
 import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Rect;
 import dev.tamboui.tui.event.KeyCode;
@@ -81,7 +82,7 @@ class DiveRenderTest {
                     ScreenState.RowGroupDetail.Pane.MENU, 0));
             stack.push(new ScreenState.ColumnChunks(0, 1));  // col 1 = "category"
             stack.push(new ScreenState.ColumnChunkDetail(0, 1,
-                    ScreenState.ColumnChunkDetail.Pane.MENU, 0, true));
+                    ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
 
             // Breadcrumb labels via the package-private utility.
             List<String> labels = stack.frames().stream()
@@ -142,7 +143,7 @@ class DiveRenderTest {
         stack.push(new ScreenState.RowGroupDetail(0, ScreenState.RowGroupDetail.Pane.MENU, 0));
         stack.push(new ScreenState.ColumnChunks(0, 0));
         stack.push(new ScreenState.ColumnChunkDetail(0, 0,
-                ScreenState.ColumnChunkDetail.Pane.MENU, 0, true));
+                ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
         stack.push(new ScreenState.Pages(0, 0, 0, false, true));
 
         Rect breadcrumbArea = new Rect(0, 0, 200, 1);
@@ -343,7 +344,7 @@ class DiveRenderTest {
                         m -> new ScreenState.ColumnChunks(0, 0)),
                 new ScreenCtor("ColumnChunkDetail",
                         m -> new ScreenState.ColumnChunkDetail(0, 0,
-                                ScreenState.ColumnChunkDetail.Pane.MENU, 0, true)),
+                                ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false)),
                 new ScreenCtor("Pages",
                         m -> new ScreenState.Pages(0, 0, 0, false, true)),
                 new ScreenCtor("ColumnAcrossRowGroups",
@@ -358,6 +359,74 @@ class DiveRenderTest {
     }
 
     private record ScreenCtor(String name, Function<ParquetModel, ScreenState> ctor) {
+    }
+
+    private static int columnIndexOf(ParquetModel model, String dottedName) {
+        for (ColumnSchema column : model.schema().getColumns()) {
+            if (column.fieldPath().matchesDottedName(dottedName)) {
+                return column.columnIndex();
+            }
+        }
+        throw new IllegalArgumentException("no such column: " + dottedName);
+    }
+
+    private static RenderHarness.RenderedFrame renderSizeStatistics(String dottedName, boolean levels)
+            throws Exception {
+        Path path = Path.of(DiveRenderTest.class.getResource("/dive_screenshots_fixture.parquet").toURI());
+        try (ParquetModel sizeStatsModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            return RenderHarness.render(AREA, new ScreenState.ColumnChunkDetail(
+                    0, columnIndexOf(sizeStatsModel, dottedName),
+                    ScreenState.ColumnChunkDetail.Pane.FACTS, 0, true, levels), sizeStatsModel);
+        }
+    }
+
+    /// Collapsed is the default: the derived rows are the summary worth
+    /// seeing at a glance, and the pane does not scroll.
+    @Test
+    void columnChunkDetailShowsDerivedSizeStatisticsWithLevelsCollapsed() throws Exception {
+        RenderHarness.RenderedFrame frame = renderSizeStatistics("websites.list.element", false);
+
+        assertThat(frame.contains("Size statistics")).isTrue();
+        assertThat(frame.contains("chunk only")).isTrue();
+        assertThat(frame.contains("Records")).isTrue();
+        assertThat(frame.contains("Avg fan-out")).isTrue();
+        assertThat(frame.contains("[l] to show")).isTrue();
+        assertThat(frame.contains("websites empty")).isFalse();
+    }
+
+    @Test
+    void columnChunkDetailShowsNamedLevelBucketsWhenToggledOn() throws Exception {
+        RenderHarness.RenderedFrame frame = renderSizeStatistics("websites.list.element", true);
+
+        assertThat(frame.contains("websites null")).isTrue();
+        assertThat(frame.contains("websites empty")).isTrue();
+        assertThat(frame.contains("element null")).isTrue();
+        assertThat(frame.contains("element present")).isTrue();
+        assertThat(frame.contains("new record")).isTrue();
+        assertThat(frame.contains("websites.list")).isTrue();
+        assertThat(frame.contains("[l] to show")).isFalse();
+    }
+
+    /// A column the writer recorded no size statistics for collapses to one
+    /// row, rather than scaffolding every row it cannot fill.
+    @Test
+    void columnChunkDetailReportsAMissingSizeStatisticsAsNotWritten() throws Exception {
+        RenderHarness.RenderedFrame frame = renderSizeStatistics("metric_a", true);
+
+        assertThat(frame.contains("— (not written)")).isTrue();
+        assertThat(frame.contains("Avg fan-out")).isFalse();
+        assertThat(frame.contains("Unencoded")).isFalse();
+    }
+
+    /// A required, non-repeated BYTE_ARRAY has no histograms to show but
+    /// its unencoded size is still the interesting number.
+    @Test
+    void columnChunkDetailShowsUnencodedSizeForAFlatRequiredColumn() throws Exception {
+        RenderHarness.RenderedFrame frame = renderSizeStatistics("id", true);
+
+        assertThat(frame.contains("Unencoded")).isTrue();
+        assertThat(frame.contains("Avg value size")).isTrue();
+        assertThat(frame.contains("Records")).isFalse();
     }
 
     private static KeyEvent key(KeyCode code) {

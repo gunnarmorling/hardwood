@@ -85,8 +85,12 @@ public sealed interface ScreenState {
     /// the facts pane and the drill-into menu. `logicalTypes` controls whether
     /// the chunk-level Min / Max in the facts pane render via the column's
     /// logical type (default) or the raw physical-type form — toggled with `t`.
+    /// `levels` controls whether the repetition- and definition-level
+    /// histograms are appended to the facts pane — toggled with `l`. Off by
+    /// default: the derived rows above them summarise the same data in a few
+    /// lines, and the pane does not scroll.
     record ColumnChunkDetail(int rowGroupIndex, int columnIndex, Pane focus, int menuSelection,
-                              boolean logicalTypes)
+                              boolean logicalTypes, boolean levels)
             implements ScreenState {
         public enum Pane { FACTS, MENU }
     }

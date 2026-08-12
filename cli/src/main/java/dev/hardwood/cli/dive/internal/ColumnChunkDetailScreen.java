@@ -16,9 +16,12 @@ import dev.hardwood.cli.dive.ParquetModel;
 import dev.hardwood.cli.dive.ScreenState;
 import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.IndexValueFormatter;
+import dev.hardwood.cli.internal.LevelSummary;
 import dev.hardwood.cli.internal.Sizes;
 import dev.hardwood.metadata.ColumnChunk;
+import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.ColumnMetaData;
+import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
 import dev.tamboui.buffer.Buffer;
@@ -29,6 +32,7 @@ import dev.tamboui.style.Style;
 import dev.tamboui.text.Line;
 import dev.tamboui.text.Span;
 import dev.tamboui.text.Text;
+import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.BorderType;
@@ -64,16 +68,22 @@ public final class ColumnChunkDetailScreen {
                     : ScreenState.ColumnChunkDetail.Pane.FACTS;
             stack.replaceTop(new ScreenState.ColumnChunkDetail(
                     state.rowGroupIndex(), state.columnIndex(), next, state.menuSelection(),
-                    state.logicalTypes()));
+                    state.logicalTypes(), state.levels()));
             return true;
         }
-        // `t` toggles logical-type rendering on the facts pane, regardless of
-        // which pane has focus. Wire before the MENU-only check.
-        if (event.code() == dev.tamboui.tui.event.KeyCode.CHAR && event.character() == 't'
-                && !event.hasCtrl() && !event.hasAlt()) {
+        // `t` toggles logical-type rendering and `l` the level histograms, both
+        // on the facts pane and regardless of which pane has focus. Wire before
+        // the MENU-only check.
+        if (isPlainChar(event, 't')) {
             stack.replaceTop(new ScreenState.ColumnChunkDetail(
                     state.rowGroupIndex(), state.columnIndex(), state.focus(),
-                    state.menuSelection(), !state.logicalTypes()));
+                    state.menuSelection(), !state.logicalTypes(), state.levels()));
+            return true;
+        }
+        if (isPlainChar(event, 'l')) {
+            stack.replaceTop(new ScreenState.ColumnChunkDetail(
+                    state.rowGroupIndex(), state.columnIndex(), state.focus(),
+                    state.menuSelection(), state.logicalTypes(), !state.levels()));
             return true;
         }
         if (state.focus() != ScreenState.ColumnChunkDetail.Pane.MENU) {
@@ -149,10 +159,13 @@ public final class ColumnChunkDetailScreen {
         }
         ColumnSchema col = model.schema().getColumn(state.columnIndex());
         boolean hasLogical = col.logicalType() != null;
+        ColumnMetaData cmd = model.chunk(state.rowGroupIndex(), state.columnIndex()).metaData();
+        boolean hasLevels = LevelSummary.of(model.schema(), col, cmd) != null;
         return new Keys.Hints()
                 .add(true, "[Tab] pane")
                 .add(onMenu && enabledCount > 1, "[↑↓] move")
                 .add(onMenu && currentEnabled, "[Enter] open")
+                .add(hasLevels, "[l] levels")
                 .add(hasLogical, "[t] logical types")
                 .add(true, "[Esc] back")
                 .build();
@@ -161,7 +174,12 @@ public final class ColumnChunkDetailScreen {
     private static ScreenState.ColumnChunkDetail state(ScreenState.ColumnChunkDetail state, int selection) {
         return new ScreenState.ColumnChunkDetail(
                 state.rowGroupIndex(), state.columnIndex(), state.focus(), selection,
-                state.logicalTypes());
+                state.logicalTypes(), state.levels());
+    }
+
+    private static boolean isPlainChar(KeyEvent event, char character) {
+        return event.code() == KeyCode.CHAR && event.character() == character
+                && !event.hasCtrl() && !event.hasAlt();
     }
 
     private static int firstEnabledIndex(MenuItem[] items, ParquetModel model,
@@ -240,10 +258,97 @@ public final class ColumnChunkDetailScreen {
         lines.add(fact("Compressed", Sizes.format(cmd.totalCompressedSize())));
         lines.add(fact("Min", stats != null ? formatStatValue(stats.minValue(), col, state.logicalTypes()) : "—"));
         lines.add(fact("Max", stats != null ? formatStatValue(stats.maxValue(), col, state.logicalTypes()) : "—"));
+        lines.add(Line.empty());
+        appendSizeStatistics(lines, LevelSummary.of(model.schema(), col, cmd), model, state,
+                Math.max(0, area.width() - 2));
 
         Block block = paneBlock(" " + truncateLeft(Sizes.columnPath(cmd), 40)
                 + " (RG #" + state.rowGroupIndex() + ") ", focused);
         Paragraph.builder().block(block).text(Text.from(lines)).left().build().render(area, buffer);
+    }
+
+    /// Appends the size-statistics block. Rows whose input the file does not
+    /// record are dropped rather than shown as `—`: scaffolding a flat column
+    /// with rows that can never be filled costs more lines than it explains.
+    /// `Records`, `Present values` and `Avg fan-out` are dropped for a
+    /// column that cannot repeat or cannot be null even though their values
+    /// are known, since they would restate the `Values` row above.
+    private static void appendSizeStatistics(List<Line> lines, LevelSummary summary, ParquetModel model,
+                                             ScreenState.ColumnChunkDetail state, int innerWidth) {
+        if (summary == null) {
+            lines.add(advisory("Size statistics", "— (not written)"));
+            return;
+        }
+        lines.add(fact("Size statistics", coverage(model, state)));
+        if (summary.hasUnencoded()) {
+            lines.add(fact("Unencoded", Sizes.format(summary.unencodedBytes())
+                    + "  (+" + Sizes.format(summary.lengthPrefixBytes()) + " lengths)"));
+        }
+        if (summary.maxRepetitionLevel() > 0 && summary.hasRecords()) {
+            lines.add(fact("Records", Fmt.fmt("%,d", summary.records())));
+        }
+        if (summary.maxDefinitionLevel() > 0 && summary.hasPresentValues()) {
+            lines.add(fact("Present values", Fmt.fmt("%,d", summary.presentValues())));
+        }
+        if (summary.maxRepetitionLevel() > 0 && summary.hasAvgFanOut()) {
+            lines.add(fact("Avg fan-out", Fmt.fmt("%.2f slots/record", summary.avgFanOut())));
+        }
+        if (summary.hasAvgListLength()) {
+            lines.add(fact("Avg list length", Fmt.fmt("%.2f  (non-empty)", summary.avgListLength())));
+        }
+        if (summary.hasAvgValueSize()) {
+            lines.add(fact("Avg value size", Sizes.format(Math.round(summary.avgValueSize()))));
+        }
+        if (summary.mismatch() != null) {
+            lines.add(Line.from(
+                    new Span(" ⚠ " + padRight("Declared vs actual", 20), Theme.error()),
+                    new Span(summary.mismatch(), Theme.error())));
+        }
+        if (!state.levels()) {
+            lines.add(advisory("Levels", "[l] to show"));
+            return;
+        }
+        lines.add(Line.empty());
+        appendLevelBlock(lines, "Def levels", summary.definitionLevels(),
+                summary.maxDefinitionLevel(), summary.maxDefinitionLevel() == 0
+                        ? "— (required, every value present)"
+                        : "— (not written)",
+                innerWidth);
+        lines.add(Line.empty());
+        appendLevelBlock(lines, "Rep levels", summary.repetitionLevels(),
+                summary.maxRepetitionLevel(), summary.maxRepetitionLevel() == 0
+                        ? "— (not repeated)"
+                        : "— (not written)",
+                innerWidth);
+    }
+
+    private static void appendLevelBlock(List<Line> lines, String label, List<LevelSummary.LevelRow> rows,
+                                         int maxLevel, String absent, int innerWidth) {
+        if (rows.isEmpty()) {
+            lines.add(advisory(label, absent));
+            return;
+        }
+        lines.add(fact(label, "max " + maxLevel));
+        for (String row : LevelSummary.renderLevels(rows, innerWidth)) {
+            lines.add(Line.from(new Span(" " + row, Style.EMPTY)));
+        }
+    }
+
+    /// How much of the chunk the file describes: the chunk-level statistics
+    /// always and the per-page copies in the column index when it carries
+    /// them. Says which before the reader drills in to find out.
+    private static String coverage(ParquetModel model, ScreenState.ColumnChunkDetail state) {
+        ColumnIndex columnIndex = model.columnIndex(state.rowGroupIndex(), state.columnIndex());
+        boolean perPage = columnIndex != null
+                && (columnIndex.definitionLevelHistograms() != null
+                        || columnIndex.repetitionLevelHistograms() != null);
+        if (!perPage) {
+            return "chunk only";
+        }
+        OffsetIndex offsetIndex = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
+        return offsetIndex != null
+                ? "chunk + " + Plurals.format(offsetIndex.pageLocations().size(), "page", "pages")
+                : "chunk + pages";
     }
 
     private static void renderMenuPane(Buffer buffer, Rect area, ParquetModel model, ScreenState.ColumnChunkDetail state) {
@@ -284,8 +389,7 @@ public final class ColumnChunkDetailScreen {
         ColumnChunk chunk = model.chunk(state.rowGroupIndex(), state.columnIndex());
         return switch (item) {
             case PAGES -> {
-                dev.hardwood.metadata.OffsetIndex oi =
-                        model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
+                OffsetIndex oi = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
                 yield oi != null ? Plurals.format(oi.pageLocations().size(), "page", "pages") : "—";
             }
             case COLUMN_INDEX -> chunk.columnIndexOffset() != null ? "present" : "n/a";
@@ -309,6 +413,15 @@ public final class ColumnChunkDetailScreen {
         return Line.from(
                 new Span(" " + padRight(key, 22), Theme.primary()),
                 new Span(value, Style.EMPTY));
+    }
+
+    /// A labelled row whose value says why there is nothing to show. The
+    /// value is chrome rather than content, so it reads back a tier fainter
+    /// than the facts around it.
+    private static Line advisory(String key, String value) {
+        return Line.from(
+                new Span(" " + padRight(key, 22), Theme.primary()),
+                new Span(value, Theme.dim()));
     }
 
     /// Special-case the Path row: when the path is short, a single "Path  value"

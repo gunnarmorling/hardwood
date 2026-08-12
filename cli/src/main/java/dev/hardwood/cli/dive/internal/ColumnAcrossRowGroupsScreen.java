@@ -72,7 +72,7 @@ public final class ColumnAcrossRowGroupsScreen {
         if (event.isConfirm() && count > 0) {
             stack.push(new ScreenState.ColumnChunkDetail(
                     state.selection(), state.columnIndex(),
-                    ScreenState.ColumnChunkDetail.Pane.MENU, 0, state.logicalTypes()));
+                    ScreenState.ColumnChunkDetail.Pane.MENU, 0, state.logicalTypes(), false));
             return true;
         }
         if (event.code() == dev.tamboui.tui.event.KeyCode.CHAR && event.character() == 't'

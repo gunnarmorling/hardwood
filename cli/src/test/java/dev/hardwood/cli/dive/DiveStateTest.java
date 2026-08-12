@@ -215,7 +215,7 @@ class DiveStateTest {
         stack.push(new ScreenState.RowGroups(0));
         stack.push(new ScreenState.ColumnChunks(0, 2));
         stack.push(new ScreenState.ColumnChunkDetail(0, 2,
-                ScreenState.ColumnChunkDetail.Pane.MENU, 0, true));
+                ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
 
         stack.clearToRoot();
 
@@ -250,7 +250,7 @@ class DiveStateTest {
     @Test
     void columnChunkDetailTabSwitchesPaneBetweenFactsAndMenu() {
         NavigationStack stack = rooted(new ScreenState.ColumnChunkDetail(
-                0, 0, ScreenState.ColumnChunkDetail.Pane.MENU, 0, true));
+                0, 0, ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
 
         ColumnChunkDetailScreen.handle(key(KeyCode.TAB), model, stack);
 
@@ -262,7 +262,7 @@ class DiveStateTest {
     void columnChunkDetailEnterOnPagesPushesPagesScreen() {
         NavigationStack stack = rooted(new ScreenState.ColumnChunkDetail(
                 0, 0, ScreenState.ColumnChunkDetail.Pane.MENU,
-                ColumnChunkDetailScreen.MenuItem.PAGES.ordinal(), true));
+                ColumnChunkDetailScreen.MenuItem.PAGES.ordinal(), true, false));
 
         ColumnChunkDetailScreen.handle(key(KeyCode.ENTER), model, stack);
 
@@ -287,7 +287,7 @@ class DiveStateTest {
         // (PAGES) on the next event rather than firing a no-op drill.
         NavigationStack stack = rooted(new ScreenState.ColumnChunkDetail(
                 0, 0, ScreenState.ColumnChunkDetail.Pane.MENU,
-                ColumnChunkDetailScreen.MenuItem.DICTIONARY.ordinal(), true));
+                ColumnChunkDetailScreen.MenuItem.DICTIONARY.ordinal(), true, false));
 
         ColumnChunkDetailScreen.handle(key(KeyCode.ENTER), model, stack);
 
@@ -620,6 +620,46 @@ class DiveStateTest {
         assertThat(atEnd.firstRow() + atEnd.selectedRow()).isEqualTo(total - 1);
     }
 
+    /// `l` is wired ahead of the menu-only early return, so it works with
+    /// either pane focused — the histograms it reveals are on the facts pane
+    /// but the cursor is usually parked on the drill-into menu.
+    @Test
+    void columnChunkDetailTogglesLevelsWithLFromEitherPane() {
+        NavigationStack stack = rooted(new ScreenState.ColumnChunkDetail(
+                0, 0, ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
+
+        ColumnChunkDetailScreen.handle(
+                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 'l'), model, stack);
+        assertThat(((ScreenState.ColumnChunkDetail) stack.top()).levels()).isTrue();
+
+        ColumnChunkDetailScreen.handle(
+                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 'l'), model, stack);
+        assertThat(((ScreenState.ColumnChunkDetail) stack.top()).levels()).isFalse();
+
+        NavigationStack onFacts = rooted(new ScreenState.ColumnChunkDetail(
+                0, 0, ScreenState.ColumnChunkDetail.Pane.FACTS, 0, true, false));
+
+        ColumnChunkDetailScreen.handle(
+                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 'l'), model, onFacts);
+        assertThat(((ScreenState.ColumnChunkDetail) onFacts.top()).levels()).isTrue();
+    }
+
+    /// Toggling levels must not disturb the other flag the screen carries.
+    @Test
+    void columnChunkDetailLevelsAndLogicalTypesToggleIndependently() {
+        NavigationStack stack = rooted(new ScreenState.ColumnChunkDetail(
+                0, 0, ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
+
+        ColumnChunkDetailScreen.handle(
+                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 'l'), model, stack);
+        ColumnChunkDetailScreen.handle(
+                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 't'), model, stack);
+
+        ScreenState.ColumnChunkDetail top = (ScreenState.ColumnChunkDetail) stack.top();
+        assertThat(top.levels()).isTrue();
+        assertThat(top.logicalTypes()).isFalse();
+    }
+
     @Test
     void dataPreviewTogglesLogicalTypeWithT() {
         ScreenState.DataPreview initial = DataPreviewScreen.initialState(model, 3);
@@ -728,7 +768,7 @@ class DiveStateTest {
                 if (model.chunk(rg, c).metaData().dictionaryPageOffset() != null) {
                     NavigationStack stack = rooted(new ScreenState.ColumnChunkDetail(
                             rg, c, ScreenState.ColumnChunkDetail.Pane.MENU,
-                            ColumnChunkDetailScreen.MenuItem.DICTIONARY.ordinal(), true));
+                            ColumnChunkDetailScreen.MenuItem.DICTIONARY.ordinal(), true, false));
 
                     ColumnChunkDetailScreen.handle(key(KeyCode.ENTER), model, stack);
 

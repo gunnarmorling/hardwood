@@ -65,7 +65,7 @@ public final class ColumnChunksScreen {
         }
         if (event.isConfirm() && count > 0) {
             stack.push(new ScreenState.ColumnChunkDetail(state.rowGroupIndex(), state.selection(),
-                    ScreenState.ColumnChunkDetail.Pane.MENU, 0, true));
+                    ScreenState.ColumnChunkDetail.Pane.MENU, 0, true, false));
             return true;
         }
         return false;
