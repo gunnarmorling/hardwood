@@ -125,6 +125,11 @@ public final class AvroSchemaConverter {
         };
     }
 
+    /// Classify a group the way the row reader does. [SchemaNode.GroupNode#isStruct]
+    /// is narrower than "not a Variant, list or map": a group carrying some other
+    /// annotation is a struct to neither. Converting it to an Avro RECORD anyway
+    /// would yield a record the reader cannot fill, since the accessors would serve
+    /// the group's leaf instead — so reject it here, once, rather than per value.
     private AvroPlanNode convertGroupNode(SchemaNode.GroupNode group) {
         if (group.isVariant()) {
             return convertVariant(group);
@@ -135,8 +140,20 @@ public final class AvroSchemaConverter {
         if (group.isMap()) {
             return convertMap(group);
         }
+        if (!group.isStruct()) {
+            throw new IllegalArgumentException("Group '" + group.name()
+                    + "' carries an annotation Avro conversion does not recognise: "
+                    + groupAnnotation(group));
+        }
         // Plain struct — prune unprojected children recursively.
         return convertGroup(group, group.name());
+    }
+
+    private static String groupAnnotation(SchemaNode.GroupNode group) {
+        if (group.logicalType() != null) {
+            return "logical type " + group.logicalType();
+        }
+        return "converted type " + group.convertedType();
     }
 
     /// Emit a two-field Avro RECORD carrying the canonical Variant bytes.

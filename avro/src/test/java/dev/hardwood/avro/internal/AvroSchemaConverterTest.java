@@ -12,6 +12,7 @@ import java.util.List;
 import org.apache.avro.Schema;
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.metadata.ConvertedType;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -20,6 +21,7 @@ import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.FileSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Unit coverage for [AvroSchemaConverter] pieces that are awkward to exercise
 /// through `AvroRowReaderTest` alone. Notably the VARIANT group conversion,
@@ -78,6 +80,24 @@ class AvroSchemaConverterTest {
         assertThat(plan.avro().getFields()).hasSize(1);
         assertThat(plan.avro().getFields().getFirst().name()).isEqualTo("variant_record");
         assertThat(plan.child(0).kind()).isEqualTo(AvroPlanNode.Kind.VARIANT);
+    }
+
+    /// A group is a struct to the converter only when the row reader agrees it is one.
+    /// An annotation neither side recognises would otherwise convert to an Avro RECORD
+    /// that the reader cannot fill, since the list accessors serve the group's leaf.
+    @Test
+    void rejectsGroupCarryingAnUnrecognisedAnnotation() {
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement legacy = new SchemaElement("legacy", null, null, RepetitionType.OPTIONAL,
+                1, ConvertedType.MAP_KEY_VALUE, null, null, null, null);
+        SchemaElement leaf = new SchemaElement("v", PhysicalType.INT32, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, legacy, leaf));
+
+        assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("legacy")
+                .hasMessageContaining("MAP_KEY_VALUE");
     }
 
     /// A Variant group and an ordinary group of the identical two-byte-field shape,

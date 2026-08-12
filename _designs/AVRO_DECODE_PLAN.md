@@ -62,6 +62,12 @@ re-derives them. A projection prunes the plan and the schema in the same step, w
 keeps a `STRUCT` node's children aligned with the fields its record actually has;
 `AvroPlanNode` rejects a record node whose child count disagrees with its field count.
 
+Groups are classified the way the row reader classifies them: a group is a struct only
+when `GroupNode.isStruct()` says so, not merely because it is neither Variant, list nor
+map. A group carrying an annotation conversion does not recognise is rejected there and
+then, naming the group and the annotation — converting it to an Avro record the reader
+cannot fill would surface as a wrong value rather than an error.
+
 A node's `avro()` is the *resolved* schema — the non-null branch of an `OPTIONAL`
 field's `[null, T]` union. The union survives in the enclosing record's field, so the
 schema handed to users is unchanged, while materialization never re-resolves a union.
@@ -85,7 +91,13 @@ private Object materializeField(StructAccessor accessor, String name, AvroPlanNo
 nested struct are the same traversal; the plan node supplies what used to differ.
 List elements and map entries keep their own switch — `PqList` and `PqMap.Entry`
 expose positional and value accessors rather than name-based ones — but they switch
-on the same `Kind`.
+on the same `Kind`, and the kinds Avro represents physically — the numerics, `bytes`
+and `fixed` — go through one shared step at all three positions, reached by each
+position's raw accessor. Only the kinds whose Avro form is the *logical* value (a uuid
+string, a decimal's unscaled bytes, an interned string) and the group kinds read
+per-position. Values are cast to the type their `Kind` implies rather than sniffed:
+the accessors and the plan classify from the same schema node, so the two agree by
+construction and no file can make them disagree.
 
 No logical-type lookup, property read, or union resolution happens per value.
 

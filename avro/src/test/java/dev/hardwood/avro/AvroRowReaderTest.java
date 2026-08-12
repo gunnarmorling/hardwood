@@ -426,6 +426,88 @@ class AvroRowReaderTest {
     }
 
     @Test
+    void fixedBackedColumnsMaterializeAsAvroFixed() throws Exception {
+        // INT96, INTERVAL under either annotation, and FLOAT16 all convert to Avro `fixed`
+        // and read as their on-disk bytes — 12, 12 and 2 wide. They share one plan kind with
+        // FIXED_LEN_BYTE_ARRAY decimals, and nothing pinned them through the reader.
+        assertFixedColumn("int96_timestamp_test.parquet", "ts", 12);
+        assertFixedColumn("interval_logical_type_test.parquet", "duration", 12);
+        assertFixedColumn("interval_legacy_converted_type_test.parquet", "duration", 12);
+        assertFixedColumn("float16_logical_type_test.parquet", "half", 2);
+    }
+
+    @Test
+    void fixedBackedListElementsMaterializeAsAvroFixed() throws Exception {
+        // list_float16_test.parquet: scores is a list<float16>, so the element takes the
+        // same `fixed` representation the scalar positions do.
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve("list_float16_test.parquet")));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            List<GenericRecord> rows = readAll(reader);
+            @SuppressWarnings("unchecked")
+            List<Object> scores = (List<Object>) rows.getFirst().get("scores");
+            assertThat(scores).isNotEmpty();
+            assertThat(scores.getFirst()).isInstanceOf(GenericData.Fixed.class);
+            assertThat(((GenericData.Fixed) scores.getFirst()).bytes()).hasSize(2);
+
+            assertThatCode(() -> serialize(reader.getSchema(), rows)).doesNotThrowAnyException();
+        }
+    }
+
+    /// Assert that `field` of `fixture` converts to an Avro `fixed` of `size` bytes and
+    /// materializes as a [GenericData.Fixed] of that width.
+    private static void assertFixedColumn(String fixture, String field, int size) throws Exception {
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve(fixture)));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            Schema fieldSchema = reader.getSchema().getField(field).schema();
+            if (fieldSchema.isUnion()) {
+                fieldSchema = fieldSchema.getTypes().stream()
+                        .filter(s -> s.getType() != Schema.Type.NULL)
+                        .findFirst()
+                        .orElseThrow();
+            }
+            assertThat(fieldSchema.getType()).isEqualTo(Schema.Type.FIXED);
+            assertThat(fieldSchema.getFixedSize()).isEqualTo(size);
+
+            List<GenericRecord> rows = readAll(reader);
+            assertThat(rows).isNotEmpty();
+            assertThat(rows.getFirst().get(field)).isInstanceOf(GenericData.Fixed.class);
+            assertThat(((GenericData.Fixed) rows.getFirst().get(field)).bytes()).hasSize(size);
+
+            assertThatCode(() -> serialize(reader.getSchema(), rows)).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void temporalValuesReadTheSameWayAtEveryPosition() throws Exception {
+        // local_timestamp_test.parquet carries the same TIMESTAMP(MICROS, NTZ) column as a
+        // field, a list element and a map value. Avro types a timestamp as a `long` under a
+        // logical type, so every position must yield the epoch micros — a decoded
+        // LocalDateTime would contradict the very schema the record is built from and fail
+        // to serialize.
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve("local_timestamp_test.parquet")));
+             AvroRowReader reader = AvroReaders.rowReader(fileReader)) {
+
+            GenericRecord row = readAll(reader).getFirst();
+
+            assertThat(row.get("local_micros")).isEqualTo(1772703000123456L);
+            assertThat((List<Object>) row.get("local_ts_list"))
+                    .containsExactly(1772703000000000L, 1772704800000000L);
+            Map<Object, Object> tsMap = (Map<Object, Object>) row.get("local_ts_map");
+            assertThat(tsMap)
+                    .containsEntry("start", 1772703000000000L)
+                    .containsEntry("end", 1772704800000000L);
+
+            assertThatCode(() -> serialize(reader.getSchema(), List.of(row))).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
     void readNestedUnsignedIntColumns() throws Exception {
         // unsigned_int_nested_test.parquet: id INT32, point STRUCT{x UINT32, y UINT32},
         // flags LIST<UINT32>, counters MAP<STRING, UINT32>. Exercises the
