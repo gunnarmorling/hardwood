@@ -23,7 +23,6 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
-import dev.hardwood.cli.dive.internal.Plurals;
 import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.LevelSummary;
 import dev.hardwood.cli.internal.Sizes;
@@ -194,7 +193,9 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
             return "chunk only";
         }
         int pages = countPages(chunk, inputFile);
-        return pages >= 0 ? "chunk + " + Plurals.format(pages, "page", "pages") : "chunk + pages";
+        return pages >= 0
+                ? Fmt.fmt("chunk + %,d page%s", pages, pages == 1 ? "" : "s")
+                : "chunk + pages";
     }
 
     private static ColumnIndex readColumnIndex(ColumnChunk chunk, InputFile inputFile) {

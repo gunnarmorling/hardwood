@@ -39,9 +39,12 @@ Concrete styling on the five `Theme` methods:
 | `selection()` | `Style.EMPTY.bold().fg(rgb(181, 137, 0))` | `Style.EMPTY.bold().fg(Color.YELLOW)` |
 | `dim()` | `Style.EMPTY.dim()` | (same — uses ANSI faint attribute) |
 
-Truecolor support is detected once at class-load via `$COLORTERM`
-(`truecolor` or `24bit`). The boolean is fixed for the JVM lifetime;
-`Theme` is otherwise stateless.
+Truecolor support is probed from `$COLORTERM` (`truecolor` or `24bit`)
+on every call rather than cached in a `static final` field. In a
+Quarkus / Mandrel native image the static initialiser of a reachable
+class can run at build time, which would freeze the value to whatever
+the build runner saw — typically unset — and disable truecolor for
+every user. See #394. `Theme` is otherwise stateless.
 
 `accent()`, `selection()` and `error()` use truecolor RGB pinned to
 Solarized's accent slots when available so that iTerm2's "Use bright colors for
