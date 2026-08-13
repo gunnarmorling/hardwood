@@ -61,6 +61,15 @@ hardwood print -f data.parquet
 # Convert to CSV
 hardwood convert --format csv -f data.parquet
 
+# Rank columns by size, including the unencoded BYTE_ARRAY size
+hardwood inspect columns -f data.parquet
+
+# Per-row-group detail and level histograms for one column
+hardwood inspect columns -f data.parquet --column order.tags.list.element
+
+# Restrict that detail to a single row group
+hardwood inspect columns -f data.parquet --column order.tags.list.element --row-group 0
+
 # Show dictionary entries for a column (first 50 entries per row group by default)
 hardwood inspect dictionary -f data.parquet -c category
 
@@ -101,6 +110,12 @@ navigable session. Typical things to reach for it for:
   Pages, Column index, or Offset index; `Enter` on a page opens the
   full thrift header, including inline statistics when no Column Index
   is present.
+- **See where a column's size and nulls come from** — Column chunk
+  detail shows the unencoded `BYTE_ARRAY` size, the record and
+  present-value counts, and average fan-out; `l` adds the repetition and
+  definition level histograms with each level named after the schema
+  node it belongs to, so an absent field reads differently from an empty
+  list.
 - **Inspect dictionary entries** for a column — Dictionary screen with
   `/` substring filter; `Enter` reveals the full untruncated value of
   the highlighted entry.
@@ -129,6 +144,7 @@ navigable session. Typical things to reach for it for:
 | `Tab` / `Shift-Tab` | Switch focused pane |
 | `/` | Inline search (Schema, Column index, Dictionary) |
 | `t` | Toggle logical / physical value rendering (screen-specific: Pages, Column index, Dictionary, Data preview, Column chunk detail) |
+| `l` | Toggle the repetition / definition level histograms (Column chunk detail) |
 | `e` / `c` | Expand / collapse all (Schema tree; Data preview row modal) |
 | `o` | Jump back to Overview |
 | `?` | Toggle help overlay |
@@ -168,6 +184,8 @@ A tour through the main screens (click any shot to open it full size):
 <figure markdown="span">[![Column chunks screen](../assets/cli/03-3-rg-column-chunks.svg){ width="720" }](../assets/cli/03-3-rg-column-chunks.svg)<figcaption>Column chunks</figcaption></figure>
 
 <figure markdown="span">[![Column chunk detail screen](../assets/cli/03-4-rg-column-chunk-detail.svg){ width="720" }](../assets/cli/03-4-rg-column-chunk-detail.svg)<figcaption>Column chunk detail — facts pane plus drill menu</figcaption></figure>
+
+<figure markdown="span">[![Column chunk level histograms](../assets/cli/03-5-rg-column-chunk-levels.svg){ width="720" }](../assets/cli/03-5-rg-column-chunk-levels.svg)<figcaption>Column chunk detail with <code>l</code> — repetition and definition level histograms</figcaption></figure>
 
 <figure markdown="span">[![Pages screen with page-header modal](../assets/cli/04-pages-header-modal.svg){ width="720" }](../assets/cli/04-pages-header-modal.svg)<figcaption>Pages — page-header modal on Enter</figcaption></figure>
 

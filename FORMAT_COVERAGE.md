@@ -228,7 +228,7 @@ The ❌ rows cluster into a handful of capabilities, cross-referenced to ROADMAP
 
 - **Modular encryption** — entire feature stubbed to fail-fast. #128 (ROADMAP has no phase yet).
 - **Bloom-filter writing** — filter *serialization* is not implemented (ROADMAP 9.3). The read path (#669) and `eq`/`in` pushdown (#105) are done.
-- **Size statistics & level histograms** — parsed and exposed; no functional consumer yet.
+- **Size statistics & level histograms** — parsed, exposed, and surfaced by the CLI (`dive` column chunk detail, `hardwood inspect columns`); no reader-side consumer yet.
 - **Statistics completeness** — distinct_count, nan_count and the exactness flags are parsed but drive no filtering (#483).
 - **Declared sort order** — `sorting_columns`, `is_sorted`; ROADMAP 4.2.
 - **Column orders** — float total-order vs type-defined; #483.

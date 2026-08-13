@@ -218,6 +218,24 @@ class LevelSummaryTest {
         assertThat(LevelSummary.renderLevels(rows, 40).get(1)).contains("element present");
     }
 
+    /// A full-share row is the widest a histogram produces, so it decides
+    /// whether the block fits its budget. Below [LevelSummary#MINIMUM_WIDTH]
+    /// the fixed level, label and count columns cannot fit at all and the
+    /// caller is expected not to ask.
+    @Test
+    void renderedLevelRowsNeverExceedTheGivenWidth() {
+        List<LevelSummary.LevelRow> rows = List.of(
+                new LevelSummary.LevelRow(0, "websites null", 0L, 0.0),
+                new LevelSummary.LevelRow(1, "element present", 6_291_456L, 1.0));
+
+        for (int width = LevelSummary.MINIMUM_WIDTH; width <= 120; width++) {
+            int given = width;
+            assertThat(LevelSummary.renderLevels(rows, given))
+                    .as("rows rendered for width %d", given)
+                    .allSatisfy(line -> assertThat(line.length()).isLessThanOrEqualTo(given));
+        }
+    }
+
     /// The check is what makes the screen worth opening on a suspect
     /// file, so it has to fire on a chunk whose declared count and
     /// histogram disagree rather than rendering both without comment.

@@ -69,6 +69,11 @@ public record LevelSummary(
     private static final int PERCENTAGE_WIDTH_FLOOR = 44;
     private static final int BAR_WIDTH_FLOOR = 56;
 
+    /// Width below which not even the level, label and count columns fit.
+    /// Rows rendered into less than this overflow it, in the same way the
+    /// facts pane's other rows do; the surrounding widget clips them.
+    public static final int MINIMUM_WIDTH = 5 + LABEL_WIDTH + COUNT_WIDTH;
+
     /// A node along a column's path that raises the definition level,
     /// paired with the name of the field enclosing it. The enclosing name
     /// is what a `REPEATED` node is labelled with.

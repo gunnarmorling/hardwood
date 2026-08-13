@@ -259,8 +259,9 @@ public final class ColumnChunkDetailScreen {
         lines.add(fact("Min", stats != null ? formatStatValue(stats.minValue(), col, state.logicalTypes()) : "—"));
         lines.add(fact("Max", stats != null ? formatStatValue(stats.maxValue(), col, state.logicalTypes()) : "—"));
         lines.add(Line.empty());
+        // Two border columns and the one-space inset every row is rendered with.
         appendSizeStatistics(lines, LevelSummary.of(model.schema(), col, cmd), model, state,
-                Math.max(0, area.width() - 2));
+                Math.max(0, area.width() - 3));
 
         Block block = paneBlock(" " + truncateLeft(Sizes.columnPath(cmd), 40)
                 + " (RG #" + state.rowGroupIndex() + ") ", focused);

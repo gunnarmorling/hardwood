@@ -14,6 +14,7 @@ The tape drives key presses through the `dive` screens and captures:
 - `docs/content/assets/cli/03-2-rg-detail.svg`
 - `docs/content/assets/cli/03-3-rg-column-chunks.svg`
 - `docs/content/assets/cli/03-4-rg-column-chunk-detail.svg`
+- `docs/content/assets/cli/03-5-rg-column-chunk-levels.svg`
 - `docs/content/assets/cli/04-pages-header-modal.svg`
 - `docs/content/assets/cli/05-dict-search.svg`
 - `docs/content/assets/cli/06-data-scrolled-right.svg`

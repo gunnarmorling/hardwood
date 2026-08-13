@@ -309,6 +309,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] `nan_count` deserialization (`StatisticsReader` field 9; no functional consumer yet)
 - [x] Implement `SizeStatistics` record (unencoded `BYTE_ARRAY` size, repetition/definition level histograms)
 - [x] SizeStatistics deserialization (`SizeStatisticsReader`, `ColumnMetaData` field 16)
+- [x] SizeStatistics and level histograms surfaced in the CLI (`dive` column chunk detail, `inspect columns --column`)
 - [x] Type-specific comparators (`StatisticsDecoder` for int, long, float, double, boolean, binary)
 - [x] Statistics collection during writing (`StatisticsCollector`, INT32 min/max/null_count)
 - [ ] Binary min/max truncation for efficiency

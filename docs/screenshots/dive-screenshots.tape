@@ -50,6 +50,13 @@ Down
 Enter
 Sleep 350ms
 Screenshot ../../docs/content/assets/cli/03-4-rg-column-chunk-detail.svg
+# `l` expands the repetition / definition level histograms; toggle it back off
+# so the Pages capture below starts from the same state as before.
+Type "l"
+Sleep 350ms
+Screenshot ../../docs/content/assets/cli/03-5-rg-column-chunk-levels.svg
+Type "l"
+Sleep 350ms
 
 # 04: Pages (with page-header modal)
 Enter

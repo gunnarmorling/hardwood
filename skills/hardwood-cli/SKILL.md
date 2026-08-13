@@ -51,7 +51,8 @@ output, and how to chain a few commands into a diagnosis.
 | The same schema as Avro or Protobuf                                  | `hardwood schema -f FILE -F AVRO` / `-F PROTO`  |
 | A few actual rows, formatted                                         | `hardwood print -n 20 -f FILE`                  |
 | The raw file layout: size, footer offset/length, PAR1 magic          | `hardwood footer -f FILE`                       |
-| Per-column compressed/uncompressed size, ranked                      | `hardwood inspect columns -f FILE`              |
+| Per-column compressed/uncompressed/unencoded size, ranked            | `hardwood inspect columns -f FILE`              |
+| Level histograms for one column: nulls vs empty lists                | `hardwood inspect columns -f FILE --column PATH` |
 | Per-row-group column chunks: type, codec, sizes                      | `hardwood inspect rowgroups -f FILE`            |
 | Pages (data + dictionary) and their min/max stats                    | `hardwood inspect pages -f FILE [-c COLUMN]`    |
 | The dictionary entries of a column                                   | `hardwood inspect dictionary -f FILE -c COLUMN` |
@@ -83,6 +84,15 @@ spot these:
   **`# Pages`**: the row at the top (Rank 1) is the dominant scan cost; `100.0%`
   means the column is stored uncompressed. A `# Pages` count (vs `-`) confirms a
   page index exists for that column.
+- **`inspect columns` → `Unencoded`** is the size the `BYTE_ARRAY` data would
+  occupy with no encoding, which is what predicts read-side memory — a
+  dictionary-encoded string column can be small on disk and large in memory. It
+  is `-` for non-`BYTE_ARRAY` columns and for files written before
+  parquet-format 2.10, which do not record it.
+- **`inspect columns --column PATH` → `tags null` vs `tags empty`** distinguishes
+  a record whose field was absent from one whose list was empty. Nothing else in
+  the metadata separates them: `Nulls` and the page index `null_counts` lump both
+  together.
 - **`inspect dictionary` → `no dictionary (column is not dictionary-encoded)`**
   versus a table of entries: tells you whether a column is dict-encoded and what
   its distinct values are.
@@ -183,20 +193,46 @@ hardwood inspect pages     -f FILE   # encodings + page counts
 ```
 
 `inspect columns` ranks columns by compressed bytes and prints the compression
-`Ratio` and `# Pages`:
+`Ratio`, the `Unencoded` size, and `# Pages`:
 
 ```
-+------+-----------+-----------+------------+--------------+--------+---------+
-| Rank | Column    | Type      | Compressed | Uncompressed | Ratio  | # Pages |
-+------+-----------+-----------+------------+--------------+--------+---------+
-|    1 | payload   | BYTE_ARRAY|    78.4 KB |      120.0 KB|  65.3% |      10 |
-|    2 | id        | INT64     |     2.1 KB |        2.1 KB| 100.0% |       - |
-+------+-----------+-----------+------------+--------------+--------+---------+
++------+-----------+-----------+------------+--------------+-----------+--------+---------+
+| Rank | Column    | Type      | Compressed | Uncompressed | Unencoded | Ratio  | # Pages |
++------+-----------+-----------+------------+--------------+-----------+--------+---------+
+|    1 | payload   | BYTE_ARRAY|    78.4 KB |      120.0 KB|  410.0 KB |  65.3% |      10 |
+|    2 | id        | INT64     |     2.1 KB |        2.1 KB|         - | 100.0% |       - |
++------+-----------+-----------+------------+--------------+-----------+--------+---------+
 ```
 
 The rank-1 column is your scan cost. Then check _why_ it is large: a `PLAIN`
 encoding where `RLE_DICT` would dominate, or no compression (`UNCOMPRESSED` in
 `inspect rowgroups`).
+
+`--column PATH` switches to per-row-group detail for one column, followed by its
+repetition and definition level histograms with each level named after the schema
+node it belongs to:
+
+```shell
+hardwood inspect columns -f FILE --column order.tags.list.element
+```
+
+```
+order.tags.list.element  BYTE_ARRAY / STRING  max def 3  max rep 1
+
++----+-----------+---------+-----------+-----------+---------+-----------+------------------+
+| RG | Values    | Nulls   | Records   | Present   | Fan-out | Unencoded | Size stats       |
++----+-----------+---------+-----------+-----------+---------+-----------+------------------+
+|  0 | 6,488,062 | 196,606 | 1,048,576 | 6,291,456 |    6.19 |   66.0 MB | chunk + 96 pages |
++----+-----------+---------+-----------+-----------+---------+-----------+------------------+
+
+Definition levels (all row groups, max 3)
+  0  tags null                52,428    0.8% ▏
+  1  tags empty              104,857    1.6% ▏
+  2  element null             39,321    0.6% ▏
+  3  element present       6,291,456   97.0% ███████████▋
+```
+
+Add `--row-group N` to narrow both the table and the histograms to one row group.
 
 ## Playbook: "is this column dictionary encoded, and what are its values?"
 
@@ -247,7 +283,8 @@ Trailing Magic: PAR1
 | `convert`                              | `-f FILE`, `-F csv\|json`, `-o OUT`, `-c a,b`, `-n N\|ALL`                                                                            |
 | `inspect pages`                        | `-f FILE`, `-c COLUMN`, `--no-stats`                                                                                                  |
 | `inspect dictionary`                   | `-f FILE`, `-c COLUMN` (required), `--limit N` (`0` = unlimited)                                                                      |
-| `inspect columns`, `inspect rowgroups` | `-f FILE`                                                                                                                             |
+| `inspect columns`                      | `-f FILE`, `-c\|--column PATH`, `--row-group N` (requires `--column`)                                                                  |
+| `inspect rowgroups`                    | `-f FILE`                                                                                                                             |
 | `dive`                                 | `-f FILE` (interactive TTY only)                                                                                                      |
 
 Notes and edge cases:

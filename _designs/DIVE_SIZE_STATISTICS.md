@@ -1,6 +1,6 @@
 # Design: size statistics and level histograms in the CLI
 
-**Status: Proposed.** Tracking issue: #870. Builds on the parse landed
+**Status: Implemented.** Tracking issue: #870. Builds on the parse landed
 under #607.
 
 ## Goal
