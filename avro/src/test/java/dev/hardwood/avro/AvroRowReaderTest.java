@@ -39,11 +39,35 @@ import dev.hardwood.schema.ColumnProjection;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AvroRowReaderTest {
 
     private static final Path TEST_RESOURCES = Path.of("").toAbsolutePath()
             .resolve("../core/src/test/resources").normalize();
+
+    @Test
+    void rejectMapsWhoseKeysCannotBeRepresentedByAvro() throws Exception {
+        assertUnsupportedMapKey("map_types_test.parquet", "int_map", "INT32");
+        assertUnsupportedMapKey("typed_accessors_issue_445.parquet", "time_keyed", "INT32");
+        assertUnsupportedMapKey("map_typed_keys_test.parquet", "long_keyed", "INT64");
+    }
+
+    private static void assertUnsupportedMapKey(String fixture, String column, String keyType)
+            throws Exception {
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve(fixture)))) {
+            assertThatThrownBy(() -> {
+                try (AvroRowReader ignored = AvroReaders.buildRowReader(fileReader)
+                        .projection(ColumnProjection.columns(column)).build()) {
+                    // Schema conversion happens while the reader is built.
+                }
+            })
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(column)
+                    .hasMessageContaining(keyType);
+        }
+    }
 
     @Test
     void readFlatSchema() throws Exception {

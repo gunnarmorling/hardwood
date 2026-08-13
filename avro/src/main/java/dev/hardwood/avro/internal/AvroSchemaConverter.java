@@ -195,6 +195,13 @@ public final class AvroSchemaConverter {
         }
         SchemaNode inner = mapGroup.children().getFirst();
         if (inner instanceof SchemaNode.GroupNode kvGroup && kvGroup.children().size() >= 2) {
+            SchemaNode keyNode = kvGroup.children().getFirst();
+            if (!(keyNode instanceof SchemaNode.PrimitiveNode key)
+                    || key.type() != PhysicalType.BYTE_ARRAY
+                    || !(key.logicalType() instanceof LogicalType.StringType)) {
+                throw new IllegalArgumentException("Map '" + mapGroup.name()
+                        + "' key type must be BYTE_ARRAY (STRING), but is " + mapKeyType(keyNode));
+            }
             SchemaNode valueNode = kvGroup.children().get(1);
             // Prune the value subtree so a map<_, struct> with a sub-field
             // projection narrows to the served fields (the key is always read).
@@ -203,6 +210,15 @@ public final class AvroSchemaConverter {
                     Schema.createMap(fieldSchema(value, valueNode)), Kind.MAP, mapGroup, value);
         }
         return untypedContainer(Schema::createMap, Kind.MAP, mapGroup);
+    }
+
+    private static String mapKeyType(SchemaNode keyNode) {
+        if (keyNode instanceof SchemaNode.PrimitiveNode key) {
+            return key.logicalType() == null
+                    ? key.type().toString()
+                    : key.type() + " (" + key.logicalType() + ")";
+        }
+        return "group '" + keyNode.name() + "'";
     }
 
     /// A list or map whose element type the schema does not describe: the container

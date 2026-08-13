@@ -7,6 +7,7 @@
  */
 package dev.hardwood.avro.internal;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.avro.Schema;
@@ -98,6 +99,70 @@ class AvroSchemaConverterTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("legacy")
                 .hasMessageContaining("MAP_KEY_VALUE");
+    }
+
+    @Test
+    void rejectsNonStringKeyedMapNestedInStruct() {
+        SchemaElement root = group("root", null, 1);
+        SchemaElement holder = group("holder", RepetitionType.OPTIONAL, 1);
+        List<SchemaElement> elements = new ArrayList<>(List.of(root, holder));
+        elements.addAll(intKeyedMap("nested"));
+
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "nested", "INT32");
+    }
+
+    @Test
+    void rejectsNonStringKeyedMapUsedAsListElement() {
+        SchemaElement root = group("root", null, 1);
+        SchemaElement items = annotatedGroup("items", RepetitionType.OPTIONAL, 1,
+                new LogicalType.ListType());
+        SchemaElement list = group("list", RepetitionType.REPEATED, 1);
+        List<SchemaElement> elements = new ArrayList<>(List.of(root, items, list));
+        elements.addAll(intKeyedMap("element"));
+
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "element", "INT32");
+    }
+
+    @Test
+    void rejectsNonStringKeyedMapUsedAsMapValue() {
+        SchemaElement root = group("root", null, 1);
+        SchemaElement outer = annotatedGroup("outer", RepetitionType.OPTIONAL, 1,
+                new LogicalType.MapType());
+        SchemaElement outerKv = group("key_value", RepetitionType.REPEATED, 2);
+        SchemaElement outerKey = new SchemaElement("key", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null, null, new LogicalType.StringType());
+        List<SchemaElement> elements = new ArrayList<>(List.of(root, outer, outerKv, outerKey));
+        elements.addAll(intKeyedMap("value"));
+
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "value", "INT32");
+    }
+
+    private static void assertRejectsMap(FileSchema schema, String mapName, String keyType) {
+        assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(mapName)
+                .hasMessageContaining(keyType);
+    }
+
+    private static List<SchemaElement> intKeyedMap(String name) {
+        return List.of(
+                annotatedGroup(name, RepetitionType.OPTIONAL, 1, new LogicalType.MapType()),
+                group("key_value", RepetitionType.REPEATED, 2),
+                new SchemaElement("key", PhysicalType.INT32, null,
+                        RepetitionType.REQUIRED, null, null, null, null, null, null),
+                new SchemaElement("value", PhysicalType.INT64, null,
+                        RepetitionType.OPTIONAL, null, null, null, null, null, null));
+    }
+
+    private static SchemaElement group(String name, RepetitionType repetition, int children) {
+        return new SchemaElement(name, null, null, repetition, children,
+                null, null, null, null, null);
+    }
+
+    private static SchemaElement annotatedGroup(String name, RepetitionType repetition, int children,
+            LogicalType logicalType) {
+        return new SchemaElement(name, null, null, repetition, children,
+                null, null, null, null, logicalType);
     }
 
     /// A Variant group and an ordinary group of the identical two-byte-field shape,
