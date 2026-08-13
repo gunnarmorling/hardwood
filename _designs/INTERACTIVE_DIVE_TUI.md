@@ -222,9 +222,12 @@ Projected rows read via `RowReader`. Per-frame the screen knows the viewport hei
 and shows that many rows. `←` / `→` scrolls the visible column window with the row
 number column pinned; `PgDn` / `PgUp` flips pages forward (and backward via cursor
 re-creation). The title shows `rows X-Y of T · cols A-B of C · physical|logical`.
-`Enter` opens a row-detail modal with one line per field; in the modal `↑` / `↓`
-moves the cursor across fields, `Enter` toggles inline expansion of the focused
-field's full value (cursor is hidden when no field is expandable and content fits).
+`Enter` opens a row-detail modal with one line per field. When the modal body fits,
+`↑` / `↓` move between actionable fields; when it overflows, they move one rendered
+line at a time so all content remains reachable. `Enter` toggles inline expansion
+of the focused field's full value, and `▶` marks actionable field headers rather
+than scalar lines selected only for scrolling (the cursor is hidden when no field
+is expandable and content fits).
 `e` / `c` expand / collapse all fields. `t` toggles logical types both in-table
 and in the modal. Long cell values get `…` indicators sized to the actual rendered
 column width.

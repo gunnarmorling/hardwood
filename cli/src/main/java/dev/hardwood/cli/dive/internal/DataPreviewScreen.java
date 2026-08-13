@@ -237,7 +237,6 @@ public final class DataPreviewScreen {
     private static void renderRecordModal(Buffer buffer, Rect screenArea, ParquetModel model,
                                           ScreenState.DataPreview state) {
         List<String> values = state.rows().get(state.modalRow());
-        List<String> expanded = state.expandedRows().get(state.modalRow());
         List<String> names = state.columnNames();
         ModalGeometry geometry = modalGeometry(
                 screenArea.width(), screenArea.height(), names);
@@ -265,11 +264,7 @@ public final class DataPreviewScreen {
             String value = i < values.size() ? values.get(i) : "";
             ownership[i] = all.size();
             if (isExpanded) {
-                String fullValue = i < expanded.size() ? expanded.get(i) : value;
-                List<String> wrapped = Strings.hardWrap(fullValue, valueBudget);
-                if (wrapped.isEmpty()) {
-                    wrapped.add("");
-                }
+                List<String> wrapped = expandedValueLines(state, i, geometry);
                 all.add(Line.from(
                         new Span(" " + name + pad + " : ", Theme.primary()),
                         Span.raw(wrapped.get(0))));
@@ -289,17 +284,11 @@ public final class DataPreviewScreen {
         // Cursor is purely decorative when there's nothing to do with it:
         // no field can expand AND content fits the viewport. In that case
         // the modal becomes a static info display.
-        boolean canExpandAny = false;
-        for (String e : expanded) {
-            if (e.indexOf('\n') >= 0) {
-                canExpandAny = true;
-                break;
-            }
-        }
+        boolean canExpandAny = hasExpandableField(state, geometry);
         boolean overflows = totalLines > viewport;
         boolean showCursor = canExpandAny || overflows;
         if (showCursor && cursorLine < all.size()) {
-            int fieldIdx = fieldForLine(state, cursorLine);
+            int fieldIdx = fieldForLine(state, cursorLine, geometry);
             int fieldFirstLine = ownership[fieldIdx];
             String name = names.get(fieldIdx);
             String pad = " ".repeat(maxKeyWidth - name.length());
@@ -309,8 +298,7 @@ public final class DataPreviewScreen {
             if (cursorLine == fieldFirstLine) {
                 String shown;
                 if (isExpanded) {
-                    String fullValue = fieldIdx < expanded.size() ? expanded.get(fieldIdx) : value;
-                    List<String> wrapped = Strings.hardWrap(fullValue, valueBudget);
+                    List<String> wrapped = expandedValueLines(state, fieldIdx, geometry);
                     shown = wrapped.isEmpty() ? "" : wrapped.get(0);
                 }
                 else {
@@ -321,8 +309,7 @@ public final class DataPreviewScreen {
                         new Span(shown, selectionStyle)));
             }
             else if (isExpanded) {
-                String fullValue = fieldIdx < expanded.size() ? expanded.get(fieldIdx) : value;
-                List<String> wrapped = Strings.hardWrap(fullValue, valueBudget);
+                List<String> wrapped = expandedValueLines(state, fieldIdx, geometry);
                 int contIdx = cursorLine - fieldFirstLine;
                 String text = contIdx < wrapped.size() ? wrapped.get(contIdx) : "";
                 all.set(cursorLine, Line.from(new Span(continuationIndent + text, selectionStyle)));
@@ -335,13 +322,14 @@ public final class DataPreviewScreen {
 
         List<Line> lines = new ArrayList<>(all.subList(scroll, end));
         lines.add(Line.empty());
-        // Hint is tiered: drop "↑↓ navigate" when navigation has no effect
-        // (cursor is hidden because content fits AND nothing is expandable,
-        // or content fits with only one line); drop "Enter expand" +
+        // Hint is tiered: drop "↑↓ navigate" when neither direction can move;
+        // drop "Enter expand" +
         // "e/c all" when no field has a multi-line expanded form;
         // include "t logical types" only when at least one column has a
         // logical type.
-        boolean canNavigate = showCursor && totalLines > 1;
+        boolean canNavigate = overflows
+                || previousNavigableLine(state, cursorLine, totalLines, geometry) >= 0
+                || nextNavigableLine(state, cursorLine, totalLines, geometry) >= 0;
         boolean canExpand = canExpandAny;
         boolean anyLogical = false;
         for (SchemaNode child : model.schema().getRootNode().children()) {
@@ -401,6 +389,31 @@ public final class DataPreviewScreen {
         return new ModalGeometry(width, height, maxKeyWidth, valueBudget, viewportLines);
     }
 
+    private static ModalGeometry observedModalGeometry(ScreenState.DataPreview state) {
+        if (!Keys.hasObservedArea()) {
+            return null;
+        }
+        return modalGeometry(
+                Keys.observedAreaWidth(), Keys.observedAreaHeight(), state.columnNames());
+    }
+
+    private static List<String> expandedValueLines(
+            ScreenState.DataPreview state, int field, ModalGeometry geometry) {
+        return expandedValueLines(state, state.modalRow(), field, geometry);
+    }
+
+    private static List<String> expandedValueLines(
+            ScreenState.DataPreview state, int modalRow, int field, ModalGeometry geometry) {
+        List<String> values = state.rows().get(modalRow);
+        List<String> expanded = state.expandedRows().get(modalRow);
+        String value = field < values.size() ? values.get(field) : "";
+        String fullValue = field < expanded.size() ? expanded.get(field) : value;
+        List<String> lines = geometry == null
+                ? List.of(fullValue.split("\n", -1))
+                : Strings.hardWrap(fullValue, geometry.valueBudget());
+        return lines.isEmpty() ? List.of("") : lines;
+    }
+
     private record ModalGeometry(
             int width,
             int height,
@@ -439,45 +452,48 @@ public final class DataPreviewScreen {
     private static boolean handleModal(KeyEvent event, ScreenState.DataPreview state,
                                        dev.hardwood.cli.dive.NavigationStack stack,
                                        ParquetModel model) {
-        // Inside the modal, ↑/↓ navigate the modal's content one line at a
-        // time (collapsed field = 1 line, expanded field = N lines), so a
-        // long expansion can be scrolled and the next field below it
-        // reached without closing. Enter toggles expansion for the field
-        // owning the current line; e / c expand / collapse all fields. Esc
-        // closes the modal. Row stepping is intentionally absent — the
-        // user picks another row from the table after closing.
+        // Inside an overflowing modal, ↑/↓ move one rendered line at a time
+        // so every field remains reachable. When the body fits, they skip to
+        // fields whose expanded rendering reveals something new. Enter
+        // toggles that field; e / c expand / collapse all fields. Esc closes
+        // the modal. Row stepping is intentionally absent — the user picks
+        // another row from the table after closing.
         if (event.isCancel()) {
             stack.replaceTop(withModalRow(state, -1));
             return true;
         }
-        int totalLines = totalModalLines(state);
+        ModalGeometry geometry = observedModalGeometry(state);
+        int totalLines = totalModalLines(state, geometry);
         if (event.isConfirm()) {
-            int field = fieldForLine(state, state.modalCursorLine());
+            int field = fieldForLine(state, state.modalCursorLine(), geometry);
+            if (geometry != null && !isExpandableField(state, field, geometry)) {
+                return false;
+            }
             Set<Integer> next = new HashSet<>(state.expandedColumns());
             if (!next.remove(field)) {
                 next.add(field);
             }
             // Keep the cursor on the same field after toggling so the user
             // doesn't lose their place.
-            int newCursor = firstLineForField(state, next, field);
+            int newCursor = firstLineForField(state, next, field, geometry);
             stack.replaceTop(withExpansion(state, next, newCursor));
             return true;
         }
         if (event.code() == KeyCode.CHAR && event.character() == 'e'
                 && !event.hasCtrl() && !event.hasAlt()) {
-            int field = fieldForLine(state, state.modalCursorLine());
+            int field = fieldForLine(state, state.modalCursorLine(), geometry);
             Set<Integer> all = new HashSet<>();
             for (int i = 0; i < state.columnNames().size(); i++) {
                 all.add(i);
             }
-            int newCursor = firstLineForField(state, all, field);
+            int newCursor = firstLineForField(state, all, field, geometry);
             stack.replaceTop(withExpansion(state, all, newCursor));
             return true;
         }
         if (event.code() == KeyCode.CHAR && event.character() == 'c'
                 && !event.hasCtrl() && !event.hasAlt()) {
-            int field = fieldForLine(state, state.modalCursorLine());
-            int newCursor = firstLineForField(state, Set.of(), field);
+            int field = fieldForLine(state, state.modalCursorLine(), geometry);
+            int newCursor = firstLineForField(state, Set.of(), field, geometry);
             stack.replaceTop(withExpansion(state, Set.of(), newCursor));
             return true;
         }
@@ -501,14 +517,24 @@ public final class DataPreviewScreen {
             if (state.modalCursorLine() == 0) {
                 return false;
             }
-            stack.replaceTop(withCursorLine(state, state.modalCursorLine() - 1));
+            int previous = previousNavigableLine(
+                    state, state.modalCursorLine(), totalLines, geometry);
+            if (previous < 0) {
+                return false;
+            }
+            stack.replaceTop(withCursorLine(state, previous));
             return true;
         }
         if (event.isDown()) {
             if (state.modalCursorLine() >= totalLines - 1) {
                 return false;
             }
-            stack.replaceTop(withCursorLine(state, state.modalCursorLine() + 1));
+            int next = nextNavigableLine(
+                    state, state.modalCursorLine(), totalLines, geometry);
+            if (next < 0) {
+                return false;
+            }
+            stack.replaceTop(withCursorLine(state, next));
             return true;
         }
         return false;
@@ -517,14 +543,13 @@ public final class DataPreviewScreen {
     /// Total displayable lines in the modal body — one per field for
     /// collapsed fields, plus extra continuation lines for each expanded
     /// field's pretty-printed value.
-    private static int totalModalLines(ScreenState.DataPreview state) {
+    private static int totalModalLines(ScreenState.DataPreview state, ModalGeometry geometry) {
         int total = state.columnNames().size();
-        List<String> expanded = state.expandedRows().get(state.modalRow());
         for (int i : state.expandedColumns()) {
-            if (i < 0 || i >= expanded.size()) {
+            if (i < 0 || i >= state.columnNames().size()) {
                 continue;
             }
-            int continuationLines = expanded.get(i).split("\n", -1).length;
+            int continuationLines = expandedValueLines(state, i, geometry).size();
             total += Math.max(0, continuationLines - 1);
         }
         return total;
@@ -532,17 +557,17 @@ public final class DataPreviewScreen {
 
     /// Field index that owns the given cursor line in the flattened modal
     /// body. Continuation lines of an expanded field map to that field.
-    private static int fieldForLine(ScreenState.DataPreview state, int line) {
+    private static int fieldForLine(
+            ScreenState.DataPreview state, int line, ModalGeometry geometry) {
         int names = state.columnNames().size();
         if (names == 0) {
             return 0;
         }
-        List<String> expanded = state.expandedRows().get(state.modalRow());
         int cursor = 0;
         for (int field = 0; field < names; field++) {
             int linesForField = 1;
-            if (state.expandedColumns().contains(field) && field < expanded.size()) {
-                linesForField = expanded.get(field).split("\n", -1).length;
+            if (state.expandedColumns().contains(field)) {
+                linesForField = expandedValueLines(state, field, geometry).size();
             }
             if (line < cursor + linesForField) {
                 return field;
@@ -554,17 +579,99 @@ public final class DataPreviewScreen {
 
     /// Line index of the key line for `field` given the new expanded set.
     private static int firstLineForField(ScreenState.DataPreview state,
-                                          Set<Integer> expandedColumns, int field) {
-        List<String> expanded = state.expandedRows().get(state.modalRow());
+                                          Set<Integer> expandedColumns, int field,
+                                          ModalGeometry geometry) {
+        return firstLineForField(
+                state, state.modalRow(), expandedColumns, field, geometry);
+    }
+
+    private static int firstLineForField(ScreenState.DataPreview state, int modalRow,
+                                          Set<Integer> expandedColumns, int field,
+                                          ModalGeometry geometry) {
         int line = 0;
         for (int i = 0; i < field; i++) {
             int linesForField = 1;
-            if (expandedColumns.contains(i) && i < expanded.size()) {
-                linesForField = expanded.get(i).split("\n", -1).length;
+            if (expandedColumns.contains(i)) {
+                linesForField = expandedValueLines(state, modalRow, i, geometry).size();
             }
             line += linesForField;
         }
         return line;
+    }
+
+    private static boolean hasExpandableField(
+            ScreenState.DataPreview state, ModalGeometry geometry) {
+        for (int field = 0; field < state.columnNames().size(); field++) {
+            if (isExpandableField(state, field, geometry)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isExpandableField(
+            ScreenState.DataPreview state, int field, ModalGeometry geometry) {
+        return isExpandableField(state, state.modalRow(), field, geometry);
+    }
+
+    private static boolean isExpandableField(
+            ScreenState.DataPreview state, int modalRow, int field, ModalGeometry geometry) {
+        List<String> expanded = state.expandedRows().get(modalRow);
+        if (field < 0 || field >= expanded.size()) {
+            return false;
+        }
+        if (geometry == null) {
+            return expanded.get(field).indexOf('\n') >= 0;
+        }
+        List<String> wrapped = expandedValueLines(state, modalRow, field, geometry);
+        List<String> values = state.rows().get(modalRow);
+        String collapsed = truncate(field < values.size() ? values.get(field) : "",
+                geometry.valueBudget());
+        return wrapped.size() > 1 || !wrapped.get(0).equals(collapsed);
+    }
+
+    /// Finds the previous reachable line: one physical line when scrolling is
+    /// required, otherwise the first line of the previous actionable field.
+    private static int previousNavigableLine(
+            ScreenState.DataPreview state, int from, int totalLines,
+            ModalGeometry geometry) {
+        if (usesLineNavigation(state, totalLines, geometry)) {
+            return from - 1;
+        }
+        int currentField = fieldForLine(state, from, geometry);
+        for (int field = currentField - 1; field >= 0; field--) {
+            if (isExpandableField(state, field, geometry)) {
+                return firstLineForField(state, state.expandedColumns(), field, geometry);
+            }
+        }
+        return -1;
+    }
+
+    /// Finds the next reachable line: one physical line when scrolling is
+    /// required, otherwise the first line of the next actionable field.
+    private static int nextNavigableLine(
+            ScreenState.DataPreview state, int from, int totalLines,
+            ModalGeometry geometry) {
+        if (usesLineNavigation(state, totalLines, geometry)) {
+            return from + 1;
+        }
+        int currentField = fieldForLine(state, from, geometry);
+        for (int field = currentField + 1; field < state.columnNames().size(); field++) {
+            if (isExpandableField(state, field, geometry)) {
+                return firstLineForField(state, state.expandedColumns(), field, geometry);
+            }
+        }
+        return -1;
+    }
+
+    private static boolean usesLineNavigation(
+            ScreenState.DataPreview state, int totalLines, ModalGeometry geometry) {
+        if (geometry != null) {
+            return totalLines > geometry.viewportLines();
+        }
+        // Handler-only tests and the first event before a render retain the
+        // previous scalar fallback because no viewport is available yet.
+        return !hasExpandableField(state, null);
     }
 
     private static ScreenState.DataPreview withSelectedRow(ScreenState.DataPreview s, int sel) {
@@ -574,10 +681,29 @@ public final class DataPreviewScreen {
     }
 
     private static ScreenState.DataPreview withModalRow(ScreenState.DataPreview s, int modalRow) {
+        ModalGeometry geometry = observedModalGeometry(s);
+        int cursorLine = 0;
+        if (modalRow >= 0
+                && (geometry == null || s.columnNames().size() <= geometry.viewportLines())) {
+            int field = firstExpandableField(s, modalRow, geometry);
+            cursorLine = firstLineForField(
+                    s, modalRow, s.expandedColumns(), field, geometry);
+        }
         return new ScreenState.DataPreview(s.firstRow(), s.pageSize(), s.columnNames(), s.rows(),
                 s.expandedRows(), s.columnScroll(), s.selectedRow(), modalRow, s.logicalTypes(),
                 modalRow < 0 ? Set.of() : s.expandedColumns(),
-                modalRow < 0 ? 0 : s.modalCursorLine());
+                cursorLine);
+    }
+
+    /// Returns the first expandable field, or field 0 when the record has none.
+    private static int firstExpandableField(
+            ScreenState.DataPreview state, int modalRow, ModalGeometry geometry) {
+        for (int field = 0; field < state.columnNames().size(); field++) {
+            if (isExpandableField(state, modalRow, field, geometry)) {
+                return field;
+            }
+        }
+        return 0;
     }
 
     private static ScreenState.DataPreview withColumnScroll(ScreenState.DataPreview s, int scroll) {

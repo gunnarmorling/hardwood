@@ -154,8 +154,10 @@ navigable session. Typical things to reach for it for:
   `/` substring filter; `Enter` reveals the full untruncated value of
   the highlighted entry.
 - **Preview a few rows** without exporting — Data preview paginates with
-  `PgDn`/`PgUp` (`g`/`G` for first/last); `Enter` opens a per-row modal
-  where each field can be expanded inline.
+  `PgDn`/`PgUp` (`g`/`G` for first/last); `Enter` opens a per-row modal.
+  When the modal fits, `↑`/`↓` skip fields whose full value is already
+  visible; when it overflows, they scroll one rendered line at a time.
+  `Enter` expands the focused field when it reveals additional content.
 - **Decode key/value metadata** — Spark JSON schemas pretty-print, Arrow
   IPC schemas decode to a hex dump.
 - **Compare a column across row groups** — from Schema, `Enter` on a
