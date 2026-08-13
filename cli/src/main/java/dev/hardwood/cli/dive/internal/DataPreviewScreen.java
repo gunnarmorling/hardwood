@@ -293,6 +293,7 @@ public final class DataPreviewScreen {
             String name = names.get(fieldIdx);
             String pad = " ".repeat(maxKeyWidth - name.length());
             boolean isExpanded = state.expandedColumns().contains(fieldIdx);
+            boolean isExpandable = isExpandableField(state, fieldIdx, geometry);
             String value = fieldIdx < values.size() ? values.get(fieldIdx) : "";
             Style selectionStyle = Theme.selection();
             if (cursorLine == fieldFirstLine) {
@@ -305,7 +306,8 @@ public final class DataPreviewScreen {
                     shown = truncate(value, valueBudget);
                 }
                 all.set(cursorLine, Line.from(
-                        new Span("▶" + name + pad + " : ", selectionStyle),
+                        new Span((isExpandable ? "▶" : " ") + name + pad + " : ",
+                                selectionStyle),
                         new Span(shown, selectionStyle)));
             }
             else if (isExpanded) {
