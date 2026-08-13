@@ -75,6 +75,12 @@ public final class Keys {
     /// handling consistent with the most recently rendered column window.
     private static int observedViewportColumns = -1;
 
+    /// Side channel for geometry-dependent handlers. Renderers record the
+    /// area they actually received so the next key event can make the same
+    /// width- and height-dependent decisions as the drawing code.
+    private static int observedAreaWidth = -1;
+    private static int observedAreaHeight = -1;
+
     /// Called by a list screen's `render` to record the body row count it
     /// can show. The next `handle` will use this as the PgDn/PgUp stride.
     public static void observeViewport(int rows) {
@@ -104,12 +110,35 @@ public final class Keys {
         return observedViewportRows > 0;
     }
 
+    /// Records the area available to a screen's renderer.
+    public static void observeArea(int width, int height) {
+        observedAreaWidth = Math.max(1, width);
+        observedAreaHeight = Math.max(1, height);
+    }
+
+    /// True iff a renderer has recorded its available width and height.
+    public static boolean hasObservedArea() {
+        return observedAreaWidth > 0 && observedAreaHeight > 0;
+    }
+
+    /// Width of the most recently observed screen area, or `-1` before render.
+    public static int observedAreaWidth() {
+        return observedAreaWidth;
+    }
+
+    /// Height of the most recently observed screen area, or `-1` before render.
+    public static int observedAreaHeight() {
+        return observedAreaHeight;
+    }
+
     /// Test hook — clears the observed viewport so handler-only tests
     /// that ran after a render-path test don't see a viewport seeded
     /// by that render and trigger unwanted auto-resize.
     public static void resetObservedViewport() {
         observedViewportRows = -1;
         observedViewportColumns = -1;
+        observedAreaWidth = -1;
+        observedAreaHeight = -1;
     }
 
     /// Conditional-keybar builder. Each `add(enabled, binding)` appends the

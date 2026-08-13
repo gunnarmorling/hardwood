@@ -177,6 +177,7 @@ public final class DataPreviewScreen {
     }
 
     public static void render(Buffer buffer, Rect area, ParquetModel model, ScreenState.DataPreview state) {
+        Keys.observeArea(area.width(), area.height());
         // Block borders (top + bottom) + header row = 3 cells of chrome
         // around the data rows.
         Keys.observeViewport(area.height() - 3);
@@ -238,18 +239,18 @@ public final class DataPreviewScreen {
         List<String> values = state.rows().get(state.modalRow());
         List<String> expanded = state.expandedRows().get(state.modalRow());
         List<String> names = state.columnNames();
-        int width = Math.max(40, screenArea.width() - 4);
-        int height = Math.max(8, screenArea.height() - 2);
+        ModalGeometry geometry = modalGeometry(
+                screenArea.width(), screenArea.height(), names);
+        int width = geometry.width();
+        int height = geometry.height();
         int x = screenArea.left() + (screenArea.width() - width) / 2;
         int y = screenArea.top() + (screenArea.height() - height) / 2;
         Rect area = new Rect(x, y, width, height);
         Clear.INSTANCE.render(area, buffer);
 
-        int maxKeyWidth = 0;
-        for (String name : names) {
-            maxKeyWidth = Math.max(maxKeyWidth, name.length());
-        }
-        int valueBudget = Math.max(8, width - 2 - 1 - maxKeyWidth - 3 - 1);
+        int maxKeyWidth = geometry.maxKeyWidth();
+        int valueBudget = geometry.valueBudget();
+        int viewport = geometry.viewportLines();
         String continuationIndent = " ".repeat(1 + maxKeyWidth + 3);
 
         // Build the full body as a flat line list. ownership[i] = the line
@@ -295,8 +296,7 @@ public final class DataPreviewScreen {
                 break;
             }
         }
-        int viewportForCursor = Math.max(1, height - 4);
-        boolean overflows = totalLines > viewportForCursor;
+        boolean overflows = totalLines > viewport;
         boolean showCursor = canExpandAny || overflows;
         if (showCursor && cursorLine < all.size()) {
             int fieldIdx = fieldForLine(state, cursorLine);
@@ -329,7 +329,6 @@ public final class DataPreviewScreen {
             }
         }
 
-        int viewport = Math.max(1, height - 4);
         int scroll = Math.max(0, Math.min(totalLines - viewport,
                 Math.max(0, cursorLine - viewport / 2)));
         int end = Math.min(totalLines, scroll + viewport);
@@ -387,6 +386,27 @@ public final class DataPreviewScreen {
                 .left()
                 .build()
                 .render(area, buffer);
+    }
+
+    private static ModalGeometry modalGeometry(
+            int screenWidth, int screenHeight, List<String> names) {
+        int width = Math.max(40, screenWidth - 4);
+        int height = Math.max(8, screenHeight - 2);
+        int maxKeyWidth = 0;
+        for (String name : names) {
+            maxKeyWidth = Math.max(maxKeyWidth, name.length());
+        }
+        int valueBudget = Math.max(8, width - 2 - 1 - maxKeyWidth - 3 - 1);
+        int viewportLines = Math.max(1, height - 4);
+        return new ModalGeometry(width, height, maxKeyWidth, valueBudget, viewportLines);
+    }
+
+    private record ModalGeometry(
+            int width,
+            int height,
+            int maxKeyWidth,
+            int valueBudget,
+            int viewportLines) {
     }
 
     public static String keybarKeys(ScreenState.DataPreview state, ParquetModel model) {
