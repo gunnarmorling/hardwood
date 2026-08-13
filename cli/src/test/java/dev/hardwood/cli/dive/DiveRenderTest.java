@@ -265,6 +265,147 @@ class DiveRenderTest {
         assertThat(RenderHarness.keybarFor(state, model)).contains("[←→] columns");
     }
 
+    @Test
+    void dataPreviewScalarOnlyOverflowRemainsReachable() {
+        List<String> names = numberedValues("f", 30);
+        List<String> values = numberedValues("v", 30);
+        ScreenState.DataPreview state = openModal(names, values, values);
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 100, 24);
+        RenderHarness.RenderedFrame first = RenderHarness.render(area, state, model);
+        assertThat(first.contains("▶f0"))
+                .as("a selected scalar field has no action marker")
+                .isFalse();
+
+        for (int line = 1; line < names.size(); line++) {
+            assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
+                    .as("move to scalar line %s", line)
+                    .isTrue();
+            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine())
+                    .isEqualTo(line);
+        }
+
+        ScreenState.DataPreview atLast = (ScreenState.DataPreview) stack.top();
+        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, atLast, model);
+        assertThat(rendered.contains("f29")).isTrue();
+        assertThat(rendered.contains("▶f29"))
+                .as("a selected scalar field is highlighted without an expand marker")
+                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack)).isTrue();
+        assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(28);
+    }
+
+    @Test
+    void dataPreviewMixedOverflowRemainsReachablePastLastExpandableField() {
+        List<String> names = new java.util.ArrayList<>(numberedValues("f", 30));
+        List<String> values = new java.util.ArrayList<>(numberedValues("v", 30));
+        List<String> expanded = new java.util.ArrayList<>(values);
+        names.set(0, "items");
+        values.set(0, "[1, 2]");
+        expanded.set(0, "[\n  1,\n  2\n]");
+        ScreenState.DataPreview state = openModal(names, values, expanded);
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 100, 24);
+        RenderHarness.RenderedFrame first = RenderHarness.render(area, state, model);
+        assertThat(first.contains("▶items"))
+                .as("the expandable field shows an action marker")
+                .isTrue();
+
+        for (int line = 1; line < names.size(); line++) {
+            assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
+                    .as("move to line %s after the expandable field", line)
+                    .isTrue();
+        }
+
+        ScreenState.DataPreview atLast = (ScreenState.DataPreview) stack.top();
+        assertThat(atLast.modalCursorLine()).isEqualTo(29);
+        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, atLast, model);
+        assertThat(rendered.contains("f29")).isTrue();
+        assertThat(rendered.contains("▶f29"))
+                .as("a scalar remains selectable for scrolling without an action marker")
+                .isFalse();
+    }
+
+    @Test
+    void dataPreviewLongSingleLineScalarIsActionableWhenTruncated() {
+        String longNote = "x".repeat(100) + "TAIL";
+        ScreenState.DataPreview state = openModal(
+                List.of("tags", "note"),
+                List.of("[a, b]", longNote),
+                List.of("[\n  a,\n  b\n]", longNote));
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 60, 24);
+        RenderHarness.render(area, state, model);
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack)).isTrue();
+        ScreenState.DataPreview selectedNote = (ScreenState.DataPreview) stack.top();
+        assertThat(selectedNote.modalCursorLine()).isEqualTo(1);
+        assertThat(RenderHarness.render(area, selectedNote, model).contains("▶note"))
+                .as("a truncated single-line value shows an action marker")
+                .isTrue();
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isTrue();
+        ScreenState.DataPreview expanded = (ScreenState.DataPreview) stack.top();
+        assertThat(expanded.expandedColumns()).containsExactly(1);
+        assertThat(RenderHarness.render(area, expanded, model).contains("TAIL")).isTrue();
+    }
+
+    @Test
+    void dataPreviewFittedSingleExpandableFieldOmitsNavigationHint() {
+        ScreenState.DataPreview state = openModal(
+                List.of("items", "id", "status"),
+                List.of("[a, b]", "1", "ready"),
+                List.of("[\n  a,\n  b\n]", "1", "ready"));
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 100, 24);
+
+        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, state, model);
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack))
+                .as("there is no previous actionable field")
+                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
+                .as("there is no next actionable field")
+                .isFalse();
+        assertThat(rendered.contains("↑↓ navigate"))
+                .as("the hint omits navigation when neither direction can move")
+                .isFalse();
+        assertThat(rendered.contains("Enter expand"))
+                .as("the selected field remains expandable")
+                .isTrue();
+    }
+
+    @Test
+    void dataPreviewFittedScalarCursorShowsNavigationHintWhenFieldIsReachable() {
+        ScreenState.DataPreview state = openModal(
+                List.of("items", "id", "status"),
+                List.of("[a, b, c, d]", "1", "ready"),
+                List.of("[\n  a,\n  b,\n  c,\n  d\n]", "1", "ready"));
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 100, 10);
+        RenderHarness.render(area, state, model);
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isTrue();
+        for (int line = 1; line <= 6; line++) {
+            assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
+                    .as("move through overflowing content to scalar line %s", line)
+                    .isTrue();
+        }
+        assertThat(DataPreviewScreen.handle(
+                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 'c'), model, stack)).isTrue();
+
+        ScreenState.DataPreview collapsed = (ScreenState.DataPreview) stack.top();
+        assertThat(collapsed.modalCursorLine()).isEqualTo(1);
+        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, collapsed, model);
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack))
+                .as("the expandable field above the scalar remains reachable")
+                .isTrue();
+        assertThat(rendered.contains("↑↓ navigate"))
+                .as("the hint reflects that navigation can move from the scalar")
+                .isTrue();
+    }
+
     /// Cross-product smoke render: every screen × every fixture renders
     /// without throwing. Catches data-shape edge cases (no CI, no dict,
     /// nested types, all-null pages) that the handler tests don't
@@ -323,6 +464,25 @@ class DiveRenderTest {
         // The "Press ? or Esc to close" sentinel is the very last line of the
         // overlay; if it renders, no content above it can have been clipped.
         assertThat(renderToString(buffer, screenArea)).contains("Press ? or Esc to close");
+    }
+
+    private static ScreenState.DataPreview openModal(
+            List<String> names, List<String> values, List<String> expandedValues) {
+        return new ScreenState.DataPreview(
+                0, 1, names, List.of(values), List.of(expandedValues),
+                0, 0, 0, true, java.util.Set.of(), 0);
+    }
+
+    private static List<String> numberedValues(String prefix, int count) {
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(i -> prefix + i)
+                .toList();
+    }
+
+    private static NavigationStack rooted(ScreenState child) {
+        NavigationStack stack = new NavigationStack(ScreenState.Overview.initial());
+        stack.push(child);
+        return stack;
     }
 
     private static String renderToString(Buffer buffer, Rect screenArea) {

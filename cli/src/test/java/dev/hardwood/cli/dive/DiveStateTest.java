@@ -747,6 +747,37 @@ class DiveStateTest {
     }
 
     @Test
+    void dataPreviewRowModalNavigationSkipsScalarFields() throws Exception {
+        // First row: scalar id, followed by two non-empty expandable lists.
+        Path file = Path.of(getClass().getResource("/list_basic_test.parquet").getPath());
+        try (ParquetModel listModel = ParquetModel.open(InputFile.of(file), file.toString())) {
+            ScreenState.DataPreview initial = DataPreviewScreen.initialState(listModel, 5);
+            NavigationStack stack = rooted(initial);
+
+            // Opening skips id (line 0) and selects tags (line 1).
+            DataPreviewScreen.handle(key(KeyCode.ENTER), listModel, stack);
+            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(1);
+
+            boolean handledAtFirst = DataPreviewScreen.handle(key(KeyCode.UP), listModel, stack);
+            assertThat(handledAtFirst).isFalse();
+            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(1);
+
+            boolean handledDown = DataPreviewScreen.handle(key(KeyCode.DOWN), listModel, stack);
+            assertThat(handledDown).isTrue();
+            // The next actionable field is scores (line 2).
+            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(2);
+
+            boolean handledAtLast = DataPreviewScreen.handle(key(KeyCode.DOWN), listModel, stack);
+            assertThat(handledAtLast).isFalse();
+            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(2);
+
+            boolean handledUp = DataPreviewScreen.handle(key(KeyCode.UP), listModel, stack);
+            assertThat(handledUp).isTrue();
+            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(1);
+        }
+    }
+
+    @Test
     void dataPreviewRowModalEnterTogglesInlineExpansion() {
         ScreenState.DataPreview initial = DataPreviewScreen.initialState(model, 5);
         NavigationStack stack = rooted(initial);
