@@ -34,22 +34,22 @@ class PageEncodingStatsReader {
     /// The reader is always left positioned on the byte after the list, so the rest of the
     /// footer parses regardless of what this field contained.
     static List<PageEncodingStats> read(ThriftCompactReader reader) throws IOException {
-        ThriftCompactReader.CollectionHeader listHeader =
+        long listHeader =
                 reader.acceptListHeader(Codes.STRUCT, "ColumnMetaData.encoding_stats");
-        if (listHeader == null) {
+        if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return List.of();
         }
-        List<PageEncodingStats> result = new ArrayList<>(listHeader.size());
-        for (int i = 0; i < listHeader.size(); i++) {
+        List<PageEncodingStats> result = new ArrayList<>(ThriftCompactReader.listSize(listHeader));
+        for (int i = 0; i < ThriftCompactReader.listSize(listHeader); i++) {
             PageEncodingStats stats = readStats(reader);
             if (stats != null) {
                 result.add(stats);
             }
         }
-        if (result.size() != listHeader.size()) {
+        if (result.size() != ThriftCompactReader.listSize(listHeader)) {
             LOG.log(System.Logger.Level.WARNING,
-                    "Ignoring ColumnMetaData.encoding_stats: " + (listHeader.size() - result.size())
-                            + " of " + listHeader.size() + " entries are missing a required field");
+                    "Ignoring ColumnMetaData.encoding_stats: " + (ThriftCompactReader.listSize(listHeader) - result.size())
+                            + " of " + ThriftCompactReader.listSize(listHeader) + " entries are missing a required field");
             return List.of();
         }
         return Collections.unmodifiableList(result);
@@ -69,17 +69,17 @@ class PageEncodingStatsReader {
             int count = -1;
 
             while (true) {
-                ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-                if (header == null) {
+                int header = reader.readFieldHeader();
+                if (header == ThriftCompactReader.STOP_FIELD) {
                     break;
                 }
                 // Every field defined on this struct is an i32, so one wire-type gate covers
                 // all three: anything else is a field this version cannot use.
-                if (header.type() != Codes.I32) {
-                    reader.skipField(header.type());
+                if (ThriftCompactReader.fieldType(header) != Codes.I32) {
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     continue;
                 }
-                switch (header.fieldId()) {
+                switch (ThriftCompactReader.fieldId(header)) {
                     case 1 -> pageType = ThriftEnumLookup.pageType(reader.readI32());
                     case 2 -> encoding = ThriftEnumLookup.encoding(reader.readI32());
                     case 3 -> count = reader.readI32();

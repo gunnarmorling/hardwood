@@ -41,12 +41,12 @@ public class StatisticsReader {
         Long nanCount = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // max (deprecated)
                     if (reader.acceptField(header, Codes.BINARY)) {
                         deprecatedMax = reader.readBinary();
@@ -89,7 +89,7 @@ public class StatisticsReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

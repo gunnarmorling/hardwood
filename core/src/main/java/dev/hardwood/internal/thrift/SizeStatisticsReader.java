@@ -37,12 +37,12 @@ public class SizeStatisticsReader {
         long[] definitionLevelHistogram = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // unencoded_byte_array_data_bytes (optional i64)
                     if (reader.acceptField(header, Codes.I64)) {
                         unencodedByteArrayDataBytes = reader.readI64();
@@ -61,7 +61,7 @@ public class SizeStatisticsReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

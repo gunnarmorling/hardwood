@@ -31,12 +31,12 @@ public class PageLocationReader {
         long firstRowIndex = 0;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // offset (i64)
                     if (reader.acceptField(header, Codes.I64)) {
                         offset = reader.readNonNegativeI64("PageLocation.offset");
@@ -53,7 +53,7 @@ public class PageLocationReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

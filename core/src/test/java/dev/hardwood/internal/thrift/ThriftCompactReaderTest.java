@@ -151,25 +151,25 @@ class ThriftCompactReaderTest {
         ThriftCompactReader reader = new ThriftCompactReader(buffer);
 
         // Read field 1
-        ThriftCompactReader.FieldHeader f1 = reader.readFieldHeader();
-        assertThat(f1.fieldId()).isEqualTo((short) 1);
+        int f1 = reader.readFieldHeader();
+        assertThat(ThriftCompactReader.fieldId(f1)).isEqualTo((short) 1);
         int val1 = reader.readI32();
         assertThat(val1).isEqualTo(5);
 
         // Skip field 2 (struct)
-        ThriftCompactReader.FieldHeader f2 = reader.readFieldHeader();
-        assertThat(f2.fieldId()).isEqualTo((short) 2);
-        reader.skipField(f2.type());
+        int f2 = reader.readFieldHeader();
+        assertThat(ThriftCompactReader.fieldId(f2)).isEqualTo((short) 2);
+        reader.skipField(ThriftCompactReader.fieldType(f2));
 
         // Read field 3 - should correctly be field 3, not field 1
-        ThriftCompactReader.FieldHeader f3 = reader.readFieldHeader();
-        assertThat(f3.fieldId()).isEqualTo((short) 3);
+        int f3 = reader.readFieldHeader();
+        assertThat(ThriftCompactReader.fieldId(f3)).isEqualTo((short) 3);
         int val3 = reader.readI32();
         assertThat(val3).isEqualTo(15);
 
         // Should be at STOP
-        ThriftCompactReader.FieldHeader stop = reader.readFieldHeader();
-        assertThat(stop).isNull();
+        int stop = reader.readFieldHeader();
+        assertThat(stop).isEqualTo(ThriftCompactReader.STOP_FIELD);
     }
 
     /// A long-form element count larger than the bytes left cannot describe real elements — the
@@ -216,10 +216,10 @@ class ThriftCompactReaderTest {
             bytes[i + 2] = FieldType.Codes.BOOLEAN_TRUE;
         }
 
-        ThriftCompactReader.CollectionHeader header = reader(bytes).readListHeader();
+        long header = reader(bytes).readListHeader();
 
-        assertThat(header.size()).isEqualTo(15);
-        assertThat(header.elementType()).isEqualTo(ElementType.BOOL.code());
+        assertThat(ThriftCompactReader.listSize(header)).isEqualTo(15);
+        assertThat(ThriftCompactReader.elementType(header)).isEqualTo(ElementType.BOOL.code());
     }
 
     /// A `bool` is the one type encoded differently as a collection element than as a struct

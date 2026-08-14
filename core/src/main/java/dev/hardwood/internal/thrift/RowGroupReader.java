@@ -34,14 +34,17 @@ public class RowGroupReader {
         long numRows = 0;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // columns (required list<ColumnChunk>)
                     if (reader.acceptField(header, Codes.LIST)) {
+                        // Chunks come in schema order, so each column's path repeats the one the
+                        // previous row group held at the same position.
+                        reader.pathCache().startRowGroup();
                         columns = reader.readStructList("RowGroup.columns", ColumnChunkReader::read);
                     }
                     break;
@@ -56,7 +59,7 @@ public class RowGroupReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

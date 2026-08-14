@@ -36,21 +36,21 @@ public class BoundingBoxReader {
         Double mmax = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
-                case 1 -> xmin = readRequiredDouble(reader, header.type(), "xmin");
-                case 2 -> xmax = readRequiredDouble(reader, header.type(), "xmax");
-                case 3 -> ymin = readRequiredDouble(reader, header.type(), "ymin");
-                case 4 -> ymax = readRequiredDouble(reader, header.type(), "ymax");
-                case 5 -> zmin = readOptionalDouble(reader, header.type());
-                case 6 -> zmax = readOptionalDouble(reader, header.type());
-                case 7 -> mmin = readOptionalDouble(reader, header.type());
-                case 8 -> mmax = readOptionalDouble(reader, header.type());
-                default -> reader.skipField(header.type());
+            switch (ThriftCompactReader.fieldId(header)) {
+                case 1 -> xmin = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "xmin");
+                case 2 -> xmax = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "xmax");
+                case 3 -> ymin = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "ymin");
+                case 4 -> ymax = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "ymax");
+                case 5 -> zmin = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                case 6 -> zmax = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                case 7 -> mmin = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                case 8 -> mmax = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                default -> reader.skipField(ThriftCompactReader.fieldType(header));
             }
         }
 

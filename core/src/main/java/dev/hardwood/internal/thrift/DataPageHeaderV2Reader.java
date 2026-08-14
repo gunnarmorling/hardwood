@@ -38,12 +38,12 @@ public class DataPageHeaderV2Reader {
         Statistics statistics = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // num_values
                     if (reader.acceptField(header, Codes.I32)) {
                         numValues = reader.readNonNegativeI32("DataPageHeaderV2.num_values");
@@ -83,7 +83,7 @@ public class DataPageHeaderV2Reader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

@@ -36,19 +36,19 @@ public class ColumnChunkReader {
         String filePath = "";
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // file_path (optional string - deprecated)
                     if (reader.acceptField(header, Codes.BINARY)) {
                         filePath = reader.readString();
                     }
                     break;
                 case 2: // file_offset (required i64)
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
                 case 3: // meta_data (required)
                     if (reader.acceptField(header, Codes.STRUCT)) {
@@ -76,7 +76,7 @@ public class ColumnChunkReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

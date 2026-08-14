@@ -38,12 +38,12 @@ public class OffsetIndexReader {
         long[] unencodedByteArrayDataBytes = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // page_locations (required list<PageLocation>)
                     if (reader.acceptField(header, Codes.LIST)) {
                         pageLocations = reader.readStructList(
@@ -57,7 +57,7 @@ public class OffsetIndexReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

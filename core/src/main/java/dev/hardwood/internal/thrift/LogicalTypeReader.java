@@ -32,74 +32,74 @@ public class LogicalTypeReader {
         LogicalType result = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 return result;
             }
 
             // Union: only one field should be set, but we need to read to the end
             if (result == null) {
-                result = switch (header.fieldId()) {
+                result = switch (ThriftCompactReader.fieldId(header)) {
                     case 1 -> { // STRING
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.StringType();
                     }
                     case 2 -> { // MAP
-                        reader.skipField(header.type()); // Empty Struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty Struct
                         yield new LogicalType.MapType();
                     }
                     case 3 -> { // LIST
-                        reader.skipField(header.type()); // Empty Struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty Struct
                         yield new LogicalType.ListType();
                     }
                     case 4 -> { // ENUM
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.EnumType();
                     }
                     case 5 -> readDecimalType(reader);
                     case 6 -> { // DATE
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.DateType();
                     }
                     case 7 -> readTimeType(reader);
                     case 8 -> readTimestampType(reader);
                     case 9 -> { // INTERVAL
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.IntervalType();
                     }
                     case 10 -> readIntType(reader);
                     case 11 -> { // NULL
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.NullType();
                     }
                     case 12 -> { // JSON
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.JsonType();
                     }
                     case 13 -> { // BSON
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.BsonType();
                     }
                     case 14 -> { // UUID
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.UuidType();
                     }
                     case 15 -> { // FLOAT16
-                        reader.skipField(header.type()); // Empty struct
+                        reader.skipField(ThriftCompactReader.fieldType(header)); // Empty struct
                         yield new LogicalType.Float16Type();
                     }
                     case 16 -> readVariantType(reader);
                     case 17 -> readGeometryType(reader);
                     case 18 -> readGeographyType(reader);
                     default -> {
-                        reader.skipField(header.type());
+                        reader.skipField(ThriftCompactReader.fieldType(header));
                         yield null;
                     }
                 };
             }
             else {
                 // Already found the union variant, skip remaining fields
-                reader.skipField(header.type());
+                reader.skipField(ThriftCompactReader.fieldType(header));
             }
         }
     }
@@ -119,12 +119,12 @@ public class LogicalTypeReader {
         int precision = -1;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // scale (required)
                     if (reader.acceptField(header, Codes.I32)) {
                         scale = reader.readI32();
@@ -136,7 +136,7 @@ public class LogicalTypeReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -165,12 +165,12 @@ public class LogicalTypeReader {
         LogicalType.TimeType.TimeUnit unit = LogicalType.TimeType.TimeUnit.MILLIS;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // isAdjustedToUTC (required)
                     isAdjustedToUTC = reader.readBooleanField(header, isAdjustedToUTC);
                     break;
@@ -178,7 +178,7 @@ public class LogicalTypeReader {
                     unit = readTimeUnit(reader);
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -201,12 +201,12 @@ public class LogicalTypeReader {
         LogicalType.TimestampType.TimeUnit unit = LogicalType.TimestampType.TimeUnit.MILLIS;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // isAdjustedToUTC (required)
                     isAdjustedToUTC = reader.readBooleanField(header, isAdjustedToUTC);
                     break;
@@ -214,7 +214,7 @@ public class LogicalTypeReader {
                     unit = readTimeUnit(reader);
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -237,12 +237,12 @@ public class LogicalTypeReader {
         boolean isSigned = true;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // bitWidth (required)
                     if (reader.acceptField(header, Codes.BYTE)) {
                         bitWidth = reader.readByte();
@@ -252,7 +252,7 @@ public class LogicalTypeReader {
                     isSigned = reader.readBooleanField(header, isSigned);
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -274,19 +274,19 @@ public class LogicalTypeReader {
         int specVersion = 1; // Per Parquet Variant spec: default when unset.
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // specification_version (optional i8)
                     if (reader.acceptField(header, Codes.BYTE)) {
                         specVersion = reader.readByte();
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -323,19 +323,19 @@ public class LogicalTypeReader {
     private static LogicalType.GeometryType readGeometryTypeInternal(ThriftCompactReader reader) throws IOException {
         String crs = null;
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // CRS
                     if (reader.acceptField(header, Codes.BINARY)) {
                         crs = reader.readString();
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -361,12 +361,12 @@ public class LogicalTypeReader {
         String crs = null;
         EdgeInterpolationAlgorithm edgeInterpolation = null;
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // CRS
                     if (reader.acceptField(header, Codes.BINARY)) {
                         crs = reader.readString();
@@ -378,7 +378,7 @@ public class LogicalTypeReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -405,16 +405,16 @@ public class LogicalTypeReader {
     ///
     /// @param unionName name of the union, for the error message
     private static int readUnionVariantId(ThriftCompactReader reader, String unionName) throws IOException {
-        ThriftCompactReader.FieldHeader variant = reader.readFieldHeader();
-        if (variant == null) {
+        int variant = reader.readFieldHeader();
+        if (variant == ThriftCompactReader.STOP_FIELD) {
             throw new IOException("Malformed Parquet metadata: " + unionName
                     + " union has no variant set");
         }
-        reader.skipField(variant.type());
-        if (reader.readFieldHeader() != null) {
+        reader.skipField(ThriftCompactReader.fieldType(variant));
+        if (reader.readFieldHeader() != ThriftCompactReader.STOP_FIELD) {
             throw new IOException("Malformed Parquet metadata: " + unionName
                     + " union has more than one variant set");
         }
-        return variant.fieldId();
+        return ThriftCompactReader.fieldId(variant);
     }
 }

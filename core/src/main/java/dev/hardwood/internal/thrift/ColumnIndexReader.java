@@ -55,12 +55,12 @@ public class ColumnIndexReader {
         long[] nanCounts = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // null_pages (required list<bool>)
                     if (reader.acceptField(header, Codes.LIST)) {
                         nullPages = reader.readBoolArray("ColumnIndex.null_pages");
@@ -104,7 +104,7 @@ public class ColumnIndexReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

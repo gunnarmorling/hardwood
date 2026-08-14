@@ -30,26 +30,26 @@ public class BloomFilterHeaderReader {
         BloomFilterHeader.Compression compression = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
-                case 1 -> numBytes = readRequiredBitsetSize(reader, header.type());
+            switch (ThriftCompactReader.fieldId(header)) {
+                case 1 -> numBytes = readRequiredBitsetSize(reader, ThriftCompactReader.fieldType(header));
                 case 2 -> {
-                    short variant = readUnionVariant(reader, header.type(), "algorithm");
+                    short variant = readUnionVariant(reader, ThriftCompactReader.fieldType(header), "algorithm");
                     algorithm = BloomFilterHeader.Algorithm.fromVariant(variant);
                 }
                 case 3 -> {
-                    short variant = readUnionVariant(reader, header.type(), "hash");
+                    short variant = readUnionVariant(reader, ThriftCompactReader.fieldType(header), "hash");
                     hash = BloomFilterHeader.Hash.fromVariant(variant);
                 }
                 case 4 -> {
-                    short variant = readUnionVariant(reader, header.type(), "compression");
+                    short variant = readUnionVariant(reader, ThriftCompactReader.fieldType(header), "compression");
                     compression = BloomFilterHeader.Compression.fromVariant(variant);
                 }
-                default -> reader.skipField(header.type());
+                default -> reader.skipField(ThriftCompactReader.fieldType(header));
             }
         }
 
@@ -79,20 +79,20 @@ public class BloomFilterHeaderReader {
         }
         short saved = reader.pushFieldIdContext();
         try {
-            ThriftCompactReader.FieldHeader variant = reader.readFieldHeader();
-            if (variant == null) {
+            int variant = reader.readFieldHeader();
+            if (variant == ThriftCompactReader.STOP_FIELD) {
                 throw invalidHeader("union field '" + name + "' has no variant set");
             }
             // The variant's value is an empty struct; a different wire type would make skipField
             // consume the wrong number of bytes and desync the rest of the header.
-            if (variant.type() != Codes.STRUCT) {
-                throw wrongWireType("union field '" + name + "' variant " + variant.fieldId(), variant.type());
+            if (ThriftCompactReader.fieldType(variant) != Codes.STRUCT) {
+                throw wrongWireType("union field '" + name + "' variant " + ThriftCompactReader.fieldId(variant), ThriftCompactReader.fieldType(variant));
             }
-            reader.skipField(variant.type()); // consume the variant's value (the empty inner struct)
-            if (reader.readFieldHeader() != null) {
+            reader.skipField(ThriftCompactReader.fieldType(variant)); // consume the variant's value (the empty inner struct)
+            if (reader.readFieldHeader() != ThriftCompactReader.STOP_FIELD) {
                 throw invalidHeader("union field '" + name + "' has more than one variant set");
             }
-            return variant.fieldId();
+            return ThriftCompactReader.fieldId(variant);
         } finally {
             reader.popFieldIdContext(saved);
         }

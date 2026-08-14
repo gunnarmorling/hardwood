@@ -25,12 +25,12 @@ class KeyValueMetadataReader {
     ///
     /// @param fieldName fully-qualified name of the field being read, for the log message
     static Map<String, String> read(ThriftCompactReader reader, String fieldName) throws IOException {
-        ThriftCompactReader.CollectionHeader listHeader = reader.acceptListHeader(Codes.STRUCT, fieldName);
-        if (listHeader == null) {
+        long listHeader = reader.acceptListHeader(Codes.STRUCT, fieldName);
+        if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return Map.of();
         }
-        Map<String, String> result = new LinkedHashMap<>(listHeader.size());
-        for (int i = 0; i < listHeader.size(); i++) {
+        Map<String, String> result = new LinkedHashMap<>(ThriftCompactReader.listSize(listHeader));
+        for (int i = 0; i < ThriftCompactReader.listSize(listHeader); i++) {
             readKeyValue(reader, result);
         }
         return Collections.unmodifiableMap(result);
@@ -44,12 +44,12 @@ class KeyValueMetadataReader {
             String value = null;
 
             while (true) {
-                ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-                if (header == null) {
+                int header = reader.readFieldHeader();
+                if (header == ThriftCompactReader.STOP_FIELD) {
                     break;
                 }
 
-                switch (header.fieldId()) {
+                switch (ThriftCompactReader.fieldId(header)) {
                     case 1: // key (required string)
                         if (reader.acceptField(header, Codes.BINARY)) {
                             key = reader.readString();
@@ -61,7 +61,7 @@ class KeyValueMetadataReader {
                         }
                         break;
                     default:
-                        reader.skipField(header.type());
+                        reader.skipField(ThriftCompactReader.fieldType(header));
                         break;
                 }
             }

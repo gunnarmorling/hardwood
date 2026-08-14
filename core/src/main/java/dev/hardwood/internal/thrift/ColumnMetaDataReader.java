@@ -8,7 +8,6 @@
 package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +26,9 @@ import dev.hardwood.metadata.Statistics;
 /// Reader for ColumnMetaData from Thrift Compact Protocol.
 public class ColumnMetaDataReader {
 
+    /// Stand-in for a `ColumnMetaData` that carries no `path_in_schema` at all.
+    private static final FieldPath EMPTY_PATH = new FieldPath(List.of());
+
     public static ColumnMetaData read(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
@@ -40,7 +42,7 @@ public class ColumnMetaDataReader {
     private static ColumnMetaData readInternal(ThriftCompactReader reader) throws IOException {
         PhysicalType type = null;
         List<Encoding> encodings = Collections.emptyList();
-        List<String> pathInSchema = Collections.emptyList();
+        FieldPath pathInSchema = EMPTY_PATH;
         CompressionCodec codec = null;
         long numValues = 0;
         long totalUncompressedSize = 0;
@@ -56,12 +58,12 @@ public class ColumnMetaDataReader {
         SizeStatistics sizeStatistics = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // type
                     if (reader.acceptField(header, Codes.I32)) {
                         type = ThriftEnumLookup.physicalType(reader.readI32());
@@ -74,7 +76,7 @@ public class ColumnMetaDataReader {
                     break;
                 case 3: // path_in_schema (required list<string>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        pathInSchema = reader.readStringList("ColumnMetaData.path_in_schema");
+                        pathInSchema = reader.pathCache().next(reader, "ColumnMetaData.path_in_schema");
                     }
                     break;
                 case 4: // codec
@@ -108,7 +110,7 @@ public class ColumnMetaDataReader {
                     }
                     break;
                 case 10: // index_page_offset (optional) - skipped for now
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
                 case 11: // dictionary_page_offset (optional)
                     if (reader.acceptField(header, Codes.I64)) {
@@ -146,12 +148,12 @@ public class ColumnMetaDataReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
 
-        return new ColumnMetaData(type, encodings, new FieldPath(pathInSchema), codec,
+        return new ColumnMetaData(type, encodings, pathInSchema, codec,
                 numValues, totalUncompressedSize, totalCompressedSize, keyValueMetadata, dataPageOffset,
                 dictionaryPageOffset, statistics, geospatialStatistics, bloomFilterOffset, bloomFilterLength,
                 encodingStats, sizeStatistics);
@@ -160,12 +162,12 @@ public class ColumnMetaDataReader {
     /// `Encoding` is a Thrift enum, so its list elements are `i32` on the wire and are mapped
     /// to the enum one by one.
     private static List<Encoding> readEncodings(ThriftCompactReader reader) throws IOException {
-        ThriftCompactReader.CollectionHeader listHeader =
+        long listHeader =
                 reader.requireListHeader(Codes.I32, "ColumnMetaData.encodings");
-        List<Encoding> encodings = new ArrayList<>(listHeader.size());
-        for (int i = 0; i < listHeader.size(); i++) {
-            encodings.add(ThriftEnumLookup.encoding(reader.readI32()));
+        Encoding[] encodings = new Encoding[ThriftCompactReader.listSize(listHeader)];
+        for (int i = 0; i < encodings.length; i++) {
+            encodings[i] = ThriftEnumLookup.encoding(reader.readI32());
         }
-        return Collections.unmodifiableList(encodings);
+        return List.of(encodings);
     }
 }

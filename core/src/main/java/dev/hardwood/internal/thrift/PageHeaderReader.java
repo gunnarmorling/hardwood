@@ -39,12 +39,12 @@ public class PageHeaderReader {
         DictionaryPageHeader dictionaryPageHeader = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // type
                     if (reader.acceptField(header, Codes.I32)) {
                         int rawType = reader.readI32();
@@ -76,7 +76,7 @@ public class PageHeaderReader {
                     }
                     break;
                 case 6: // index_page_header (optional) - skipped for now
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
                 case 7: // dictionary_page_header
                     if (reader.acceptField(header, Codes.STRUCT)) {
@@ -89,7 +89,7 @@ public class PageHeaderReader {
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

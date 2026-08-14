@@ -13,6 +13,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -45,9 +46,26 @@ public class ThriftCompactReader {
     private static final byte TYPE_MAP = Codes.MAP;
     private static final byte TYPE_STRUCT = Codes.STRUCT;
 
+    /// Returned by [#readFieldHeader] for the STOP field that ends a struct. No real header packs
+    /// to this value: it would take a wire type of `0xFF`, and the type comes from a nibble.
+    public static final int STOP_FIELD = -1;
+
+    private static final int FIELD_ID_SHIFT = 8;
+    private static final int TYPE_MASK = 0xFF;
+
+    /// Returned by [#acceptListHeader] for a list field that is absent or carries the wrong
+    /// element type. No real header packs to this value: it would need a negative element count.
+    static final long ABSENT_LIST = -1;
+
+    /// Element type occupies the low byte of a packed list header, the count the rest.
+    private static final int ELEMENT_TYPE_BITS = 8;
+
     private final ByteBuffer buffer;
     private final int startPosition;
     private short lastFieldId = 0;
+    /// Per-decode cache of repeated column paths, created on first use so the page-header path —
+    /// which has none — never allocates one.
+    private RepeatedPathCache pathCache;
 
     /// Creates a reader that reads directly from a ByteBuffer.
     ///
@@ -74,6 +92,52 @@ public class ThriftCompactReader {
     /// Returns the number of bytes still available to read in the buffer.
     public int remaining() {
         return buffer.remaining();
+    }
+
+    /// This decode's cache of repeated column paths.
+    RepeatedPathCache pathCache() {
+        if (pathCache == null) {
+            pathCache = new RepeatedPathCache();
+        }
+        return pathCache;
+    }
+
+    /// The reader's current offset into its buffer, for capturing a byte range that was read.
+    int position() {
+        return buffer.position();
+    }
+
+    /// Whether the bytes at the current position are `expected`, without moving the position.
+    boolean matchesAt(byte[] expected) {
+        if (buffer.remaining() < expected.length) {
+            return false;
+        }
+        int from = buffer.position();
+        if (buffer.hasArray()) {
+            int offset = buffer.arrayOffset() + from;
+            return Arrays.equals(expected, 0, expected.length, buffer.array(), offset, offset + expected.length);
+        }
+        for (int i = 0; i < expected.length; i++) {
+            if (expected[i] != buffer.get(from + i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Advances past `length` bytes already known to be present.
+    void skipBytes(int length) throws EOFException {
+        if (buffer.remaining() < length) {
+            throw new EOFException("Unexpected EOF while skipping " + length + " bytes");
+        }
+        buffer.position(buffer.position() + length);
+    }
+
+    /// A copy of `length` bytes from `from`, independent of this reader's buffer.
+    byte[] copyRange(int from, int length) {
+        byte[] bytes = new byte[length];
+        buffer.get(from, bytes, 0, length);
+        return bytes;
     }
 
     /// Returns a zero-copy, read-only, little-endian view of the next `length` bytes and advances
@@ -197,18 +261,39 @@ public class ThriftCompactReader {
     }
 
     /// Read a string value.
+    ///
+    /// A heap-backed buffer — which is what the footer and every page header are read from — is
+    /// decoded in place, so the string costs one object rather than a `byte[]` copy and then the
+    /// string built from it.
     public String readString() throws IOException {
-        return new String(readBinary(), StandardCharsets.UTF_8);
+        int length = checkedBinaryLength(readVarint());
+        if (buffer.hasArray()) {
+            if (buffer.remaining() < length) {
+                throw new EOFException("Unexpected EOF while reading bytes");
+            }
+            String value = new String(buffer.array(), buffer.arrayOffset() + buffer.position(), length,
+                    StandardCharsets.UTF_8);
+            buffer.position(buffer.position() + length);
+            return value;
+        }
+        byte[] data = new byte[length];
+        readBytes(data);
+        return new String(data, StandardCharsets.UTF_8);
     }
 
-    /// Read a field header and return field info.
-    /// Returns null when STOP field is encountered.
-    public FieldHeader readFieldHeader() throws IOException {
+    /// Read a field header and return it packed into an `int`: the field id in the upper bits,
+    /// the wire type in the low byte. Returns [#STOP_FIELD] when the STOP field is encountered.
+    ///
+    /// The header is packed rather than returned as an object because a struct-heavy footer
+    /// reads one per field — a wide file's footer runs to tens of millions — and the object
+    /// escapes into [#acceptField], so it is allocated for real rather than scalarized.
+    /// Unpack it with [#fieldId] and [#fieldType].
+    public int readFieldHeader() throws IOException {
         byte b = readByte();
 
         if (b == ThriftCompactConstants.STOP) {
             lastFieldId = 0;
-            return null;
+            return STOP_FIELD;
         }
 
         byte type = (byte) (b & 0x0F);
@@ -225,7 +310,18 @@ public class ThriftCompactReader {
         }
 
         lastFieldId = fieldId;
-        return new FieldHeader(fieldId, type);
+        return (fieldId << FIELD_ID_SHIFT) | type;
+    }
+
+    /// The field id of a header returned by [#readFieldHeader].
+    public static short fieldId(int fieldHeader) {
+        return (short) (fieldHeader >> FIELD_ID_SHIFT);
+    }
+
+    /// The wire type of a header returned by [#readFieldHeader], one of
+    /// [ThriftCompactConstants.FieldType.Codes].
+    public static byte fieldType(int fieldHeader) {
+        return (byte) (fieldHeader & TYPE_MASK);
     }
 
     /// Gate a struct field on its declared wire type: returns `true` with the reader positioned
@@ -239,11 +335,12 @@ public class ThriftCompactReader {
     ///
     /// @param header the field header just read
     /// @param expectedType wire code the field must declare, from [ThriftCompactConstants.FieldType.Codes]
-    boolean acceptField(FieldHeader header, byte expectedType) throws IOException {
-        if (header.type() == expectedType) {
+    boolean acceptField(int header, byte expectedType) throws IOException {
+        byte type = fieldType(header);
+        if (type == expectedType) {
             return true;
         }
-        skipField(header.type());
+        skipField(type);
         return false;
     }
 
@@ -253,14 +350,15 @@ public class ThriftCompactReader {
     /// @param header the field header just read
     /// @param fallback value to report for a field declared as anything but `bool`, which is
     ///     skipped as [#acceptField] would
-    boolean readBooleanField(FieldHeader header, boolean fallback) throws IOException {
-        if (header.type() == TYPE_BOOLEAN_TRUE) {
+    boolean readBooleanField(int header, boolean fallback) throws IOException {
+        byte type = fieldType(header);
+        if (type == TYPE_BOOLEAN_TRUE) {
             return true;
         }
-        if (header.type() == TYPE_BOOLEAN_FALSE) {
+        if (type == TYPE_BOOLEAN_FALSE) {
             return false;
         }
-        skipField(header.type());
+        skipField(type);
         return fallback;
     }
 
@@ -272,7 +370,7 @@ public class ThriftCompactReader {
     /// a five-byte varint into a multi-gigabyte allocation, and a count past the `int` range would
     /// wrap to a negative capacity (an unchecked exception) or to zero (a silently empty
     /// collection) instead of a controlled error naming the file.
-    public CollectionHeader readListHeader() throws IOException {
+    public long readListHeader() throws IOException {
         byte sizeAndType = readByte();
         int size = (sizeAndType >> 4) & 0x0F;
         byte elementType = (byte) (sizeAndType & 0x0F);
@@ -282,7 +380,18 @@ public class ThriftCompactReader {
             size = checkedCollectionSize(readVarint());
         }
 
-        return new CollectionHeader(elementType, size);
+        return ((long) size << ELEMENT_TYPE_BITS) | elementType;
+    }
+
+    /// The element count of a header returned by [#readListHeader].
+    public static int listSize(long listHeader) {
+        return (int) (listHeader >> ELEMENT_TYPE_BITS);
+    }
+
+    /// The element wire type of a header returned by [#readListHeader], one of
+    /// [ThriftCompactConstants.ElementType].
+    public static byte elementType(long listHeader) {
+        return (byte) (listHeader & TYPE_MASK);
     }
 
     /// Read the header of a **required** list field and check its declared element type.
@@ -294,10 +403,10 @@ public class ThriftCompactReader {
     /// @param expectedElementType wire code the elements must declare
     /// @param fieldName fully-qualified field name for the error message
     /// @throws IOException if the list declares a different element type
-    CollectionHeader requireListHeader(byte expectedElementType, String fieldName) throws IOException {
-        CollectionHeader header = readListHeader();
-        if (header.elementType() != expectedElementType) {
-            throw wrongElementType(fieldName, header.elementType(), hex(expectedElementType));
+    long requireListHeader(byte expectedElementType, String fieldName) throws IOException {
+        long header = readListHeader();
+        if (elementType(header) != expectedElementType) {
+            throw wrongElementType(fieldName, elementType(header), hex(expectedElementType));
         }
         return header;
     }
@@ -314,13 +423,13 @@ public class ThriftCompactReader {
     /// @param fieldName fully-qualified field name for the log message
     /// @return the header, or `null` if the list declares a different element type and has been
     ///     skipped
-    CollectionHeader acceptListHeader(byte expectedElementType, String fieldName) throws IOException {
-        CollectionHeader header = readListHeader();
-        if (header.elementType() != expectedElementType) {
+    long acceptListHeader(byte expectedElementType, String fieldName) throws IOException {
+        long header = readListHeader();
+        if (elementType(header) != expectedElementType) {
             skipElements(header);
             LOG.log(System.Logger.Level.WARNING, "Ignoring " + fieldName + ": wrong Thrift element type "
-                    + hex(header.elementType()) + " (expected " + hex(expectedElementType) + ")");
-            return null;
+                    + hex(elementType(header)) + " (expected " + hex(expectedElementType) + ")");
+            return ABSENT_LIST;
         }
         return header;
     }
@@ -331,9 +440,9 @@ public class ThriftCompactReader {
     /// @param fieldName fully-qualified field name for the error message
     /// @param elementReader reader for one element
     <T> List<T> readStructList(String fieldName, StructReader<T> elementReader) throws IOException {
-        CollectionHeader header = requireListHeader(Codes.STRUCT, fieldName);
-        List<T> values = new ArrayList<>(header.size());
-        for (int i = 0; i < header.size(); i++) {
+        long header = requireListHeader(Codes.STRUCT, fieldName);
+        List<T> values = new ArrayList<>(listSize(header));
+        for (int i = 0, n = listSize(header); i < n; i++) {
             values.add(elementReader.read(this));
         }
         return Collections.unmodifiableList(values);
@@ -341,23 +450,26 @@ public class ThriftCompactReader {
 
     /// Read a required `list<string>` in full.
     ///
+    /// The result is an immutable [List#of] list rather than a wrapped [ArrayList], saving two
+    /// objects per list — worth having where a footer holds one such list per column chunk.
+    ///
     /// @param fieldName fully-qualified field name for the error message
     List<String> readStringList(String fieldName) throws IOException {
-        CollectionHeader header = requireListHeader(Codes.BINARY, fieldName);
-        List<String> values = new ArrayList<>(header.size());
-        for (int i = 0; i < header.size(); i++) {
-            values.add(readString());
+        long header = requireListHeader(Codes.BINARY, fieldName);
+        String[] values = new String[listSize(header)];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = readString();
         }
-        return Collections.unmodifiableList(values);
+        return List.of(values);
     }
 
     /// Read a required `list<binary>` in full.
     ///
     /// @param fieldName fully-qualified field name for the error message
     List<byte[]> readBinaryList(String fieldName) throws IOException {
-        CollectionHeader header = requireListHeader(Codes.BINARY, fieldName);
-        List<byte[]> values = new ArrayList<>(header.size());
-        for (int i = 0; i < header.size(); i++) {
+        long header = requireListHeader(Codes.BINARY, fieldName);
+        List<byte[]> values = new ArrayList<>(listSize(header));
+        for (int i = 0, n = listSize(header); i < n; i++) {
             values.add(readBinary());
         }
         return Collections.unmodifiableList(values);
@@ -370,11 +482,11 @@ public class ThriftCompactReader {
     ///
     /// @param fieldName fully-qualified field name for the error message
     boolean[] readBoolArray(String fieldName) throws IOException {
-        CollectionHeader header = readListHeader();
-        if (header.elementType() != TYPE_BOOLEAN_TRUE && header.elementType() != TYPE_BOOLEAN_FALSE) {
-            throw wrongElementType(fieldName, header.elementType(), "bool");
+        long header = readListHeader();
+        if (elementType(header) != TYPE_BOOLEAN_TRUE && elementType(header) != TYPE_BOOLEAN_FALSE) {
+            throw wrongElementType(fieldName, elementType(header), "bool");
         }
-        boolean[] values = new boolean[header.size()];
+        boolean[] values = new boolean[listSize(header)];
         for (int i = 0; i < values.length; i++) {
             values[i] = readBoolean();
         }
@@ -391,11 +503,11 @@ public class ThriftCompactReader {
     ///
     /// @param fieldName fully-qualified field name for the log message
     long[] readOptionalI64Array(String fieldName) throws IOException {
-        CollectionHeader header = acceptListHeader(Codes.I64, fieldName);
-        if (header == null) {
+        long header = acceptListHeader(Codes.I64, fieldName);
+        if (header == ABSENT_LIST) {
             return null;
         }
-        long[] values = new long[header.size()];
+        long[] values = new long[listSize(header)];
         for (int i = 0; i < values.length; i++) {
             values[i] = readI64();
         }
@@ -442,9 +554,10 @@ public class ThriftCompactReader {
     }
 
     /// Skip every element of a list, set or map whose header has just been read.
-    public void skipElements(CollectionHeader header) throws IOException {
-        for (int i = 0; i < header.size(); i++) {
-            skipElement(header.elementType());
+    public void skipElements(long header) throws IOException {
+        byte type = elementType(header);
+        for (int i = 0, n = listSize(header); i < n; i++) {
+            skipElement(type);
         }
     }
 
@@ -489,7 +602,9 @@ public class ThriftCompactReader {
                 readDouble();
                 break;
             case TYPE_BINARY:
-                readBinary();
+                // Advance past the value rather than materializing it: a skipped binary is one
+                // nobody asked for, and copying it to drop it costs an allocation per field.
+                skipBytes(checkedBinaryLength(readVarint()));
                 break;
             case TYPE_LIST:
             case TYPE_SET:
@@ -524,11 +639,11 @@ public class ThriftCompactReader {
         short saved = pushFieldIdContext();
         try {
             while (true) {
-                FieldHeader header = readFieldHeader();
-                if (header == null) {
+                int header = readFieldHeader();
+                if (header == STOP_FIELD) {
                     break;
                 }
-                skipField(header.type());
+                skipField(fieldType(header));
             }
         }
         finally {
@@ -555,9 +670,4 @@ public class ThriftCompactReader {
         T read(ThriftCompactReader reader) throws IOException;
     }
 
-    public static record FieldHeader(short fieldId, byte type) {
-    }
-
-    public static record CollectionHeader(byte elementType, int size) {
-    }
 }

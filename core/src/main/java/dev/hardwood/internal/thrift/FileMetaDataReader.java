@@ -43,12 +43,12 @@ public class FileMetaDataReader {
         List<ColumnOrder> columnOrders = Collections.emptyList();
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // version
                     if (reader.acceptField(header, Codes.I32)) {
                         version = reader.readI32();
@@ -90,7 +90,7 @@ public class FileMetaDataReader {
                     // later page scan crash with an unattributable error.
                     throw new EncryptedParquetException();
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
@@ -103,13 +103,13 @@ public class FileMetaDataReader {
     /// this reader will not decode leaves them empty — the same shape as a writer that omits
     /// the field.
     private static List<ColumnOrder> readColumnOrders(ThriftCompactReader reader) throws IOException {
-        ThriftCompactReader.CollectionHeader listHeader =
+        long listHeader =
                 reader.acceptListHeader(Codes.STRUCT, "FileMetaData.column_orders");
-        if (listHeader == null) {
+        if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return List.of();
         }
-        List<ColumnOrder> orders = new ArrayList<>(listHeader.size());
-        for (int i = 0; i < listHeader.size(); i++) {
+        List<ColumnOrder> orders = new ArrayList<>(ThriftCompactReader.listSize(listHeader));
+        for (int i = 0; i < ThriftCompactReader.listSize(listHeader); i++) {
             orders.add(ColumnOrderReader.read(reader));
         }
         return Collections.unmodifiableList(orders);
