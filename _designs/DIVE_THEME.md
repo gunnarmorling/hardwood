@@ -32,9 +32,18 @@ Concrete styling on the four `Theme` methods:
 | `selection()` | `Style.EMPTY.bold().fg(rgb(181, 137, 0))` | `Style.EMPTY.bold().fg(Color.YELLOW)` |
 | `dim()` | `Style.EMPTY.dim()` | (same — uses ANSI faint attribute) |
 
-Truecolor support is detected once at class-load via `$COLORTERM`
-(`truecolor` or `24bit`). The boolean is fixed for the JVM lifetime;
-`Theme` is otherwise stateless.
+Truecolor support is probed on every `accent()` / `selection()` call
+via `$COLORTERM` (`truecolor` or `24bit`); `Theme` is otherwise
+stateless. The probe is not cached in a `static final` field because a
+native-image build can run the static initialiser at build time and
+freeze the result to the build runner's environment (#394).
+
+Setting the `hardwood.dive.truecolor` system property forces the
+truecolor branch on regardless of `$COLORTERM`. The `screenshots`
+Maven profile sets it so the checked-in SVGs under
+`docs/content/assets/cli/` always carry the Solarized palette; a
+recording made from a terminal without `$COLORTERM` would otherwise
+rewrite every asset to the named-ANSI fallback.
 
 `accent()` and `selection()` use truecolor RGB pinned to Solarized's
 accent slots when available so that iTerm2's "Use bright colors for
@@ -204,8 +213,8 @@ All four return `Style`. Selection sites compose `.bold()` onto
 none) extracts it via `.fg().orElseThrow()`.
 
 There is no `init()` and no `--theme` flag. The truecolor probe runs
-in a static initialiser; the values are immutable for the JVM's
-lifetime.
+per call; `hardwood.dive.truecolor` is the only override, and it
+exists for reproducible screenshot capture rather than for end users.
 
 ## Testing
 

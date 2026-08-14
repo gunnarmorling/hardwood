@@ -44,5 +44,7 @@ Override fixture path:
 
 Notes:
 - Existing screenshots are overwritten in place.
+- The profile sets `-Dhardwood.dive.truecolor=true`, so the captured SVGs carry
+  the Solarized palette regardless of the recording terminal's `$COLORTERM`.
 - The fixture parquet file must already exist before running the profile.
 - When `-Dscreenshots.parquetFile=...` is provided, that fixture is used directly.

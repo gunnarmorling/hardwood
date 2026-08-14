@@ -20,6 +20,7 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
 - `hardwood help <command>` is removed — use `hardwood <command> --help` (or `-h`)
 - Shell completion scripts are now generated for zsh and fish in addition to bash
 - The native `hardwood` binary now reads LZ4 and LZ4_RAW compressed files
+- Byte sizes printed by the CLI and the `dive` TUI carry binary unit labels (`KiB`, `MiB`, `GiB`), matching the 1024-based scaling they have always used
 
 ## 1.0.0.Final (2026-06-25)
 

@@ -49,6 +49,14 @@ public final class Theme {
     private static final Color SOLARIZED_BLUE = Color.rgb(38, 139, 210);
     private static final Color SOLARIZED_YELLOW = Color.rgb(181, 137, 0);
 
+    /// Forces the truecolor branch on regardless of `$COLORTERM`. Set by
+    /// the `screenshots` Maven profile so the checked-in `dive` SVGs under
+    /// `docs/content/assets/cli/` carry the Solarized palette whatever
+    /// terminal the regeneration ran in; the profile drives the recording
+    /// through `exec:java`, which runs in-process and so cannot inject an
+    /// environment variable of its own.
+    static final String FORCE_TRUECOLOR_PROPERTY = "hardwood.dive.truecolor";
+
     /// Bold default foreground — labels, breadcrumb leaf, enabled
     /// drill-into menu labels, the `/` search prompt, and other
     /// "you-are-here" markers. Adds visual weight without imposing
@@ -84,7 +92,7 @@ public final class Theme {
     /// default body fg. On legacy terminals named `Color.BLUE`
     /// (ANSI 4) is used.
     public static Style accent() {
-        return Style.EMPTY.fg(supportsTruecolor(System.getenv("COLORTERM")) ? SOLARIZED_BLUE : Color.BLUE);
+        return Style.EMPTY.fg(truecolor() ? SOLARIZED_BLUE : Color.BLUE);
     }
 
     /// Active-row indicator for navigable tables and menus —
@@ -93,7 +101,14 @@ public final class Theme {
     /// truecolor terminals (Solarized yellow `#b58900`); bold
     /// named `Color.YELLOW` otherwise.
     public static Style selection() {
-        return Style.EMPTY.bold().fg(supportsTruecolor(System.getenv("COLORTERM")) ? SOLARIZED_YELLOW : Color.YELLOW);
+        return Style.EMPTY.bold().fg(truecolor() ? SOLARIZED_YELLOW : Color.YELLOW);
+    }
+
+    /// Whether the accent tones render as truecolor RGB: either the
+    /// terminal advertises truecolor via `$COLORTERM`, or
+    /// [#FORCE_TRUECOLOR_PROPERTY] is set.
+    private static boolean truecolor() {
+        return Boolean.getBoolean(FORCE_TRUECOLOR_PROPERTY) || supportsTruecolor(System.getenv("COLORTERM"));
     }
 
     /// Whether the given `$COLORTERM` value advertises 24-bit

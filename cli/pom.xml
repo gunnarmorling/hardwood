@@ -314,6 +314,14 @@
                       <key>tamboui.record.fps</key>
                       <value>30</value>
                     </property>
+                    <!-- Pins the Solarized palette into the captured SVGs. Without it the
+                         recording inherits the terminal's $COLORTERM, so regenerating from a
+                         non-truecolor terminal silently rewrites every checked-in screenshot
+                         to the named-ANSI fallback. -->
+                    <property>
+                      <key>hardwood.dive.truecolor</key>
+                      <value>true</value>
+                    </property>
                   </systemProperties>
                 </configuration>
               </execution>

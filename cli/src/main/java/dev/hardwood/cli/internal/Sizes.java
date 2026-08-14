@@ -18,17 +18,25 @@ public class Sizes {
         return cmd.pathInSchema().toString();
     }
 
+    /// Largest scaled value that still renders below `1024.0` at one
+    /// decimal place. Anything at or above it rounds up to `1024.0`,
+    /// which belongs in the next unit — so the branches switch here
+    /// rather than at the exact power of two.
+    private static final double ROUNDING_LIMIT = 1_023.95;
+
     public static String format(long bytes) {
         if (bytes < 1_024) {
             return bytes + " B";
         }
-        if (bytes < 1_024 * 1_024) {
-            return Fmt.fmt("%.1f KiB", bytes / 1_024.0);
+        double kib = bytes / 1_024.0;
+        if (kib < ROUNDING_LIMIT) {
+            return Fmt.fmt("%.1f KiB", kib);
         }
-        if (bytes < 1_024L * 1_024 * 1_024) {
-            return Fmt.fmt("%.1f MiB", bytes / (1_024.0 * 1_024));
+        double mib = kib / 1_024.0;
+        if (mib < ROUNDING_LIMIT) {
+            return Fmt.fmt("%.1f MiB", mib);
         }
-        return Fmt.fmt("%.1f GiB", bytes / (1_024.0 * 1_024 * 1_024));
+        return Fmt.fmt("%.1f GiB", mib / 1_024.0);
     }
 
     /// Renders bytes as a human-readable form plus the raw byte count in

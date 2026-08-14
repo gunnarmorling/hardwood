@@ -62,4 +62,21 @@ class ThemeTest {
         assertThat(Theme.supportsTruecolor("")).isFalse();
         assertThat(Theme.supportsTruecolor(null)).isFalse();
     }
+
+    /// The `screenshots` Maven profile sets this property so the
+    /// checked-in `dive` SVGs keep the Solarized palette no matter
+    /// which terminal the regeneration ran in. Without the override
+    /// a recording made without `$COLORTERM` rewrites every asset to
+    /// the named-ANSI fallback.
+    @Test
+    void forcedTruecolorHoldsWithoutColorterm() {
+        System.setProperty(Theme.FORCE_TRUECOLOR_PROPERTY, "true");
+        try {
+            assertThat(Theme.accent().fg().orElseThrow()).isEqualTo(Color.rgb(38, 139, 210));
+            assertThat(Theme.selection().fg().orElseThrow()).isEqualTo(Color.rgb(181, 137, 0));
+        }
+        finally {
+            System.clearProperty(Theme.FORCE_TRUECOLOR_PROPERTY);
+        }
+    }
 }
