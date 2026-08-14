@@ -23,6 +23,7 @@ RUN microdnf install -y --nodocs \
       zlib-devel \
       file \
       vim-common \
+      util-linux-script \
       fontconfig \
       dejavu-sans-fonts \
       google-noto-sans-vf-fonts \

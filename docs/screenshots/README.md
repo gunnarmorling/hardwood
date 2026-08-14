@@ -33,14 +33,21 @@ source .docker-venv/bin/activate && python tools/simple-datagen.py
 Run:
 
 ```bash
-./mvnw -pl cli -am -Pscreenshots package -Dquick
+script -qec "./mvnw -pl cli -am -Pscreenshots package -Dquick" /dev/null
 ```
 
 Override fixture path:
 
 ```bash
-./mvnw -pl cli -am -Pscreenshots package -Dquick -Dscreenshots.parquetFile=/absolute/path/to/file.parquet
+script -qec "./mvnw -pl cli -am -Pscreenshots package -Dquick -Dscreenshots.parquetFile=/absolute/path/to/file.parquet" /dev/null
 ```
+
+The profile drives `dive` through `exec:java`, and `dive` refuses to start
+unless stdout is a TTY. `script` (from `util-linux-script`, installed in the dev
+container) runs the build attached to a pseudo-terminal; `-q` drops its banner,
+`-e` propagates the build's exit status, and the typescript goes to `/dev/null`
+because only the terminal is wanted. On a normal interactive shell the bare
+`./mvnw …` command works too.
 
 Notes:
 - Existing screenshots are overwritten in place.
