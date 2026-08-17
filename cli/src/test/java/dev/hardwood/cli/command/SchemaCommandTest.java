@@ -49,13 +49,10 @@ class SchemaCommandTest implements SchemaCommandContract {
 
     @Test
     void sanitizesNamesInAvroSchema(@TempDir Path tempDir) throws Exception {
-        Path parquetFile = tempDir.resolve("escaped-names.parquet");
-        FileSchema schema = FileSchema.builder("root \"schema\"\\path")
+        Path parquetFile = write(tempDir, FileSchema.builder("root \"schema\"\\path")
                 .addColumn("say \"hi\"\\field", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .addColumn("bell\u0007field", PhysicalType.INT32, RepetitionType.REQUIRED)
-                .build();
-        try (ParquetFileWriter ignored = ParquetFileWriter.create(OutputFile.of(parquetFile), schema)) {
-        }
+                .build());
 
         Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "AVRO");
 
@@ -71,14 +68,7 @@ class SchemaCommandTest implements SchemaCommandContract {
 
     @Test
     void disambiguatesCollidingFieldNamesInAvroSchema(@TempDir Path tempDir) throws Exception {
-        Path parquetFile = tempDir.resolve("colliding-names.parquet");
-        FileSchema schema = FileSchema.builder("schema")
-                .addColumn("a b", PhysicalType.INT32, RepetitionType.REQUIRED)
-                .addColumn("a-b", PhysicalType.INT32, RepetitionType.REQUIRED)
-                .addColumn("a.b", PhysicalType.INT32, RepetitionType.REQUIRED)
-                .build();
-        try (ParquetFileWriter ignored = ParquetFileWriter.create(OutputFile.of(parquetFile), schema)) {
-        }
+        Path parquetFile = write(tempDir, collidingNames());
 
         Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "AVRO");
 
@@ -105,6 +95,50 @@ class SchemaCommandTest implements SchemaCommandContract {
         assertThat(result.output())
                 .contains("syntax = \"proto3\"")
                 .contains("message");
+    }
+
+    @Test
+    void sanitizesNamesInProtoSchema(@TempDir Path tempDir) throws Exception {
+        Path parquetFile = write(tempDir, FileSchema.builder("root \"schema\"")
+                .addColumn("total (usd)", PhysicalType.DOUBLE, RepetitionType.OPTIONAL)
+                .addColumn("bell\u0007field", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("plain", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .build());
+
+        Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "PROTO");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                syntax = "proto3";
+
+                message Root__schema_ {
+                  // Parquet name: total (usd)
+                  optional double total__usd_ = 1;
+                  // Parquet name: bell\\u0007field
+                  int32 bell_field = 2;
+                  int32 plain = 3;
+                }""");
+    }
+
+    @Test
+    void disambiguatesCollidingFieldNamesInProtoSchema(@TempDir Path tempDir) throws Exception {
+        Path parquetFile = write(tempDir, collidingNames());
+
+        Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "PROTO");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("int32 a_b = 1;")
+                .contains("int32 a_b_2 = 2;")
+                .contains("int32 a_b_3 = 3;");
+    }
+
+    @Test
+    void leavesLegalNamesUncommentedInProtoSchema() {
+        Cli.Result result = Cli.launch("schema", "-f", NESTED_FILE, "--format", "PROTO");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).doesNotContain("//");
     }
 
     @Test
@@ -144,5 +178,21 @@ class SchemaCommandTest implements SchemaCommandContract {
                     optional int64 typed_value;
                   }
                 }""");
+    }
+
+    /// Three names that all sanitize to `a_b`.
+    private static FileSchema collidingNames() {
+        return FileSchema.builder("schema")
+                .addColumn("a b", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("a-b", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("a.b", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .build();
+    }
+
+    private static Path write(Path tempDir, FileSchema schema) throws Exception {
+        Path parquetFile = tempDir.resolve("names.parquet");
+        try (ParquetFileWriter ignored = ParquetFileWriter.create(OutputFile.of(parquetFile), schema)) {
+        }
+        return parquetFile;
     }
 }

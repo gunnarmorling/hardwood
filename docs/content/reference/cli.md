@@ -83,16 +83,28 @@ hardwood convert -n -50 --format csv -f data.parquet
 `-F AVRO` and `-F PROTO` render it as an Avro schema or a Protobuf message
 definition instead.
 
-Avro restricts record and field names to `[A-Za-z_][A-Za-z0-9_]*`, while
-Parquet permits any name. Names outside that grammar are rewritten for the
-Avro output: each character outside `[A-Za-z0-9_]` becomes `_`, a leading `_`
-is prepended to a name starting with a digit, and names that collide after
-rewriting get a `_2`, `_3`, … suffix. A rewritten name carries its Parquet
-name in the `doc` attribute:
+Avro names and Protobuf identifiers are both restricted to
+`[A-Za-z_][A-Za-z0-9_]*`, while Parquet permits any name. Names outside that
+grammar are rewritten in both formats: each character outside `[A-Za-z0-9_]`
+becomes `_`, a leading `_` is prepended to a name starting with a digit, and
+names that collide within one record or message after rewriting get a `_2`,
+`_3`, … suffix.
+
+A rewritten name keeps its Parquet name in the output — as a `doc` attribute
+in Avro:
 
 ```json
 { "name": "total__usd_", "doc": "Parquet name: total (usd)", "type": "double" }
 ```
+
+and as a comment in Protobuf:
+
+```proto
+// Parquet name: total (usd)
+optional double total__usd_ = 1;
+```
+
+## Interactive exploration (`dive`)
 
 `hardwood dive` launches a terminal UI for interactively navigating a Parquet file's structure:
 

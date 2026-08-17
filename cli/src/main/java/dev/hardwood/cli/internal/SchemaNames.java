@@ -7,17 +7,18 @@
  */
 package dev.hardwood.cli.internal;
 
-/// Mapping of arbitrary Parquet names onto the Avro name grammar.
+/// Mapping of arbitrary Parquet names onto the name grammar of the schema formats the
+/// `schema` command emits.
 ///
-/// Avro restricts record and field names to `[A-Za-z_][A-Za-z0-9_]*`, while Parquet
+/// Avro names and proto identifiers are both `[A-Za-z_][A-Za-z0-9_]*`, while Parquet
 /// permits any UTF-8 string. A schema carrying a name outside that grammar is rejected
-/// by every Avro parser, so names are rewritten to fit.
-public final class AvroNames {
+/// by every parser of either format, so names are rewritten to fit.
+public final class SchemaNames {
 
-    private AvroNames() {
+    private SchemaNames() {
     }
 
-    /// Rewrites `name` into a legal Avro name: every character outside
+    /// Rewrites `name` into a legal schema name: every character outside
     /// `[A-Za-z0-9_]` becomes `_`, and a leading `_` is prepended when the result
     /// would otherwise start with a digit. An empty name maps to `_`.
     ///
