@@ -9,7 +9,9 @@ package dev.hardwood.cli.command;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.aesh.command.Command;
 import org.aesh.command.CommandDefinition;
@@ -19,6 +21,7 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.AvroNames;
 import dev.hardwood.cli.internal.JsonStrings;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -79,12 +82,18 @@ public class SchemaCommand implements Command<CommandInvocation> {
         String p = "  ".repeat(indent);
         sb.append(p).append("{\n");
         sb.append(p).append("  \"type\": \"record\",\n");
-        sb.append(p).append("  \"name\": \"").append(JsonStrings.escape(capitalize(name))).append("\",\n");
+        sb.append(p).append("  \"name\": \"").append(AvroNames.sanitize(capitalize(name))).append("\",\n");
+        String doc = avroDoc(name);
+        if (!doc.isEmpty()) {
+            sb.append(p).append("  ").append(doc).append("\n");
+        }
         sb.append(p).append("  \"fields\": [\n");
 
         List<SchemaNode> children = group.children();
+        Set<String> usedNames = new HashSet<>(children.size());
         for (int i = 0; i < children.size(); i++) {
-            appendAvroField(sb, children.get(i), indent + 2);
+            SchemaNode child = children.get(i);
+            appendAvroField(sb, child, disambiguate(AvroNames.sanitize(child.name()), usedNames), indent + 2);
             if (i < children.size() - 1) {
                 sb.append(",");
             }
@@ -95,15 +104,41 @@ public class SchemaCommand implements Command<CommandInvocation> {
         sb.append(p).append("}");
     }
 
-    private static void appendAvroField(StringBuilder sb, SchemaNode node, int indent) {
+    private static void appendAvroField(StringBuilder sb, SchemaNode node, String avroName, int indent) {
         boolean optional = node.repetitionType() == RepetitionType.OPTIONAL;
         String p = "  ".repeat(indent);
-        sb.append(p).append("{ \"name\": \"").append(JsonStrings.escape(node.name())).append("\", \"type\": ");
+        sb.append(p).append("{ \"name\": \"").append(avroName).append("\", ");
+        String doc = avroDoc(node.name());
+        if (!doc.isEmpty()) {
+            sb.append(doc).append(" ");
+        }
+        sb.append("\"type\": ");
         appendAvroType(sb, node, optional, indent);
         if (optional) {
             sb.append(", \"default\": null");
         }
         sb.append(" }");
+    }
+
+    /// Returns a `doc` attribute carrying the Parquet name whenever that name does not
+    /// survive the mapping onto the Avro name grammar, so the rewrite is visible rather
+    /// than silent. Compared against the sanitized name only: the capitalization applied
+    /// to record names is cosmetic and does not warrant a note.
+    private static String avroDoc(String parquetName) {
+        if (parquetName.equals(AvroNames.sanitize(parquetName))) {
+            return "";
+        }
+        return "\"doc\": \"Parquet name: " + JsonStrings.escape(parquetName) + "\",";
+    }
+
+    /// Sanitizing is not injective, so two Parquet names can map onto the same Avro name.
+    /// Avro rejects a record with duplicate field names, hence the numeric suffix.
+    private static String disambiguate(String avroName, Set<String> usedNames) {
+        String candidate = avroName;
+        for (int suffix = 2; !usedNames.add(candidate); suffix++) {
+            candidate = avroName + "_" + suffix;
+        }
+        return candidate;
     }
 
     private static void appendAvroType(StringBuilder sb, SchemaNode node, boolean optional, int indent) {

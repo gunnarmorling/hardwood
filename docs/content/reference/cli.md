@@ -49,6 +49,9 @@ hardwood info -f data.parquet
 # Print schema
 hardwood schema -f data.parquet
 
+# Print the schema as Avro or Protobuf
+hardwood schema -F AVRO -f data.parquet
+
 # Show first 20 rows
 hardwood print -n 20 -f data.parquet
 
@@ -74,7 +77,22 @@ hardwood convert -n 100 --format json -f data.parquet
 hardwood convert -n -50 --format csv -f data.parquet
 ```
 
-## Interactive exploration (`dive`)
+## Schema output formats
+
+`hardwood schema` prints the Parquet schema in its native form by default.
+`-F AVRO` and `-F PROTO` render it as an Avro schema or a Protobuf message
+definition instead.
+
+Avro restricts record and field names to `[A-Za-z_][A-Za-z0-9_]*`, while
+Parquet permits any name. Names outside that grammar are rewritten for the
+Avro output: each character outside `[A-Za-z0-9_]` becomes `_`, a leading `_`
+is prepended to a name starting with a digit, and names that collide after
+rewriting get a `_2`, `_3`, … suffix. A rewritten name carries its Parquet
+name in the `doc` attribute:
+
+```json
+{ "name": "total__usd_", "doc": "Parquet name: total (usd)", "type": "double" }
+```
 
 `hardwood dive` launches a terminal UI for interactively navigating a Parquet file's structure:
 

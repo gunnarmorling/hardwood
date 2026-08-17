@@ -48,10 +48,11 @@ class SchemaCommandTest implements SchemaCommandContract {
     }
 
     @Test
-    void escapesNamesInAvroSchema(@TempDir Path tempDir) throws Exception {
+    void sanitizesNamesInAvroSchema(@TempDir Path tempDir) throws Exception {
         Path parquetFile = tempDir.resolve("escaped-names.parquet");
         FileSchema schema = FileSchema.builder("root \"schema\"\\path")
                 .addColumn("say \"hi\"\\field", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("bell\u0007field", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .build();
         try (ParquetFileWriter ignored = ParquetFileWriter.create(OutputFile.of(parquetFile), schema)) {
         }
@@ -59,9 +60,41 @@ class SchemaCommandTest implements SchemaCommandContract {
         Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "AVRO");
 
         assertThat(result.exitCode()).isZero();
-        Schema parsed = new Schema.Parser().setValidate(false).parse(result.output());
-        assertThat(parsed.getName()).isEqualTo("Root \"schema\"\\path");
-        assertThat(parsed.getFields()).extracting(Schema.Field::name).containsExactly("say \"hi\"\\field");
+        Schema parsed = new Schema.Parser().parse(result.output());
+        assertThat(parsed.getName()).isEqualTo("Root__schema__path");
+        assertThat(parsed.getDoc()).isEqualTo("Parquet name: root \"schema\"\\path");
+        assertThat(parsed.getFields()).extracting(Schema.Field::name)
+                .containsExactly("say__hi__field", "bell_field");
+        assertThat(parsed.getFields()).extracting(Schema.Field::doc)
+                .containsExactly("Parquet name: say \"hi\"\\field", "Parquet name: bell\u0007field");
+    }
+
+    @Test
+    void disambiguatesCollidingFieldNamesInAvroSchema(@TempDir Path tempDir) throws Exception {
+        Path parquetFile = tempDir.resolve("colliding-names.parquet");
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("a b", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("a-b", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("a.b", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .build();
+        try (ParquetFileWriter ignored = ParquetFileWriter.create(OutputFile.of(parquetFile), schema)) {
+        }
+
+        Cli.Result result = Cli.launch("schema", "-f", parquetFile.toString(), "--format", "AVRO");
+
+        assertThat(result.exitCode()).isZero();
+        Schema parsed = new Schema.Parser().parse(result.output());
+        assertThat(parsed.getFields()).extracting(Schema.Field::name).containsExactly("a_b", "a_b_2", "a_b_3");
+    }
+
+    @Test
+    void leavesLegalNamesUndocumentedInAvroSchema() {
+        Cli.Result result = Cli.launch("schema", "-f", NESTED_FILE, "--format", "AVRO");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).doesNotContain("\"doc\"");
+        Schema parsed = new Schema.Parser().parse(result.output());
+        assertThat(parsed.getType()).isEqualTo(Schema.Type.RECORD);
     }
 
     @Test

@@ -244,9 +244,10 @@
       <artifactId>hardwood-test-support</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Parses the emitted Avro schema in SchemaCommandTest -->
     <dependency>
-      <groupId>dev.hardwood</groupId>
-      <artifactId>hardwood-avro</artifactId>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -1,0 +1,55 @@
+/*
+ *  SPDX-License-Identifier: Apache-2.0
+ *
+ *  Copyright The original authors
+ *
+ *  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package dev.hardwood.cli.internal;
+
+/// Mapping of arbitrary Parquet names onto the Avro name grammar.
+///
+/// Avro restricts record and field names to `[A-Za-z_][A-Za-z0-9_]*`, while Parquet
+/// permits any UTF-8 string. A schema carrying a name outside that grammar is rejected
+/// by every Avro parser, so names are rewritten to fit.
+public final class AvroNames {
+
+    private AvroNames() {
+    }
+
+    /// Rewrites `name` into a legal Avro name: every character outside
+    /// `[A-Za-z0-9_]` becomes `_`, and a leading `_` is prepended when the result
+    /// would otherwise start with a digit. An empty name maps to `_`.
+    ///
+    /// The mapping is not injective — two distinct Parquet names can collide, so
+    /// callers emitting several names into the same scope must disambiguate the
+    /// results themselves.
+    ///
+    /// @throws NullPointerException if `name` is `null`
+    public static String sanitize(String name) {
+        if (name.isEmpty()) {
+            return "_";
+        }
+
+        int length = name.length();
+        StringBuilder sb = new StringBuilder(length + 1);
+        // Every illegal character maps to '_', which is itself a legal first character,
+        // so only a leading digit still needs the prefix.
+        if (isDigit(name.charAt(0))) {
+            sb.append('_');
+        }
+        for (int i = 0; i < length; i++) {
+            char c = name.charAt(i);
+            sb.append(isNamePart(c) ? c : '_');
+        }
+        return sb.toString();
+    }
+
+    private static boolean isNamePart(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || isDigit(c);
+    }
+
+    private static boolean isDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+}
