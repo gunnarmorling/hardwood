@@ -29,6 +29,13 @@ import dev.hardwood.schema.SchemaNode;
 /// `AvroSchemaConverter`, producing Avro schemas that are compatible
 /// with standard Avro tools and libraries.
 ///
+/// It diverges in one place, and only by accepting more: a map key annotated
+/// `ENUM` or `JSON` converts to a string-keyed Avro map, where parquet-java
+/// requires `STRING`. Both annotations describe UTF-8 text the string accessor
+/// serves, and `ENUM` / `JSON` values already convert to Avro strings. So a
+/// file that converts here does not necessarily convert under parquet-java —
+/// never the reverse.
+///
 /// Conversion yields a decode plan — see [#plan] — pairing each converted value
 /// position with the Parquet node it comes from, for readers that need the
 /// Parquet-side annotations the Avro schema does not carry. The converted schema
@@ -72,24 +79,33 @@ public final class AvroSchemaConverter {
     }
 
     private AvroPlanNode convertRoot() {
-        return convertGroup(fileSchema.getRootNode(), fileSchema.getName());
+        return convertGroup(fileSchema.getRootNode(), fileSchema.getName(), "");
     }
 
     /// Convert a struct group (or the schema root) to an Avro record, retaining
     /// only children that contain a projected leaf when a projection is active.
-    private AvroPlanNode convertGroup(SchemaNode.GroupNode group, String recordName) {
+    private AvroPlanNode convertGroup(SchemaNode.GroupNode group, String recordName, String path) {
         List<Schema.Field> fields = new ArrayList<>();
         List<AvroPlanNode> children = new ArrayList<>();
         for (SchemaNode child : group.children()) {
             if (projected != null && !hasProjectedLeaf(child, projected)) {
                 continue;
             }
-            AvroPlanNode childNode = convertNode(child);
+            AvroPlanNode childNode = convertNode(child, childPath(path, child.name()));
             fields.add(new Schema.Field(child.name(), fieldSchema(childNode, child), null, null));
             children.add(childNode);
         }
         return AvroPlanNode.record(
                 Schema.createRecord(recordName, null, null, false, fields), group, children);
+    }
+
+    /// The dotted path a converted node is reported under when conversion rejects
+    /// it. Names the value positions of the converted schema, so the synthetic
+    /// `list` and `key_value` levels of the Parquet encoding do not appear: a map
+    /// nested in `holder` is `holder.nested`, a map at a list element position is
+    /// `items.element`, and a map at a map value position is `outer.value`.
+    private static String childPath(String path, String name) {
+        return path.isEmpty() ? name : path + "." + name;
     }
 
     /// The schema a converted node takes as a field, list element, or map value:
@@ -118,10 +134,10 @@ public final class AvroSchemaConverter {
         };
     }
 
-    private AvroPlanNode convertNode(SchemaNode node) {
+    private AvroPlanNode convertNode(SchemaNode node, String path) {
         return switch (node) {
             case SchemaNode.PrimitiveNode prim -> convertPrimitive(prim);
-            case SchemaNode.GroupNode group -> convertGroupNode(group);
+            case SchemaNode.GroupNode group -> convertGroupNode(group, path);
         };
     }
 
@@ -130,23 +146,23 @@ public final class AvroSchemaConverter {
     /// annotation is a struct to neither. Converting it to an Avro RECORD anyway
     /// would yield a record the reader cannot fill, since the accessors would serve
     /// the group's leaf instead — so reject it here, once, rather than per value.
-    private AvroPlanNode convertGroupNode(SchemaNode.GroupNode group) {
+    private AvroPlanNode convertGroupNode(SchemaNode.GroupNode group, String path) {
         if (group.isVariant()) {
             return convertVariant(group);
         }
         if (group.isList()) {
-            return convertList(group);
+            return convertList(group, path);
         }
         if (group.isMap()) {
-            return convertMap(group);
+            return convertMap(group, path);
         }
         if (!group.isStruct()) {
-            throw new IllegalArgumentException("Group '" + group.name()
+            throw new IllegalArgumentException("Group '" + path
                     + "' carries an annotation Avro conversion does not recognise: "
                     + groupAnnotation(group));
         }
         // Plain struct — prune unprojected children recursively.
-        return convertGroup(group, group.name());
+        return convertGroup(group, group.name(), path);
     }
 
     private static String groupAnnotation(SchemaNode.GroupNode group) {
@@ -174,7 +190,7 @@ public final class AvroSchemaConverter {
         return AvroPlanNode.leaf(schema, Kind.VARIANT, group);
     }
 
-    private AvroPlanNode convertList(SchemaNode.GroupNode listGroup) {
+    private AvroPlanNode convertList(SchemaNode.GroupNode listGroup, String path) {
         SchemaNode element = listGroup.getListElement();
         if (element == null) {
             // Fallback for malformed list
@@ -183,42 +199,61 @@ public final class AvroSchemaConverter {
         // The list column is only reached when it has a projected leaf; prune the
         // element subtree so a list<struct> with a sub-field projection narrows to
         // the served fields.
-        AvroPlanNode elementNode = convertNode(element);
+        AvroPlanNode elementNode = convertNode(element, childPath(path, element.name()));
         return AvroPlanNode.container(
                 Schema.createArray(fieldSchema(elementNode, element)), Kind.LIST, listGroup, elementNode);
     }
 
-    private AvroPlanNode convertMap(SchemaNode.GroupNode mapGroup) {
+    private AvroPlanNode convertMap(SchemaNode.GroupNode mapGroup, String path) {
         // MAP -> key_value (repeated) -> key, value
         if (mapGroup.children().isEmpty()) {
             return untypedContainer(Schema::createMap, Kind.MAP, mapGroup);
         }
         SchemaNode inner = mapGroup.children().getFirst();
         if (inner instanceof SchemaNode.GroupNode kvGroup && kvGroup.children().size() >= 2) {
-            SchemaNode keyNode = kvGroup.children().getFirst();
-            if (!(keyNode instanceof SchemaNode.PrimitiveNode key)
-                    || key.type() != PhysicalType.BYTE_ARRAY
-                    || !(key.logicalType() instanceof LogicalType.StringType)) {
-                throw new IllegalArgumentException("Map '" + mapGroup.name()
-                        + "' key type must be BYTE_ARRAY (STRING), but is " + mapKeyType(keyNode));
-            }
+            requireAvroStringKey(kvGroup.children().getFirst(), path);
             SchemaNode valueNode = kvGroup.children().get(1);
             // Prune the value subtree so a map<_, struct> with a sub-field
             // projection narrows to the served fields (the key is always read).
-            AvroPlanNode value = convertNode(valueNode);
+            AvroPlanNode value = convertNode(valueNode, childPath(path, valueNode.name()));
             return AvroPlanNode.container(
                     Schema.createMap(fieldSchema(value, valueNode)), Kind.MAP, mapGroup, value);
         }
         return untypedContainer(Schema::createMap, Kind.MAP, mapGroup);
     }
 
-    private static String mapKeyType(SchemaNode keyNode) {
-        if (keyNode instanceof SchemaNode.PrimitiveNode key) {
-            return key.logicalType() == null
-                    ? key.type().toString()
-                    : key.type() + " (" + key.logicalType() + ")";
+    /// An Avro `MAP` carries no key schema — the spec fixes keys as strings — so a
+    /// Parquet map is only representable when its key converts to an Avro `STRING`.
+    /// The reader reads the key through [dev.hardwood.row.PqMap.Entry#getStringKey],
+    /// which a key of any other type cannot serve; reject the whole map here rather
+    /// than let a schema claiming string keys fail per value during materialization.
+    ///
+    /// "Converts to an Avro `STRING`" is [Kind#STRING], as decided by
+    /// [#convertLogicalType] — a `BYTE_ARRAY` annotated `STRING`, `ENUM` or `JSON`.
+    /// A `UUID` key also converts to an Avro string but is [Kind#UUID], carrying
+    /// bytes the string accessor would hand back as mojibake, so it is rejected too.
+    private void requireAvroStringKey(SchemaNode keyNode, String path) {
+        if (!(keyNode instanceof SchemaNode.PrimitiveNode key)
+                || convertPrimitive(key).kind() != Kind.STRING) {
+            throw new IllegalArgumentException("Map '" + path
+                    + "' key must be a BYTE_ARRAY annotated as STRING, ENUM or JSON"
+                    + " — Avro map keys are strings — but is " + mapKeyType(keyNode));
         }
-        return "group '" + keyNode.name() + "'";
+    }
+
+    /// Describe a map key for the rejection message. A `BYTE_ARRAY` key is rejected
+    /// for the annotation it lacks rather than its physical type, so name the missing
+    /// annotation instead of repeating the type the message just asked for.
+    private static String mapKeyType(SchemaNode keyNode) {
+        if (!(keyNode instanceof SchemaNode.PrimitiveNode key)) {
+            return "group '" + keyNode.name() + "'";
+        }
+        if (key.logicalType() != null) {
+            return key.type() + " (" + key.logicalType() + ")";
+        }
+        return key.type() == PhysicalType.BYTE_ARRAY
+                ? "BYTE_ARRAY with no logical annotation"
+                : key.type().toString();
     }
 
     /// A list or map whose element type the schema does not describe: the container

@@ -108,7 +108,7 @@ class AvroSchemaConverterTest {
         List<SchemaElement> elements = new ArrayList<>(List.of(root, holder));
         elements.addAll(intKeyedMap("nested"));
 
-        assertRejectsMap(FileSchema.fromSchemaElements(elements), "nested", "INT32");
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "holder.nested", "INT32");
     }
 
     @Test
@@ -120,7 +120,7 @@ class AvroSchemaConverterTest {
         List<SchemaElement> elements = new ArrayList<>(List.of(root, items, list));
         elements.addAll(intKeyedMap("element"));
 
-        assertRejectsMap(FileSchema.fromSchemaElements(elements), "element", "INT32");
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "items.element", "INT32");
     }
 
     @Test
@@ -134,24 +134,106 @@ class AvroSchemaConverterTest {
         List<SchemaElement> elements = new ArrayList<>(List.of(root, outer, outerKv, outerKey));
         elements.addAll(intKeyedMap("value"));
 
-        assertRejectsMap(FileSchema.fromSchemaElements(elements), "value", "INT32");
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "outer.value", "INT32");
     }
 
-    private static void assertRejectsMap(FileSchema schema, String mapName, String keyType) {
+    /// Avro has no key schema, so every key it can represent arrives as a string.
+    /// That is exactly the set [AvroSchemaConverter] renders as an Avro `STRING`:
+    /// a `BYTE_ARRAY` annotated `STRING`, `ENUM` or `JSON`.
+    @Test
+    void acceptsEveryMapKeyAvroRendersAsString() {
+        assertMapConverts(mapKeyedBy(
+                primitive("key", PhysicalType.BYTE_ARRAY, null, new LogicalType.StringType())));
+        assertMapConverts(mapKeyedBy(
+                primitive("key", PhysicalType.BYTE_ARRAY, null, new LogicalType.EnumType())));
+        assertMapConverts(mapKeyedBy(
+                primitive("key", PhysicalType.BYTE_ARRAY, null, new LogicalType.JsonType())));
+    }
+
+    /// Writers predating the logical-type union annotate string keys with the legacy
+    /// `UTF8` converted type alone. Those maps are ordinary string-keyed maps and
+    /// must not be rejected.
+    @Test
+    void acceptsMapKeyCarryingOnlyTheLegacyUtf8ConvertedType() {
+        assertMapConverts(mapKeyedBy(
+                primitive("key", PhysicalType.BYTE_ARRAY, ConvertedType.UTF8, null)));
+    }
+
+    /// An unannotated `BYTE_ARRAY` key holds arbitrary bytes. Decoding those as UTF-8
+    /// would substitute replacement characters, and two distinct keys that both decode
+    /// to the same replacement sequence would collide into one Avro map entry —
+    /// dropping the other. Reject instead of mangling.
+    @Test
+    void rejectsUnannotatedBinaryMapKey() {
+        assertRejectsMap(mapKeyedBy(primitive("key", PhysicalType.BYTE_ARRAY, null, null)),
+                "m", "BYTE_ARRAY with no logical annotation");
+    }
+
+    /// A `UUID` key converts to an Avro `STRING`, but it is 16 raw bytes rather than
+    /// text — the string accessor would hand back mojibake.
+    @Test
+    void rejectsUuidMapKey() {
+        assertRejectsMap(mapKeyedBy(primitive("key", PhysicalType.FIXED_LEN_BYTE_ARRAY,
+                null, new LogicalType.UuidType())), "m", "UUID");
+    }
+
+    /// The Parquet spec requires a primitive map key; a group in the key position has
+    /// no value for the string accessor to read.
+    @Test
+    void rejectsMapWithGroupKey() {
+        List<SchemaElement> elements = List.of(
+                group("root", null, 1),
+                annotatedGroup("m", RepetitionType.OPTIONAL, 1, new LogicalType.MapType()),
+                group("key_value", RepetitionType.REPEATED, 2),
+                group("key", RepetitionType.REQUIRED, 1),
+                primitive("part", PhysicalType.INT32, null, null),
+                new SchemaElement("value", PhysicalType.INT64, null,
+                        RepetitionType.OPTIONAL, null, null, null, null, null, null));
+
+        assertRejectsMap(FileSchema.fromSchemaElements(elements), "m", "group 'key'");
+    }
+
+    private static void assertMapConverts(FileSchema schema) {
+        Schema map = pickMapBranch(convert(schema).getField("m").schema());
+        assertThat(map.getType()).isEqualTo(Schema.Type.MAP);
+    }
+
+    /// A map key Avro cannot represent is reported under the map's full path, so a
+    /// map nested below the root is diagnosable without hunting for which `element`
+    /// or `value` position the message means.
+    private static void assertRejectsMap(FileSchema schema, String mapPath, String keyType) {
         assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining(mapName)
+                .hasMessageContaining("Map '" + mapPath + "'")
                 .hasMessageContaining(keyType);
     }
 
     private static List<SchemaElement> intKeyedMap(String name) {
+        return keyedMap(name, primitive("key", PhysicalType.INT32, null, null));
+    }
+
+    /// A `map<?, int64>` whose key element is given, so key handling can be varied
+    /// without restating the surrounding MAP / `key_value` shape.
+    private static List<SchemaElement> keyedMap(String name, SchemaElement key) {
         return List.of(
                 annotatedGroup(name, RepetitionType.OPTIONAL, 1, new LogicalType.MapType()),
                 group("key_value", RepetitionType.REPEATED, 2),
-                new SchemaElement("key", PhysicalType.INT32, null,
-                        RepetitionType.REQUIRED, null, null, null, null, null, null),
+                key,
                 new SchemaElement("value", PhysicalType.INT64, null,
                         RepetitionType.OPTIONAL, null, null, null, null, null, null));
+    }
+
+    /// A single-field schema whose field `m` is a `map<?, int64>` with the given key.
+    private static FileSchema mapKeyedBy(SchemaElement key) {
+        List<SchemaElement> elements = new ArrayList<>(List.of(group("root", null, 1)));
+        elements.addAll(keyedMap("m", key));
+        return FileSchema.fromSchemaElements(elements);
+    }
+
+    private static SchemaElement primitive(String name, PhysicalType type,
+            ConvertedType convertedType, LogicalType logicalType) {
+        return new SchemaElement(name, type, null, RepetitionType.REQUIRED, null,
+                convertedType, null, null, null, logicalType);
     }
 
     private static SchemaElement group(String name, RepetitionType repetition, int children) {

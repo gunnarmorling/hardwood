@@ -53,6 +53,23 @@ class AvroRowReaderTest {
         assertUnsupportedMapKey("map_typed_keys_test.parquet", "long_keyed", "INT64");
     }
 
+    /// The rejection covers the projected schema, so an unreadable map costs only
+    /// its own column: the remaining columns of the same file still read.
+    @Test
+    void readsRemainingColumnsOfAFileCarryingAnUnsupportedMap() throws Exception {
+        // map_types_test.parquet: id INT32, string_map, int_map (map<int32, int64>), bool_map — 3 rows
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                InputFile.of(TEST_RESOURCES.resolve("map_types_test.parquet")));
+                AvroRowReader reader = AvroReaders.buildRowReader(fileReader)
+                        .projection(ColumnProjection.columns("id")).build()) {
+            List<Object> ids = new ArrayList<>();
+            while (reader.hasNext()) {
+                ids.add(reader.next().get("id"));
+            }
+            assertThat(ids).containsExactly(1, 2, 3);
+        }
+    }
+
     private static void assertUnsupportedMapKey(String fixture, String column, String keyType)
             throws Exception {
         try (ParquetFileReader fileReader = ParquetFileReader.open(
