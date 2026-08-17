@@ -419,8 +419,8 @@ class DiveRenderTest {
     void columnChunkDetailShowsDerivedSizeStatisticsWithLevelsCollapsed() throws Exception {
         RenderHarness.RenderedFrame frame = renderSizeStatistics("websites.list.element", false);
 
-        assertThat(frame.contains("Size statistics")).isTrue();
-        assertThat(frame.contains("chunk only")).isTrue();
+        assertThat(frame.contains("Size statistics")).isFalse();
+        assertThat(frame.contains("chunk only")).isFalse();
         assertThat(frame.contains("Records")).isTrue();
         assertThat(frame.contains("per record")).isTrue();
         assertThat(frame.contains("[l] to show")).isTrue();

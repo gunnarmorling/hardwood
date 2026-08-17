@@ -320,7 +320,7 @@ public final class ColumnChunkDetailScreen {
                     .map(Enum::name)
                     .collect(Collectors.joining(", "))));
         }
-        appendStorageStatistics(lines, summary, cmd, model, state);
+        appendStorageStatistics(lines, summary, cmd);
 
         lines.add(Line.empty());
         lines.add(group("Content"));
@@ -377,13 +377,9 @@ public final class ColumnChunkDetailScreen {
     /// whose input the file does not record are dropped rather than shown as
     /// `—`: scaffolding a flat column with rows that can never be filled costs
     /// more lines than it explains.
-    private static void appendStorageStatistics(List<Line> lines, LevelSummary summary, ColumnMetaData cmd,
-                                                ParquetModel model, ScreenState.ColumnChunkDetail state) {
+    private static void appendStorageStatistics(List<Line> lines, LevelSummary summary, ColumnMetaData cmd) {
         if (!summary.hasSizeStatistics()) {
             lines.add(advisory("Size statistics", "— (not written)"));
-        }
-        else {
-            lines.add(fact("Size statistics", coverage(model, state)));
         }
         if (summary.hasUnencoded()) {
             // The length-prefix parenthetical needs the present-value count; a
@@ -536,24 +532,6 @@ public final class ColumnChunkDetailScreen {
     }
 
     /// How much of the chunk the file describes: the chunk-level statistics
-    /// always and the per-page copies when the page index carries them. Says
-    /// which before the reader drills in to find out.
-    ///
-    /// Both indexes count. The histograms live in the column index and the
-    /// unencoded sizes in the offset index, so a required `BYTE_ARRAY` column —
-    /// which has no histogram to write — still describes its pages.
-    private static String coverage(ParquetModel model, ScreenState.ColumnChunkDetail state) {
-        ColumnIndex columnIndex = model.columnIndex(state.rowGroupIndex(), state.columnIndex());
-        OffsetIndex offsetIndex = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
-        if (!LevelSummary.hasPageLevelHistograms(columnIndex)
-                && !LevelSummary.hasPageUnencodedSizes(offsetIndex)) {
-            return "chunk only";
-        }
-        return offsetIndex != null
-                ? "chunk + " + Plurals.format(offsetIndex.pageLocations().size(), "page", "pages")
-                : "chunk + pages";
-    }
-
     private static void renderMenuPane(Buffer buffer, Rect area, ParquetModel model, ScreenState.ColumnChunkDetail state) {
         boolean focused = state.focus() == ScreenState.ColumnChunkDetail.Pane.MENU;
         Block block = paneBlock(" Drill into ", focused);
