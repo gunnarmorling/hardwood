@@ -39,6 +39,7 @@ allocation profiling, `-rf json -rff out.json` for machine-readable results,
 | `PageScanBenchmark` | Sequential header-based page scan vs. offset-index lookup | `generate_benchmark_data.py` |
 | `PageHandlingBenchmark` | Per-page decompression vs. full page decode | taxi data, downloaded by `./mvnw verify -Pperformance-test` |
 | `MemoryMapBenchmark` | Raw I/O floor: mmap + copy of a whole file, no decode | taxi data, downloaded by `./mvnw verify -Pperformance-test` |
+| `CursorDecodeBenchmark` | Fused cursor decode (`hardwood.cursor-decode`) on vs off for flat dict columns; single-thread + UNCOMPRESSED; scenarios `all_present` / `null_heavy` / `low_card` | `generate_cursor_data.py` |
 | `FixedSizeListDecodeBenchmark` | Fixed-size-list fast path vs. general list decode across vector widths | `generate_fixed_size_list_data.py` |
 | `FixedSizeListFallbackBenchmark` | Detector cost on almost-fixed-width pages that fall back | `generate_fixed_size_list_data.py` |
 | `nested/NestedListReadBenchmark` | `LIST<primitive>` reads across element types and null densities vs. a flat floor | self-generating (`NestedListFileGenerator`) |

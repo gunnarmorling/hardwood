@@ -135,6 +135,7 @@ Options are string-keyed and keys are matched case-sensitively; boolean option v
 |--------|---------|-------------|
 | `hardwood.fixed-list-fast-path` | `false` | Set to `"true"` to decode fixed-size `LIST` columns (e.g. embedding vectors, where every row holds the same number of non-null elements) without reconstructing per-row definition and repetition levels. Off by default, so every column takes the general nested-decode path unless the option is enabled. |
 | `hardwood.metadata-filtering` | `true` | Set to `"false"` to disable metadata-based filtering: no row groups or pages are skipped from min/max statistics, bloom filters, dictionary pages, or page indexes, and filter predicates are instead evaluated against every decoded row. Filtered results then depend only on the data pages, for files whose footer or page-index metadata is unreliable. |
+| `hardwood.cursor-decode` | `false` | Set to `"true"` to decode flat dictionary-encoded columns by consuming definition levels and dictionary indices run-by-run via a cursor instead of materializing them into `int[]` arrays. Off by default. |
 
 ## System Properties Reference
 
