@@ -72,9 +72,11 @@ When a data reader spans multiple files, the first file's schema is the referenc
 subsequent file reached by the data-reader plan is validated against it: every column the read
 touches — the projected ones plus any a filter tests — must exist with a matching physical type,
 logical type, repetition type, fixed byte length, and enclosing groups of the same nullability and
-repeatedness, or a `SchemaIncompatibleException` is thrown up front. Metadata inspection alone
-does not perform this projection-specific validation. A silently mismatched column that produced
-garbage values mid-stream would be the worse outcome.
+repeatedness, or a `SchemaIncompatibleException` is thrown up front, rather than surfacing as
+garbage values halfway through a scan.
+
+Which columns a read touches is known only once a reader is planned, so that is when the check
+runs. Inspecting a file's metadata reports the footer as it is on disk and does not run it.
 
 The match is by field path, never by position. A Parquet footer lists column chunks in the order
 of the schema's flattened leaves, so a column's ordinal belongs to the file that was written, not

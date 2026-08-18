@@ -8,10 +8,10 @@
 package dev.hardwood.reader;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import dev.hardwood.HardwoodContext;
 import dev.hardwood.InputFile;
@@ -58,6 +58,12 @@ import dev.hardwood.schema.FileSchema;
 /// }
 /// ```
 ///
+/// **After close:** the metadata accessors split on whether they can read from
+/// disk. [#getFileMetaData(int)] may have to load a footer, so it throws
+/// [IllegalStateException] once the reader is closed. [#getFileCount()],
+/// [#getFileMetaData()] and [#getFileSchema()] are served from state already in
+/// memory and stay usable.
+///
 /// **Limitation:** When using the default memory-mapped [InputFile], the file
 /// itself may be arbitrarily large, but each individual column chunk must be at
 /// most 2 GB ([Integer#MAX_VALUE] bytes) of compressed data. The in-memory and
@@ -80,7 +86,12 @@ public class ParquetFileReader implements AutoCloseable {
     private final boolean metadataFilteringEnabled;
     private final boolean ownsContext;
     private final boolean ownsInputFiles;
-    private final List<RowGroupIterator> rowGroupIterators = new ArrayList<>();
+    /// Iterators handed to child readers that have not been closed yet. Tracking
+    /// them lets [#close()] tear down an iterator whose child reader the caller
+    /// never closed; each iterator drops itself from here once it is closed, so a
+    /// long-lived reader does not accumulate the work lists of finished children.
+    /// Copy-on-write because a child reader may be closed from another thread.
+    private final List<RowGroupIterator> rowGroupIterators = new CopyOnWriteArrayList<>();
     private boolean closed;
 
     private ParquetFileReader(List<InputFile> inputFiles, FileMetaData firstFileMetaData,
@@ -437,10 +448,9 @@ public class ParquetFileReader implements AutoCloseable {
         // where canFastSkipTail and computeFetchPlans both ran the same
         // page-format check per row group.
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema, projection, true);
-        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0L, 0L, 0L);
+        RowGroupIterator iterator = trackedIterator(0L, 0L, 0L);
         iterator.setFirstFile(schema, subset);
         iterator.initialize(projectedSchema, null);
-        rowGroupIterators.add(iterator);
 
         boolean fastSkip = (skip == 0) || iterator.canFastSkipAllRowGroups();
         if (fastSkip && skip > 0) {
@@ -478,11 +488,9 @@ public class ParquetFileReader implements AutoCloseable {
 
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema, projection, true);
 
-        RowGroupIterator iterator = new RowGroupIterator(
-                fileMetadataCache, context, maxRows, tailSkip, physicalSkip);
+        RowGroupIterator iterator = trackedIterator(maxRows, tailSkip, physicalSkip);
         iterator.setFirstFile(schema, firstFileRowGroups);
         iterator.initialize(projectedSchema, resolved, metadataFilteringEnabled);
-        rowGroupIterators.add(iterator);
 
         // Physical-skip residue: the iterator has seeked to the row group the offset
         // lands in and exposes the leading rows of that group still to be dropped. The
@@ -561,10 +569,9 @@ public class ParquetFileReader implements AutoCloseable {
             ColumnSchema column, List<RowGroup> rowGroups, int batchSize) {
         ProjectedSchema projected = ProjectedSchema.create(schema,
                 ColumnProjection.columns(column.fieldPath().toString()));
-        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0, 0, 0);
+        RowGroupIterator iterator = trackedIterator(0, 0, 0);
         iterator.setFirstFile(schema, rowGroups);
         iterator.initialize(projected, null);
-        rowGroupIterators.add(iterator);
         return ColumnReader.createFromIterator(
                 column, schema, iterator, context, fixedListFastPathEnabled, 0, iterator,
                 resolveBatchSize(batchSize, projected, rowGroups), NestedColumnWorker.IndexMode.REAL_VIEW);
@@ -584,10 +591,9 @@ public class ParquetFileReader implements AutoCloseable {
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
 
         if (resolved == null) {
-            RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0, 0, 0);
+            RowGroupIterator iterator = trackedIterator(0, 0, 0);
             iterator.setFirstFile(schema, rowGroups);
             ProjectedSchema projected = iterator.initialize(projection, null);
-            rowGroupIterators.add(iterator);
             // Every row group pruned (e.g. a byte-range row-group filter dropped
             // them all): nothing to decode.
             if (iterator.getWorkItems().isEmpty()) {
@@ -602,11 +608,10 @@ public class ParquetFileReader implements AutoCloseable {
         // stay row-aligned regardless of per-column page-skip capability), then
         // compact each exposed column to the matching records per batch.
         ColumnProjection augmented = augmentWithPredicateColumns(projection, resolved);
-        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, context, 0, 0, 0);
+        RowGroupIterator iterator = trackedIterator(0, 0, 0);
         iterator.setFirstFile(schema, rowGroups);
         ProjectedSchema augProjected = iterator.initialize(augmented, resolved, metadataFilteringEnabled);
         ProjectedSchema payloadProjected = ProjectedSchema.create(schema, projection);
-        rowGroupIterators.add(iterator);
         // Statistics/bloom pruning dropped every row group — no record can match.
         // Skip building the per-column readers (worker threads + ~batch-sized
         // buffers) and the selection engine entirely; expose exhausted no-op
@@ -628,6 +633,20 @@ public class ParquetFileReader implements AutoCloseable {
     /// size derived from the projected column widths scaled by their list fan-out
     /// (from `rowGroups` metadata), the same logic the `RowReader` path uses, so
     /// both regimes agree.
+    /// Iterators still tracked for teardown by [#close()]. Visible for testing.
+    int trackedIteratorCount() {
+        return rowGroupIterators.size();
+    }
+
+    /// Creates an iterator over this reader's files and tracks it until it is
+    /// closed. See [#rowGroupIterators].
+    private RowGroupIterator trackedIterator(long maxRows, long tailSkip, long physicalSkip) {
+        RowGroupIterator iterator = new RowGroupIterator(fileMetadataCache, rowGroupIterators::remove,
+                context, maxRows, tailSkip, physicalSkip);
+        rowGroupIterators.add(iterator);
+        return iterator;
+    }
+
     private static int resolveBatchSize(int requested, ProjectedSchema projected, List<RowGroup> rowGroups) {
         return requested > 0
                 ? requested

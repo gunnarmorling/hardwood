@@ -40,34 +40,23 @@ public final class FileMetadataCache {
         this.inputFiles = List.copyOf(inputFiles);
     }
 
+    /// Seeds the first file's footer, already read by the owning
+    /// [dev.hardwood.reader.ParquetFileReader], so that opening the reader and
+    /// inspecting index `0` never read it twice.
     public FileMetadataCache(List<InputFile> inputFiles, FileMetaData firstFileMetaData,
                              FileSchema firstFileSchema) {
         this(inputFiles);
-        InputFile first = this.inputFiles.getFirst();
-        PreparedFile prepared = new PreparedFile(first, firstFileMetaData, firstFileSchema,
-                firstFileMetaData.rowGroups());
-        seedFirstFile(prepared);
+        PreparedFile prepared = new PreparedFile(this.inputFiles.getFirst(), firstFileMetaData,
+                firstFileSchema, firstFileMetaData.rowGroups());
+        fileFutures.put(0, CompletableFuture.completedFuture(prepared));
     }
 
     List<InputFile> inputFiles() {
         return inputFiles;
     }
 
-    /// Seeds metadata already read by a caller that owns this cache. Existing
-    /// complete metadata, such as the first footer read by ParquetFileReader,
-    /// is never replaced by an iterator-specific row-group subset.
-    void setFirstFile(FileSchema schema, List<RowGroup> rowGroups) {
-        InputFile first = inputFiles.getFirst();
-        PreparedFile prepared = new PreparedFile(first, null, schema, rowGroups);
-        seedFirstFile(prepared);
-    }
-
     public FileMetaData getFileMetaData(int fileIndex) throws IOException {
-        PreparedFile prepared = getFileChecked(fileIndex);
-        if (prepared.metaData() == null) {
-            throw new IllegalStateException("File metadata is unavailable for index " + fileIndex);
-        }
-        return prepared.metaData();
+        return getFileChecked(fileIndex).metaData();
     }
 
     /// Gets or loads a prepared file, blocking if necessary.
@@ -142,13 +131,6 @@ public final class FileMetadataCache {
         }
     }
 
-    private void seedFirstFile(PreparedFile prepared) {
-        synchronized (lifecycleLock) {
-            ensureOpen();
-            fileFutures.putIfAbsent(0, CompletableFuture.completedFuture(prepared));
-        }
-    }
-
     private CompletableFuture<PreparedFile> registerLoad(int fileIndex, boolean required) {
         synchronized (lifecycleLock) {
             if (closeStarted) {
@@ -164,12 +146,6 @@ public final class FileMetadataCache {
                 return null;
             }
             return fileFutures.computeIfAbsent(fileIndex, this::loadFileAsync);
-        }
-    }
-
-    private void ensureOpen() {
-        if (closeStarted) {
-            throw new IllegalStateException("FileMetadataCache is closed");
         }
     }
 
@@ -211,10 +187,19 @@ public final class FileMetadataCache {
         }
     }
 
+    /// One file's reusable, projection-independent state. Every component is
+    /// parsed from that file's own footer, so none of them is ever absent.
     record PreparedFile(
             InputFile inputFile,
             FileMetaData metaData,
             FileSchema schema,
             List<RowGroup> rowGroups
-    ) {}
+    ) {
+        PreparedFile {
+            Objects.requireNonNull(inputFile, "inputFile");
+            Objects.requireNonNull(metaData, "metaData");
+            Objects.requireNonNull(schema, "schema");
+            Objects.requireNonNull(rowGroups, "rowGroups");
+        }
+    }
 }

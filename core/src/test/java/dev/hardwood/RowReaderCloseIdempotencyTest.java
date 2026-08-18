@@ -7,13 +7,11 @@
  */
 package dev.hardwood;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.file.Paths;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.reader.CountingInputFile;
 import dev.hardwood.reader.ColumnReader;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
@@ -32,43 +30,6 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 /// (issue #659).
 class RowReaderCloseIdempotencyTest {
 
-    /// Counts how often the wrapped [InputFile] is closed.
-    private static final class CountingInputFile implements InputFile {
-
-        private final InputFile delegate;
-        private final AtomicInteger closeCount = new AtomicInteger();
-
-        CountingInputFile(InputFile delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public void open() throws IOException {
-            delegate.open();
-        }
-
-        @Override
-        public ByteBuffer readRange(long offset, int length) throws IOException {
-            return delegate.readRange(offset, length);
-        }
-
-        @Override
-        public long length() throws IOException {
-            return delegate.length();
-        }
-
-        @Override
-        public String name() {
-            return delegate.name();
-        }
-
-        @Override
-        public void close() throws IOException {
-            closeCount.incrementAndGet();
-            delegate.close();
-        }
-    }
-
     @Test
     void columnReaderLeavesInputLifecycleToParent() throws Exception {
         CountingInputFile file = new CountingInputFile(
@@ -77,11 +38,18 @@ class RowReaderCloseIdempotencyTest {
         ParquetFileReader fileReader = ParquetFileReader.open(file);
         try {
             ColumnReader columnReader = fileReader.columnReader(0);
-            for (int i = 0; i < 5; i++) {
-                columnReader.close();
+            // Drain first: the teardown #659 is about — quiescing started
+            // per-column workers — only exists once decoding has run.
+            while (columnReader.nextBatch()) {
+                // drain
             }
+            assertThatCode(() -> {
+                for (int i = 0; i < 5; i++) {
+                    columnReader.close();
+                }
+            }).doesNotThrowAnyException();
 
-            assertThat(file.closeCount.get())
+            assertThat(file.closeCount())
                     .as("ColumnReader.close() must leave the parent-owned input open")
                     .isZero();
 
@@ -89,13 +57,13 @@ class RowReaderCloseIdempotencyTest {
                 assertThat(rowReader.hasNext()).isTrue();
                 rowReader.next();
             }
-            assertThat(file.closeCount.get()).isZero();
+            assertThat(file.closeCount()).isZero();
         }
         finally {
             fileReader.close();
         }
 
-        assertThat(file.closeCount.get())
+        assertThat(file.closeCount())
                 .as("ParquetFileReader.close() must close its input exactly once")
                 .isEqualTo(1);
     }

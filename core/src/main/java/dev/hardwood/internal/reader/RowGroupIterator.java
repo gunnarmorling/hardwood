@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.function.Consumer;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.internal.ExceptionContext;
@@ -72,9 +73,13 @@ public class RowGroupIterator {
     private static final int MAX_COALESCED_BYTES =
             Integer.getInteger("hardwood.internal.maxCoalescedBytes", 128 * 1024 * 1024);
 
+    private static final Consumer<RowGroupIterator> NO_CLOSE_LISTENER = iterator -> {
+    };
+
     private final List<InputFile> inputFiles;
     private final FileMetadataCache fileMetadataCache;
     private final boolean ownsFileMetadataCache;
+    private final Consumer<RowGroupIterator> closeListener;
     private final HardwoodContextImpl context;
     private final long maxRows;
     private final long physicalSkip;
@@ -197,16 +202,24 @@ public class RowGroupIterator {
     ///        semantics.
     public RowGroupIterator(List<InputFile> inputFiles, HardwoodContextImpl context,
                             long maxRows, long tailSkip, long physicalSkip) {
-        this(new FileMetadataCache(inputFiles), true, context, maxRows, tailSkip, physicalSkip);
+        this(new FileMetadataCache(inputFiles), true, NO_CLOSE_LISTENER, context,
+                maxRows, tailSkip, physicalSkip);
     }
 
     /// Creates a RowGroupIterator sharing file metadata with its parent reader.
-    public RowGroupIterator(FileMetadataCache fileMetadataCache, HardwoodContextImpl context,
+    ///
+    /// `closeListener` is invoked with this iterator once [#close()] has released
+    /// its caches, so the parent can stop tracking an iterator its child reader
+    /// has already torn down.
+    public RowGroupIterator(FileMetadataCache fileMetadataCache,
+                            Consumer<RowGroupIterator> closeListener,
+                            HardwoodContextImpl context,
                             long maxRows, long tailSkip, long physicalSkip) {
-        this(fileMetadataCache, false, context, maxRows, tailSkip, physicalSkip);
+        this(fileMetadataCache, false, closeListener, context, maxRows, tailSkip, physicalSkip);
     }
 
     private RowGroupIterator(FileMetadataCache fileMetadataCache, boolean ownsFileMetadataCache,
+                             Consumer<RowGroupIterator> closeListener,
                              HardwoodContextImpl context, long maxRows, long tailSkip,
                              long physicalSkip) {
         if (tailSkip < 0) {
@@ -222,6 +235,7 @@ public class RowGroupIterator {
         }
         this.fileMetadataCache = fileMetadataCache;
         this.ownsFileMetadataCache = ownsFileMetadataCache;
+        this.closeListener = closeListener;
         this.inputFiles = fileMetadataCache.inputFiles();
         this.context = context;
         this.maxRows = maxRows;
@@ -240,16 +254,19 @@ public class RowGroupIterator {
         return firstRowGroupSkip;
     }
 
-    /// Sets the reference schema and pre-prepared first file, skipping [#openFirst()].
-    /// Used when the file is already open and metadata has been read externally
-    /// (e.g., by [dev.hardwood.reader.ParquetFileReader]).
+    /// Sets the reference schema and this iterator's row-group subset for the
+    /// first file, skipping [#openFirst()]. Used when metadata has been read
+    /// externally (e.g., by [dev.hardwood.reader.ParquetFileReader], which seeds
+    /// the shared [FileMetadataCache] with that same footer).
+    ///
+    /// The row groups stay iterator-local: they are one reader's filtered view,
+    /// not a property of the file, so they never reach the shared cache.
     ///
     /// @param schema the file schema from the first file
     /// @param rowGroups the (already filtered) row groups from the first file
     public void setFirstFile(FileSchema schema, List<RowGroup> rowGroups) {
         this.referenceSchema = schema;
         this.firstFileRowGroups = rowGroups;
-        fileMetadataCache.setFirstFile(schema, rowGroups);
     }
 
     /// Opens the first file and returns its schema.
@@ -946,7 +963,9 @@ public class RowGroupIterator {
 
     /// Releases iterator-local caches. Standalone iterators also wait for
     /// in-flight metadata loads and close their input files; iterators owned by
-    /// ParquetFileReader leave those shared resources to the parent.
+    /// ParquetFileReader leave those shared resources to the parent and instead
+    /// tell it to stop tracking this iterator, so a closed child reader's work
+    /// list does not stay reachable for the parent's whole lifetime.
     public void close() {
         metadataCache.clear();
         fetchPlanCache.clear();
@@ -962,6 +981,8 @@ public class RowGroupIterator {
                 }
             }
         }
+
+        closeListener.accept(this);
     }
 
     // ==================== Internal ====================
