@@ -56,7 +56,7 @@ type stays `INT32`; type breadth (stage 12) repeats this proven mechanism for th
 types — most importantly `BYTE_ARRAY`, where dictionary encoding is the dominant real-world
 encoding — inheriting the page and chunk layout unchanged. Compression (stage 10) and
 statistics (stage 11) layer on afterwards. `DELTA_*` and `BYTE_STREAM_SPLIT` remain out of
-scope (stage 14). Only the modern `RLE_DICTIONARY` form is produced; the deprecated
+scope (stage 19). Only the modern `RLE_DICTIONARY` form is produced; the deprecated
 `PLAIN_DICTIONARY` (which the reader still tolerates) is not written.
 
 ## Column-chunk layout

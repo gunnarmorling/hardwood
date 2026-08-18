@@ -53,7 +53,7 @@ and in DuckDB, Spark, and pandas.
 Value conversion — accepting a `LocalDate` or a `BigDecimal` and lowering it to the physical
 representation — is **not** in scope. This stage annotates; the caller still supplies physical
 values (days-since-epoch, unscaled bytes). The inverse of `LogicalTypeConverter` arrives with
-the row-oriented `ParquetWriter` in stage 17.
+the row-oriented `ParquetWriter` in stage 16.
 
 ### Increment split
 
