@@ -311,6 +311,20 @@ class FilterPredicateResolverTest {
                 .hasMessageContaining("not found");
     }
 
+    @Test
+    void resolveNestedGroupColumnThrows() {
+        FileSchema schema = FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL)))
+                .build();
+
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("company.address"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("group");
+    }
+
     // ==================== Type validation ====================
 
     @Test
