@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.parquet.Version;
 import org.apache.parquet.format.FileMetaData;
 import org.apache.parquet.format.Util;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
@@ -76,6 +77,9 @@ public class WideSchemaMetadataParquetJavaBenchmark {
         decodedFooter = Util.readFileMetaData(new ByteArrayInputStream(footerBytes));
         hadoopConf = new Configuration();
         hadoopPath = new org.apache.hadoop.fs.Path(path.toString());
+        // Stamped from the artifact on the classpath, so a published comparison names the
+        // version it actually measured rather than the one whoever ran it believed was pinned.
+        System.out.printf("%,d columns against parquet-java %s%n", columns, Version.VERSION_NUMBER);
     }
 
     @Benchmark

@@ -27,13 +27,28 @@ final class Footers {
     static byte[] read(Path path) throws IOException {
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
             long size = channel.size();
-            ByteBuffer trailer = ByteBuffer.allocate(TRAILER_LENGTH).order(ByteOrder.LITTLE_ENDIAN);
-            readFully(channel, trailer, size - TRAILER_LENGTH);
-            int footerLength = trailer.flip().getInt();
+            int footerLength = footerLength(channel, size);
             ByteBuffer buffer = ByteBuffer.allocate(footerLength);
             readFully(channel, buffer, size - TRAILER_LENGTH - footerLength);
             return buffer.array();
         }
+    }
+
+    /// The same footer body as a memory-mapped, and therefore direct, buffer: the form
+    /// [dev.hardwood.internal.reader.MappedInputFile] hands the decoder for a local file, whose
+    /// bytes the decoder cannot reach through an array.
+    static ByteBuffer map(Path path) throws IOException {
+        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            long size = channel.size();
+            int footerLength = footerLength(channel, size);
+            return channel.map(FileChannel.MapMode.READ_ONLY, size - TRAILER_LENGTH - footerLength, footerLength);
+        }
+    }
+
+    private static int footerLength(FileChannel channel, long size) throws IOException {
+        ByteBuffer trailer = ByteBuffer.allocate(TRAILER_LENGTH).order(ByteOrder.LITTLE_ENDIAN);
+        readFully(channel, trailer, size - TRAILER_LENGTH);
+        return trailer.flip().getInt();
     }
 
     private static void readFully(FileChannel channel, ByteBuffer buffer, long position) throws IOException {

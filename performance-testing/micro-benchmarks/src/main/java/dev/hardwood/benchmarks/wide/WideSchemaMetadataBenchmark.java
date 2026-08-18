@@ -45,6 +45,17 @@ import dev.hardwood.schema.FileSchema;
 ///
 /// - `decodeFooter` — Thrift decode of the footer bytes into a [FileMetaData], with the
 ///   bytes already in memory. No I/O, no schema building: the parser alone.
+/// - `decodeFooterMapped` — the same decode over a memory-mapped, and so direct, buffer. The
+///   decoder reads strings and compares cached column paths straight out of the backing array
+///   where it has one, and copies byte by byte where it does not; this arm is what the second
+///   case costs, and it is the buffer a local file read produces.
+/// - `decodeFooterMappedCopied` — the mapped footer copied onto the heap and then decoded, so
+///   the decode runs on an array. Against `decodeFooterMapped` this is what buying the array
+///   for a footer read once and dropped is worth: it is worth nothing. The two decodes cost
+///   the same to within a few percent at every width — a direct buffer's `get` is a bare
+///   memory load where a heap buffer's is an array access the JIT bounds-checks, which offsets
+///   the array-only paths — and the copy adds the footer's own size in allocation on top. The
+///   reader therefore decodes off whatever buffer the file hands it.
 /// - `buildSchema` — [FileSchema] construction from already-decoded schema elements, the
 ///   other half of what `open` does beyond reading bytes.
 /// - `openFile` — what a caller actually pays for [ParquetFileReader#open]: memory-map the
@@ -81,6 +92,8 @@ public class WideSchemaMetadataBenchmark {
     private Path path;
     /// The footer bytes, read once so `decodeFooter` measures only the parser.
     private ByteBuffer footer;
+    /// The same bytes as a mapped, direct buffer, for `decodeFooterMapped`.
+    private ByteBuffer mappedFooter;
     private List<SchemaElement> schemaElements;
     private HardwoodContext context;
 
@@ -90,6 +103,7 @@ public class WideSchemaMetadataBenchmark {
         WideSchemaFileGenerator.ensureFile(dir, columns);
         path = WideSchemaFileGenerator.file(dir, columns).toAbsolutePath().normalize();
         footer = ByteBuffer.wrap(Footers.read(path));
+        mappedFooter = Footers.map(path);
         schemaElements = decode().schema();
         context = HardwoodContext.create();
         System.out.printf("%,d columns: %,d footer bytes (%,.1f bytes/column)%n",
@@ -104,6 +118,18 @@ public class WideSchemaMetadataBenchmark {
     @Benchmark
     public void decodeFooter(Blackhole blackhole) throws IOException {
         blackhole.consume(decode());
+    }
+
+    @Benchmark
+    public void decodeFooterMapped(Blackhole blackhole) throws IOException {
+        blackhole.consume(FileMetaDataReader.read(new ThriftCompactReader(mappedFooter.duplicate())));
+    }
+
+    @Benchmark
+    public void decodeFooterMappedCopied(Blackhole blackhole) throws IOException {
+        ByteBuffer copy = ByteBuffer.allocate(mappedFooter.remaining());
+        copy.put(mappedFooter.duplicate());
+        blackhole.consume(FileMetaDataReader.read(new ThriftCompactReader(copy.flip())));
     }
 
     @Benchmark

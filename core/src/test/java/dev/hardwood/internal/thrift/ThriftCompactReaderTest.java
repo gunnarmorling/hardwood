@@ -222,6 +222,60 @@ class ThriftCompactReaderTest {
         assertThat(ThriftCompactReader.elementType(header)).isEqualTo(ElementType.BOOL.code());
     }
 
+    /// A varint carries at most ten bytes for a 64-bit value. Java masks a `long` shift to six
+    /// bits, so an eleventh byte would fold its payload back over the low bits of the result and
+    /// answer with a wrong number rather than fail — the one outcome a decoder must never have.
+    @Test
+    void varintRejectsMoreThanTenBytes() {
+        // Eleven continuation bytes followed by a terminator: shift reaches 70, which Java
+        // applies as 70 & 63 = 6.
+        ThriftCompactReader reader = reader(
+                0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01);
+
+        assertThatThrownBy(reader::readVarint)
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("varint");
+    }
+
+    /// The widest varint the format can carry is still read in full.
+    @Test
+    void varintAcceptsTenBytes() throws IOException {
+        // -1 as an unsigned 64-bit varint: nine 0xFF bytes and a final 0x01.
+        ThriftCompactReader reader = reader(
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01);
+
+        assertThat(reader.readVarint()).isEqualTo(-1L);
+    }
+
+    /// Thrift defines a field id as an `i16`, so a long-form header declaring one outside that
+    /// range is malformed. Narrowing it instead of rejecting it turns id 65537 into id 1, and the
+    /// struct reader then decodes that field's bytes as whatever field 1 holds.
+    @Test
+    void fieldHeaderRejectsFieldIdOutsideI16() {
+        // Long form (delta nibble 0) of type I32, then zigzag varint of 65537.
+        ThriftCompactReader reader = reader(FieldType.Codes.I32, 0x82, 0x80, 0x08, STOP);
+
+        assertThatThrownBy(reader::readFieldHeader)
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("65537");
+    }
+
+    /// The same bound applies when the id is reached by delta: a header may add up to 15 to the
+    /// previous id, and the sum has to stay an `i16` like the id it stands for.
+    @Test
+    void fieldHeaderRejectsDeltaPastI16() {
+        // Long form of I32 carrying id 32767, then a short-form header adding 1 to it.
+        ThriftCompactReader reader = reader(
+                FieldType.Codes.I32, 0xFE, 0xFF, 0x03, fieldHeader(1, FieldType.I32), STOP);
+
+        assertThatThrownBy(() -> {
+            reader.readFieldHeader();
+            reader.readFieldHeader();
+        })
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("32768");
+    }
+
     /// A `bool` is the one type encoded differently as a collection element than as a struct
     /// field: the field form carries its value in the type nibble of its header and has no
     /// payload, the element form is a bare byte. Skipping a `list<bool>` by field rules consumes

@@ -60,6 +60,11 @@ public class ThriftCompactReader {
     /// Element type occupies the low byte of a packed list header, the count the rest.
     private static final int ELEMENT_TYPE_BITS = 8;
 
+    /// Bytes a varint may occupy: seven bits each, for a 64-bit value.
+    private static final int MAX_VARINT_BYTES = 10;
+    /// Shift the last of those bytes contributes at, and so the largest a shift may reach.
+    private static final int MAX_VARINT_SHIFT = 7 * (MAX_VARINT_BYTES - 1);
+
     private final ByteBuffer buffer;
     private final int startPosition;
     private short lastFieldId = 0;
@@ -155,9 +160,25 @@ public class ThriftCompactReader {
     }
 
     /// Read an unsigned varint from the buffer.
-    public long readVarint() throws EOFException {
-        long result = 0;
-        int shift = 0;
+    ///
+    /// Ten bytes carry the 64 bits a varint can hold, and an eleventh is rejected: Java applies a
+    /// `long` shift modulo 64, so its payload would land back over the low bits of the result and
+    /// the read would answer with a wrong number instead of failing.
+    ///
+    /// @throws IOException if the varint runs past ten bytes
+    public long readVarint() throws IOException {
+        if (!buffer.hasRemaining()) {
+            throw new EOFException("Unexpected EOF while reading varint");
+        }
+        // Most of a footer's varints are one byte — every field id, every small size, every enum
+        // value — and a non-negative first byte is exactly the single-byte case.
+        byte first = buffer.get();
+        if (first >= 0) {
+            return first;
+        }
+
+        long result = first & 0x7FL;
+        int shift = 7;
         while (buffer.hasRemaining()) {
             int b = buffer.get() & 0xFF;
             result |= (long) (b & 0x7F) << shift;
@@ -165,6 +186,9 @@ public class ThriftCompactReader {
                 return result;
             }
             shift += 7;
+            if (shift > MAX_VARINT_SHIFT) {
+                throw new IOException("Malformed varint: more than " + MAX_VARINT_BYTES + " bytes");
+            }
         }
         throw new EOFException("Unexpected EOF while reading varint");
     }
@@ -262,9 +286,9 @@ public class ThriftCompactReader {
 
     /// Read a string value.
     ///
-    /// A heap-backed buffer — which is what the footer and every page header are read from — is
-    /// decoded in place, so the string costs one object rather than a `byte[]` copy and then the
-    /// string built from it.
+    /// A heap-backed buffer is decoded in place, so the string costs one object rather than a
+    /// `byte[]` copy and the string built from it. A memory-mapped file hands its footer and its
+    /// page headers over as direct buffers, which take the copying path.
     public String readString() throws IOException {
         int length = checkedBinaryLength(readVarint());
         if (buffer.hasArray()) {
@@ -302,11 +326,11 @@ public class ThriftCompactReader {
         short fieldId;
         if (fieldIdDelta == 0) {
             // Field ID is encoded separately
-            fieldId = (short) readZigzag();
+            fieldId = checkedFieldId(readZigzag());
         }
         else {
             // Field ID is delta from last field
-            fieldId = (short) (lastFieldId + fieldIdDelta);
+            fieldId = checkedFieldId(lastFieldId + fieldIdDelta);
         }
 
         lastFieldId = fieldId;
@@ -412,7 +436,7 @@ public class ThriftCompactReader {
     }
 
     /// Read the header of an **optional** list field and check its declared element type,
-    /// reporting `null` for a list this reader will not decode.
+    /// reporting [#ABSENT_LIST] for a list this reader will not decode.
     ///
     /// Elements of the declared type occupy a different number of bytes than the ones the field
     /// is defined to hold, so decoding them anyway would desynchronise the stream and corrupt
@@ -421,8 +445,8 @@ public class ThriftCompactReader {
     ///
     /// @param expectedElementType wire code the elements must declare
     /// @param fieldName fully-qualified field name for the log message
-    /// @return the header, or `null` if the list declares a different element type and has been
-    ///     skipped
+    /// @return the header, or [#ABSENT_LIST] if the list declares a different element type and
+    ///     has been skipped
     long acceptListHeader(byte expectedElementType, String fieldName) throws IOException {
         long header = readListHeader();
         if (elementType(header) != expectedElementType) {
@@ -450,8 +474,12 @@ public class ThriftCompactReader {
 
     /// Read a required `list<string>` in full.
     ///
-    /// The result is an immutable [List#of] list rather than a wrapped [ArrayList], saving two
-    /// objects per list — worth having where a footer holds one such list per column chunk.
+    /// The result comes from [List#of], which holds a one- or two-element list in its own
+    /// fields: a `path_in_schema` of that length then costs neither a backing array nor an
+    /// unmodifiable wrapper, and a footer holds one such list per column chunk. This is a
+    /// property of the short cases only — [List#of] copies the array it is handed — so the
+    /// readers of collections that run to one element per column, page or row group fill an
+    /// [ArrayList] instead, where the copy would cost more than the wrapper saves.
     ///
     /// @param fieldName fully-qualified field name for the error message
     List<String> readStringList(String fieldName) throws IOException {
@@ -542,6 +570,18 @@ public class ThriftCompactReader {
                     + declaredSize + " elements but only " + buffer.remaining() + " bytes remain");
         }
         return Math.toIntExact(declaredSize);
+    }
+
+    /// Validate a field id, however the header arrived at it, against the `i16` range Thrift
+    /// defines for one. Narrowing an out-of-range id instead would fold it onto a real one — id
+    /// 65537 reads as id 1 — and the struct reader would then decode that field's bytes as
+    /// whatever it holds field 1 to be, which is wrong data rather than a failed read.
+    private static short checkedFieldId(long declaredId) throws IOException {
+        if (declaredId < Short.MIN_VALUE || declaredId > Short.MAX_VALUE) {
+            throw new IOException("Malformed Parquet metadata: field id " + declaredId
+                    + " is outside the Thrift i16 range");
+        }
+        return (short) declaredId;
     }
 
     private static IOException wrongElementType(String fieldName, byte actual, String expected) {
