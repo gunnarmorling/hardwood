@@ -445,18 +445,12 @@ class DrainSideOracleTest {
             this.scoreNulls = scoreNulls;
             this.flags = flags;
             this.flagNulls = flagNulls;
-            SchemaElement root = new SchemaElement("root", null, null, null, 5,
-                    null, null, null, null, null);
-            SchemaElement c1 = new SchemaElement("id", PhysicalType.INT64, null,
-                    RepetitionType.OPTIONAL, null, null, null, null, null, null);
-            SchemaElement c2 = new SchemaElement("value", PhysicalType.DOUBLE, null,
-                    RepetitionType.OPTIONAL, null, null, null, null, null, null);
-            SchemaElement c3 = new SchemaElement("tag", PhysicalType.INT32, null,
-                    RepetitionType.OPTIONAL, null, null, null, null, null, null);
-            SchemaElement c4 = new SchemaElement("score", PhysicalType.FLOAT, null,
-                    RepetitionType.OPTIONAL, null, null, null, null, null, null);
-            SchemaElement c5 = new SchemaElement("flag", PhysicalType.BOOLEAN, null,
-                    RepetitionType.OPTIONAL, null, null, null, null, null, null);
+            SchemaElement root = SchemaElement.root("root", 5);
+            SchemaElement c1 = SchemaElement.primitive("id", PhysicalType.INT64, RepetitionType.OPTIONAL);
+            SchemaElement c2 = SchemaElement.primitive("value", PhysicalType.DOUBLE, RepetitionType.OPTIONAL);
+            SchemaElement c3 = SchemaElement.primitive("tag", PhysicalType.INT32, RepetitionType.OPTIONAL);
+            SchemaElement c4 = SchemaElement.primitive("score", PhysicalType.FLOAT, RepetitionType.OPTIONAL);
+            SchemaElement c5 = SchemaElement.primitive("flag", PhysicalType.BOOLEAN, RepetitionType.OPTIONAL);
             this.schema = FileSchema.fromSchemaElements(List.of(root, c1, c2, c3, c4, c5));
             this.projection = ProjectedSchema.create(schema, ColumnProjection.all());
         }

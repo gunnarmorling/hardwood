@@ -665,9 +665,8 @@ class FilterPredicateTest {
 
     @Test
     void uuidPredicateOnNonUuidColumnThrows() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
-                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.fixedLengthPrimitive("col", 16, RepetitionType.REQUIRED);
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, col));
 
         assertThatThrownBy(() -> FilterPredicateResolver.resolve(
@@ -1376,9 +1375,8 @@ class FilterPredicateTest {
     }
 
     private static FileSchema createUuidSchema() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
-                RepetitionType.REQUIRED, null, null, null, null, null, new LogicalType.UuidType());
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.fixedLengthPrimitive("col", 16, RepetitionType.REQUIRED, new LogicalType.UuidType());
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 
@@ -1392,14 +1390,14 @@ class FilterPredicateTest {
 
     private static FileSchema createSchemaForType(PhysicalType type) {
         // Root element + one column
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", type, null, RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.primitive("col", type, RepetitionType.REQUIRED);
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 
     private static FileSchema createSchemaForType(PhysicalType type, LogicalType logicalType) {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", type, null, RepetitionType.REQUIRED, null, null, null, null, null, logicalType);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.primitive("col", type, RepetitionType.REQUIRED, logicalType);
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 

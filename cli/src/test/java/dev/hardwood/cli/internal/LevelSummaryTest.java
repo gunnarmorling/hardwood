@@ -228,9 +228,8 @@ class LevelSummaryTest {
     @Test
     void unannotatedRepeatedFieldLabelsTheEmptyBucketWithItsOwnName() {
         FileSchema schema = FileSchema.fromSchemaElements(List.of(
-                new SchemaElement("root", null, null, RepetitionType.REQUIRED, 1, null, null, null, null, null),
-                new SchemaElement("tags", PhysicalType.INT32, null, RepetitionType.REPEATED, null,
-                        null, null, null, null, null)));
+                SchemaElement.group("root", RepetitionType.REQUIRED, 1),
+                SchemaElement.primitive("tags", PhysicalType.INT32, RepetitionType.REPEATED)));
         ColumnSchema tags = column(schema, "tags");
 
         assertThat(LevelSummary.definitionLabels(schema, tags))

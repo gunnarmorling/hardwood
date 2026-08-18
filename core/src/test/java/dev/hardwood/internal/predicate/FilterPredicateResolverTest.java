@@ -472,7 +472,7 @@ class FilterPredicateResolverTest {
 
     private static FileSchema schemaWithLogicalType(String columnName, PhysicalType type,
             Integer typeLength, LogicalType logicalType) {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
         SchemaElement col = new SchemaElement(columnName, type, typeLength, RepetitionType.REQUIRED,
                 null, null, null, null, null, logicalType);
         return FileSchema.fromSchemaElements(List.of(root, col));

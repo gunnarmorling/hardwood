@@ -124,11 +124,9 @@ class RepeatedPathCacheTest {
 
     private static List<SchemaElement> schemaElements(List<String> paths) {
         List<SchemaElement> elements = new ArrayList<>();
-        elements.add(new SchemaElement("schema", null, null, RepetitionType.REQUIRED, paths.size(),
-                null, null, null, null, null));
+        elements.add(SchemaElement.group("schema", RepetitionType.REQUIRED, paths.size()));
         for (String path : paths) {
-            elements.add(new SchemaElement(path.replace('.', '_'), PhysicalType.DOUBLE, null,
-                    RepetitionType.REQUIRED, null, null, null, null, null, null));
+            elements.add(SchemaElement.primitive(path.replace('.', '_'), PhysicalType.DOUBLE, RepetitionType.REQUIRED));
         }
         return elements;
     }

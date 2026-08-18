@@ -334,18 +334,15 @@ class RecordFilterCompilerTest {
     }
 
     private static FileSchema schema(String name, PhysicalType type) {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement(name, type, null, RepetitionType.OPTIONAL,
-                null, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.primitive(name, type, RepetitionType.OPTIONAL);
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 
     private static FileSchema twoIntSchema(String name1, String name2) {
-        SchemaElement root = new SchemaElement("root", null, null, null, 2, null, null, null, null, null);
-        SchemaElement col1 = new SchemaElement(name1, PhysicalType.INT32, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
-        SchemaElement col2 = new SchemaElement(name2, PhysicalType.INT32, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 2);
+        SchemaElement col1 = SchemaElement.primitive(name1, PhysicalType.INT32, RepetitionType.REQUIRED);
+        SchemaElement col2 = SchemaElement.primitive(name2, PhysicalType.INT32, RepetitionType.REQUIRED);
         return FileSchema.fromSchemaElements(List.of(root, col1, col2));
     }
 
