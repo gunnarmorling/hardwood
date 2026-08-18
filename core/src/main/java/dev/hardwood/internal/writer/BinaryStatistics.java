@@ -26,6 +26,12 @@ interface BinaryStatistics {
     /// @param truncationLength the maximum bound length, applied only where truncation preserves
     ///        the ordering
     static BinaryStatistics forColumn(ColumnSchema column, int truncationLength) {
+        if (!StatisticsOrder.supportsBounds(column)) {
+            // No ordering exists to accumulate in, and the bounds would be dropped at flush, so
+            // the values are never inspected — a `GEOMETRY` chunk would otherwise copy a blob
+            // out on every bound extension only to discard it.
+            return new NullCountStatistics();
+        }
         LogicalType logicalType = column.logicalType();
         if (logicalType instanceof LogicalType.Float16Type) {
             return new Float16StatisticsCollector();

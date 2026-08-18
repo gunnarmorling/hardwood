@@ -444,6 +444,39 @@ class WriterDifferentialTest {
         assertThat(valueLists).containsExactly(Arrays.asList(10, null), List.of(), null, List.of(30));
     }
 
+    /// A map key is annotated like any other primitive. Without the annotation DuckDB infers
+    /// `MAP(BLOB, INTEGER)` and no string lookup works; with it the map is the
+    /// `MAP(VARCHAR, INTEGER)` callers expect.
+    @Test
+    void duckDbReadsWrittenMapWithAnAnnotatedKey(@TempDir Path dir) throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .map("props", RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY, new LogicalType.StringType(),
+                        v -> v.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build();
+
+        byte[][] keys = { "alpha".getBytes(StandardCharsets.UTF_8), "beta".getBytes(StandardCharsets.UTF_8) };
+
+        Path file = dir.resolve("mapwithstringkey.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
+            writer.writeBatch(batch -> batch
+                    .ints("r", new int[] { 0 })
+                    .map("props", new int[] { 0, 2 }, Validity.ofNulls(new boolean[] { false }))
+                    .bytes("props.key_value.key", keys)
+                    .ints("props.key_value.value", new int[] { 10, 20 }));
+        }
+
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
+                        "SELECT typeof(props) AS t, map_extract(props, 'beta')[1] AS beta "
+                                + "FROM read_parquet('" + file.toAbsolutePath() + "')")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("t")).isEqualTo("MAP(VARCHAR, INTEGER)");
+            assertThat(rs.getInt("beta")).isEqualTo(20);
+        }
+    }
+
     private static List<Integer> toIntList(Array array) throws Exception {
         if (array == null) {
             return null;

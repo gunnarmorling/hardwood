@@ -94,6 +94,42 @@ class WriterLogicalTypeStatisticsTest {
         assertThat(statistics.maxValue()).isEqualTo(hex("00FF"));
     }
 
+    /// A fixed-width decimal compares the same way: `0xFF…FF` is `-1` and sorts below `0x00…01`,
+    /// the opposite of the unsigned lexicographic order the same physical type uses unannotated.
+    @Test
+    void fixedLengthDecimalBoundsAsASignedInteger() throws Exception {
+        byte[][] values = { hex("0000000000000001"), hex("FFFFFFFFFFFFFFFF"), hex("000000000000007F") };
+
+        Statistics statistics = writeAndReadStatistics(PhysicalType.FIXED_LEN_BYTE_ARRAY, 8,
+                new LogicalType.DecimalType(0, 18), batch -> batch.fixed(0, values));
+
+        assertThat(statistics.minValue()).isEqualTo(hex("FFFFFFFFFFFFFFFF"));
+        assertThat(statistics.maxValue()).isEqualTo(hex("000000000000007F"));
+    }
+
+    /// An undefined-order column accumulates no bounds at all, but must still report its null
+    /// count — the only statistic a reader has left to prune on.
+    @Test
+    void undefinedOrderColumnsStillCountNulls() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL,
+                        new LogicalType.GeometryType("EPSG:4326"))
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.bytes(0, new byte[][] { hex("01"), hex("02"), hex("03") },
+                    Validity.ofNulls(new boolean[] { false, true, false })));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics statistics = columnMeta(reader, 0).statistics();
+            assertThat(statistics.minValue()).isNull();
+            assertThat(statistics.maxValue()).isNull();
+            assertThat(statistics.nullCount()).isEqualTo(1L);
+        }
+    }
+
     /// Truncation keeps a prefix as the lower bound and an incremented prefix as the upper one,
     /// which preserves the unsigned lexicographic order but not the signed big-endian one — a
     /// shorter byte string is a different number there. A decimal's bounds stay whole and exact.

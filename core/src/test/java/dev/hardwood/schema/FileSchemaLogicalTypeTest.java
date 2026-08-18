@@ -8,8 +8,12 @@
 package dev.hardwood.schema;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import dev.hardwood.metadata.ConvertedType;
 import dev.hardwood.metadata.LogicalType;
@@ -136,6 +140,87 @@ class FileSchemaLogicalTypeTest {
         assertThat(element(schema, "counts").logicalType()).isEqualTo(new LogicalType.MapType());
         assertThat(element(schema, "counts").convertedType()).isEqualTo(ConvertedType.MAP);
         assertThat(element(schema, "element").logicalType()).isEqualTo(new LogicalType.StringType());
+    }
+
+    /// A map key is a primitive like any other and carries its own annotation; without one the
+    /// key of a `MAP<STRING, …>` reads back as an opaque `BYTE_ARRAY`.
+    @Test
+    void mapKeysCarryTheirAnnotation() {
+        FileSchema schema = FileSchema.builder("schema")
+                .map("counts", RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY, new LogicalType.StringType(),
+                        value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build();
+
+        assertThat(element(schema, "key").logicalType()).isEqualTo(new LogicalType.StringType());
+        assertThat(element(schema, "key").convertedType()).isEqualTo(ConvertedType.UTF8);
+        assertThat(schema.getColumn("counts.key_value.key").logicalType())
+                .isEqualTo(new LogicalType.StringType());
+    }
+
+    @Test
+    void mapKeysCarryAFixedLengthAnnotation() {
+        FileSchema schema = FileSchema.builder("schema")
+                .map("byId", RepetitionType.OPTIONAL, PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
+                        new LogicalType.UuidType(),
+                        value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build();
+
+        assertThat(element(schema, "key").logicalType()).isEqualTo(new LogicalType.UuidType());
+        assertThat(element(schema, "key").typeLength()).isEqualTo(16);
+    }
+
+    /// The key overloads exist on all three builders, and a map nested in a struct, inside a list,
+    /// or as another map's value reaches a different one each time. Each is a hand-written
+    /// delegation, so a transposed or dropped argument in one of them would otherwise surface only
+    /// once a caller wrote that shape.
+    @Test
+    void nestedMapsCarryTheirKeyAnnotation() {
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("s", RepetitionType.OPTIONAL, group -> group
+                        .map("counts", RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY,
+                                new LogicalType.StringType(),
+                                value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                        .map("byId", RepetitionType.OPTIONAL, PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
+                                new LogicalType.UuidType(),
+                                value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .list("tags", RepetitionType.OPTIONAL, element -> element.map(
+                        RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY, new LogicalType.StringType(),
+                        value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .map("outer", RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY, new LogicalType.StringType(),
+                        value -> value.map(RepetitionType.OPTIONAL, PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
+                                new LogicalType.UuidType(),
+                                inner -> inner.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        assertThat(schema.getColumn("s.counts.key_value.key").logicalType())
+                .isEqualTo(new LogicalType.StringType());
+        assertThat(schema.getColumn("s.byId.key_value.key").logicalType())
+                .isEqualTo(new LogicalType.UuidType());
+        assertThat(schema.getColumn("s.byId.key_value.key").typeLength()).isEqualTo(16);
+        assertThat(schema.getColumn("tags.list.element.key_value.key").logicalType())
+                .isEqualTo(new LogicalType.StringType());
+        assertThat(schema.getColumn("outer.key_value.value.key_value.key").logicalType())
+                .isEqualTo(new LogicalType.UuidType());
+        assertThat(schema.getColumn("outer.key_value.value.key_value.key").typeLength()).isEqualTo(16);
+    }
+
+    /// The key goes through the same validation as any other primitive, so an illegal pairing —
+    /// or a `FIXED_LEN_BYTE_ARRAY` key with no length, which used to fail only once the writer
+    /// reached the column — is rejected where the map is declared.
+    @Test
+    void mapKeysAreValidatedWhereTheyAreDeclared() {
+        assertThatThrownBy(() -> FileSchema.builder("schema")
+                .map("counts", RepetitionType.OPTIONAL, PhysicalType.INT32, new LogicalType.StringType(),
+                        value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BYTE_ARRAY");
+        assertThatThrownBy(() -> FileSchema.builder("schema")
+                .map("byId", RepetitionType.OPTIONAL, PhysicalType.FIXED_LEN_BYTE_ARRAY,
+                        value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("type length");
     }
 
     @Test
@@ -265,5 +350,69 @@ class FileSchemaLogicalTypeTest {
             assertThat(lowered(type, new LogicalType.NullType()).logicalType())
                     .isEqualTo(new LogicalType.NullType());
         }
+    }
+
+    /// A `REQUIRED` column can hold no null, so nothing it could legally contain matches an
+    /// `UNKNOWN` annotation — and reading such a column back fails on the null the annotation
+    /// promises. The pairing is rejected where it is declared instead.
+    @Test
+    void unknownIsRejectedOnARequiredColumn() {
+        assertThatThrownBy(() -> FileSchema.builder("schema")
+                .addColumn("v", PhysicalType.INT32, RepetitionType.REQUIRED, new LogicalType.NullType())
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("UNKNOWN")
+                .hasMessageContaining("REQUIRED")
+                .hasMessageContaining("v");
+    }
+
+    /// Every annotation with a legacy equivalent must resolve from the `converted_type` alone, so
+    /// a pre-union reader — one that ignores field 10 — still sees it. Stripping the union from a
+    /// schema built with annotations is exactly what such a reader observes.
+    @ParameterizedTest
+    @MethodSource("legacyEquivalents")
+    void annotationsResolveFromTheConvertedTypeAlone(PhysicalType type, LogicalType logicalType) {
+        assertThat(withoutUnion(type, logicalType).getColumn("annotated").logicalType())
+                .isEqualTo(logicalType);
+    }
+
+    static Stream<Arguments> legacyEquivalents() {
+        return Stream.of(
+                Arguments.of(PhysicalType.BYTE_ARRAY, new LogicalType.StringType()),
+                Arguments.of(PhysicalType.BYTE_ARRAY, new LogicalType.EnumType()),
+                Arguments.of(PhysicalType.BYTE_ARRAY, new LogicalType.JsonType()),
+                Arguments.of(PhysicalType.BYTE_ARRAY, new LogicalType.BsonType()),
+                Arguments.of(PhysicalType.INT32, new LogicalType.DateType()),
+                Arguments.of(PhysicalType.INT32, new LogicalType.DecimalType(2, 9)),
+                Arguments.of(PhysicalType.INT64, new LogicalType.DecimalType(4, 18)),
+                Arguments.of(PhysicalType.INT32, new LogicalType.IntType(8, true)),
+                Arguments.of(PhysicalType.INT32, new LogicalType.IntType(16, false)),
+                Arguments.of(PhysicalType.INT32, new LogicalType.IntType(32, true)),
+                Arguments.of(PhysicalType.INT64, new LogicalType.IntType(64, false)),
+                Arguments.of(PhysicalType.INT32, new LogicalType.TimeType(true, TimeUnit.MILLIS)),
+                Arguments.of(PhysicalType.INT64, new LogicalType.TimeType(true, TimeUnit.MICROS)),
+                Arguments.of(PhysicalType.INT64, new LogicalType.TimestampType(true, TimeUnit.MILLIS)),
+                Arguments.of(PhysicalType.INT64, new LogicalType.TimestampType(true, TimeUnit.MICROS)));
+    }
+
+    /// The legacy annotations denoted UTC-normalized values and cannot express a local one, so a
+    /// pre-union reader necessarily resolves a local timestamp as UTC-normalized. A reader that
+    /// takes field 10 gets the exact semantics.
+    @Test
+    void aLocalTimestampResolvesAsUtcFromTheConvertedTypeAlone() {
+        FileSchema legacy = withoutUnion(PhysicalType.INT64, new LogicalType.TimestampType(false, TimeUnit.MILLIS));
+
+        assertThat(legacy.getColumn("annotated").logicalType())
+                .isEqualTo(new LogicalType.TimestampType(true, TimeUnit.MILLIS));
+    }
+
+    /// The schema as a reader that ignores the `LogicalType` union would reconstruct it.
+    private static FileSchema withoutUnion(PhysicalType type, LogicalType logicalType) {
+        List<SchemaElement> stripped = withColumn(type, logicalType).toSchemaElements().stream()
+                .map(element -> new SchemaElement(element.name(), element.type(), element.typeLength(),
+                        element.repetitionType(), element.numChildren(), element.convertedType(),
+                        element.scale(), element.precision(), element.fieldId(), null))
+                .toList();
+        return FileSchema.fromSchemaElements(stripped);
     }
 }

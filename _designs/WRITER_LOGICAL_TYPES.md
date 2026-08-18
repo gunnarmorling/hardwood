@@ -80,10 +80,28 @@ void          primitive(PhysicalType type, RepetitionType rep, LogicalType logic
 void          primitive(PhysicalType type, RepetitionType rep, int typeLength, LogicalType logicalType)
 ```
 
+A `MAP`'s key is a primitive the caller never names a verb for — it is declared positionally on
+the `map` verb — so each `map` verb gains the same pair of overloads for it. A `MAP<STRING, …>`
+whose key is an unannotated `BYTE_ARRAY` is a map of opaque blobs to every other engine:
+
+```java
+Builder       map(String name, RepetitionType rep, PhysicalType keyType, LogicalType keyLogicalType,
+                  Consumer<ElementBuilder> value)
+Builder       map(String name, RepetitionType rep, PhysicalType keyType, int keyTypeLength,
+                  LogicalType keyLogicalType, Consumer<ElementBuilder> value)
+StructBuilder map(…)   // the same two forms
+void          map(…)   // the same two forms, on ElementBuilder
+```
+
+A key takes no length-only form, so the primitive verbs' four shapes become three here: a
+`FIXED_LEN_BYTE_ARRAY` key with no annotation is declared by passing a `null` one. A raw
+fixed-width key is rare enough not to justify a fourth overload on each of the three builders.
+
 The annotation rides on the private `BuilderLeaf` node and is lowered by `flatten` onto the
-leaf's `SchemaElement`. Groups take no logical-type parameter: `LIST` and `MAP` groups are
-annotated by the `list` / `map` verbs themselves, and a plain `struct` group carries no
-annotation.
+leaf's `SchemaElement`; a map key is a `BuilderLeaf` too, so it is built and validated through
+the same `leaf` helper as any other primitive. Groups take no logical-type parameter: `LIST` and
+`MAP` groups are annotated by the `list` / `map` verbs themselves, and a plain `struct` group
+carries no annotation.
 
 ```java
 FileSchema schema = FileSchema.builder("schema")
@@ -93,6 +111,8 @@ FileSchema schema = FileSchema.builder("schema")
                 new LogicalType.DecimalType(2, 18))
         .addColumn("created", PhysicalType.INT64, RepetitionType.REQUIRED,
                 new LogicalType.TimestampType(true, LogicalType.TimeUnit.MICROS))
+        .map("counts", RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY, new LogicalType.StringType(),
+                value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
         .build();
 ```
 
@@ -119,11 +139,16 @@ interpret. `LogicalTypeValidator` (in `internal.schema`) is the single table:
 | `DecimalType` | `INT64` | `precision <= 18` |
 | `DecimalType` | `FIXED_LEN_BYTE_ARRAY` | `precision <= floor(log10(2^(8·len − 1) − 1))` |
 | `DecimalType` | `BYTE_ARRAY` | — |
-| `NullType` | any | — |
+| `NullType` | any | not `REQUIRED` |
 | `ListType`, `MapType`, `VariantType` | — | rejected on a primitive |
 
 `DecimalType` additionally requires `scale <= precision`, which the record itself does not
 enforce (it must stay lenient enough to model the files the reader encounters).
+
+`NullType` is the one annotation constrained by repetition rather than by physical type:
+`UNKNOWN` describes a column whose every value is null, which a `REQUIRED` column can never be.
+Nothing it could legally hold matches the annotation, and `LogicalTypeConverter` throws on the
+non-null value such a column would carry, so the pairing is rejected where it is declared.
 
 `ListType` and `MapType` are group annotations that the `list` / `map` verbs emit; declaring
 either on a leaf is a caller error. `VariantType` annotates a group of a prescribed shape and is
@@ -260,6 +285,11 @@ bounds. `ColumnChunkBuffer` consults it once per chunk and drops the bounds wher
 so the decision costs nothing per value. 13b extends the same seam to *select* the comparator:
 `ValueEncoder.forColumn` already receives the `ColumnSchema`, which carries `logicalType()`.
 
+A binary column whose order is undefined does not accumulate bounds at all — `BinaryStatistics`
+gives it a `NullCountStatistics` that counts nulls and ignores values, rather than a collector
+that would copy a `GEOMETRY` blob out on every bound extension only for the flush to discard it.
+The fixed-width collectors accumulate in primitive fields, so there is nothing to save there.
+
 Two consequences beyond the comparator itself:
 
 - **Undefined-order columns write `null_count` only.** parquet-format states it directly for
@@ -296,7 +326,7 @@ writer has emitted bounds since stage 11 without it.
 
 ## Testing
 
-- **Thrift symmetry** — `LogicalTypeWriterTest` writes each of the 18 union members with
+- **Thrift symmetry** — `LogicalTypeWriterTest` writes each of the 17 defined union members with
   `LogicalTypeWriter` and reads it back with `LogicalTypeReader`, asserting equality; the
   parameterized members are covered across their parameter space (each `TimeUnit`, both
   `isAdjustedToUTC` values, each `bitWidth` × signedness, present and absent `crs`). This is the
@@ -307,11 +337,14 @@ writer has emitted bounds since stage 11 without it.
   nullable, and nested columns.
 - **Validation** — every rejected physical/logical pairing in the table above fails at
   `FileSchema.Builder` with a message naming the column, the annotation, and the constraint.
-- **Statistics** — bounds are asserted per ordering, and undefined-order columns are asserted to
-  carry a null count with no bounds. A binary `DECIMAL` column with values longer than the
-  truncation length is asserted to keep untruncated, exact bounds.
+- **Statistics** — bounds are asserted per ordering, on both `BYTE_ARRAY` and
+  `FIXED_LEN_BYTE_ARRAY` for the signed big-endian order, and undefined-order columns are
+  asserted to carry a null count with no bounds. A binary `DECIMAL` column with values longer
+  than the truncation length is asserted to keep untruncated, exact bounds.
 - **Differential** — `WriterDifferentialTest` gains annotated columns and asserts DuckDB reads
   them as `VARCHAR`, `DATE`, `TIMESTAMP`, `DECIMAL`, and `UUID` rather than as raw physical
-  types.
-- **Legacy readers** — a schema built with annotations, re-read through `fromSchemaElements`
-  with field 10 ignored, resolves to the same `LogicalType` from the `converted_type` alone.
+  types, and reads an annotated map key as `MAP(VARCHAR, INTEGER)`.
+- **Legacy readers** — a schema built with annotations and then stripped of field 10, as a
+  pre-union reader observes it, resolves every annotation that has a legacy equivalent from the
+  `converted_type` alone. A local `TIMESTAMP` is asserted to resolve as UTC-normalized, the
+  documented limit of what the legacy form can express.

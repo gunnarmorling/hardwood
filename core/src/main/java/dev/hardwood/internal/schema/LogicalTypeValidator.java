@@ -11,6 +11,7 @@ import java.math.BigInteger;
 
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
 
 /// Checks that a logical type annotation is legal for the physical type it annotates.
 ///
@@ -27,11 +28,13 @@ public class LogicalTypeValidator {
     ///
     /// @param columnName the column name, for the failure message
     /// @param type the column's physical type
+    /// @param repetition the column's repetition
     /// @param typeLength the `FIXED_LEN_BYTE_ARRAY` byte length, `null` for any other type
     /// @param logicalType the annotation to validate, `null` for an unannotated column
-    /// @throws IllegalArgumentException if the annotation is not legal for the physical type
-    public static void validate(String columnName, PhysicalType type, Integer typeLength,
-                                LogicalType logicalType) {
+    /// @throws IllegalArgumentException if the annotation is not legal for the physical type, its
+    ///         type length, or — for `UNKNOWN` — the column's repetition
+    public static void validate(String columnName, PhysicalType type, RepetitionType repetition,
+                                Integer typeLength, LogicalType logicalType) {
         if (logicalType == null) {
             return;
         }
@@ -52,15 +55,22 @@ public class LogicalTypeValidator {
                     time.unit() == LogicalType.TimeUnit.MILLIS ? PhysicalType.INT32 : PhysicalType.INT64);
             case LogicalType.TimestampType ignored -> require(columnName, logicalType, type, PhysicalType.INT64);
             case LogicalType.DecimalType decimal -> validateDecimal(columnName, type, typeLength, decimal);
-            case LogicalType.NullType ignored -> {
-                // UNKNOWN annotates a column of any physical type, which by definition holds
-                // only nulls.
-            }
+            case LogicalType.NullType ignored -> requireNullable(columnName, repetition);
             case LogicalType.ListType ignored -> throw groupAnnotation(columnName, logicalType);
             case LogicalType.MapType ignored -> throw groupAnnotation(columnName, logicalType);
             case LogicalType.VariantType ignored -> throw new IllegalArgumentException(
                     "VARIANT annotates a group of metadata and value children, which the writer "
                             + "does not yet build: " + columnName);
+        }
+    }
+
+    /// `UNKNOWN` annotates a column of any physical type whose every value is null, which a
+    /// `REQUIRED` column can never be: no value it could legally hold matches the annotation,
+    /// and reading one back fails on the null the annotation promises.
+    private static void requireNullable(String columnName, RepetitionType repetition) {
+        if (repetition == RepetitionType.REQUIRED) {
+            throw new IllegalArgumentException("UNKNOWN annotates a column holding only nulls, so it cannot be "
+                    + "REQUIRED (column " + columnName + ")");
         }
     }
 
