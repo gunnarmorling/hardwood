@@ -127,8 +127,12 @@
             </newVersion>
             <parameter>
               <onlyModified>true</onlyModified>
+              <!-- Every module keeps its non-public API in an "internal" package:
+                   dev.hardwood.internal in the core, dev.hardwood.<module>.internal
+                   elsewhere. Both forms are excluded, subpackages included. -->
               <excludes>
                 <exclude>dev.hardwood.internal</exclude>
+                <exclude>dev.hardwood.*.internal</exclude>
               </excludes>
             </parameter>
             <outputDirectory>${maven.multiModuleProjectDirectory}/target/japicmp/${project.artifactId}</outputDirectory>
