@@ -53,6 +53,9 @@ import dev.hardwood.row.StructAccessor;
 import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.FileSchema;
 
+import static dev.hardwood.metadata.SchemaElement.primitive;
+import static dev.hardwood.metadata.SchemaElement.root;
+
 /// Predicate evaluation micro-benchmark, isolated from any I/O.
 ///
 /// Measures the per-row cost of `RecordFilterCompiler.compile` + `RowMatcher.test`
@@ -200,15 +203,11 @@ public class RecordFilterMicroBenchmark {
     /// Schema with four flat columns: id (INT64), value (DOUBLE), tag (INT32),
     /// flag (BOOLEAN). All required.
     private static FileSchema buildSchema() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 4, null, null, null, null, null);
-        SchemaElement id = new SchemaElement("id", PhysicalType.INT64, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
-        SchemaElement value = new SchemaElement("value", PhysicalType.DOUBLE, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
-        SchemaElement tag = new SchemaElement("tag", PhysicalType.INT32, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
-        SchemaElement flag = new SchemaElement("flag", PhysicalType.BOOLEAN, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
+        SchemaElement root = root("root", 4);
+        SchemaElement id = primitive("id", PhysicalType.INT64, RepetitionType.REQUIRED);
+        SchemaElement value = primitive("value", PhysicalType.DOUBLE, RepetitionType.REQUIRED);
+        SchemaElement tag = primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED);
+        SchemaElement flag = primitive("flag", PhysicalType.BOOLEAN, RepetitionType.REQUIRED);
         return FileSchema.fromSchemaElements(List.of(root, id, value, tag, flag));
     }
 
