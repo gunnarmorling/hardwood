@@ -185,8 +185,8 @@ class SchemaElementFactoryTest {
                 .hasMessageContaining("token");
     }
 
-    /// Record equality proves the factories match the constructor. This proves the rest of
-    /// the system accepts what they build.
+    /// Record equality proves the factories match the constructor. The round trip also
+    /// preserves the logical annotations, including their legacy converted-type forms.
     @Test
     void factoryBuiltElementsRoundTripThroughFileSchema() {
         List<SchemaElement> elements = List.of(
@@ -199,8 +199,8 @@ class SchemaElementFactoryTest {
         FileSchema schema = FileSchema.fromSchemaElements(elements);
 
         assertThat(schema.getName()).isEqualTo("root");
-        // The root comes back with the REQUIRED that fromSchemaElements reads into an absent
-        // repetition; every other element survives the trip unchanged.
+        // The root comes back with REQUIRED because fromSchemaElements defaults an absent
+        // root repetition; logical annotations also gain their legacy converted-type forms.
         assertThat(schema.toSchemaElements()).containsExactly(
                 new SchemaElement("root", null, null, RepetitionType.REQUIRED, 3, null, null, null, null, null),
                 new SchemaElement("items", null, null, RepetitionType.OPTIONAL, 1, ConvertedType.LIST, null, null,

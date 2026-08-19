@@ -47,8 +47,8 @@ class FileSchemaFlattenTest {
     }
 
     /// `type_length` is optional in the footer, so a `FIXED_LEN_BYTE_ARRAY` element can
-    /// arrive without one. Flattening reproduces the element as it was read, so rewriting
-    /// such a file fails on the column's own contents rather than on an unboxed null.
+    /// arrive without one. Flattening preserves the missing width; a later writer validation
+    /// rejects the schema before it can write values.
     @Test
     void fixedWidthColumnWithNoByteLengthSurvivesFlattening() {
         SchemaElement noWidth = new SchemaElement("digest", PhysicalType.FIXED_LEN_BYTE_ARRAY, null,

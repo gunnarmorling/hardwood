@@ -49,9 +49,9 @@ The root element has no repetition, and every other element has one. `root` buil
 
 A footer that breaks this rule still reads. `fromSchemaElements` supplies a missing repetition, `REQUIRED` for a root and `OPTIONAL` for any other element.
 
-### Name
-
-`name` may be `null`. The factories pass it through without a check. A footer always carries a name, because the Thrift field is required, so a `null` name comes from code rather than from a file.
+`name` may be `null`. Valid Parquet footers carry a name because the Thrift field is required.
+Malformed or truncated metadata can still produce a null name; the factories pass it through
+without a check.
 
 ### Type length
 
