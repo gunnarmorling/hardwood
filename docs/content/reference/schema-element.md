@@ -11,21 +11,21 @@
 -->
 # SchemaElement
 
-`dev.hardwood.metadata.SchemaElement` is one entry in the flat, depth-first schema list stored in a Parquet file footer. It maps one to one onto the Thrift `SchemaElement` in the Parquet format.
+`dev.hardwood.metadata.SchemaElement` represents one element in the flat schema list in a Parquet footer. The list uses depth-first order.
 
-`FileSchema.fromSchemaElements(List<SchemaElement>)` turns such a list into a schema tree. `FileSchema.toSchemaElements()` turns it back.
+`FileSchema.fromSchemaElements(List<SchemaElement>)` builds a schema tree from this list. `FileSchema.toSchemaElements()` creates the list again.
 
 !!! note
 
-    To build a schema for writing, use [`FileSchema.builder(String)`](../how-to/metadata.md) instead. It validates the whole schema and computes child counts for you. Use `SchemaElement` when you work with footer metadata directly.
+    Use [`FileSchema.builder(String)`](../how-to/metadata.md) to build a schema for writing. The builder checks the complete schema and calculates child counts. Use `SchemaElement` when you work with footer metadata.
 
 ## Factories
 
-Static factories cover the common element kinds. Each one sets only the components that its kind uses.
+The static factories build the common element kinds. Each factory sets the fields for its kind.
 
 | Factory | Builds |
 |---|---|
-| `root(name, numChildren)` | the root group, which has no repetition |
+| `root(name, numChildren)` | the root group, with no repetition |
 | `group(name, repetition, numChildren)` | a group |
 | `group(name, repetition, numChildren, logicalType)` | a group with a logical type |
 | `primitive(name, type, repetition)` | a primitive column |
@@ -43,41 +43,46 @@ List<SchemaElement> elements = List.of(
 FileSchema schema = FileSchema.fromSchemaElements(elements);
 ```
 
-### Repetition
+## Repetition
 
-The root element has no repetition, and every other element has one. `root` builds the first case, and `group` and the primitive factories take the repetition for the second.
+A valid root has no repetition. Other valid elements have a repetition value.
 
-A footer that breaks this rule still reads. `fromSchemaElements` supplies a missing repetition, `REQUIRED` for a root and `OPTIONAL` for any other element.
+`root` sets the root repetition to `null`. The group and primitive factories take the repetition value as an argument.
 
-`name` may be `null`. Valid Parquet footers carry a name because the Thrift field is required.
-Malformed or truncated metadata can still produce a null name; the factories pass it through
-without a check.
+`fromSchemaElements` accepts a missing repetition value. It uses `REQUIRED` for the root and `OPTIONAL` for other elements.
 
-### Type length
+## Name
 
-`typeLength` has two meanings, one per physical type:
+A valid Parquet footer has a name for each schema element. The Thrift field is required.
 
-| Physical type | Meaning | How to set it |
-|---|---|---|
-| `FIXED_LEN_BYTE_ARRAY` | byte length of every value | `fixedLengthPrimitive` |
-| any other | maximum bit length used to store a value | `withTypeLength(int)` |
+A malformed or truncated footer can omit the name. The reader then creates an element with `name == null`. The factories pass a null name through without a check.
 
-`withTypeLength` returns a copy of an element with the field set:
+## Type length
+
+`typeLength` has a different meaning for each physical type:
+
+| Physical type | Meaning |
+|---|---|
+| `FIXED_LEN_BYTE_ARRAY` | the byte length of each value |
+| any other physical type | the maximum bit length needed to store any value |
+
+Use `fixedLengthPrimitive` to create an `FIXED_LEN_BYTE_ARRAY` (called FLBA henceforth) column with its byte length. Use `withTypeLength(int)` to set or replace `typeLength` on a primitive element.
 
 ```java
-// a low-cardinality INT32 whose values fit in 3 bits
-primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED).withTypeLength(3)
+// An INT32 column with a maximum bit length of 3 - all values of this column can be stored with 3 bits.
+SchemaElement tag = primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED)
+        .withTypeLength(3);
 ```
 
-The field is optional in both cases. A column of any type can leave it out.
+`typeLength` can be `null` in raw footer metadata. A writer must provide a positive length for an FLBA column. A data reader also needs this length to decode FLBA values.
 
-`fixedLengthPrimitive` sets the physical type to `FIXED_LEN_BYTE_ARRAY` itself, so it takes no `PhysicalType`. It takes the width **second**. `FileSchema.Builder.addColumn` takes the width last.
+`fixedLengthPrimitive` sets the physical type to `FIXED_LEN_BYTE_ARRAY`. It takes the width as its second argument. `FileSchema.Builder.addColumn` takes the width as its fourth argument.
 
-`primitive` rejects `FIXED_LEN_BYTE_ARRAY`, because that type needs a width. Use `fixedLengthPrimitive` for it.
+`primitive` rejects `FIXED_LEN_BYTE_ARRAY`. Use `fixedLengthPrimitive` for that type.
 
-### Errors
+## Errors
 
-Every factory throws `IllegalArgumentException` for these:
+The factories throw `IllegalArgumentException` for these inputs:
 
 | Condition | Factory |
 |---|---|
@@ -87,23 +92,26 @@ Every factory throws `IllegalArgumentException` for these:
 | `typeLength` is zero or less | `fixedLengthPrimitive`, `withTypeLength` |
 | the element is a group | `withTypeLength` |
 
-A factory checks only one element. Rules that span the whole list stay in `fromSchemaElements`. For example, a root that declares two children followed by only one element fails there, not in the factory.
+A factory checks one element. Rules for the complete list stay in `fromSchemaElements`. The method consumes the list in depth-first order and builds the schema tree.
 
 ## Canonical constructor
 
-The record constructor takes all ten components in Hardwood record-component order:
+The record constructor takes the components in Hardwood record-component order:
 
 ```java
-new SchemaElement(name, type, typeLength, repetitionType, numChildren,
-        convertedType, scale, precision, fieldId, logicalType);
+new SchemaElement(name, type, typeLength, repetitionType, 
+                  numChildren, convertedType, scale, precision, 
+                  fieldId, logicalType);
 ```
 
-Use it for metadata the factories do not cover. No factory sets `convertedType`, `scale`, `precision`, or `fieldId`, so these cases need the constructor:
+Use the constructor when the factories do not cover the metadata. The factories do not set `convertedType`, `scale`, `precision`, or `fieldId`.
 
-- a legacy `ConvertedType` annotation, such as `ConvertedType.LIST` or `ConvertedType.MAP`
-- a decimal, which carries `scale` and `precision`
-- a Thrift `fieldId`
-- a full element decoded from a footer, where every component must survive
+Use the constructor for:
+
+- a legacy `ConvertedType` annotation, such as `ConvertedType.LIST` or `ConvertedType.MAP`;
+- legacy decimal metadata with `scale` and `precision`;
+- a Thrift `fieldId`;
+- a complete element decoded from a footer.
 
 ## Node kind
 
@@ -112,4 +120,4 @@ Use it for metadata the factories do not cover. No factory sets `convertedType`,
 | `isGroup()` | `type` is `null` |
 | `isPrimitive()` | `type` is not `null` |
 
-A `null` physical type is what marks an element as a group. This is why `primitive` rejects a `null` type: it would build a group.
+A null physical type marks a group. `primitive` rejects a null type because it would create a group.
