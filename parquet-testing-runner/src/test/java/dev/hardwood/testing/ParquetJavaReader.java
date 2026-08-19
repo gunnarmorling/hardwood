@@ -15,6 +15,10 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.parquet.CorruptStatistics;
+import org.apache.parquet.VersionParser;
+import org.apache.parquet.VersionParser.ParsedVersion;
+import org.apache.parquet.VersionParser.VersionParseException;
 import org.apache.parquet.column.ColumnDescriptor;
 import org.apache.parquet.column.Encoding;
 import org.apache.parquet.column.page.DataPage;
@@ -27,6 +31,9 @@ import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /// Reads a Parquet file with parquet-java, the strict reader of the write-path interop gate
 /// described in `_designs/WRITER_INTEROP_GATE.md`.
@@ -72,6 +79,37 @@ final class ParquetJavaReader {
         try (ParquetFileReader reader = ParquetFileReader
                 .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
             return reader.getFooter();
+        }
+    }
+
+    /// Asserts that parquet-java can identify the writer that produced the file.
+    ///
+    /// A `created_by` its [VersionParser] cannot parse leaves parquet-java unable to tell which
+    /// implementation wrote the file, so it assumes the worst and applies its writer-specific
+    /// correctness workarounds: under the PARQUET-251 heuristic it discards the deprecated
+    /// `min` / `max` of a `BINARY` or `FIXED_LEN_BYTE_ARRAY` column outright. Both halves are
+    /// asserted — that the identifier parses, and that the heuristic consequently spares the
+    /// statistics of the two types it gates.
+    ///
+    /// @param footer the footer parquet-java parsed
+    static void assertParseableCreatedBy(ParquetMetadata footer) {
+        String createdBy = footer.getFileMetaData().getCreatedBy();
+
+        ParsedVersion parsed;
+        try {
+            parsed = VersionParser.parse(createdBy);
+        }
+        catch (VersionParseException e) {
+            throw new AssertionError("parquet-java cannot parse created_by: " + createdBy, e);
+        }
+        assertThat(parsed.application).as("created_by application").isEqualTo("hardwood");
+        assertThat(parsed.version).as("created_by version").isNotNull();
+        assertThat(parsed.hasSemanticVersion()).as("created_by version is a semantic version").isTrue();
+
+        for (PrimitiveTypeName gated : List.of(PrimitiveTypeName.BINARY, PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY)) {
+            assertThat(CorruptStatistics.shouldIgnoreStatistics(createdBy, gated))
+                    .as("PARQUET-251 discards %s statistics written by '%s'", gated, createdBy)
+                    .isFalse();
         }
     }
 

@@ -160,6 +160,7 @@ class WriterInteropTest {
 
         ParquetMetadata footer = ParquetJavaReader.readFooter(file);
         Pages pages = ParquetJavaReader.readPages(file);
+        ParquetJavaReader.assertParseableCreatedBy(footer);
         assertRowCount(testCase, footer);
         assertStatistics(testCase, footer);
         assertEncodings(testCase, footer, pages);

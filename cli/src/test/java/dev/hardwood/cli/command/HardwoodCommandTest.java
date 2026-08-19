@@ -7,11 +7,20 @@
  */
 package dev.hardwood.cli.command;
 
+import java.util.regex.Pattern;
+
 import org.junit.jupiter.api.Test;
+
+import dev.hardwood.cli.internal.Version;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HardwoodCommandTest {
+
+    /// `hardwood <project-version> (<revision>)`. The project version is required to be
+    /// semver-shaped, since Maven always supplies it; the revision is left open because it
+    /// comes from `git` and legitimately reads `unknown` in a build outside a checkout.
+    private static final Pattern VERSION_LINE = Pattern.compile("hardwood \\d+\\.\\d+\\.\\d+\\S* \\(\\S+\\)");
 
     @Test
     void helpFlagPrintsUsage() {
@@ -20,11 +29,18 @@ class HardwoodCommandTest {
         assertThat(result.output()).contains("hardwood");
     }
 
+    /// Asserts the printed version is a real one, not just the literal `hardwood` prefix the
+    /// format string contributes — that prefix prints even when the build identity failed to
+    /// resolve and every component degraded to `unknown`. Comparing the output against
+    /// [Version#getVersion] alone would not catch that either: both sides read the same
+    /// degraded value and agree. Only the shape does, so it is asserted first.
     @Test
-    void versionFlagPrintsVersion() {
+    void versionFlagPrintsTheResolvedBuildVersion() {
         Cli.Result result = Cli.launch("--version");
+
         assertThat(result.exitCode()).isZero();
-        assertThat(result.output()).contains("hardwood");
+        assertThat(result.output()).matches(VERSION_LINE);
+        assertThat(result.output()).isEqualTo("hardwood " + Version.getVersion());
     }
 
     @Test

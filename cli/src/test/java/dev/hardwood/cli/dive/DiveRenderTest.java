@@ -25,6 +25,7 @@ import dev.hardwood.cli.dive.internal.ColumnChunkDetailScreen;
 import dev.hardwood.cli.dive.internal.DataPreviewScreen;
 import dev.hardwood.cli.dive.internal.HelpOverlay;
 import dev.hardwood.cli.dive.internal.Keys;
+import dev.hardwood.cli.internal.Version;
 import dev.hardwood.schema.ColumnSchema;
 import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Rect;
@@ -294,6 +295,18 @@ class DiveRenderTest {
         assertThat(renderToString(buffer, screenArea))
                 .contains("enter filter mode (Schema, Column ")
                 .contains("               index, Dictionary) ");
+    }
+
+    /// The overlay is where a TUI user reads which build they are on, so the line must carry
+    /// the resolved version rather than the label alone.
+    @Test
+    void helpOverlayShowsTheBuildVersion() {
+        Rect screenArea = new Rect(0, 0, 120, 40);
+        Buffer buffer = Buffer.empty(screenArea);
+
+        HelpOverlay.render(buffer, screenArea);
+
+        assertThat(renderToString(buffer, screenArea)).contains("Version: " + Version.getVersion());
     }
 
     @Test

@@ -73,7 +73,7 @@ The solution differs by codec:
 
 - **libdeflate (GZIP acceleration)** — libdeflate uses the Java 22+ Foreign Function & Memory (FFM) API, which relies on runtime downcall handles that cannot be created inside a native image. `LibdeflateLoader` detects the native image context via the `org.graalvm.nativeimage.imagecode` system property and returns `isAvailable() = false`, dead-code-eliminating the entire FFM path. The `--initialize-at-build-time` directive in `core`'s `native-image.properties` ensures GraalVM constant-folds this check at image build time.
 
-### Build arguments (application.properties)
+### Build arguments (`native-maven-plugin` `buildArgs` in `cli/pom.xml`)
 
 | Argument | Reason |
 |---|---|

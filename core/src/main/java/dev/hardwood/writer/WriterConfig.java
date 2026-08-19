@@ -7,6 +7,7 @@
  */
 package dev.hardwood.writer;
 
+import dev.hardwood.internal.BuildInfo;
 import dev.hardwood.internal.compression.CodecLibraries;
 import dev.hardwood.metadata.CompressionCodec;
 
@@ -28,8 +29,15 @@ public final class WriterConfig {
     /// Default row-group target: 128 MiB of uncompressed data per row group.
     public static final long DEFAULT_ROW_GROUP_TARGET_BYTES = 128L << 20;
 
-    /// Default `created_by` identifier written into the file footer.
-    public static final String DEFAULT_CREATED_BY = "hardwood";
+    /// Default `created_by` identifier written into the file footer, in the
+    /// `<app> version <version> (build <hash>)` convention Parquet readers parse — for
+    /// example `hardwood version 1.1.0 (build a093aab)`. The hash carries a `-dirty` suffix
+    /// when the working tree was not clean at build time, and a build that cannot identify
+    /// itself reports `unknown` in place of the version or the hash.
+    ///
+    /// A reader that cannot parse this field cannot tell which writer produced the file, and
+    /// applies its writer-specific correctness workarounds to it by default.
+    public static final String DEFAULT_CREATED_BY = defaultCreatedBy();
 
     /// Default dictionary page-size limit: 1 MiB of dictionary values before a column
     /// chunk falls back to `PLAIN`.
@@ -107,6 +115,11 @@ public final class WriterConfig {
     /// The codec each page body is compressed with.
     public CompressionCodec codec() {
         return codec;
+    }
+
+    /// Assembles this build's `created_by` identifier from [BuildInfo].
+    private static String defaultCreatedBy() {
+        return "hardwood version " + BuildInfo.version() + " (build " + BuildInfo.revisionWithDirtyMark() + ")";
     }
 
     /// `ZSTD` when its library is loadable, otherwise `UNCOMPRESSED`. The class is only probed

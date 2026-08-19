@@ -128,17 +128,21 @@ to parameterize:
 Only `UNCOMPRESSED` and `ZSTD` appear on the codec axis because those are the only codecs
 the writer produces today. Stage 19 adds the rest, and extends this axis with them.
 
-## What the gate found
+## Writer identification
 
-Running the matrix surfaced a defect the existing suites could not see, which is the point
-of building it: `created_by` is the bare string `hardwood`, and parquet-java's
-`VersionParser` expects `<app> version <version> (build <hash>)`. Every read in the new
-suite logs a `CorruptStatistics` warning, and under the PARQUET-251 heuristic parquet-java
-discards the deprecated `min`/`max` of a binary column whose writer it cannot identify.
-Hardwood's bounds survive only because it writes solely the modern `min_value`/`max_value`,
-which the heuristic does not gate — so today's correctness rests on a field the writer
-happens not to emit. Fixing the identifier is increment 15; the gate's footer assertions
-extend with it.
+A reader that cannot parse `created_by` cannot tell which implementation produced the
+file, and applies its writer-specific correctness workarounds by default: under the
+PARQUET-251 heuristic, parquet-java discards the deprecated `min`/`max` of a `BINARY` or
+`FIXED_LEN_BYTE_ARRAY` column written by a writer it cannot identify. Hardwood writes only
+the modern `min_value`/`max_value`, which that heuristic does not gate, so a parseable
+identifier is what keeps the outcome from depending on which statistics fields the writer
+happens to emit.
+
+The gate therefore asserts both halves for every case: that `VersionParser` parses the
+identifier into the `hardwood` application with a semantic version, and that
+`CorruptStatistics.shouldIgnoreStatistics` consequently returns false for the two types it
+gates. This is the class of defect only a strict reader can observe — the suites that read
+back through Hardwood and DuckDB see a well-formed file either way.
 
 ## Extension contract
 
@@ -172,9 +176,10 @@ classes, split by what they parameterize over rather than by size:
   the two sort orders that differ from their physical type's own (unsigned integers and
   binary `DECIMAL`).
 
-A shared `ParquetJavaReader` helper wraps the Group reader, the footer reader and the page
-walk, so the parquet-java surface the gate depends on sits in one place. It is separate
-from `Utils`, which serves the read direction and carries the Avro comparison.
+A shared `ParquetJavaReader` helper wraps the Group reader, the footer reader, the page
+walk and the `created_by` check, so the parquet-java surface the gate depends on sits in
+one place. It is separate from `Utils`, which serves the read direction and carries the
+Avro comparison.
 
 None of the classes touch the `parquet-testing` fixture repository: the gate's inputs are
 files Hardwood writes, so it does not need the clone the read-direction tests do.

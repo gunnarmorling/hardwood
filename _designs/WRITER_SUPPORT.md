@@ -269,6 +269,23 @@ The writer auto-selects sensible per-column encodings and exposes overrides thro
 `WriterConfig` knobs: row-group size, page size, dictionary page-size limit, codec,
 and the written `created_by` string.
 
+### `created_by`
+
+The default identifier follows the `<app> version <version> (build <hash>)` convention
+Parquet readers parse — `hardwood version 1.1.0 (build a093aab)`, with a `-dirty` suffix
+on the hash when the working tree was not clean at build time. The version and hash are
+baked into `hardwood-core` at build time by `dev.hardwood.internal.BuildInfo`, which reads
+a filtered resource populated by the parent POM's `capture-git-info` step; a build that
+cannot determine either component reports `unknown` in its place, which stays parseable.
+
+The convention is not cosmetic. A reader that cannot parse this field cannot tell which
+implementation wrote the file, and applies its writer-specific correctness workarounds by
+default: parquet-java's PARQUET-251 heuristic discards the deprecated `min` / `max` of a
+`BINARY` or `FIXED_LEN_BYTE_ARRAY` column written by an unidentifiable writer. Hardwood
+writes only the modern `min_value` / `max_value`, which that heuristic does not gate, so a
+parseable identifier is what keeps the outcome from depending on which statistics fields
+the writer happens to emit.
+
 ### Statistics
 
 `StatisticsCollector` accumulates `min` / `max` / `null_count` per column chunk
@@ -384,7 +401,7 @@ Each increment carries a **Kind**: *Dimension* (changes the shape of the solutio
 | 12 | All primitive physical types (incl. `FIXED_LEN_BYTE_ARRAY` type length and `BYTE_ARRAY` min/max truncation), each inheriting paging, nulls, nesting, dictionary, compression and stats. Truncated `BYTE_ARRAY` bounds are flagged inexact (`is_min_value_exact` / `is_max_value_exact` = false), extending the exactness the fixed-width types write unconditionally as true. Variable-width values end the constant-bytes-per-row assumption, so the row-group flush moves from the fixed rows-per-group proxy (`rowGroupTargetBytes / (columnCount × 4)`) to tracking the actual buffered uncompressed bytes. Settled in `_designs/WRITER_PRIMITIVE_TYPES.md`; delivered in two stacked increments (12a fixed-width `BOOLEAN`/`INT64`/`FLOAT`/`DOUBLE`, 12b variable-width `BYTE_ARRAY`/`FIXED_LEN_BYTE_ARRAY` with truncation). | Breadth | Write any column type, flat or nested | 2.1, 9.1 (truncation) | [x] |
 | 13 | Logical-type annotations: `LogicalTypeWriter` serializes the `LogicalType` union and legacy `converted_type`/`scale`/`precision`; `FileSchema.Builder` logical-type overload. Both annotations are emitted together for every type with a legacy equivalent (STRING, DATE, DECIMAL, the INT/UINT widths, TIME/TIMESTAMP millis+micros, ENUM, JSON, BSON, `LIST`, `MAP`), the union taking read precedence and the `converted_type` kept for pre-union readers; only types without a legacy equivalent (UUID, FLOAT16, NANOS units, VARIANT, GEOMETRY/GEOGRAPHY) are union-only, and INTERVAL is `converted_type`-only because its union member is reserved but undefined. This makes stage 13 additive to the `converted_type`-only annotations stages 6–8 already write. An annotation also redefines the column's `min`/`max` ordering, so the statistics collectors become logical-type-aware and the footer's `column_orders` — required by the format wherever bounds are written — is emitted. Settled in `_designs/WRITER_LOGICAL_TYPES.md`; delivered in two stacked increments (13a annotations, 13b order-correct statistics and `column_orders`). | Breadth | Columns read back with their logical type (STRING, DATE, TIMESTAMP, DECIMAL, …) | 6.4 (annotation) | [x] |
 | 14 | **Write-path interop gate**: `parquet-testing-runner` reads hardwood-written files with parquet-java and asserts value agreement, covering a single-entry dictionary per physical type as its floor and every shape increments 1–13 can produce. Closes the defect class where only hardwood and a lenient engine accept the bytes; the suites that precede it read back through hardwood and DuckDB, neither of which can observe it. Every increment after this one extends the matrix with the shapes it adds. Settled in `_designs/WRITER_INTEROP_GATE.md`. | Gate | Produced files are proven conformant, not merely self-consistent | — | [x] |
-| 15 | **Parseable `created_by`**: `WriterConfig.DEFAULT_CREATED_BY` follows the `<app> version <version> (build <hash>)` convention parquet-java's `VersionParser` expects, instead of the bare `hardwood` it writes today. parquet-java cannot parse the bare form, so it logs a `CorruptStatistics` warning on every read of a hardwood file and, under the PARQUET-251 heuristic, discards the deprecated `min`/`max` of a binary column outright. Hardwood's own bounds survive only because it writes solely the modern `min_value`/`max_value`, which the heuristic does not gate — so today's correctness rests on a field the writer happens not to emit. The interop gate (increment 14) surfaced this and extends with an assertion that parquet-java parses the identifier. | Dimension | Produced files carry a version identifier consumers can parse | — | [ ] |
+| 15 | **Parseable `created_by`**: `WriterConfig.DEFAULT_CREATED_BY` follows the `<app> version <version> (build <hash>)` convention Parquet readers parse, rather than a bare application name they reject. `hardwood-core` gains the build-info plumbing that identifier needs (`dev.hardwood.internal.BuildInfo` over a filtered resource fed by the parent POM's `capture-git-info` step), which `hardwood-cli`'s `Version` also consumes so the plumbing exists once. Detailed above under `created_by`. Surfaced by increment 14, whose footer assertions extend with parquet-java's `VersionParser` accepting the identifier and its PARQUET-251 heuristic consequently sparing binary statistics. | Dimension | Produced files carry a version identifier consumers can parse | — | [x] |
 | 16 | Row-oriented `ParquetWriter` ergonomic layer on the columnar core, including nested record materialization and logical-type value conversion (inverse of `LogicalTypeConverter`). | Layer | Mainstream-friendly API | 6.1 (`ParquetWriter`), 6.4 (value conversion) | [ ] |
 | 17 | User-facing documentation under `docs/content/` for the writer public API (`OutputFile`, `ParquetFileWriter`, `FileSchema.Builder`): a `how-to` guide and a `reference` page, covering the settled surface including nesting and the row-oriented layer. | Docs | Documented, stable public API | — | [ ] |
 | 18 | S3 `OutputFile` backend: sequential multipart upload — buffer to the part size, upload parts, complete on `close()`. In-flight bytes bounded to the part size times a small concurrency multiple; lazy `CreateMultipartUpload` deferred to the first part flush, with a single `PutObject` fallback for a sub-part output. Reuses the read-side S3 / SigV4 stack. | Layer | Write directly to object storage | — | [ ] |
@@ -425,7 +442,8 @@ The increments after stage 17 extend that surface additively rather than reshapi
 so each carries its own docs update in the normal way: stage 18 adds an S3 `OutputFile`
 factory, and stage 19 adds codec and encoding values to `WriterConfig`. Stages 20–21 are
 internal encode decisions with no public surface. Stage 15 changes only the default value
-of an already-documented option. The core surface
+of a `WriterConfig` option, which the stage 17 reference page documents along with the
+rest. The core surface
 (`OutputFile`, `ParquetFileWriter`, `FileSchema.Builder`) gets its `how-to`/`reference`
 pages at stage 17.
 

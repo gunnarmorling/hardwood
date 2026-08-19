@@ -36,9 +36,11 @@ module inherits it; the JAR-manifest configuration lives in the parent's
 `<pluginManagement>` for `maven-jar-plugin` and therefore applies to every JAR
 module (`core`, `avro`, `aws-auth`, `s3`, `cli`, …) without per-module setup.
 
-The `hardwood-cli` module additionally consumes `revision` and `revisionDirty`
-through resource filtering in `application.properties`, surfacing them in
-`hardwood --version`.
+The `hardwood-core` module additionally consumes `revision` and `revisionDirty`
+through resource filtering in `dev/hardwood/build-info.properties`, read by
+`dev.hardwood.internal.BuildInfo`. They surface in the `created_by` identifier
+the writer stamps into every file it produces, and in `hardwood --version`,
+which the CLI's `Version` formats from the same source.
 
 ## Reproducibility
 
