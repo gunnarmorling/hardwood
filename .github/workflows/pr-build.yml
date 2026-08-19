@@ -342,6 +342,7 @@ jobs:
 
       - name: 'Install libdeflate'
         if: ${{ matrix.install_libdeflate }}
+        timeout-minutes: 5
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
@@ -350,11 +351,32 @@ jobs:
           # unattended-upgrades, which holds /var/lib/dpkg/lock-frontend and
           # makes apt-get block indefinitely. Stop the service and wait for
           # the lock to clear before installing.
-          sudo systemctl stop unattended-upgrades.service 2>/dev/null || true
-          while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+          #
+          # Every wait here is bounded, because each one replaces an indefinite
+          # apt-get block with a different indefinite block: `systemctl stop`
+          # waits for the unit's in-flight transaction to finish, and a lock
+          # that never clears would spin until the job's own timeout. A runner
+          # that cannot be made ready must fail the step and say so, rather
+          # than burn the job's wall clock in silence.
+          #
+          # The two waits are reported separately. A stop that times out still
+          # leaves the lock held, so collapsing them would blame the loop for a
+          # stall that happened before it — which is the misattribution this
+          # step exists to avoid.
+          stop_status=0
+          sudo timeout 60 systemctl stop unattended-upgrades.service 2>/dev/null || stop_status=$?
+          if [ "$stop_status" -eq 124 ]; then
+            echo "::warning::systemctl stop unattended-upgrades did not complete within 60s; it may still hold the dpkg lock"
+          fi
+          for _ in $(seq 1 60); do
+            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
             echo "Waiting for dpkg lock..."
             sleep 2
           done
+          if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+            echo "::error::dpkg lock still held after 120s; runner is not installable"
+            exit 1
+          fi
           sudo -E apt-get update
           sudo -E apt-get install -y libdeflate-dev
 
