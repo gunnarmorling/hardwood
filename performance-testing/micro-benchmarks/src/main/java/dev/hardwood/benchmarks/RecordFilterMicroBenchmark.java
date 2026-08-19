@@ -203,12 +203,12 @@ public class RecordFilterMicroBenchmark {
     /// Schema with four flat columns: id (INT64), value (DOUBLE), tag (INT32),
     /// flag (BOOLEAN). All required.
     private static FileSchema buildSchema() {
-        SchemaElement root = root("root", 4);
+        SchemaElement rootElement = root("root", 4);
         SchemaElement id = primitive("id", PhysicalType.INT64, RepetitionType.REQUIRED);
         SchemaElement value = primitive("value", PhysicalType.DOUBLE, RepetitionType.REQUIRED);
         SchemaElement tag = primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED);
         SchemaElement flag = primitive("flag", PhysicalType.BOOLEAN, RepetitionType.REQUIRED);
-        return FileSchema.fromSchemaElements(List.of(root, id, value, tag, flag));
+        return FileSchema.fromSchemaElements(List.of(rootElement, id, value, tag, flag));
     }
 
     private static StructAccessor[] buildRows(int n, long seed) {

@@ -34,23 +34,23 @@ public record SchemaElement(
         Integer fieldId,
         LogicalType logicalType) {
 
-    /// Creates a root group element.
+    /// Creates a root group element, which carries no repetition.
     ///
     /// @param name        group name; the root group is named `"schema"` by convention
     /// @param numChildren number of child elements, zero or more
     /// @return the group element
     /// @throws IllegalArgumentException if `numChildren` is negative
     public static SchemaElement root(String name, int numChildren) {
-        return group(name, null, numChildren, null);
+        return groupElement(name, null, numChildren, null);
     }
 
     /// Creates a group element.
     ///
     /// @param name group name
-    /// @param repetitionType repetition level
+    /// @param repetitionType repetition level; only the root element may omit it, via [#root]
     /// @param numChildren number of child elements, zero or more
     /// @return the group element
-    /// @throws IllegalArgumentException if `numChildren` is negative
+    /// @throws IllegalArgumentException if `repetitionType` is `null` or `numChildren` is negative
     public static SchemaElement group(String name, RepetitionType repetitionType, int numChildren) {
         return group(name, repetitionType, numChildren, null);
     }
@@ -58,16 +58,22 @@ public record SchemaElement(
     /// Creates a group element.
     ///
     /// @param name group name
-    /// @param repetitionType nullable repetition level
+    /// @param repetitionType repetition level; only the root element may omit it, via [#root]
     /// @param numChildren number of child elements, zero or more
     /// @param logicalType logical type annotation, or `null` for none
     /// @return the group element
-    /// @throws IllegalArgumentException if `numChildren` is negative
+    /// @throws IllegalArgumentException if `repetitionType` is `null` or `numChildren` is negative
     public static SchemaElement group(String name, RepetitionType repetitionType, int numChildren,
             LogicalType logicalType) {
+        requireRepetition(name, repetitionType);
+        return groupElement(name, repetitionType, numChildren, logicalType);
+    }
+
+    private static SchemaElement groupElement(String name, RepetitionType repetitionType, int numChildren,
+            LogicalType logicalType) {
         if (numChildren < 0) {
-            String s = "Group " + name + " requires a child count of zero or more, not " + numChildren;
-            throw new IllegalArgumentException(s);
+            throw new IllegalArgumentException(
+                    "Group " + name + " requires a child count of zero or more, not " + numChildren);
         }
         return new SchemaElement(name, null, null, repetitionType, numChildren, null, null, null, null, logicalType);
     }
@@ -76,9 +82,9 @@ public record SchemaElement(
     ///
     /// @param name column name
     /// @param type physical type
-    /// @param repetitionType nullable repetition level
+    /// @param repetitionType repetition level
     /// @return the primitive element
-    /// @throws IllegalArgumentException if `type` is `null`, or is
+    /// @throws IllegalArgumentException if `repetitionType` is `null`, or `type` is `null` or is
     ///         [PhysicalType#FIXED_LEN_BYTE_ARRAY], which needs a width
     public static SchemaElement primitive(String name, PhysicalType type, RepetitionType repetitionType) {
         return primitive(name, type, repetitionType, null);
@@ -88,13 +94,14 @@ public record SchemaElement(
     ///
     /// @param name column name
     /// @param type physical type
-    /// @param repetitionType nullable repetition level
+    /// @param repetitionType repetition level
     /// @param logicalType nullable logical type annotation
     /// @return the primitive element
-    /// @throws IllegalArgumentException if `type` is `null`, or is
+    /// @throws IllegalArgumentException if `repetitionType` is `null`, or `type` is `null` or is
     ///         [PhysicalType#FIXED_LEN_BYTE_ARRAY], which needs a width
     public static SchemaElement primitive(String name, PhysicalType type, RepetitionType repetitionType,
             LogicalType logicalType) {
+        requireRepetition(name, repetitionType);
         if (type == null) {
             throw new IllegalArgumentException(
                     "Primitive element " + name + " requires a physical type; a null type denotes a group");
@@ -110,9 +117,9 @@ public record SchemaElement(
     ///
     /// @param name column name
     /// @param typeLength fixed byte length: must be positive
-    /// @param repetitionType nullable repetition level
+    /// @param repetitionType repetition level
     /// @return the fixed-length primitive element
-    /// @throws IllegalArgumentException if `typeLength` is not positive
+    /// @throws IllegalArgumentException if `repetitionType` is `null` or `typeLength` is not positive
     public static SchemaElement fixedLengthPrimitive(String name, int typeLength, RepetitionType repetitionType) {
         return fixedLengthPrimitive(name, typeLength, repetitionType, null);
     }
@@ -121,45 +128,26 @@ public record SchemaElement(
     ///
     /// @param name column name
     /// @param typeLength fixed byte length: must be positive
-    /// @param repetitionType nullable repetition level
+    /// @param repetitionType repetition level
     /// @param logicalType nullable logical type annotation
     /// @return the fixed-length primitive element
-    /// @throws IllegalArgumentException if `typeLength` is not positive
+    /// @throws IllegalArgumentException if `repetitionType` is `null` or `typeLength` is not positive
     public static SchemaElement fixedLengthPrimitive(String name, int typeLength, RepetitionType repetitionType,
             LogicalType logicalType) {
+        requireRepetition(name, repetitionType);
         if (typeLength <= 0) {
-            String s = "FIXED_LEN_BYTE_ARRAY column " + name + " requires a positive type length, not " + typeLength;
-            throw new IllegalArgumentException(s);
+            throw new IllegalArgumentException(
+                    "FIXED_LEN_BYTE_ARRAY column " + name + " requires a positive type length, not " + typeLength);
         }
         return new SchemaElement(name, PhysicalType.FIXED_LEN_BYTE_ARRAY, typeLength, repetitionType, null, null, null,
                 null, null, logicalType);
     }
 
-    /// Returns a copy of this element carrying `typeLength`.
-    ///
-    /// The field has two meanings, one per physical type. For
-    /// [PhysicalType#FIXED_LEN_BYTE_ARRAY] it is the byte length of every value, which
-    /// [#fixedLengthPrimitive] sets directly. For every other physical type it is the
-    /// maximum bit length used to store a value, and this method is the only way to set it:
-    ///
-    /// ```java
-    /// // a low-cardinality INT32 whose values fit in 3 bits
-    /// primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED).withTypeLength(3)
-    /// ```
-    ///
-    /// @param typeLength the byte length or the maximum bit length, one or more
-    /// @return a copy of this element with `typeLength` set
-    /// @throws IllegalArgumentException if `typeLength` is not positive, or this element is a group
-    public SchemaElement withTypeLength(int typeLength) {
-        if (typeLength <= 0) {
-            String s = "Column " + name + " requires a positive type length, not " + typeLength;
-            throw new IllegalArgumentException(s);
+    private static void requireRepetition(String name, RepetitionType repetitionType) {
+        if (repetitionType == null) {
+            throw new IllegalArgumentException(
+                    "Element " + name + " requires a repetition level; only the root element may omit it");
         }
-        if (isGroup()) {
-            throw new IllegalArgumentException("Group " + name + " cannot carry a type length");
-        }
-        return new SchemaElement(name, type, typeLength, repetitionType, numChildren, convertedType, scale, precision,
-                fieldId, logicalType);
     }
 
     /// Returns `true` if this element is a group node (has no physical type).

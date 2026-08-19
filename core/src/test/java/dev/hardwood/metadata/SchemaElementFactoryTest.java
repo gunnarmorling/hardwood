@@ -80,46 +80,31 @@ class SchemaElementFactoryTest {
     /// A root element carries no repetition. `RecordFilterMicroBenchmark` and many fixtures
     /// build one that way, and `FileSchema.fromSchemaElements` defaults it to `REQUIRED`.
     @Test
-    void groupKeepsANullRepetition() {
-        SchemaElement root = root("root", 4);
+    void rootKeepsANullRepetition() {
+        SchemaElement rootElement = root("root", 4);
 
-        assertThat(root.repetitionType()).isNull();
-        assertThat(root).isEqualTo(new SchemaElement("root", null, null, null, 4, null, null, null, null, null));
+        assertThat(rootElement.repetitionType()).isNull();
+        assertThat(rootElement).isEqualTo(new SchemaElement("root", null, null, null, 4, null, null, null, null, null));
     }
 
-    /// `type_length` on a non-FLBA column is the maximum bit length of a value, which the
-    /// primitive factories cannot express. `withTypeLength` is the only way to set it.
+    /// Only the root element may omit `repetition_type`; every other element must carry one,
+    /// so the non-root factories reject a null rather than let `fromSchemaElements` silently
+    /// default it to `OPTIONAL`.
     @Test
-    void withTypeLengthSetsTheMaximumBitLength() {
-        assertThat(primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED).withTypeLength(3))
-                .isEqualTo(new SchemaElement("tag", PhysicalType.INT32, 3, RepetitionType.REQUIRED, null, null, null,
-                        null, null, null));
-    }
-
-    @Test
-    void withTypeLengthKeepsEveryOtherComponent() {
-        LogicalType stringType = new LogicalType.StringType();
-        SchemaElement annotated = primitive("city", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL, stringType);
-
-        assertThat(annotated.withTypeLength(12))
-                .isEqualTo(new SchemaElement("city", PhysicalType.BYTE_ARRAY, 12, RepetitionType.OPTIONAL, null, null,
-                        null, null, null, stringType));
-    }
-
-    @Test
-    void withTypeLengthReplacesAFixedWidth() {
-        assertThat(fixedLengthPrimitive("token", 4, RepetitionType.OPTIONAL).withTypeLength(8))
-                .isEqualTo(fixedLengthPrimitive("token", 8, RepetitionType.OPTIONAL));
-    }
-
-    @Test
-    void withTypeLengthRejectsAGroupAndANonPositiveLength() {
-        assertThatThrownBy(() -> group("g", RepetitionType.OPTIONAL, 1).withTypeLength(4))
+    void everyNonRootFactoryRejectsANullRepetition() {
+        assertThatThrownBy(() -> group("g", null, 1))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("cannot carry a type length");
-        assertThatThrownBy(() -> primitive("p", PhysicalType.INT32, RepetitionType.REQUIRED).withTypeLength(0))
+                .hasMessageContaining("g")
+                .hasMessageContaining("requires a repetition level");
+        assertThatThrownBy(() -> group("g", null, 1, new LogicalType.ListType()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("positive type length");
+                .hasMessageContaining("requires a repetition level");
+        assertThatThrownBy(() -> primitive("p", PhysicalType.INT32, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires a repetition level");
+        assertThatThrownBy(() -> fixedLengthPrimitive("f", 4, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires a repetition level");
     }
 
     @Test

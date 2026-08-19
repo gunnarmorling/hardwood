@@ -34,6 +34,10 @@ The static factories build the common element kinds. Each factory sets the field
 | `fixedLengthPrimitive(name, typeLength, repetition, logicalType)` | a `FIXED_LEN_BYTE_ARRAY` column with a logical type |
 
 ```java
+import static dev.hardwood.metadata.SchemaElement.fixedLengthPrimitive;
+import static dev.hardwood.metadata.SchemaElement.primitive;
+import static dev.hardwood.metadata.SchemaElement.root;
+
 List<SchemaElement> elements = List.of(
         root("schema", 3),
         primitive("id", PhysicalType.INT64, RepetitionType.REQUIRED),
@@ -45,11 +49,11 @@ FileSchema schema = FileSchema.fromSchemaElements(elements);
 
 ## Repetition
 
-A valid root has no repetition. Other valid elements have a repetition value.
+The Parquet format leaves `repetition_type` unset on the root element and requires it on every other element.
 
-`root` sets the root repetition to `null`. The group and primitive factories take the repetition value as an argument.
+`root` builds the root element with no repetition. The group and primitive factories require a non-null repetition value and reject a null one.
 
-`fromSchemaElements` accepts a missing repetition value. It uses `REQUIRED` for the root and `OPTIONAL` for other elements.
+`fromSchemaElements` accepts an element with no repetition value, as a footer may carry one. It uses `REQUIRED` for the root and `OPTIONAL` for other elements. `FileSchema.toSchemaElements()` writes `REQUIRED` for the root of a schema built with `FileSchema.builder(String)`.
 
 ## Name
 
@@ -66,19 +70,17 @@ A malformed or truncated footer can omit the name. The reader then creates an el
 | `FIXED_LEN_BYTE_ARRAY` | the byte length of each value |
 | any other physical type | the maximum bit length needed to store any value |
 
-Use `fixedLengthPrimitive` to create an `FIXED_LEN_BYTE_ARRAY` (called FLBA henceforth) column with its byte length. Use `withTypeLength(int)` to set or replace `typeLength` on a primitive element.
+`fixedLengthPrimitive` sets the physical type to `FIXED_LEN_BYTE_ARRAY` and takes the byte length as its second argument. `primitive` rejects `FIXED_LEN_BYTE_ARRAY`.
+
+The maximum bit length has no factory. Use the canonical constructor for it:
 
 ```java
 // An INT32 column with a maximum bit length of 3 - all values of this column can be stored with 3 bits.
-SchemaElement tag = primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED)
-        .withTypeLength(3);
+SchemaElement tag = new SchemaElement("tag", PhysicalType.INT32, 3, RepetitionType.REQUIRED,
+        null, null, null, null, null, null);
 ```
 
-`typeLength` can be `null` in raw footer metadata. A writer must provide a positive length for an FLBA column. A data reader also needs this length to decode FLBA values.
-
-`fixedLengthPrimitive` sets the physical type to `FIXED_LEN_BYTE_ARRAY`. It takes the width as its second argument. `FileSchema.Builder.addColumn` takes the width as its fourth argument.
-
-`primitive` rejects `FIXED_LEN_BYTE_ARRAY`. Use `fixedLengthPrimitive` for that type.
+`typeLength` can be `null` in raw footer metadata. A writer must provide a positive length for a `FIXED_LEN_BYTE_ARRAY` column. A data reader also needs this length to decode its values.
 
 ## Errors
 
@@ -86,11 +88,11 @@ The factories throw `IllegalArgumentException` for these inputs:
 
 | Condition | Factory |
 |---|---|
+| `repetition` is `null` | `group`, `primitive`, `fixedLengthPrimitive` |
 | `type` is `null` | `primitive` |
 | `type` is `FIXED_LEN_BYTE_ARRAY` | `primitive` |
 | `numChildren` is negative | `group`, `root` |
-| `typeLength` is zero or less | `fixedLengthPrimitive`, `withTypeLength` |
-| the element is a group | `withTypeLength` |
+| `typeLength` is zero or less | `fixedLengthPrimitive` |
 
 A factory checks one element. Rules for the complete list stay in `fromSchemaElements`. The method consumes the list in depth-first order and builds the schema tree.
 
@@ -111,6 +113,8 @@ Use the constructor for:
 - a legacy `ConvertedType` annotation, such as `ConvertedType.LIST` or `ConvertedType.MAP`;
 - legacy decimal metadata with `scale` and `precision`;
 - a Thrift `fieldId`;
+- a `typeLength` on a column that is not `FIXED_LEN_BYTE_ARRAY`;
+- an element with no repetition value that is not the root;
 - a complete element decoded from a footer.
 
 ## Node kind

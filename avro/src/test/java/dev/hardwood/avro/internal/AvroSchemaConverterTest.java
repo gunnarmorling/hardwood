@@ -91,11 +91,11 @@ class AvroSchemaConverterTest {
     /// that the reader cannot fill, since the list accessors serve the group's leaf.
     @Test
     void rejectsGroupCarryingAnUnrecognisedAnnotation() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement legacy = new SchemaElement("legacy", null, null, RepetitionType.OPTIONAL,
                 1, ConvertedType.MAP_KEY_VALUE, null, null, null, null);
         SchemaElement leaf = primitive("v", PhysicalType.INT32, RepetitionType.REQUIRED);
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, legacy, leaf));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, legacy, leaf));
 
         assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -105,9 +105,9 @@ class AvroSchemaConverterTest {
 
     @Test
     void rejectsNonStringKeyedMapNestedInStruct() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement holder = group("holder", RepetitionType.OPTIONAL, 1);
-        List<SchemaElement> elements = new ArrayList<>(List.of(root, holder));
+        List<SchemaElement> elements = new ArrayList<>(List.of(rootElement, holder));
         elements.addAll(intKeyedMap("nested"));
 
         assertRejectsMap(FileSchema.fromSchemaElements(elements), "holder.nested", "INT32");
@@ -115,10 +115,10 @@ class AvroSchemaConverterTest {
 
     @Test
     void rejectsNonStringKeyedMapUsedAsListElement() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement items = group("items", RepetitionType.OPTIONAL, 1, new LogicalType.ListType());
         SchemaElement list = group("list", RepetitionType.REPEATED, 1);
-        List<SchemaElement> elements = new ArrayList<>(List.of(root, items, list));
+        List<SchemaElement> elements = new ArrayList<>(List.of(rootElement, items, list));
         elements.addAll(intKeyedMap("element"));
 
         assertRejectsMap(FileSchema.fromSchemaElements(elements), "items.element", "INT32");
@@ -126,12 +126,12 @@ class AvroSchemaConverterTest {
 
     @Test
     void rejectsNonStringKeyedMapUsedAsMapValue() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement outer = group("outer", RepetitionType.OPTIONAL, 1, new LogicalType.MapType());
         SchemaElement outerKv = group("key_value", RepetitionType.REPEATED, 2);
         SchemaElement outerKey = primitive("key", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
                 new LogicalType.StringType());
-        List<SchemaElement> elements = new ArrayList<>(List.of(root, outer, outerKv, outerKey));
+        List<SchemaElement> elements = new ArrayList<>(List.of(rootElement, outer, outerKv, outerKey));
         elements.addAll(intKeyedMap("value"));
 
         assertRejectsMap(FileSchema.fromSchemaElements(elements), "outer.value", "INT32");
@@ -237,7 +237,7 @@ class AvroSchemaConverterTest {
     /// A Variant group and an ordinary group of the identical two-byte-field shape,
     /// side by side.
     private static FileSchema variantAndOrdinarySchema() {
-        SchemaElement root = root("root", 2);
+        SchemaElement rootElement = root("root", 2);
         SchemaElement variant = group("variant_record", RepetitionType.OPTIONAL, 2, new LogicalType.VariantType(1));
         SchemaElement variantMetadata = primitive("metadata", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED);
         SchemaElement variantValue = primitive("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED);
@@ -246,7 +246,7 @@ class AvroSchemaConverterTest {
         SchemaElement ordinaryValue = primitive("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED);
 
         return FileSchema.fromSchemaElements(List.of(
-                root, variant, variantMetadata, variantValue,
+                rootElement, variant, variantMetadata, variantValue,
                 ordinary, ordinaryMetadata, ordinaryValue));
     }
 
@@ -255,10 +255,10 @@ class AvroSchemaConverterTest {
     /// the Avro spec forbids.
     @Test
     void nullLogicalTypeBecomesBareAvroNull() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement nothing = primitive("nothing", PhysicalType.INT32, RepetitionType.OPTIONAL,
                 new LogicalType.NullType());
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, nothing));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, nothing));
 
         Schema avroSchema = convert(schema);
         Schema.Field field = avroSchema.getField("nothing");
@@ -273,9 +273,9 @@ class AvroSchemaConverterTest {
 
     @Test
     void rejectsListWithoutElementDuringPlanning() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement list = group("items", RepetitionType.OPTIONAL, 0, new LogicalType.ListType());
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, list));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, list));
 
         assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -285,12 +285,12 @@ class AvroSchemaConverterTest {
 
     @Test
     void keyOnlyMapBecomesMapOfBareNull() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement map = group("attributes", RepetitionType.OPTIONAL, 1, new LogicalType.MapType());
         SchemaElement keyValue = group("key_value", RepetitionType.REPEATED, 1);
         SchemaElement key = primitive("key", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
                 new LogicalType.StringType());
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, map, keyValue, key));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, map, keyValue, key));
 
         AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
         Schema mapSchema = pickMapBranch(plan.avro().getField("attributes").schema());
@@ -303,11 +303,11 @@ class AvroSchemaConverterTest {
     /// in the other order this map converts to `map<null>` and only fails per value.
     @Test
     void rejectsKeyOnlyMapWhoseKeyIsNotAString() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement map = group("attributes", RepetitionType.OPTIONAL, 1, new LogicalType.MapType());
         SchemaElement keyValue = group("key_value", RepetitionType.REPEATED, 1);
         SchemaElement key = primitive("key", PhysicalType.INT32, RepetitionType.REQUIRED);
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, map, keyValue, key));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, map, keyValue, key));
 
         assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -319,10 +319,10 @@ class AvroSchemaConverterTest {
     /// structs stay distinguishable.
     @Test
     void namesTheDottedPathWhenANestedListHasNoElement() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement holder = group("holder", RepetitionType.OPTIONAL, 1);
         SchemaElement list = group("items", RepetitionType.OPTIONAL, 0, new LogicalType.ListType());
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, holder, list));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, holder, list));
 
         assertThatThrownBy(() -> AvroSchemaConverter.plan(schema, ColumnProjection.all()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -333,12 +333,12 @@ class AvroSchemaConverterTest {
     /// `array<union [null, null]>`.
     @Test
     void listOfNullElementsBecomesArrayOfBareNull() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement listGroup = group("nulls", RepetitionType.OPTIONAL, 1, new LogicalType.ListType());
         SchemaElement listInner = group("list", RepetitionType.REPEATED, 1);
         SchemaElement element = primitive("element", PhysicalType.INT32, RepetitionType.OPTIONAL,
                 new LogicalType.NullType());
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, listGroup, listInner, element));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, listGroup, listInner, element));
 
         Schema avroSchema = convert(schema);
         Schema listField = pickArrayBranch(avroSchema.getField("nulls").schema());
@@ -351,14 +351,14 @@ class AvroSchemaConverterTest {
     /// `map<union [null, null]>`.
     @Test
     void mapWithNullValuesBecomesMapOfBareNull() {
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement mapGroup = group("m", RepetitionType.OPTIONAL, 1, new LogicalType.MapType());
         SchemaElement kv = group("key_value", RepetitionType.REPEATED, 2);
         SchemaElement key = primitive("key", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
                 new LogicalType.StringType());
         SchemaElement value = primitive("value", PhysicalType.INT32, RepetitionType.OPTIONAL,
                 new LogicalType.NullType());
-        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, mapGroup, kv, key, value));
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(rootElement, mapGroup, kv, key, value));
 
         Schema avroSchema = convert(schema);
         Schema mapField = pickMapBranch(avroSchema.getField("m").schema());
@@ -410,14 +410,14 @@ class AvroSchemaConverterTest {
 
     private static FileSchema buildVariantSchema(boolean includeTypedValue) {
         int varChildren = includeTypedValue ? 3 : 2;
-        SchemaElement root = root("root", 1);
+        SchemaElement rootElement = root("root", 1);
         SchemaElement var = group("var", RepetitionType.OPTIONAL, varChildren, new LogicalType.VariantType(1));
         SchemaElement metadata = primitive("metadata", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED);
         SchemaElement value = primitive("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED);
         if (!includeTypedValue) {
-            return FileSchema.fromSchemaElements(List.of(root, var, metadata, value));
+            return FileSchema.fromSchemaElements(List.of(rootElement, var, metadata, value));
         }
         SchemaElement typedValue = primitive("typed_value", PhysicalType.INT64, RepetitionType.OPTIONAL);
-        return FileSchema.fromSchemaElements(List.of(root, var, metadata, value, typedValue));
+        return FileSchema.fromSchemaElements(List.of(rootElement, var, metadata, value, typedValue));
     }
 }

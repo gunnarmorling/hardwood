@@ -61,11 +61,13 @@ class FileSchemaFlattenTest {
     }
 
     /// A non-FLBA element may carry a `type_length`, which the format defines as the
-    /// maximum bit length of a value. It does not affect decoding, and it survives the
+    /// maximum bit length of a value. The primitive factories do not express it, so the
+    /// canonical constructor builds it. It does not affect decoding, and it survives the
     /// round trip.
     @Test
     void maximumBitLengthOfIntColumnSurvivesFlattening() {
-        SchemaElement tag = primitive("tag", PhysicalType.INT32, RepetitionType.REQUIRED).withTypeLength(3);
+        SchemaElement tag = new SchemaElement("tag", PhysicalType.INT32, 3, RepetitionType.REQUIRED, null, null, null,
+                null, null, null);
 
         SchemaElement column = onlyColumnOf(tag);
 
