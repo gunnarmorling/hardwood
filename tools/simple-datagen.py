@@ -5539,3 +5539,36 @@ print("    as a struct field and as a map value, and the same four positions")
 print("    again as FIXED_LEN_BYTE_ARRAY(21)")
 print("  - a VARIANT column whose first row holds a 3072-byte BINARY payload")
 print("  - page index written, so the dive column-index screen has opaque bounds")
+
+# ---------------------------------------------------------------------------
+# Avro name resolution (hardwood-hq/hardwood#895).
+# Three shapes that the Avro schema converter has to rename or namespace, in one
+# file so a reader test can prove the renamed names still address real values:
+#   - home.address / work.address: two records sharing a simple name. Avro
+#     identifies a named type by its full name, so both need a namespace.
+#   - 'acme.address': a group name outside the Avro grammar [A-Za-z_][A-Za-z0-9_]*,
+#     rewritten to 'acme_address'. Its 'city' child is legal and keeps its name, so
+#     reading it exercises a rewritten struct addressed by its Parquet name.
+#   - 'a-b': the same rewrite at a flat top-level column.
+_avro_names_schema = pa.schema([
+    ('home', pa.struct([('address', pa.struct([('city', pa.string())]))])),
+    ('work', pa.struct([('address', pa.struct([('zip', pa.int32())]))])),
+    ('acme.address', pa.struct([('city', pa.string())])),
+    ('a-b', pa.int32()),
+])
+_avro_names_table = pa.table({
+    'home': [{'address': {'city': 'Timbuktu'}}, {'address': {'city': 'Reykjavik'}}],
+    'work': [{'address': {'zip': 73}}, {'address': {'zip': 101}}],
+    'acme.address': [{'city': 'Valparaiso'}, None],
+    'a-b': [42, 7],
+}, schema=_avro_names_schema)
+pq.write_table(
+    _avro_names_table,
+    'core/src/test/resources/avro_name_resolution.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0'
+)
+print("\nGenerated avro_name_resolution.parquet:")
+print("  - Schema: home.address.city, work.address.zip, 'acme.address'.city, 'a-b'")
+print("  - 2 rows: duplicate nested record names plus names outside the Avro grammar")
