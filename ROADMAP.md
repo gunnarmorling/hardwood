@@ -566,6 +566,8 @@ Remaining Failures by Category (7 total):
 - [ ] Fuzz testing (random schemas and data)
 - [ ] Edge cases (empty files, single values, max nesting)
 - [x] Performance benchmarks vs parquet-java (JMH micro-benchmarks + end-to-end performance tests)
+- [x] Write-path performance benchmark vs parquet-java (`FlatWriteBenchmark` — the columnar and
+  row-oriented APIs against `ExampleParquetWriter`; see `_designs/FLAT_WRITE_BENCHMARK.md`)
 - [x] Predicate pushdown tests (`PredicatePushDownTest` — 28 test methods)
 - [x] Column projection tests (`ColumnProjectionTest` — 21 test methods)
 - [x] Multi-file reader tests (`MultiFileRowReaderTest` — 16 test methods)

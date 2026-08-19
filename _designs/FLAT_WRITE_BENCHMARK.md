@@ -1,6 +1,6 @@
 # Flat write benchmark (#9, stage 17)
 
-**Status: Settled; not yet implemented.** Tracking issue: #9. Delivery stage 17 (Benchmark) of
+**Status: Complete.** Tracking issue: #9. Delivery stage 17 (Benchmark) of
 [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
 
 ## Context
@@ -29,8 +29,16 @@ what JMH exists to measure properly.
 
 The module already depends on `parquet-avro`, `parquet-hadoop`, `zstd-jni`, `snappy-java` and
 JMH 1.37, so the benchmark adds no dependency. It follows the conventions already established
-there: `@Fork(1)`, `@Warmup(2, 1s)`, `@Measurement(3, 1s)`, run instructions in the class
-JavaDoc.
+there: `@Fork(1)`, `@Warmup(3, 1s)`, `@Measurement(5, 1s)`, run instructions in the class
+JavaDoc. The fork's JVM arguments are *appended* rather than replaced, because replacing them
+drops the `-Dperf.rows` / `-Dperf.dir` the forked JVM's setup reads.
+
+The module carries a `log4j.properties` pinning the root logger to `WARN`, the same file the
+end-to-end suite has. Without one, Log4j 1.x defaults the root logger to `DEBUG` and
+parquet-java's `MessageColumnIO` record consumer formats a log message per field per record,
+which costs an order of magnitude more than the write it is reporting on. Any benchmark that
+writes through parquet-java's record API measures logging rather than encoding until that file
+is on the classpath.
 
 Correctness is deliberately not asserted here, unlike `FlatPerformanceTest`. The write path
 already has the cover: the byte-identical equivalence tests hold the two Hardwood APIs to the
@@ -97,6 +105,18 @@ arrays over, `RowWriter` walks them element by element, and `ExampleParquetWrite
 including it is fair — but the class JavaDoc states plainly that it is in the measurement, so
 nobody reads the gap as pure encoding speed.
 
+The arrays are held **one per column per 1024-row batch** rather than one per column, so the
+columnar contender submits a batch by handing its arrays over as they are. Slicing a batch out
+of a million-element column on every call would put a copy of the whole fixture inside the
+measured region and measure `Arrays.copyOfRange` alongside the encoder.
+
+A column whose APIs take different Java types is materialized in each of them, so that no
+contender pays a conversion its API does not require: the `STRING` columns as UTF-8 `byte[]`
+for the columnar API and as `String` for the two record-shaped ones, and `pickup_ts` as `long`
+microseconds for the two APIs that take the stored value alongside `Instant` for `RowWriter`,
+which takes the annotated one. The `Instant` conversion is genuinely in `hardwoodRow`'s number
+and genuinely absent from the other two, because that is what a caller holding records pays.
+
 **One million rows per invocation** (~40–50 MB uncompressed), overridable with `-Dperf.rows` in
 the style of `BenchmarkData`. At the write path's current throughput that is roughly 0.15 s per
 invocation, so a benchmark method takes about five seconds and the full three contenders across
@@ -107,10 +127,20 @@ two codecs run in well under a minute.
 Two things decide whether the numbers mean anything at all, and both are easy to get wrong.
 
 **Every writer setting is matched across contenders**: page size, row-group / block size, codec,
-dictionary enabled, and the dictionary page limit. A codec `@Param` over `{UNCOMPRESSED, ZSTD}`
-covers the two the writer produces today, and both sides are given an explicit 16 MiB row-group
-target so a million rows produces a handful of row groups and the flush path is exercised —
-rather than one group at the 128 MiB default, which would measure a case real files do not hit.
+dictionary enabled, the dictionary page limit, writer version, and page checksums. A codec
+`@Param` over `{UNCOMPRESSED, ZSTD}` covers the two the writer produces today, and both sides
+are given an explicit 16 MiB row-group target so a million rows produces a handful of row groups
+and the flush path is exercised — rather than one group at the 128 MiB default, which would
+measure a case real files do not hit. parquet-java's 20 000-row page cap is lifted, because
+Hardwood bounds a page by size alone and the two would otherwise be cutting pages on different
+rules.
+
+Two things stay unmatched because they are properties of the writers rather than settings.
+parquet-java writes a column index and an offset index per column chunk, which Hardwood does not
+produce yet (delivery stage 23). And the 16 MiB row-group target means different things on the
+two sides — Hardwood counts buffered *uncompressed* bytes, parquet-java its own buffered size
+estimate — so the same target yields a different number of row groups, which the benchmark
+prints alongside each file's size.
 
 **Output size is reported next to the time.** A contender that is twenty percent faster and
 produces a ten percent larger file has not won, and a throughput regression can otherwise hide
@@ -156,7 +186,17 @@ The benchmark is validated by being run, not by tests of its own. The bar for ac
 
 - All three contenders produce files of the same row count, read back through Hardwood, checked
   once from the trial setup rather than per invocation.
-- The reported output sizes are within a few percent of each other for the same codec; a large
-  divergence means the settings are not actually matched and the numbers are not comparable.
+- The two Hardwood contenders produce files of identical size, as the byte-identical equivalence
+  tests require; a divergence there is a writer defect, not a benchmark one.
 - Run on the N300 bare-metal box for any number that gets quoted; the container's figures are
   for relative movement during development only.
+
+**Hardwood's files are the larger ones**, by roughly a fifth on this fixture, and that gap is
+the writer's dictionary policy rather than a settings mismatch. Stage 9 builds a dictionary
+optimistically per column chunk and falls back to `PLAIN` mid-chunk, so a chunk that falls back
+still carries the dictionary page the pages written before the fallback reference; and a column
+that is entirely distinct but stays under the byte limit — `id`, `fare`, `pickup_ts` here — is
+dictionary-encoded at a dictionary page *plus* an index stream, where the values alone would be
+smaller. parquet-java chooses per chunk once the data is in hand and writes neither. This is
+what delivery stage 22 (row-group-global dictionary selection) exists to fix, and this benchmark
+is where its payoff is measured.

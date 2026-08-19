@@ -18,8 +18,6 @@ import org.apache.parquet.format.FileMetaData;
 import org.apache.parquet.format.Util;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
 import org.apache.parquet.hadoop.ParquetFileReader;
-import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
-import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -34,6 +32,8 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 import dev.hardwood.benchmarks.BenchmarkData;
+import shaded.parquet.org.apache.thrift.protocol.TCompactProtocol;
+import shaded.parquet.org.apache.thrift.transport.TIOStreamTransport;
 
 /// The parquet-java counterpart of [WideSchemaMetadataBenchmark], over the identical fixtures,
 /// so the two are compared on the same machine, JVM and bytes. Run both together — the class
