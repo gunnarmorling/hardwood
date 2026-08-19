@@ -12,9 +12,8 @@ package dev.hardwood.metadata;
 /// @param name column or group name
 /// @param type physical type of this element, or `null` for group nodes
 /// @param typeLength byte length of the values for [PhysicalType#FIXED_LEN_BYTE_ARRAY]; for any other
-///         physical type, it denotes the maximum bit length used to store a value; or, `null` when the field is absent
-/// @param repetitionType repetition level (required, optional, or repeated), or `null` when the field is
-///         absent, which a root element may be
+///         physical type, it denotes the maximum bit length used to store a value; or, `null` otherwise
+/// @param repetitionType repetition level (required, optional, or repeated)
 /// @param numChildren number of child elements for group nodes, or `null` for primitive nodes
 /// @param convertedType legacy converted type annotation, or `null` if absent
 /// @param scale decimal scale (number of digits after the decimal point), or `null` if not a decimal
