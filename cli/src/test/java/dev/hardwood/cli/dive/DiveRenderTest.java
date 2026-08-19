@@ -325,6 +325,42 @@ class DiveRenderTest {
         assertThat(renderToString(buffer, screenArea)).contains("Press ? or Esc to close");
     }
 
+    /// On a short terminal the help overlay is taller than the viewport, so the
+    /// bottom-most rows — the build version and the close hint — are off-screen
+    /// until the user pages down. The top frame must say more content exists
+    /// rather than silently dropping it, and paging to the bottom must make those
+    /// last rows reachable. That is the exact failure mode of #963.
+    @Test
+    void helpOverlayCanReachItsBottomContentAtNarrowHeight() {
+        Rect screenArea = new Rect(0, 0, 80, 24);
+        DiveApp app = new DiveApp(model);
+
+        app.dispatchKey(new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, '?'));
+        assertThat(app.helpOpen()).isTrue();
+        Buffer buffer = Buffer.empty(screenArea);
+        app.renderOnce(buffer);
+
+        // At 24 rows the overlay is capped to the screen, so the trailing
+        // version / close-hint lines are not on screen yet — and the overlay
+        // must say so instead of pretending it fits.
+        assertThat(renderToString(buffer, screenArea)).doesNotContain(
+                "Press ? or Esc to close");
+        assertThat(renderToString(buffer, screenArea)).contains(
+                "hardwood dive — help");
+
+        // Page down until the last rows arrive; bounded so a regression that
+        // stops scrolling fails the test instead of hanging it.
+        int pageDowns = 0;
+        while (!renderToString(buffer, screenArea).contains("Press ? or Esc to close")) {
+            assertThat(++pageDowns).isLessThan(40);
+            app.dispatchKey(key(KeyCode.PAGE_DOWN));
+            app.renderOnce(buffer);
+        }
+
+        assertThat(renderToString(buffer, screenArea)).contains(
+                "Press ? or Esc to close");
+    }
+
     private static String renderToString(Buffer buffer, Rect screenArea) {
         StringBuilder sb = new StringBuilder();
         for (int y = 0; y < screenArea.height(); y++) {

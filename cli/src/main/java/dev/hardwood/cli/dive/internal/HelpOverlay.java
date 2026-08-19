@@ -30,6 +30,10 @@ public final class HelpOverlay {
     }
 
     public static void render(Buffer buffer, Rect screenArea) {
+        render(buffer, screenArea, 0);
+    }
+
+    public static void render(Buffer buffer, Rect screenArea, int scrollTop) {
         int width = Math.min(60, screenArea.width() - 4);
         int descBudget = Math.max(1, (width - 2) - 20);
 
@@ -71,16 +75,29 @@ public final class HelpOverlay {
         int x = screenArea.left() + (screenArea.width() - width) / 2;
         int y = screenArea.top() + (screenArea.height() - height) / 2;
         Rect area = new Rect(x, y, width, height);
+
+        // A short terminal clips the line list; only the visible slice is drawn
+        // and the stored offset is clamped against the current content, so the
+        // last rows (version / close hint) stay reachable by paging down.
+        int viewport = Math.max(1, height - 2);
+        int maxScroll = Math.max(0, lines.size() - viewport);
+        int scroll = Math.max(0, Math.min(maxScroll, scrollTop));
+        int end = Math.min(lines.size(), scroll + viewport);
+
         // Wipe the area so the underlying screen doesn't bleed through cells
         // that the Paragraph doesn't paint.
         dev.tamboui.widgets.Clear.INSTANCE.render(area, buffer);
 
+        String title = " hardwood dive — help ";
+        if (end - scroll < lines.size()) {
+            title += "─ " + (scroll + 1) + "-" + end + "/" + lines.size() + " ";
+        }
         Block block = Block.builder()
-                .title(" hardwood dive — help ")
+                .title(title)
                 .borders(Borders.ALL)
                 .borderType(BorderType.ROUNDED)
                 .build();
-        Paragraph.builder().block(block).text(Text.from(lines)).left().build().render(area, buffer);
+        Paragraph.builder().block(block).text(Text.from(lines.subList(scroll, end))).left().build().render(area, buffer);
     }
 
     private static List<Line> kv(String key, String description, int descBudget) {

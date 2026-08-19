@@ -45,11 +45,13 @@ public final class DiveApp {
     private final ParquetModel model;
     private final NavigationStack stack;
     private boolean helpOpen;
+    private int helpScrollTop;
 
     public DiveApp(ParquetModel model) {
         this.model = model;
         this.stack = new NavigationStack(ScreenState.Overview.initial());
         this.helpOpen = false;
+        this.helpScrollTop = 0;
     }
 
     /// Runs the TUI loop until the user quits. Uses default backend + alternate screen.
@@ -99,11 +101,22 @@ public final class DiveApp {
         }
         if (!textInput && ke.code() == KeyCode.CHAR && ke.character() == '?') {
             helpOpen = !helpOpen;
+            if (helpOpen) {
+                helpScrollTop = 0;
+            }
             return Action.HANDLED;
         }
         if (helpOpen) {
             if (ke.isCancel()) {
                 helpOpen = false;
+                return Action.HANDLED;
+            }
+            if (Keys.isPageDown(ke)) {
+                helpScrollTop += 1;
+                return Action.HANDLED;
+            }
+            if (Keys.isPageUp(ke)) {
+                helpScrollTop = Math.max(0, helpScrollTop - 1);
                 return Action.HANDLED;
             }
             return Action.IGNORED;
@@ -182,7 +195,7 @@ public final class DiveApp {
             // Clear+paint restores full intensity inside its area.
             // Chrome (top bar, breadcrumb, keybar) stays unchanged.
             buffer.setStyle(regions.body(), Theme.dim());
-            HelpOverlay.render(buffer, area);
+            HelpOverlay.render(buffer, area, helpScrollTop);
         }
     }
 
