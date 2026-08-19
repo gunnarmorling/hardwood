@@ -19,6 +19,7 @@ import static dev.hardwood.metadata.SchemaElement.fixedLengthPrimitive;
 import static dev.hardwood.metadata.SchemaElement.primitive;
 import static dev.hardwood.metadata.SchemaElement.root;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Characterization test for [FileSchema#toSchemaElements], the footer-write path
 /// [dev.hardwood.writer.ParquetFileWriter] calls: pins what survives a round trip
@@ -72,25 +73,16 @@ class FileSchemaFlattenTest {
         assertThat(column.typeLength()).isEqualTo(3);
     }
 
-    /// Documents a known fault, not intended behavior. `Builder.map` takes the key's physical
-    /// type but no byte length, so a `FIXED_LEN_BYTE_ARRAY` key cannot be given one, and
-    /// `build()` accepts it. The resulting `key` element has no width, which no reader can
-    /// decode. The fix is to reject the key type in `map`, and this assertion inverts when it
-    /// lands.
+    /// `Builder.map` rejects a `FIXED_LEN_BYTE_ARRAY` key because the builder has no
+    /// key-width parameter.
     @Test
-    void mapWithFixedWidthKeyBuildsAKeyWithNoByteLength() {
-        FileSchema schema = FileSchema.builder("schema")
+    void mapWithFixedWidthKeyRequiresAByteLength() {
+        assertThatThrownBy(() -> FileSchema.builder("schema")
                 .map("m", RepetitionType.OPTIONAL, PhysicalType.FIXED_LEN_BYTE_ARRAY,
                         value -> value.primitive(PhysicalType.INT32, RepetitionType.REQUIRED))
-                .build();
-
-        SchemaElement key = schema.toSchemaElements().stream()
-                .filter(element -> "key".equals(element.name()))
-                .findFirst()
-                .orElseThrow();
-
-        assertThat(key.type()).isEqualTo(PhysicalType.FIXED_LEN_BYTE_ARRAY);
-        assertThat(key.typeLength()).isNull();
+                .build())
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("FIXED_LEN_BYTE_ARRAY column key requires a positive type length");
     }
 
     @Test

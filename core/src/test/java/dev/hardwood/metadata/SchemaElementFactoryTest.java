@@ -203,9 +203,11 @@ class SchemaElementFactoryTest {
         // repetition; every other element survives the trip unchanged.
         assertThat(schema.toSchemaElements()).containsExactly(
                 new SchemaElement("root", null, null, RepetitionType.REQUIRED, 3, null, null, null, null, null),
-                elements.get(1),
+                new SchemaElement("items", null, null, RepetitionType.OPTIONAL, 1, ConvertedType.LIST, null, null,
+                        null, new LogicalType.ListType()),
                 elements.get(2),
-                elements.get(3),
+                new SchemaElement("name", PhysicalType.BYTE_ARRAY, null, RepetitionType.OPTIONAL, null,
+                        ConvertedType.UTF8, null, null, null, new LogicalType.StringType()),
                 elements.get(4));
     }
 }
