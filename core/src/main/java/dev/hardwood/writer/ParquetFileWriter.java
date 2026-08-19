@@ -26,6 +26,7 @@ import dev.hardwood.internal.encoding.LevelEncoder;
 import dev.hardwood.internal.thrift.FileMetaDataWriter;
 import dev.hardwood.internal.thrift.ThriftCompactWriter;
 import dev.hardwood.internal.writer.ColumnSource;
+import dev.hardwood.internal.writer.LogicalTypeValueRange;
 import dev.hardwood.internal.writer.RecordShredder;
 import dev.hardwood.internal.writer.RowGroupBuffer;
 import dev.hardwood.metadata.ColumnOrder;
@@ -71,6 +72,8 @@ public final class ParquetFileWriter implements Closeable {
     private final long rowGroupTargetBits;
     private final RecordShredder shredder;
     private final Compressor compressor;
+    /// The range each column's annotation declares, resolved once and handed to every batch.
+    private final LogicalTypeValueRange[] ranges;
     private final List<RowGroup> rowGroups = new ArrayList<>();
 
     // Running actual buffered-bit average, learned across the whole write so the append stride
@@ -98,6 +101,7 @@ public final class ParquetFileWriter implements Closeable {
         this.rowGroupTargetBits = Math.multiplyExact(config.rowGroupTargetBytes(), Byte.SIZE);
         this.shredder = new RecordShredder(schema);
         this.compressor = compressor;
+        this.ranges = LogicalTypeValueRange.forSchema(schema);
         this.current = newRowGroupBuffer();
     }
 
@@ -205,7 +209,7 @@ public final class ParquetFileWriter implements Closeable {
     /// Writes one batch without latching the write mode, so the row-oriented layer can submit
     /// the batches it stages.
     void writeStagedBatch(Consumer<ColumnBatch> filler) throws IOException {
-        ColumnBatch batch = new ColumnBatch(schema);
+        ColumnBatch batch = new ColumnBatch(schema, ranges);
         filler.accept(batch);
         ColumnSource[] sources = batch.completedSources();
         shredder.bind(sources, batch.validities(), batch.structValidities(),

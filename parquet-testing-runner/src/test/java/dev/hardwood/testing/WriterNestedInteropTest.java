@@ -394,23 +394,31 @@ class WriterNestedInteropTest {
                 .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .struct("person", RepetitionType.OPTIONAL, s -> s
                         .addColumn("name", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL)
-                        .addColumn("born", PhysicalType.INT32, RepetitionType.REQUIRED))
+                        .addColumn("born", PhysicalType.INT32, RepetitionType.REQUIRED)
+                        // A REQUIRED fixed-width leaf: the absent record gives it a slot the row
+                        // layer fills with a placeholder, which must not reach the file.
+                        .addColumn("key", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 4))
                 .build();
+        byte[] firstKey = { 1, 2, 3, 4 };
+        byte[] lastKey = { 5, 6, 7, 8 };
 
         List<Group> rows = writeRowsAndRead(dir, schema, writer -> {
             writer.writeRow(row -> row.setInt("id", 1).setStruct("person",
-                    person -> person.setBinary("name", utf8("ada")).setInt("born", 1815)));
+                    person -> person.setBinary("name", utf8("ada")).setInt("born", 1815)
+                            .setBinary("key", firstKey)));
             writer.writeRow(row -> row.setInt("id", 2));
             writer.writeRow(row -> row.setInt("id", 3).setStruct("person",
-                    person -> person.setInt("born", 1912)));
+                    person -> person.setInt("born", 1912).setBinary("key", lastKey)));
         });
 
         assertThat(rows).hasSize(3);
         assertThat(rows.get(0).getGroup("person", 0).getBinary("name", 0).getBytes()).isEqualTo(utf8("ada"));
         assertThat(rows.get(0).getGroup("person", 0).getInteger("born", 0)).isEqualTo(1815);
+        assertThat(rows.get(0).getGroup("person", 0).getBinary("key", 0).getBytes()).isEqualTo(firstKey);
         assertThat(count(rows.get(1), "person")).as("record 1 has no person").isZero();
         assertThat(count(rows.get(2).getGroup("person", 0), "name")).as("record 2 has no name").isZero();
         assertThat(rows.get(2).getGroup("person", 0).getInteger("born", 0)).isEqualTo(1912);
+        assertThat(rows.get(2).getGroup("person", 0).getBinary("key", 0).getBytes()).isEqualTo(lastKey);
     }
 
     @Test

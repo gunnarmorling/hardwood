@@ -205,6 +205,33 @@ class WriterLogicalTypeInteropTest {
         assertThat(columns.get(1).getStatistics().genericGetMax()).as("uint64 max").isEqualTo(-1L);
     }
 
+    /// The extremes of the range an annotation declares — the values the writer accepts and the
+    /// ones just outside it rejects — read back as themselves. The narrow widths are where a
+    /// strict reader would disagree with a permissive one: parquet-java materializes an `INT(8)`
+    /// column's `-128` and a `UINT_16` column's `65535` out of the same `INT32` storage.
+    @Test
+    void theExtremesOfADeclaredRangeSurviveTheFile(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("annotated")
+                .addColumn("i8", PhysicalType.INT32, RepetitionType.REQUIRED, new LogicalType.IntType(8, true))
+                .addColumn("u16", PhysicalType.INT32, RepetitionType.REQUIRED, new LogicalType.IntType(16, false))
+                .addColumn("d9", PhysicalType.INT32, RepetitionType.REQUIRED, new LogicalType.DecimalType(2, 9))
+                .build();
+
+        Path file = write(dir, schema, batch -> batch
+                .ints("i8", new int[] { -128, 127 })
+                .ints("u16", new int[] { 0, 65_535 })
+                .ints("d9", new int[] { -999_999_999, 999_999_999 }));
+
+        List<Group> rows = ParquetJavaReader.readGroups(file);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).getInteger("i8", 0)).isEqualTo(-128);
+        assertThat(rows.get(1).getInteger("i8", 0)).isEqualTo(127);
+        assertThat(rows.get(0).getInteger("u16", 0)).isZero();
+        assertThat(rows.get(1).getInteger("u16", 0)).isEqualTo(65_535);
+        assertThat(rows.get(0).getInteger("d9", 0)).isEqualTo(-999_999_999);
+        assertThat(rows.get(1).getInteger("d9", 0)).isEqualTo(999_999_999);
+    }
+
     /// A `DECIMAL` over a binary type is compared as a signed big-endian integer, not as the
     /// unsigned byte string an unannotated binary column uses, so a negative value is the
     /// minimum even though its leading byte is the largest.

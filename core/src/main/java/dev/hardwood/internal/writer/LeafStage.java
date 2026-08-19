@@ -10,6 +10,7 @@ package dev.hardwood.internal.writer;
 import java.util.Arrays;
 
 import dev.hardwood.Validity;
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.writer.ColumnBatch;
 
@@ -39,17 +40,29 @@ abstract sealed class LeafStage {
     /// mask entirely.
     boolean hasNulls;
 
-    static LeafStage forType(PhysicalType type) {
+    /// The stage for a column of `type`, `typeLength` being the declared byte length of a
+    /// `FIXED_LEN_BYTE_ARRAY` column and `-1` for any other type. `logicalType` decides what a
+    /// binary column's cleared slot has to look like, which its annotation can narrow.
+    static LeafStage forType(PhysicalType type, int typeLength, LogicalType logicalType) {
         return switch (type) {
             case BOOLEAN -> new BooleanStage();
             case INT32 -> new IntStage();
             case INT64 -> new LongStage();
             case FLOAT -> new FloatStage();
             case DOUBLE -> new DoubleStage();
-            case BYTE_ARRAY -> new BinaryStage(false);
-            case FIXED_LEN_BYTE_ARRAY -> new BinaryStage(true);
+            case BYTE_ARRAY -> new BinaryStage(false, binaryPlaceholder(logicalType));
+            case FIXED_LEN_BYTE_ARRAY -> new BinaryStage(true, new byte[typeLength]);
             case INT96 -> throw new IllegalArgumentException("INT96 is not supported by the writer");
         };
+    }
+
+    /// The cleared-slot value of a `BYTE_ARRAY` column: the empty value, except under a
+    /// `DECIMAL` annotation, whose values are two's complement unscaled values — an encoding
+    /// with no zero-byte form, so the empty value is not one of them.
+    private static byte[] binaryPlaceholder(LogicalType logicalType) {
+        return logicalType instanceof LogicalType.DecimalType
+                ? new byte[] { 0 }
+                : BinaryStage.EMPTY;
     }
 
     /// Reserves the next entry, growing both the value and the null arrays, and returns its
@@ -309,14 +322,21 @@ abstract sealed class LeafStage {
     /// columns, which differ only in the batch setter they end up in.
     static final class BinaryStage extends LeafStage {
 
-        private static final byte[] EMPTY = new byte[0];
+        static final byte[] EMPTY = new byte[0];
+
+        /// The value a cleared slot carries. The slot of a null, or of an entry an absent
+        /// ancestor makes unreachable, is handed to [ColumnBatch] like any other and has to be a
+        /// value the column can hold, even though it is never encoded: the declared number of
+        /// zero bytes for a `FIXED_LEN_BYTE_ARRAY`, and a decodable zero under a `DECIMAL`.
+        private final byte[] placeholder;
 
         private final boolean fixedWidth;
         private byte[][] values = new byte[INITIAL_CAPACITY][];
         private long payloadBytes;
 
-        BinaryStage(boolean fixedWidth) {
+        BinaryStage(boolean fixedWidth, byte[] placeholder) {
             this.fixedWidth = fixedWidth;
+            this.placeholder = placeholder;
         }
 
         void append(byte[] value) {
@@ -334,7 +354,10 @@ abstract sealed class LeafStage {
 
         @Override
         void clearAt(int index) {
-            values[index] = EMPTY;
+            values[index] = placeholder;
+            // Counted like any other staged value, so [#dropValues] — which cannot tell a
+            // placeholder from a value of the same width — stays symmetric with what was added.
+            payloadBytes += placeholder.length;
         }
 
         @Override

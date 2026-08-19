@@ -19,6 +19,7 @@ import dev.hardwood.internal.writer.ColumnSource;
 import dev.hardwood.internal.writer.DoubleArrayColumnSource;
 import dev.hardwood.internal.writer.FloatArrayColumnSource;
 import dev.hardwood.internal.writer.IntArrayColumnSource;
+import dev.hardwood.internal.writer.LogicalTypeValueRange;
 import dev.hardwood.internal.writer.LongArrayColumnSource;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -35,6 +36,12 @@ import dev.hardwood.schema.SchemaNode;
 /// by name, and the schema binding lets every identifier be validated as it is added — an
 /// unknown name, an out-of-range index, a column of the wrong physical type, or setting the same column
 /// twice (whether by index or name) all fail eagerly rather than at write time.
+///
+/// The values are checked as eagerly. A value outside the range its column's annotation
+/// declares — 300 on a `UINT_8` column, an unscaled value of more digits than a `DECIMAL`'s
+/// precision — is rejected where it is handed over, because writing it produces a file whose
+/// values fall outside the range its own annotation declares. The values at rows a column's
+/// [Validity] marks null are never encoded, and so are never checked.
 ///
 /// ```java
 /// writer.writeBatch(b -> b
@@ -64,6 +71,10 @@ import dev.hardwood.schema.SchemaNode;
 public final class ColumnBatch {
 
     private final FileSchema schema;
+
+    /// The range each column's annotation declares, resolved once per file by the writer.
+    private final LogicalTypeValueRange[] ranges;
+
     private final ColumnSource[] sources;
     private final Validity[] validities;
     private final Map<String, Validity> structValidities = new HashMap<>();
@@ -72,8 +83,9 @@ public final class ColumnBatch {
     private int rowCount = -1;
     private boolean consumed;
 
-    ColumnBatch(FileSchema schema) {
+    ColumnBatch(FileSchema schema, LogicalTypeValueRange[] ranges) {
         this.schema = schema;
+        this.ranges = ranges;
         this.sources = new ColumnSource[schema.getColumnCount()];
         this.validities = new Validity[schema.getColumnCount()];
     }
@@ -264,11 +276,12 @@ public final class ColumnBatch {
     /// @param values the column's values for this batch
     /// @return this batch, for chaining
     /// @throws IllegalArgumentException if the index is out of range, the column is not
-    ///         `INT32`, the column is already set, or the length does not match the other
-    ///         columns in this batch
+    ///         `INT32`, the column is already set, a value falls outside the range the column's
+    ///         annotation declares, or the length does not match the other columns in this batch
     public ColumnBatch ints(int columnIndex, int[] values) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
+        validateIntValues(idx, values, null);
         store(idx, PhysicalType.INT32, new IntArrayColumnSource(values), values.length, null);
         return this;
     }
@@ -289,11 +302,13 @@ public final class ColumnBatch {
     /// @param nulls the column's nulls; `nulls.isNull(i)` marks row `i` null
     /// @return this batch, for chaining
     /// @throws IllegalArgumentException if the index is out of range, the column is not
-    ///         `OPTIONAL INT32`, or the column is already set
+    ///         `OPTIONAL INT32`, the column is already set, or a value at a present row falls
+    ///         outside the range the column's annotation declares
     @Experimental
     public ColumnBatch ints(int columnIndex, int[] values, Validity nulls) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
+        validateIntValues(idx, values, nulls);
         storeNullable(idx, PhysicalType.INT32, new IntArrayColumnSource(values), values.length, nulls);
         return this;
     }
@@ -320,8 +335,9 @@ public final class ColumnBatch {
     public ColumnBatch ints(int columnIndex, int[] values, boolean[] nulls) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
-        storeNullable(idx, PhysicalType.INT32, new IntArrayColumnSource(values), values.length,
-                maskToValidity(idx, values.length, nulls));
+        Validity validity = maskToValidity(idx, values.length, nulls);
+        validateIntValues(idx, values, validity);
+        storeNullable(idx, PhysicalType.INT32, new IntArrayColumnSource(values), values.length, validity);
         return this;
     }
 
@@ -340,6 +356,7 @@ public final class ColumnBatch {
     public ColumnBatch longs(int columnIndex, long[] values) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
+        validateLongValues(idx, values, null);
         store(idx, PhysicalType.INT64, new LongArrayColumnSource(values), values.length, null);
         return this;
     }
@@ -358,6 +375,7 @@ public final class ColumnBatch {
     public ColumnBatch longs(int columnIndex, long[] values, Validity nulls) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
+        validateLongValues(idx, values, nulls);
         storeNullable(idx, PhysicalType.INT64, new LongArrayColumnSource(values), values.length, nulls);
         return this;
     }
@@ -377,8 +395,9 @@ public final class ColumnBatch {
     public ColumnBatch longs(int columnIndex, long[] values, boolean[] nulls) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
-        storeNullable(idx, PhysicalType.INT64, new LongArrayColumnSource(values), values.length,
-                maskToValidity(idx, values.length, nulls));
+        Validity validity = maskToValidity(idx, values.length, nulls);
+        validateLongValues(idx, values, validity);
+        storeNullable(idx, PhysicalType.INT64, new LongArrayColumnSource(values), values.length, validity);
         return this;
     }
 
@@ -680,12 +699,14 @@ public final class ColumnBatch {
         return fixed(schema.getColumn(columnName).columnIndex(), values, nulls);
     }
 
-    /// Validates a binary column's present values: none may be `null`, and for a
-    /// `FIXED_LEN_BYTE_ARRAY` (`fixed` true) each must be exactly the column's type length. A
-    /// null-row value (per `validity`) is ignored. Failing here, at the public boundary, beats a
-    /// late error at encode time.
+    /// Validates a binary column's present values: none may be `null`, for a
+    /// `FIXED_LEN_BYTE_ARRAY` (`fixed` true) each must be exactly the column's type length, and
+    /// under a `DECIMAL` annotation each must be an unscaled value the declared precision holds.
+    /// A null-row value (per `validity`) is ignored. Failing here, at the public boundary, beats
+    /// a late error at encode time.
     private void validateBinaryValues(int columnIndex, byte[][] values, Validity validity, boolean fixed) {
         Integer typeLength = schema.getColumn(columnIndex).typeLength();
+        LogicalTypeValueRange range = ranges[columnIndex];
         for (int i = 0; i < values.length; i++) {
             if (validity != null && validity.isNull(i)) {
                 continue;
@@ -701,7 +722,53 @@ public final class ColumnBatch {
                         + " has a value of length " + values[i].length + " at row " + i
                         + " but the FIXED_LEN_BYTE_ARRAY type length is " + typeLength);
             }
+            if (range.isBounded() && !range.containsUnscaled(values[i])) {
+                throw new IllegalArgumentException("Column " + describe(columnIndex)
+                        + " has a value at row " + i + " that is not an unscaled value the column's "
+                        + range.annotation() + " can hold");
+            }
         }
+    }
+
+    /// Checks an `INT32` column's present values against the range its annotation declares. A
+    /// column of another physical type is left to [#store], which names the mismatch, and an
+    /// unannotated or unbounded column is not scanned at all.
+    private void validateIntValues(int columnIndex, int[] values, Validity validity) {
+        LogicalTypeValueRange range = ranges[columnIndex];
+        if (!range.isBounded() || schema.getColumn(columnIndex).type() != PhysicalType.INT32) {
+            return;
+        }
+        for (int i = 0; i < values.length; i++) {
+            if (validity != null && validity.isNull(i)) {
+                continue;
+            }
+            if (!range.contains(values[i])) {
+                throw outOfRange(columnIndex, values[i], i, range);
+            }
+        }
+    }
+
+    /// Checks an `INT64` column's present values against the range its annotation declares.
+    ///
+    /// @see #validateIntValues
+    private void validateLongValues(int columnIndex, long[] values, Validity validity) {
+        LogicalTypeValueRange range = ranges[columnIndex];
+        if (!range.isBounded() || schema.getColumn(columnIndex).type() != PhysicalType.INT64) {
+            return;
+        }
+        for (int i = 0; i < values.length; i++) {
+            if (validity != null && validity.isNull(i)) {
+                continue;
+            }
+            if (!range.contains(values[i])) {
+                throw outOfRange(columnIndex, values[i], i, range);
+            }
+        }
+    }
+
+    private IllegalArgumentException outOfRange(int columnIndex, long value, int row, LogicalTypeValueRange range) {
+        return new IllegalArgumentException("Column " + describe(columnIndex) + " has value " + value
+                + " at row " + row + ", out of range for a " + range.annotation() + " column");
     }
 
     private int checkedIndex(int columnIndex) {
@@ -750,6 +817,7 @@ public final class ColumnBatch {
             throw new IllegalStateException("Batch has already been written and cannot be modified");
         }
         ColumnSchema column = schema.getColumn(columnIndex);
+        requireAllNull(columnIndex, valueCount, validity);
         if (column.type() != expected) {
             throw new IllegalArgumentException("Column " + describe(columnIndex) + " is " + column.type()
                     + ", not " + expected);
@@ -770,6 +838,26 @@ public final class ColumnBatch {
         }
         sources[columnIndex] = source;
         validities[columnIndex] = validity;
+    }
+
+    /// Checks that a column annotated `UNKNOWN` carries nothing but nulls. The annotation says
+    /// the column holds no values at all, so a value written under it is one the reader refuses
+    /// to materialize — the same defect a value outside a declared range produces, at the one
+    /// annotation whose declared range is empty.
+    private void requireAllNull(int columnIndex, int valueCount, Validity validity) {
+        if (!ranges[columnIndex].holdsNoValue()) {
+            return;
+        }
+        if (validity == null) {
+            throw new IllegalArgumentException("Column " + describe(columnIndex)
+                    + " is annotated UNKNOWN, which holds only nulls; set it through a setter taking a null mask");
+        }
+        for (int i = 0; i < valueCount; i++) {
+            if (!validity.isNull(i)) {
+                throw new IllegalArgumentException("Column " + describe(columnIndex)
+                        + " is annotated UNKNOWN, which holds only nulls, but row " + i + " is not null");
+            }
+        }
     }
 
     private String describe(int columnIndex) {

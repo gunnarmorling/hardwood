@@ -209,6 +209,33 @@ class RowWriterRoundTripTest {
         }
     }
 
+    /// A `REQUIRED FIXED_LEN_BYTE_ARRAY` leaf under an absent struct has no value to stage, and
+    /// the slot it is nevertheless given has to be a value of the column's declared width: the
+    /// batch it is handed to accepts nothing else, however unreachable the entry is.
+    @Test
+    void writesAFixedWidthLeafUnderAnAbsentStruct() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .struct("key", RepetitionType.OPTIONAL, key -> key
+                        .addColumn("bytes", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 4))
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            RowWriter rows = writer.rowWriter();
+            rows.writeRow(row -> row.setInt("id", 1));
+            rows.writeRow(row -> row.setInt("id", 2)
+                    .setStruct("key", key -> key.setBinary("bytes", new byte[] { 1, 2, 3, 4 })));
+        }
+
+        try (ParquetFileReader reader = open(out); RowReader rows = reader.rowReader()) {
+            rows.next();
+            assertThat(rows.isNull("key")).isTrue();
+            rows.next();
+            assertThat(rows.getStruct("key").getBinary("bytes")).containsExactly(1, 2, 3, 4);
+        }
+    }
+
     /// An absent list, an empty list and a list holding a null entry are three distinct
     /// records, and the row API spells each of them.
     @Test

@@ -41,18 +41,10 @@ final class RowLeafNode extends RowNode {
     private final LeafStage stage;
     private final PrecisionLossPolicy precisionLossPolicy;
 
-    /// Inclusive bounds an `int` value must fall in, narrowed by an `INT(8)` / `INT(16)`
-    /// annotation to the values that annotation can hold: `[-2^(n-1), 2^(n-1))` when signed and
-    /// `[0, 2^n)` when not.
-    ///
-    /// `UINT_32` is deliberately unbounded: every one of the `int`'s bit patterns is a valid
-    /// value of that column, and spelling one above `Integer.MAX_VALUE` as a negative `int` is
-    /// the only way to reach it — which is also how the reader returns it. A narrower unsigned
-    /// width has no such excuse: all 256 valid `UINT_8` values fit in `[0, 256)`, so a value
-    /// outside it is a mistake rather than a spelling, and writing it produces a file whose
-    /// values are outside the range its own annotation declares.
-    private final int minValue;
-    private final int maxValue;
+    /// The range the column's annotation declares, which the physical setters check the value
+    /// against — the same object [ColumnBatch] scans its arrays with, so the two write APIs
+    /// cannot disagree about which values the column may hold.
+    private final LogicalTypeValueRange range;
 
     RowLeafNode(String path, ColumnSchema column, PrecisionLossPolicy precisionLossPolicy) {
         super(path);
@@ -62,16 +54,8 @@ final class RowLeafNode extends RowNode {
         this.logicalType = column.logicalType();
         this.typeLength = column.typeLength() == null ? -1 : column.typeLength();
         this.optional = column.repetitionType() == RepetitionType.OPTIONAL;
-        this.stage = LeafStage.forType(physicalType);
-        int min = Integer.MIN_VALUE;
-        int max = Integer.MAX_VALUE;
-        if (physicalType == PhysicalType.INT32 && logicalType instanceof LogicalType.IntType intType
-                && intType.bitWidth() < Integer.SIZE) {
-            min = intType.isSigned() ? -(1 << (intType.bitWidth() - 1)) : 0;
-            max = intType.isSigned() ? (1 << (intType.bitWidth() - 1)) - 1 : (1 << intType.bitWidth()) - 1;
-        }
-        this.minValue = min;
-        this.maxValue = max;
+        this.stage = LeafStage.forType(physicalType, typeLength, logicalType);
+        this.range = LogicalTypeValueRange.of(column);
     }
 
     LeafStage stage() {
@@ -82,30 +66,33 @@ final class RowLeafNode extends RowNode {
 
     void setInt(int value) {
         require(physicalType == PhysicalType.INT32, "setInt", "an INT32 column");
-        if (value < minValue || value > maxValue) {
-            throw new IllegalArgumentException("Field " + path + ": " + value
-                    + " is out of range for a " + logicalType + " column");
-        }
+        requireValueAllowed("setInt");
+        checkRange(value);
         ((LeafStage.IntStage) stage).append(value);
     }
 
     void setLong(long value) {
         require(physicalType == PhysicalType.INT64, "setLong", "an INT64 column");
+        requireValueAllowed("setLong");
+        checkRange(value);
         ((LeafStage.LongStage) stage).append(value);
     }
 
     void setFloat(float value) {
         require(physicalType == PhysicalType.FLOAT, "setFloat", "a FLOAT column");
+        requireValueAllowed("setFloat");
         ((LeafStage.FloatStage) stage).append(value);
     }
 
     void setDouble(double value) {
         require(physicalType == PhysicalType.DOUBLE, "setDouble", "a DOUBLE column");
+        requireValueAllowed("setDouble");
         ((LeafStage.DoubleStage) stage).append(value);
     }
 
     void setBoolean(boolean value) {
         require(physicalType == PhysicalType.BOOLEAN, "setBoolean", "a BOOLEAN column");
+        requireValueAllowed("setBoolean");
         ((LeafStage.BooleanStage) stage).append(value);
     }
 
@@ -229,7 +216,17 @@ final class RowLeafNode extends RowNode {
 
     @Override
     void appendAbsentInstance() {
-        stage.appendPlaceholder();
+        // An OPTIONAL leaf can say what the slot is: null. The ancestor's definition level already
+        // caps the leaf's, so the null bit changes nothing on the wire — but it tells the batch the
+        // slot carries no value, which is what an UNKNOWN column requires of every row and what
+        // spares every other annotation from range-checking a placeholder. A REQUIRED leaf has no
+        // null bit to set and keeps the placeholder, which is a value its column can hold.
+        if (optional) {
+            stage.appendNull();
+        }
+        else {
+            stage.appendPlaceholder();
+        }
     }
 
     @Override
@@ -249,13 +246,38 @@ final class RowLeafNode extends RowNode {
 
     // ==================== Validation helpers ====================
 
-    /// Appends a binary value, checking it against a fixed-width column's declared length.
+    /// Appends a binary value, checking it against a fixed-width column's declared length and,
+    /// under a `DECIMAL` annotation, against the unscaled values that annotation can hold.
     private void appendBinary(byte[] value) {
+        requireValueAllowed("setBinary");
         if (physicalType == PhysicalType.FIXED_LEN_BYTE_ARRAY && value.length != typeLength) {
             throw new IllegalArgumentException("Field " + path + ": value is " + value.length
                     + " bytes but the column is FIXED_LEN_BYTE_ARRAY(" + typeLength + ")");
         }
+        if (range.isBounded() && !range.containsUnscaled(value)) {
+            throw new IllegalArgumentException("Field " + path
+                    + ": the value is not an unscaled value the column's " + logicalType + " can hold");
+        }
         ((LeafStage.BinaryStage) stage).append(value);
+    }
+
+    /// Rejects a value on a column annotated `UNKNOWN`, which holds only nulls: no value it
+    /// could carry matches the annotation, and the reader refuses to materialize one.
+    private void requireValueAllowed(String setter) {
+        if (range.holdsNoValue()) {
+            throw new IllegalArgumentException("Field " + path
+                    + " is annotated UNKNOWN, which holds only nulls; " + setter
+                    + " cannot set a value on it");
+        }
+    }
+
+    /// Checks an integral value against the range the column's annotation declares. An
+    /// unannotated column, and one whose annotation narrows nothing, admits every value.
+    private void checkRange(long value) {
+        if (range.isBounded() && !range.contains(value)) {
+            throw new IllegalArgumentException("Field " + path + ": " + value
+                    + " is out of range for a " + logicalType + " column");
+        }
     }
 
     /// Stages a `TIME` value, which is stored in an `INT32` at `MILLIS` and in an `INT64`

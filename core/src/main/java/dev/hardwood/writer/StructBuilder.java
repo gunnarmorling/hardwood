@@ -50,8 +50,10 @@ public interface StructBuilder {
     /// The value is stored as declared: a `DATE`, `TIME(MILLIS)` or `DECIMAL` annotation on
     /// the column does not change what this setter writes, so it is the raw-value escape
     /// hatch alongside [#setDate] and friends — mirroring the reader, whose `getInt` returns
-    /// the stored `int` whatever the annotation. An `INT(8)` or `INT(16)` annotation
-    /// range-checks the value against what it can hold, signed or unsigned; `UINT_32` does not,
+    /// the stored `int` whatever the annotation. The value is still range-checked against what
+    /// the annotation can hold: an `INT(8)` or `INT(16)` bounds it to that width, signed or
+    /// unsigned, a `TIME` to the times of day its unit can spell, and a `DECIMAL` to the digits
+    /// its precision declares. `UINT_32` bounds nothing,
     /// because every bit pattern is one of its values and a negative `int` is the only way to
     /// spell one above `Integer.MAX_VALUE`.
     ///
@@ -92,8 +94,8 @@ public interface StructBuilder {
 
     /// Sets a `BYTE_ARRAY` or `FIXED_LEN_BYTE_ARRAY` field from its bytes, which are
     /// referenced rather than copied and must not be mutated until the record is written. A
-    /// `FIXED_LEN_BYTE_ARRAY` field requires exactly its declared length. A `null` value sets
-    /// the field null.
+    /// `FIXED_LEN_BYTE_ARRAY` field requires exactly its declared length, and a `DECIMAL` field
+    /// an unscaled value the declared precision holds. A `null` value sets the field null.
     ///
     /// @see #setInt(String, int)
     StructBuilder setBinary(String name, byte[] value);

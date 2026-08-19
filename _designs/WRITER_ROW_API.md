@@ -218,7 +218,9 @@ for a caller who wants the raw parquet-java contract. The policy is a property o
   declares.
   `UINT_32` is the exception and keeps the raw two's-complement bits, which is what the reader
   returns for it: every bit pattern is a valid value of the column, and spelling one above
-  `Integer.MAX_VALUE` as a negative `int` is the only way to reach it.
+  `Integer.MAX_VALUE` as a negative `int` is the only way to reach it. The complete rule set,
+  including the `DECIMAL` bounds the physical setters carry, is in
+  [WRITER_ANNOTATION_RANGES.md](WRITER_ANNOTATION_RANGES.md).
 - **Fixed widths.** `setBinary` on a `FIXED_LEN_BYTE_ARRAY` column requires exactly the declared
   length.
 
@@ -233,8 +235,9 @@ the annotation. That makes the physical setters the escape hatch alongside the l
 it is why the `INT(8)` / `INT(16)` range check lives on `setInt` rather than only on a logical
 setter.
 
-`ColumnBatch` is unchanged: it keeps its "the caller hands over encoded physical arrays"
-contract, and gains no logical setters. Conversion is a property of the row layer.
+`ColumnBatch` keeps its "the caller hands over encoded physical arrays" contract, and gains no
+logical setters: conversion is a property of the row layer. The range an annotation declares is
+not — both APIs check the values they are handed against it.
 
 ## Transposition
 
