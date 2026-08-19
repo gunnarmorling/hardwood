@@ -241,7 +241,11 @@ public final class RecordShredder {
                 seenRepeated = true;
             }
             else if (seenRepeated && layer.nullable()) {
-                throw new IllegalArgumentException("A nullable struct enclosing a repeated field ("
+                // UnsupportedOperationException, not IllegalArgumentException: the batch is
+                // well formed and the schema is the problem, which is how the writer reports an
+                // unsupported shape everywhere else — `create` for INT96, `rowWriter` for this
+                // very shape. One defect must not have two types depending on which API sees it.
+                throw new UnsupportedOperationException("A nullable struct enclosing a repeated field ("
                         + layer.key() + ") is not yet supported by the writer");
             }
         }

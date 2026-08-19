@@ -30,6 +30,7 @@ import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ColumnBatch;
 import dev.hardwood.writer.ParquetFileWriter;
+import dev.hardwood.writer.RowWriter;
 import dev.hardwood.writer.WriterConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -379,7 +380,194 @@ class WriterNestedInteropTest {
         }
     }
 
+    // ==================== The row-oriented layer ====================
+
+    /// The same nested shapes produced record by record rather than column by column. The row
+    /// layer stages into a `ColumnBatch` and submits it through the columnar path, so what
+    /// these add to the gate is the record-shaped entry point over each nesting shape: that
+    /// the offsets, per-instance nulls and phantom leaf slots it derives from a filler are the
+    /// ones parquet-java expects to see.
+
+    @Test
+    void rowWrittenStructsIncludingAbsentOnes(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .struct("person", RepetitionType.OPTIONAL, s -> s
+                        .addColumn("name", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL)
+                        .addColumn("born", PhysicalType.INT32, RepetitionType.REQUIRED))
+                .build();
+
+        List<Group> rows = writeRowsAndRead(dir, schema, writer -> {
+            writer.writeRow(row -> row.setInt("id", 1).setStruct("person",
+                    person -> person.setBinary("name", utf8("ada")).setInt("born", 1815)));
+            writer.writeRow(row -> row.setInt("id", 2));
+            writer.writeRow(row -> row.setInt("id", 3).setStruct("person",
+                    person -> person.setInt("born", 1912)));
+        });
+
+        assertThat(rows).hasSize(3);
+        assertThat(rows.get(0).getGroup("person", 0).getBinary("name", 0).getBytes()).isEqualTo(utf8("ada"));
+        assertThat(rows.get(0).getGroup("person", 0).getInteger("born", 0)).isEqualTo(1815);
+        assertThat(count(rows.get(1), "person")).as("record 1 has no person").isZero();
+        assertThat(count(rows.get(2).getGroup("person", 0), "name")).as("record 2 has no name").isZero();
+        assertThat(rows.get(2).getGroup("person", 0).getInteger("born", 0)).isEqualTo(1912);
+    }
+
+    @Test
+    void rowWrittenListsIncludingEmptyAbsentAndNullEntries(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .list("v", RepetitionType.OPTIONAL,
+                        element -> element.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build();
+
+        List<Group> rows = writeRowsAndRead(dir, schema, writer -> {
+            writer.writeRow(row -> row.setList("v", v -> v.addInt(1).addNull().addInt(3)));
+            writer.writeRow(row -> row.setList("v", v -> { }));
+            writer.writeRow(row -> { });
+            writer.writeRow(row -> row.setList("v", v -> v.addInt(4)));
+        });
+
+        assertThat(readIntList(rows.get(0), "v")).containsExactly(1, null, 3);
+        assertThat(readIntList(rows.get(1), "v")).as("record 1 is an empty list").isEmpty();
+        assertThat(readIntList(rows.get(2), "v")).as("record 2 is an absent list").isNull();
+        assertThat(readIntList(rows.get(3), "v")).containsExactly(4);
+    }
+
+    @Test
+    void rowWrittenListOfStructsAndListOfLists(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .list("people", RepetitionType.REQUIRED, element -> element.struct(RepetitionType.REQUIRED,
+                        person -> person.addColumn("name", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)))
+                .list("grid", RepetitionType.REQUIRED, element -> element.list(RepetitionType.REQUIRED,
+                        inner -> inner.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
+                .build();
+
+        List<Group> rows = writeRowsAndRead(dir, schema, writer -> {
+            writer.writeRow(row -> row
+                    .setList("people", people -> people
+                            .addStruct(person -> person.setBinary("name", utf8("ada")))
+                            .addStruct(person -> person.setBinary("name", utf8("alan"))))
+                    .setList("grid", grid -> grid
+                            .addList(inner -> inner.addInt(1).addInt(2))
+                            .addList(inner -> inner.addInt(3))));
+            writer.writeRow(row -> row
+                    .setList("people", people -> people.addStruct(p -> p.setBinary("name", utf8("grace"))))
+                    .setList("grid", grid -> { }));
+        });
+
+        Group people = rows.get(0).getGroup("people", 0);
+        assertThat(count(people, "list")).isEqualTo(2);
+        assertThat(people.getGroup("list", 0).getGroup("element", 0).getBinary("name", 0).getBytes())
+                .isEqualTo(utf8("ada"));
+        assertThat(people.getGroup("list", 1).getGroup("element", 0).getBinary("name", 0).getBytes())
+                .isEqualTo(utf8("alan"));
+
+        Group grid = rows.get(0).getGroup("grid", 0);
+        assertThat(readIntList(grid.getGroup("list", 0), "element")).containsExactly(1, 2);
+        assertThat(readIntList(grid.getGroup("list", 1), "element")).containsExactly(3);
+        assertThat(count(rows.get(1).getGroup("grid", 0), "list")).as("record 1's grid is empty").isZero();
+    }
+
+    @Test
+    void rowWrittenMaps(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .map("props", RepetitionType.OPTIONAL, PhysicalType.BYTE_ARRAY, new LogicalType.StringType(),
+                        value -> value.primitive(PhysicalType.INT64, RepetitionType.OPTIONAL))
+                .build();
+
+        List<Group> rows = writeRowsAndRead(dir, schema, writer -> {
+            writer.writeRow(row -> row.setMap("props", props -> props
+                    .addEntry(entry -> entry.setString("key", "reads").setLong("value", 12))
+                    .addEntry(entry -> entry.setString("key", "writes").setNull("value"))));
+            writer.writeRow(row -> row.setMap("props", props -> { }));
+            writer.writeRow(row -> { });
+        });
+
+        Group entries = rows.get(0).getGroup("props", 0);
+        assertThat(count(entries, "key_value")).isEqualTo(2);
+        assertThat(entries.getGroup("key_value", 0).getBinary("key", 0).getBytes()).isEqualTo(utf8("reads"));
+        assertThat(entries.getGroup("key_value", 0).getLong("value", 0)).isEqualTo(12L);
+        assertThat(entries.getGroup("key_value", 1).getBinary("key", 0).getBytes()).isEqualTo(utf8("writes"));
+        assertThat(count(entries.getGroup("key_value", 1), "value")).as("the second value is null").isZero();
+        assertThat(count(rows.get(1).getGroup("props", 0), "key_value")).as("record 1 is an empty map").isZero();
+        assertThat(count(rows.get(2), "props")).as("record 2 has no map").isZero();
+    }
+
+    /// Records written through the row layer across several of its staged batches, so the
+    /// per-batch reset of the nested staging — list offsets, per-instance null masks, the leaf
+    /// counts that are not the record count — is exercised against an external reader.
+    @Test
+    void rowWrittenNestedRecordsCrossStagedBatches(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .struct("person", RepetitionType.OPTIONAL, s -> s
+                        .addColumn("born", PhysicalType.INT32, RepetitionType.REQUIRED))
+                .list("v", RepetitionType.OPTIONAL,
+                        element -> element.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
+                .build();
+
+        int records = 2_500;
+        List<Group> rows = writeRowsAndRead(dir, schema, writer -> {
+            for (int r = 0; r < records; r++) {
+                int record = r;
+                writer.writeRow(row -> {
+                    row.setInt("id", record);
+                    if (record % 3 != 0) {
+                        row.setStruct("person", person -> person.setInt("born", 1900 + record % 100));
+                    }
+                    if (record % 5 != 0) {
+                        row.setList("v", v -> {
+                            for (int e = 0; e <= record % 4; e++) {
+                                if (e == 2) {
+                                    v.addNull();
+                                }
+                                else {
+                                    v.addInt(record * 10 + e);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+        assertThat(rows).hasSize(records);
+        for (int r = 0; r < records; r++) {
+            Group row = rows.get(r);
+            assertThat(row.getInteger("id", 0)).as("record %d id", r).isEqualTo(r);
+            if (r % 3 == 0) {
+                assertThat(count(row, "person")).as("record %d has no person", r).isZero();
+            }
+            else {
+                assertThat(row.getGroup("person", 0).getInteger("born", 0)).as("record %d born", r)
+                        .isEqualTo(1900 + r % 100);
+            }
+            if (r % 5 == 0) {
+                assertThat(readIntList(row, "v")).as("record %d has no list", r).isNull();
+                continue;
+            }
+            List<Integer> expected = new ArrayList<>();
+            for (int e = 0; e <= r % 4; e++) {
+                expected.add(e == 2 ? null : r * 10 + e);
+            }
+            assertThat(readIntList(row, "v")).as("record %d list", r).isEqualTo(expected);
+        }
+    }
+
     // ==================== Helpers ====================
+
+    /// Writes records through the row-oriented layer, which may throw a checked [IOException].
+    private interface RowWrite {
+        void accept(RowWriter rows) throws IOException;
+    }
+
+    private List<Group> writeRowsAndRead(Path dir, FileSchema schema, RowWrite filler) throws IOException {
+        Path file = dir.resolve("nested-rows.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
+            filler.accept(writer.rowWriter());
+        }
+        return ParquetJavaReader.readGroups(file);
+    }
 
     private List<Group> writeAndRead(Path dir, FileSchema schema, Consumer<ColumnBatch> filler) throws IOException {
         return ParquetJavaReader.readGroups(write(dir, schema, WriterConfig.defaults(), filler));

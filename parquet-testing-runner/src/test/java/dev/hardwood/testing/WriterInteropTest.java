@@ -30,6 +30,7 @@ import dev.hardwood.schema.FileSchema;
 import dev.hardwood.testing.InteropCase.Nullability;
 import dev.hardwood.testing.ParquetJavaReader.Pages;
 import dev.hardwood.writer.ParquetFileWriter;
+import dev.hardwood.writer.RowWriter;
 import dev.hardwood.writer.WriterConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -110,6 +111,21 @@ class WriterInteropTest {
                         axis.rowGroups(), axis.dataPages(), axis.bound()));
     }
 
+    /// The write-path axis: the same shapes produced through the row-oriented layer rather than
+    /// the columnar one. It stages records into batches of its own and submits them through the
+    /// columnar core, so what it adds to the gate is the record-shaped entry point — the
+    /// single-entry dictionary floor in every repetition shape, and a file whose records cross
+    /// page and row-group boundaries.
+    static Stream<InteropCase> rowWritten() {
+        return Stream.concat(
+                sweep(List.of(Nullability.values()), (type, nullability) -> InteropCase.of(
+                        "row-written single-entry dictionary", type, nullability, 1, 200,
+                        WriterConfig.defaults())),
+                sweep(List.of(Nullability.OPTIONAL_SOME_NULL), (type, nullability) -> InteropCase.of(
+                        "row-written across pages and row groups", type, nullability, 64, MANY_ROWS,
+                        WriterConfig.builder().pageTargetBytes(1024).rowGroupTargetBytes(1024).build())));
+    }
+
     // ==================== Tests ====================
 
     @ParameterizedTest(name = "{0}")
@@ -147,14 +163,24 @@ class WriterInteropTest {
         }
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void rowWritten(InteropCase testCase, @TempDir Path dir) throws IOException {
+        verify(testCase, dir, WritePath.ROW);
+    }
+
     // ==================== The gate ====================
 
     /// Writes the case's file with Hardwood and asserts everything parquet-java can see about it:
     /// that it reads at all, that every value and null matches what was written, and that the
     /// footer's row count, statistics and encodings do too.
     private Verified verify(InteropCase testCase, Path dir) throws IOException {
+        return verify(testCase, dir, WritePath.BATCH);
+    }
+
+    private Verified verify(InteropCase testCase, Path dir, WritePath writePath) throws IOException {
         Path file = dir.resolve("written.parquet");
-        write(testCase, file);
+        write(testCase, file, writePath);
 
         assertValues(testCase, ParquetJavaReader.readGroups(file));
 
@@ -167,13 +193,29 @@ class WriterInteropTest {
         return new Verified(footer, pages);
     }
 
-    private void write(InteropCase testCase, Path file) throws IOException {
+    /// Which of the two write APIs produces the file under test.
+    private enum WritePath { BATCH, ROW }
+
+    private void write(InteropCase testCase, Path file, WritePath writePath) throws IOException {
         FileSchema schema = testCase.type()
                 .declare(FileSchema.builder("interop"), COLUMN, testCase.nullability().repetitionType())
                 .build();
 
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, testCase.config())) {
-            writer.writeBatch(batch -> testCase.type().set(batch, COLUMN, testCase));
+            if (writePath == WritePath.BATCH) {
+                writer.writeBatch(batch -> testCase.type().set(batch, COLUMN, testCase));
+                return;
+            }
+            RowWriter rows = writer.rowWriter();
+            for (int r = 0; r < testCase.rows(); r++) {
+                int row = r;
+                if (testCase.isNull(row)) {
+                    rows.writeRow(record -> record.setNull(COLUMN));
+                }
+                else {
+                    rows.writeRow(record -> testCase.type().set(record, COLUMN, testCase.ordinal(row)));
+                }
+            }
         }
     }
 

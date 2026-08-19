@@ -179,14 +179,15 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 > record. The boxes below are the fine-grained inventory ticked as increments land.
 
 ### 6.1 Writer Architecture
-- [ ] Implement `ParquetWriter<T>` main class
-- [ ] Implement `WriterConfig` (row group size, page size, dictionary size, codec, version)
+- [x] Implement `RowWriter` — the row-oriented layer over the columnar core, obtained from
+  `ParquetFileWriter.rowWriter()` (see `_designs/WRITER_ROW_API.md`)
+- [x] Implement `WriterConfig` (row group size, page size, dictionary size, codec, version)
 - [ ] Implement `RowGroupWriter`
 - [ ] Implement `ColumnWriter`
 - [ ] Implement `PageWriter`
 
 ### 6.2 Write Flow
-- [ ] Record buffering
+- [x] Record buffering
 - [x] Row group size tracking
 - [x] Automatic row group flushing
 - [x] Dictionary page writing
@@ -208,7 +209,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Implement `LogicalTypeWriter` (`LogicalType` union serialization; inverse of `LogicalTypeReader`)
 - [x] Serialize legacy `converted_type` / `scale` / `precision` on `SchemaElement`
 - [x] `FileSchema.Builder` logical-type overload (and `FIXED_LEN_BYTE_ARRAY` type length)
-- [ ] Logical-type value conversion in the writer API (inverse of `LogicalTypeConverter`)
+- [x] Logical-type value conversion in the writer API (`PhysicalValueConverter`, inverse of `LogicalTypeConverter`)
 
 ---
 

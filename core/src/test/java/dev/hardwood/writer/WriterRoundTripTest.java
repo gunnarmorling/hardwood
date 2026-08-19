@@ -1669,7 +1669,10 @@ class WriterRoundTripTest {
     @Test
     void rejectsNullableStructEnclosingList() throws Exception {
         // A nullable struct directly enclosing a repeated field is not yet supported and must
-        // be rejected eagerly rather than shredded into an unverified file.
+        // be rejected eagerly rather than shredded into an unverified file. It is reported as
+        // an unsupported shape rather than a bad argument, because the batch is well formed and
+        // the schema is what the writer cannot produce — the same type, and the same message,
+        // the row layer raises for it from rowWriter().
         FileSchema schema = FileSchema.builder("schema")
                 .struct("s", RepetitionType.OPTIONAL, sb -> sb
                         .list("phones", RepetitionType.OPTIONAL, el -> el.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
@@ -1679,7 +1682,8 @@ class WriterRoundTripTest {
             assertThatThrownBy(() -> writer.writeBatch(batch -> batch
                     .list("s.phones", new int[] { 0, 1 })
                     .ints("s.phones.list.element", new int[] { 1 })))
-                    .isInstanceOf(IllegalArgumentException.class);
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("nullable struct enclosing a repeated field");
         }
     }
 

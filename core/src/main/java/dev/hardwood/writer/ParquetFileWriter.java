@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import dev.hardwood.Experimental;
 import dev.hardwood.OutputFile;
 import dev.hardwood.internal.compression.Compressor;
 import dev.hardwood.internal.compression.CompressorFactory;
@@ -80,6 +81,14 @@ public final class ParquetFileWriter implements Closeable {
     private RowGroupBuffer current;
     private long numRows;
     private boolean closed;
+
+    /// Which of the two write APIs this file is being written through. A file is written
+    /// through one or the other: rows and batches would otherwise interleave two independent
+    /// staging states into one row group.
+    private enum Mode { UNSET, BATCH, ROW }
+
+    private Mode mode = Mode.UNSET;
+    private RowWriter rowWriter;
 
     private ParquetFileWriter(OutputFile out, FileSchema schema, WriterConfig config, Compressor compressor) {
         this.out = out;
@@ -146,9 +155,56 @@ public final class ParquetFileWriter implements Closeable {
     ///
     /// @param filler populates the batch's columns; must cover every column exactly once
     /// @throws IOException if the write fails
-    /// @throws IllegalArgumentException if the batch does not cover every column
+    /// @throws IllegalArgumentException if the batch does not cover every column, or its
+    ///         per-layer inputs do not agree on a record count
+    /// @throws UnsupportedOperationException if the schema has a shape the writer cannot
+    ///         produce
+    /// @throws IllegalStateException if the writer is closed, or [#rowWriter()] has already
+    ///         been used on this file
     public void writeBatch(Consumer<ColumnBatch> filler) throws IOException {
         ensureOpen();
+        latch(Mode.BATCH);
+        writeStagedBatch(filler);
+    }
+
+    /// Returns the row-oriented view over this file: a record-shaped API for callers that
+    /// hold records rather than columns. It stages records into batches and submits them
+    /// through [#writeBatch], so the file it produces is the one the columnar API produces
+    /// for the same data.
+    ///
+    /// The file writer keeps ownership: the returned view is not closeable, and its pending
+    /// records are written by [#close()]. The same instance is returned on every call.
+    ///
+    /// @return the row-oriented view over this file
+    /// @throws IllegalStateException if the writer is closed, or [#writeBatch] has already
+    ///         been used on this file
+    /// @throws UnsupportedOperationException if the schema has a shape the writer cannot
+    ///         produce record by record
+    @Experimental
+    public RowWriter rowWriter() {
+        ensureOpen();
+        latch(Mode.ROW);
+        if (rowWriter == null) {
+            rowWriter = new RowWriter(this, schema, config);
+        }
+        return rowWriter;
+    }
+
+    /// Latches the file to one of the two write APIs, rejecting the other from then on.
+    private void latch(Mode wanted) {
+        if (mode == Mode.UNSET) {
+            mode = wanted;
+        }
+        else if (mode != wanted) {
+            throw new IllegalStateException("This file is already being written through "
+                    + (mode == Mode.BATCH ? "writeBatch(...)" : "rowWriter()")
+                    + "; a file is written through one of the two, not both");
+        }
+    }
+
+    /// Writes one batch without latching the write mode, so the row-oriented layer can submit
+    /// the batches it stages.
+    void writeStagedBatch(Consumer<ColumnBatch> filler) throws IOException {
         ColumnBatch batch = new ColumnBatch(schema);
         filler.accept(batch);
         ColumnSource[] sources = batch.completedSources();
@@ -196,6 +252,9 @@ public final class ParquetFileWriter implements Closeable {
         }
         closed = true;
         try {
+            if (rowWriter != null) {
+                rowWriter.flushPending();
+            }
             flushRowGroup();
             writeFooter();
         }
@@ -302,7 +361,7 @@ public final class ParquetFileWriter implements Closeable {
         };
     }
 
-    private void ensureOpen() {
+    void ensureOpen() {
         if (closed) {
             throw new IllegalStateException("Writer is closed");
         }

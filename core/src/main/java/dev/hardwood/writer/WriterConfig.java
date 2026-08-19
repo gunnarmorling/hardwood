@@ -53,6 +53,10 @@ public final class WriterConfig {
     /// default only avoids imposing the ZSTD dependency on callers who did not ask to compress.
     public static final CompressionCodec DEFAULT_CODEC = defaultCodec();
 
+    /// Default precision-loss policy: reject a value the column cannot hold exactly, rather
+    /// than silently dropping the digits that do not fit.
+    public static final PrecisionLossPolicy DEFAULT_PRECISION_LOSS_POLICY = PrecisionLossPolicy.REJECT;
+
     private final int pageTargetBytes;
     private final long rowGroupTargetBytes;
     private final String createdBy;
@@ -60,6 +64,7 @@ public final class WriterConfig {
     private final int dictionaryPageLimitBytes;
     private final int statisticsTruncationLength;
     private final CompressionCodec codec;
+    private final PrecisionLossPolicy precisionLossPolicy;
 
     private WriterConfig(Builder builder) {
         this.pageTargetBytes = builder.pageTargetBytes;
@@ -69,6 +74,7 @@ public final class WriterConfig {
         this.dictionaryPageLimitBytes = builder.dictionaryPageLimitBytes;
         this.statisticsTruncationLength = builder.statisticsTruncationLength;
         this.codec = builder.codec;
+        this.precisionLossPolicy = builder.precisionLossPolicy;
     }
 
     /// The default configuration.
@@ -117,6 +123,11 @@ public final class WriterConfig {
         return codec;
     }
 
+    /// What [RowWriter] does with a value carrying more precision than its column can hold.
+    public PrecisionLossPolicy precisionLossPolicy() {
+        return precisionLossPolicy;
+    }
+
     /// Assembles this build's `created_by` identifier from [BuildInfo].
     private static String defaultCreatedBy() {
         return "hardwood version " + BuildInfo.version() + " (build " + BuildInfo.revisionWithDirtyMark() + ")";
@@ -140,6 +151,7 @@ public final class WriterConfig {
         private int dictionaryPageLimitBytes = DEFAULT_DICTIONARY_PAGE_LIMIT_BYTES;
         private int statisticsTruncationLength = DEFAULT_STATISTICS_TRUNCATION_LENGTH;
         private CompressionCodec codec = DEFAULT_CODEC;
+        private PrecisionLossPolicy precisionLossPolicy = DEFAULT_PRECISION_LOSS_POLICY;
 
         private Builder() {
         }
@@ -210,6 +222,18 @@ public final class WriterConfig {
                 throw new IllegalArgumentException("codec must not be null");
             }
             this.codec = codec;
+            return this;
+        }
+
+        /// Sets what [RowWriter] does with a value carrying more precision than its column
+        /// can hold — an [java.time.Instant] with microseconds written to a
+        /// `TIMESTAMP(MILLIS)` column, say; must be non-null. Defaults to
+        /// [PrecisionLossPolicy#REJECT].
+        public Builder precisionLossPolicy(PrecisionLossPolicy precisionLossPolicy) {
+            if (precisionLossPolicy == null) {
+                throw new IllegalArgumentException("precisionLossPolicy must not be null");
+            }
+            this.precisionLossPolicy = precisionLossPolicy;
             return this;
         }
 

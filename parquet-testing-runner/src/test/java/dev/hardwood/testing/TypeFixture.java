@@ -18,6 +18,7 @@ import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ColumnBatch;
+import dev.hardwood.writer.StructBuilder;
 
 /// One writable physical type, in the three forms the write-path interop gate needs it: how to
 /// declare a column of it, how to fill a [ColumnBatch] column with its values, and how to read
@@ -175,6 +176,19 @@ enum TypeFixture {
                     batch.fixed(column, values, nulls);
                 }
             }
+        }
+    }
+
+    /// Sets this column's value for one record through the row-oriented API, so the gate covers
+    /// the files that layer produces as well as the ones the columnar API does.
+    void set(StructBuilder row, String column, int ordinal) {
+        switch (this) {
+            case BOOLEAN -> row.setBoolean(column, (boolean) value(ordinal));
+            case INT32 -> row.setInt(column, (int) value(ordinal));
+            case INT64 -> row.setLong(column, (long) value(ordinal));
+            case FLOAT -> row.setFloat(column, (float) value(ordinal));
+            case DOUBLE -> row.setDouble(column, (double) value(ordinal));
+            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> row.setBinary(column, (byte[]) value(ordinal));
         }
     }
 
