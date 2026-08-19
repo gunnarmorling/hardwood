@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.IntUnaryOperator;
 
+import dev.hardwood.internal.predicate.matcher.binary.BinaryEqBatchMatcher;
 import dev.hardwood.internal.predicate.matcher.booleans.BooleanEqBatchMatcher;
 import dev.hardwood.internal.predicate.matcher.booleans.BooleanNotEqBatchMatcher;
 import dev.hardwood.internal.predicate.matcher.doubles.DoubleEqBatchMatcher;
@@ -62,8 +63,8 @@ import dev.hardwood.schema.FileSchema;
 ///   fold into a per-column [AndBatchMatcher] / [OrBatchMatcher] composite — the
 ///   same mechanism that handles `id >= x AND id <= y` today.
 ///
-/// Anything else (intermediate-struct paths, `BinaryPredicate`,
-/// `GeospatialPredicate`, unsupported `(type, op)`) returns `null` and the
+/// Anything else (intermediate-struct paths, binary operators other than
+/// equality, `GeospatialPredicate`, unsupported `(type, op)`) returns `null` and the
 /// caller falls back to [dev.hardwood.internal.reader.FilteredRowReader].
 public final class BatchFilterCompiler {
 
@@ -239,6 +240,7 @@ public final class BatchFilterCompiler {
             case ResolvedPredicate.IntPredicate p -> p.columnIndex();
             case ResolvedPredicate.FloatPredicate p -> p.columnIndex();
             case ResolvedPredicate.BooleanPredicate p -> p.columnIndex();
+            case ResolvedPredicate.BinaryPredicate p -> p.columnIndex();
             case ResolvedPredicate.IntInPredicate p -> p.columnIndex();
             case ResolvedPredicate.LongInPredicate p -> p.columnIndex();
             case ResolvedPredicate.IsNullPredicate p -> p.columnIndex();
@@ -259,6 +261,7 @@ public final class BatchFilterCompiler {
             case ResolvedPredicate.FloatPredicate ignored -> true;
             case ResolvedPredicate.IntInPredicate ignored -> true;
             case ResolvedPredicate.LongInPredicate ignored -> true;
+            case ResolvedPredicate.BinaryPredicate p -> p.op() == FilterPredicate.Operator.EQ;
             case ResolvedPredicate.IsNullPredicate ignored -> true;
             case ResolvedPredicate.IsNotNullPredicate ignored -> true;
             case ResolvedPredicate.BooleanPredicate p ->
@@ -306,6 +309,12 @@ public final class BatchFilterCompiler {
                 case NOT_EQ -> new BooleanNotEqBatchMatcher(p.value());
                 default -> throw new IllegalStateException(
                         "Unsupported boolean operator reached leafMatcher: " + p.op()
+                                + " — isSupported should have rejected this");
+            };
+            case ResolvedPredicate.BinaryPredicate p -> switch (p.op()) {
+                case EQ -> new BinaryEqBatchMatcher(p.value());
+                default -> throw new IllegalStateException(
+                        "Unsupported binary operator reached leafMatcher: " + p.op()
                                 + " — isSupported should have rejected this");
             };
             case ResolvedPredicate.IntInPredicate p -> new IntInBatchMatcher(p.values());
