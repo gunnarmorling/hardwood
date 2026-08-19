@@ -267,7 +267,7 @@ group is flushed and the footer written.
 
 Because `writeBatch` consumes its sources synchronously — `RecordShredder.bind` and
 `appendRecords` both complete within the call — the staging arrays can be refilled as soon as it
-returns. Stage 20 (parallel encode) must preserve that, or give the row writer a second staging
+returns. Stage 21 (parallel encode) must preserve that, or give the row writer a second staging
 generation to write into; it is noted here so the coupling is not rediscovered.
 
 A staged array is passed to `ColumnBatch` directly when its fill count equals its capacity, and

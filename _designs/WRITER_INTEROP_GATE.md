@@ -126,7 +126,7 @@ to parameterize:
   candidate order, so a consistency check passes for them whichever order the writer used.
 
 Only `UNCOMPRESSED` and `ZSTD` appear on the codec axis because those are the only codecs
-the writer produces today. Stage 19 adds the rest, and extends this axis with them.
+the writer produces today. Stage 20 adds the rest, and extends this axis with them.
 
 ## Writer identification
 
@@ -153,12 +153,13 @@ in the same commit that introduces them. Concretely:
 |-----------|-----------|
 | 15 (parseable `created_by`) | The footer assertions gain that parquet-java's `VersionParser` accepts the identifier |
 | 16 (row-oriented `RowWriter`) | The record-shaped entry point: a `rowWritten` axis on the flat sweep, row-written struct / list / map / list-of-struct / list-of-list shapes and a multi-batch nested run in `WriterNestedInteropTest`, and `RowWriterLogicalTypeInteropTest` — the external oracle for `PhysicalValueConverter`, whose expectations come from Avro's conversions rather than from the inverse Hardwood decodes with |
-| 18 (S3 `OutputFile`) | None — the backend does not change the bytes |
-| 19 (codecs, delta / BSS encoders) | The codec axis gains the remaining codecs; the encoding axis gains the delta and byte-stream-split forms |
-| 20 (parallel encoding) | None — the output is byte-identical by construction, which its own tests assert |
-| 21 (row-group-global dictionary selection) | The encoding axis loses the mid-chunk `PLAIN` fallback and gains the whole-chunk choice |
-| 22 (page index) | The footer assertions gain the OffsetIndex and ColumnIndex, read through parquet-java |
-| 23 (Bloom filters) | The footer assertions gain the Bloom filter, read and probed through parquet-java |
+| 17 (flat write benchmark) | None — it measures throughput over the shapes the gate already covers |
+| 19 (S3 `OutputFile`) | None — the backend does not change the bytes |
+| 20 (codecs, delta / BSS encoders) | The codec axis gains the remaining codecs; the encoding axis gains the delta and byte-stream-split forms |
+| 21 (parallel encoding) | None — the output is byte-identical by construction, which its own tests assert |
+| 22 (row-group-global dictionary selection) | The encoding axis loses the mid-chunk `PLAIN` fallback and gains the whole-chunk choice |
+| 23 (page index) | The footer assertions gain the OffsetIndex and ColumnIndex, read through parquet-java |
+| 24 (Bloom filters) | The footer assertions gain the Bloom filter, read and probed through parquet-java |
 
 ## Placement
 

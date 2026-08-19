@@ -1,0 +1,162 @@
+# Flat write benchmark (#9, stage 17)
+
+**Status: Settled; not yet implemented.** Tracking issue: #9. Delivery stage 17 (Benchmark) of
+[WRITER_SUPPORT.md](WRITER_SUPPORT.md).
+
+## Context
+
+The read path has `FlatPerformanceTest`: a flat scan of the NYC taxi corpus, Hardwood's row and
+column readers against parquet-java, with summed values asserted equal so a fast contender
+cannot be a wrong one. The write path has no counterpart. Stages 1–16 were built against
+correctness gates — round trips, byte-identical equivalence, the parquet-java interop gate — and
+none of them says how long producing a file takes, or how that compares to the incumbent.
+
+This is the first write benchmark: flat schema, three contenders, one number each. It exists to
+establish a baseline that later stages are measured against — the remaining codecs and encoders
+(stage 20), parallel column encoding (stage 21), row-group-global dictionary selection (stage
+22) are all throughput claims, and none of them can be argued without this.
+
+## Placement
+
+`performance-testing/micro-benchmarks`, as a JMH benchmark alongside the existing ones, rather
+than in `performance-testing/end-to-end` where `FlatPerformanceTest` lives.
+
+Two reasons. The end-to-end suite is built around the downloaded taxi corpus under
+`test-data-setup/target/tlc-trip-record-data`, and a write benchmark does not want Parquet files
+— it wants source records in memory, so reading them back in first would put the read path
+inside the measurement. And encode throughput is a steady-state, JIT-sensitive figure, which is
+what JMH exists to measure properly.
+
+The module already depends on `parquet-avro`, `parquet-hadoop`, `zstd-jni`, `snappy-java` and
+JMH 1.37, so the benchmark adds no dependency. It follows the conventions already established
+there: `@Fork(1)`, `@Warmup(2, 1s)`, `@Measurement(3, 1s)`, run instructions in the class
+JavaDoc.
+
+Correctness is deliberately not asserted here, unlike `FlatPerformanceTest`. The write path
+already has the cover: the byte-identical equivalence tests hold the two Hardwood APIs to the
+same output, and the interop gate holds that output to parquet-java's reading of it. Repeating
+it inside a benchmark would buy nothing and slow the run.
+
+## Contenders
+
+| Contender | API |
+|-----------|-----|
+| `HARDWOOD_COLUMNAR` | `ParquetFileWriter.writeBatch`, 1024-row batches |
+| `HARDWOOD_ROW` | `ParquetFileWriter.rowWriter()` → `RowWriter.writeRow` |
+| `PARQUET_JAVA_GROUP` | `ExampleParquetWriter` over `SimpleGroup` |
+
+`ExampleParquetWriter` is the first parquet-java contender because it is record-shaped, so it is
+the honest counterpart to `RowWriter`, and because it puts no Avro layer inside the timed
+region: with `AvroParquetWriter` a share of the number is `GenericRecord` machinery, reported as
+though it were parquet-java's writer. It is also already the writer this repository uses in
+`LargeFileReadTest`, so it introduces no new idiom.
+
+`AvroParquetWriter` is the mainstream API and belongs in the comparison, but as a second
+contender added later and labelled for what it is — what most callers actually pay — rather than
+as the baseline.
+
+**parquet-java has no columnar write API.** Its `WriteSupport` is record-at-a-time by
+construction. So `ColumnBatch` has no counterpart and the comparison is really "the two
+record-shaped APIs head to head, with Hardwood's columnar API as the ceiling neither row API can
+beat". That asymmetry is the point rather than a flaw in the setup, and the class JavaDoc says so.
+
+## The data
+
+Generated in-process from a fixed seed, not read from the taxi corpus.
+
+A write benchmark needs records in memory. Sourcing them from the corpus would mean downloading
+hundreds of megabytes through `test-data-setup` and decoding it on every run, which defeats
+"fast to run" and puts the read path inside the fixture. A seeded generator is instant,
+identical on every machine, and stable over time, so a number from today is comparable with one
+from six months from now.
+
+What it must not be is uniform random noise. Encode cost is dominated by dictionary behaviour
+and compression ratio, both of which are distribution-sensitive; a benchmark over random data
+measures a file nobody writes. The fixture is therefore shaped like the taxi data — mostly
+dictionary-friendly columns, a minority nullable — across the axes that actually change what the
+writer does:
+
+| Column | Type | Distribution | What it exercises |
+|--------|------|--------------|-------------------|
+| `id` | `INT64` `REQUIRED` | all distinct, ascending | dictionary growth to the limit, then `PLAIN` fallback |
+| `pickup_ts` | `INT64` `REQUIRED`, `TIMESTAMP(MICROS)` | ascending with jitter | logical-type conversion on the row path |
+| `passenger_count` | `INT32` `OPTIONAL` | 1–6, ~5% null | definition levels over a tiny dictionary |
+| `fare` | `DOUBLE` `REQUIRED` | continuous | high-cardinality fixed width |
+| `payment_type` | `BYTE_ARRAY` `REQUIRED`, `STRING` | 4 distinct | the dictionary's best case |
+| `vendor` | `BYTE_ARRAY` `OPTIONAL`, `STRING` | ~20 distinct, ~10% null | `setString` encoding plus levels |
+
+Six columns, chosen to span the axes rather than to enumerate the type matrix: all-distinct
+against low-cardinality, fixed against variable width, `REQUIRED` against `OPTIONAL`, annotated
+against bare.
+
+The fixture is built once per trial as **column-oriented primitive arrays** (`long[]`, `int[]`,
+`double[]`, `byte[][]`, plus null masks) and shared by all three contenders. Each then pays
+whatever its own API costs to get from those arrays into a file: the columnar path hands the
+arrays over, `RowWriter` walks them element by element, and `ExampleParquetWriter` constructs a
+`SimpleGroup` per record. That per-record object is inherent to parquet-java's design, so
+including it is fair — but the class JavaDoc states plainly that it is in the measurement, so
+nobody reads the gap as pure encoding speed.
+
+**One million rows per invocation** (~40–50 MB uncompressed), overridable with `-Dperf.rows` in
+the style of `BenchmarkData`. At the write path's current throughput that is roughly 0.15 s per
+invocation, so a benchmark method takes about five seconds and the full three contenders across
+two codecs run in well under a minute.
+
+## Comparability
+
+Two things decide whether the numbers mean anything at all, and both are easy to get wrong.
+
+**Every writer setting is matched across contenders**: page size, row-group / block size, codec,
+dictionary enabled, and the dictionary page limit. A codec `@Param` over `{UNCOMPRESSED, ZSTD}`
+covers the two the writer produces today, and both sides are given an explicit 16 MiB row-group
+target so a million rows produces a handful of row groups and the flush path is exercised —
+rather than one group at the 128 MiB default, which would measure a case real files do not hit.
+
+**Output size is reported next to the time.** A contender that is twenty percent faster and
+produces a ten percent larger file has not won, and a throughput regression can otherwise hide
+behind a compression change. The size each contender produces is printed once from the trial
+setup, so the two numbers are always read together.
+
+`-prof gc` is part of the normal invocation: after the page-body copy work in stage 16 the
+write path's allocation rate is a number worth watching, and JMH reports it for free.
+
+## Output destination
+
+Both sides write to memory: Hardwood through `ByteBufferOutputFile`, parquet-java through a
+small in-memory `org.apache.parquet.io.OutputFile` / `PositionOutputStream` over a
+`ByteArrayOutputStream` — the shim that repository does not provide but which is a few lines to
+write.
+
+This deliberately excludes filesystem I/O, because the question is encode throughput and I/O
+noise in a container would swamp the differences being measured. `-Dperf.dir` switches both
+sides to temp files on a given directory for the case where the end-to-end cost is what is
+wanted, which is a different question and a later one.
+
+## Scope
+
+Delivered here:
+
+- `FlatWriteBenchmark` in `performance-testing/micro-benchmarks`, the three contenders above,
+  the codec `@Param`, the seeded fixture, in-memory output, and reported output sizes.
+
+Deliberately not here:
+
+- **Nested shapes.** `NestedWriteBenchmark` follows once the flat one is telling us something;
+  the nested write path has more surface (offsets, per-instance validity, the row layer's
+  staging reset) and deserves its own fixture rather than a column bolted onto this one.
+- **`AvroParquetWriter`.** Added as a second parquet-java contender once the first comparison is
+  settled, so the two are not confounded on introduction.
+- **Filesystem and object-store throughput.** The S3 backend arrives in stage 19; measuring it
+  is its own exercise with its own dominant term.
+- **Correctness assertions.** Covered by the equivalence tests and the interop gate.
+
+## Validation
+
+The benchmark is validated by being run, not by tests of its own. The bar for accepting it:
+
+- All three contenders produce files of the same row count, read back through Hardwood, checked
+  once from the trial setup rather than per invocation.
+- The reported output sizes are within a few percent of each other for the same codec; a large
+  divergence means the settings are not actually matched and the numbers are not comparable.
+- Run on the N300 bare-metal box for any number that gets quoted; the container's figures are
+  for relative movement during development only.
