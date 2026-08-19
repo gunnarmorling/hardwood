@@ -52,12 +52,68 @@ public final class RecordShredder {
 
     /// A `STRUCT` or `REPEATED` step on a leaf's path, carrying the definition/repetition
     /// contributions and the batch-input key (the group's dotted path).
-    private record Layer(Kind kind, String key, boolean nullable, int presentDefInc,
-                         int contentDefInc, int repLevel) {
+    ///
+    /// One instance is shared by every leaf beneath the group, and its batch inputs are
+    /// resolved once per [#bind] rather than looked up by key while shredding: `emit` runs per
+    /// record per layer per column, so a map lookup there is paid on every value of every
+    /// nested column.
+    private static final class Layer {
+
         enum Kind { STRUCT, REPEATED }
+
+        private final Kind kind;
+        private final String key;
+        private final boolean nullable;
+        private final int presentDefInc;
+        private final int contentDefInc;
+        private final int repLevel;
+
+        /// This layer's per-instance nulls for the bound batch, or `null` when the group is
+        /// `REQUIRED` or the caller supplied none.
+        private Validity validity;
+
+        /// This layer's entry offsets for the bound batch; `null` for a `STRUCT` layer.
+        private int[] offsets;
+
+        Layer(Kind kind, String key, boolean nullable, int presentDefInc, int contentDefInc, int repLevel) {
+            this.kind = kind;
+            this.key = key;
+            this.nullable = nullable;
+            this.presentDefInc = presentDefInc;
+            this.contentDefInc = contentDefInc;
+            this.repLevel = repLevel;
+        }
+
+        Kind kind() {
+            return kind;
+        }
+
+        String key() {
+            return key;
+        }
+
+        boolean nullable() {
+            return nullable;
+        }
+
+        int presentDefInc() {
+            return presentDefInc;
+        }
+
+        int contentDefInc() {
+            return contentDefInc;
+        }
+
+        int repLevel() {
+            return repLevel;
+        }
     }
 
     private final Layer[][] layers;
+
+    /// Every layer once, in no particular order, so a bind resolves each one's batch inputs a
+    /// single time however many leaves sit beneath it.
+    private final Layer[] distinctLayers;
     private final boolean[] leafOptional;
     private final int[] maxDef;
     private final int[] maxRep;
@@ -79,7 +135,9 @@ public final class RecordShredder {
         this.maxDef = new int[columnCount];
         this.maxRep = new int[columnCount];
         this.columnNames = new String[columnCount];
-        walk(schema.getRootNode(), new ArrayList<>(), new ArrayList<>(), false);
+        List<Layer> collected = new ArrayList<>();
+        walk(schema.getRootNode(), new ArrayList<>(), new ArrayList<>(), false, collected);
+        this.distinctLayers = collected.toArray(new Layer[0]);
         for (int c = 0; c < columnCount; c++) {
             ColumnSchema column = schema.getColumn(c);
             maxDef[c] = column.maxDefinitionLevel();
@@ -90,7 +148,7 @@ public final class RecordShredder {
 
     /// Classifies each group on the way to a leaf into the layer list the shredder walks.
     private void walk(SchemaNode.GroupNode group, List<String> path, List<Layer> layerStack,
-                      boolean insideRepeatedScaffolding) {
+                      boolean insideRepeatedScaffolding, List<Layer> collected) {
         for (SchemaNode child : group.children()) {
             switch (child) {
                 case SchemaNode.PrimitiveNode leaf -> {
@@ -102,8 +160,9 @@ public final class RecordShredder {
                     Layer added = classify(nested, String.join(".", path), layerStack, insideRepeatedScaffolding);
                     if (added != null) {
                         layerStack.add(added);
+                        collected.add(added);
                     }
-                    walk(nested, path, layerStack, nested.isList() || nested.isMap());
+                    walk(nested, path, layerStack, nested.isList() || nested.isMap(), collected);
                     if (added != null) {
                         layerStack.remove(layerStack.size() - 1);
                     }
@@ -147,6 +206,12 @@ public final class RecordShredder {
         this.structValidities = structValidities;
         this.listValidities = listValidities;
         this.listOffsets = listOffsets;
+        for (Layer layer : distinctLayers) {
+            layer.validity = layer.kind == Layer.Kind.STRUCT
+                    ? structValidities.get(layer.key)
+                    : listValidities.get(layer.key);
+            layer.offsets = layer.kind == Layer.Kind.REPEATED ? listOffsets.get(layer.key) : null;
+        }
         this.recordCount = validateAndDeriveRecordCount();
     }
 
@@ -180,7 +245,7 @@ public final class RecordShredder {
         }
         Layer layer = ctx.path[layerIndex];
         if (layer.kind() == Layer.Kind.STRUCT) {
-            if (layer.nullable() && isNull(structValidities.get(layer.key()), itemIndex)) {
+            if (layer.nullable() && isNull(layer.validity, itemIndex)) {
                 ctx.sink.accept(repToEmit, parentDef, ABSENT);
             }
             else {
@@ -189,11 +254,11 @@ public final class RecordShredder {
             return;
         }
         // REPEATED (list).
-        if (layer.nullable() && isNull(listValidities.get(layer.key()), itemIndex)) {
+        if (layer.nullable() && isNull(layer.validity, itemIndex)) {
             ctx.sink.accept(repToEmit, parentDef, ABSENT); // null list — outer group absent
             return;
         }
-        int[] offsets = offsetsFor(layer);
+        int[] offsets = layer.offsets;
         int start = offsets[itemIndex];
         int end = offsets[itemIndex + 1];
         int listDef = parentDef + layer.presentDefInc();
