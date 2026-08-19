@@ -16,8 +16,9 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Statement;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -944,8 +945,13 @@ class WriterDifferentialTest {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString("name")).isEqualTo("beta");
             assertThat(rs.getDate("d").toLocalDate()).isEqualTo(LocalDate.of(1970, 1, 1).plusDays(19_000));
-            assertThat(rs.getTimestamp("ts").toInstant())
-                    .isEqualTo(Instant.EPOCH.plusSeconds(1_700_000_000L));
+            // `ts` is annotated isAdjustedToUTC = false, so it is a wall clock with no zone
+            // rather than an instant, and DuckDB surfaces it as TIMESTAMP. Reading it as an
+            // Instant reinterprets that wall clock in the JVM's default zone, which holds only
+            // where that zone happens to be UTC — see LocalTimestampTest for the same rule on
+            // the read path. Comparing the wall clock is zone-independent.
+            assertThat(rs.getTimestamp("ts").toLocalDateTime())
+                    .isEqualTo(LocalDateTime.ofEpochSecond(1_700_000_000L, 0, ZoneOffset.UTC));
             assertThat(rs.getBigDecimal("amount")).isEqualByComparingTo(new BigDecimal("-0.6700"));
             assertThat(rs.next()).isFalse();
         }
