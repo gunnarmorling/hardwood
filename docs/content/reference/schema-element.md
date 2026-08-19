@@ -91,7 +91,7 @@ A factory checks only one element. Rules that span the whole list stay in `fromS
 
 ## Canonical constructor
 
-The record constructor takes all ten components in Thrift field order:
+The record constructor takes all ten components in Hardwood record-component order:
 
 ```java
 new SchemaElement(name, type, typeLength, repetitionType, numChildren,
