@@ -126,7 +126,7 @@ to parameterize:
   candidate order, so a consistency check passes for them whichever order the writer used.
 
 Only `UNCOMPRESSED` and `ZSTD` appear on the codec axis because those are the only codecs
-the writer produces today. Stage 20 adds the rest, and extends this axis with them.
+the writer produces today. Stage 19 adds the rest, and extends this axis with them.
 
 ## Writer identification
 

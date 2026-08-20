@@ -48,7 +48,7 @@ a dictionary, and compared for `min` / `max`.
 
 Logical-type annotations (STRING over `BYTE_ARRAY`, DECIMAL over `FIXED_LEN_BYTE_ARRAY`, …)
 are stage 13; this stage writes the physical bytes only. `DELTA_*` and `BYTE_STREAM_SPLIT`
-encoders are stage 20; every column here is `PLAIN` or `RLE_DICTIONARY`.
+encoders are stage 19; every column here is `PLAIN` or `RLE_DICTIONARY`.
 
 ## The value seam
 
@@ -189,7 +189,7 @@ untruncated binary bound), and `StatisticsWriter` emits `is_min_value_exact` /
 
 The whole writer surface is `@Experimental` and is not yet in the user documentation under
 `docs/content/`; it is documented as a settled API by the milestone's dedicated docs increment
-(stage 18 of [WRITER_SUPPORT.md](WRITER_SUPPORT.md)), not per primitive-type increment.
+(stage 20 of [WRITER_SUPPORT.md](WRITER_SUPPORT.md)), not per primitive-type increment.
 
 ## Row-group flush
 
@@ -207,7 +207,7 @@ as `Integer.SIZE`. This holds only while every value is four bytes. Two changes 
   exact for a non-dictionary column and runs high for a dictionary-encoded one, whose buffered
   index stream is smaller than the summed `PLAIN` widths, so dictionary row groups flush somewhat
   below the target. Sizing a row group from its true encoded bytes — measured once the whole group
-  is buffered — is stage 22 (row-group-global dictionary selection), where the per-chunk
+  is buffered — is stage 18 (row-group-global dictionary selection), where the per-chunk
   encoding choice is already made from the fully buffered group. The proxy is retained only to
   bound the page-level entry count.
 
@@ -256,5 +256,5 @@ file:
 
 Together they complete roadmap boxes 2.1 (all physical types) and the truncation half of 9.1.
 Stage 13 (logical-type annotations) then layers STRING / DATE / DECIMAL / … onto these physical
-types, and stage 22 (row-group-global dictionary selection) exploits the accurate per-type
+types, and stage 18 (row-group-global dictionary selection) exploits the accurate per-type
 dictionary byte accounting introduced here.

@@ -39,7 +39,7 @@ is serialized onto the schema and converted at the API boundary.
 
 The optional index structures — OffsetIndex, ColumnIndex, and Bloom filters, with the
 per-page statistics that drive page-level pruning (including the `DataPageHeader` inline
-statistics) — are numbered increments 22–23 below, following the write-support milestone
+statistics) — are numbered increments 23–24 below, following the write-support milestone
 on the settled surface. Sequenced as separate later milestones, each its own
 design: DataPage V2, the Avro write API, and a CLI write/convert command. Sorting-column
 metadata and custom record materializers are non-goals. Key-aligned layout control —
@@ -175,7 +175,7 @@ public interface OutputFile extends Closeable {
   write never leaves a truncated file presented as valid.
 - **In-memory backend** (`internal.writer.ByteBufferOutputFile`): a growable buffer,
   the write-side counterpart to `ByteBufferInputFile`, used for tests and round-trips.
-- **S3 backend** (`internal.writer.S3OutputFile`, increment 19): sequential writes buffer
+- **S3 backend** (`internal.writer.S3OutputFile`, increment 21): sequential writes buffer
   to the multipart part size and upload parts; `close()` completes the multipart upload.
   In-flight bytes are bounded to the part size times a small concurrency multiple, so a
   fast producer cannot outrun the uploads; `CreateMultipartUpload` is deferred until the
@@ -257,7 +257,7 @@ The writer auto-selects sensible per-column encodings and exposes overrides thro
   not dictionary-friendly is written `PLAIN` instead. The dictionary-vs-`PLAIN` choice is
   made per column chunk from its cardinality — incrementally with a mid-chunk `PLAIN`
   fallback on dictionary-size overflow initially (stage 9), then as a row-group-global
-  decision taken once the group is buffered (stage 22), so no chunk mixes encodings. The
+  decision taken once the group is buffered (stage 18), so no chunk mixes encodings. The
   delta and byte-stream-split encodings are optional and deferred to a later breadth
   increment.
 - **Compression**: `UNCOMPRESSED` first, then `SNAPPY` / `ZSTD` / `GZIP` / `LZ4` —
@@ -405,11 +405,11 @@ Each increment carries a **Kind**: *Dimension* (changes the shape of the solutio
 | 16 | **Row-oriented `RowWriter`**: an ergonomic layer on the columnar core, obtained from `ParquetFileWriter.rowWriter()` and mirroring the read side's `rowReader()`. `writeRow` takes a filler over a `StructBuilder`, with `ListBuilder`/`MapBuilder` for nesting, so fields are addressed by their user-visible names rather than by leaf paths carrying the synthetic `list.element` / `key_value` segments. Setters mirror the reader's accessors one for one and convert logical-type values to their physical representation through `PhysicalValueConverter`, the inverse of `LogicalTypeConverter`. The layer is an adapter: it transposes staged rows into a `ColumnBatch` and submits them through `writeBatch`, so every guarantee of stages 1–15 holds unchanged, asserted by writing the same data both ways and requiring byte-identical files. A file writer serves one API or the other, latched on first use. Values whose precision the column cannot hold are rejected by default, with `WriterConfig.precisionLossPolicy(TRUNCATE)` opting into dropping the digits that do not fit; a value the column cannot represent at all is rejected under either. Settled in `_designs/WRITER_ROW_API.md`. | Layer | Mainstream-friendly API | 6.1 (`RowWriter`), 6.4 (value conversion) | [x] |
 | 16a | **Annotation range checks on the columnar API**: `ColumnBatch` rejects a value outside the range its column's annotation declares, as the row layer already does. An annotation narrows what a physical type may hold — an `INT(8)` `INT32` to `[-128, 128)`, a `UINT_8` to `[0, 256)`, a `DECIMAL(p, s)` to unscaled values of at most `p` digits — and the columnar setters currently take any value the physical type can carry, so a caller can produce a file whose values fall outside the range its own annotation declares. A `uint8` consumer reads 300 back as 44, and the bounds written into the column's statistics describe values the annotation says cannot exist. This is per-value validation of the kind `ColumnBatch` already performs — `validateBinaryValues` checks every `FIXED_LEN_BYTE_ARRAY` value against the declared type length — extended to the numeric annotations. Closing it makes rejection a property of the writer rather than of which of the two APIs the caller picked. Settled in `_designs/WRITER_ANNOTATION_RANGES.md`. | Gate | Neither write API can produce a value outside its column's declared range | 6.4 (annotation) | [x] |
 | 17 | **Flat write benchmark**: `FlatWriteBenchmark` in `performance-testing/micro-benchmarks` — Hardwood's columnar and row-oriented APIs against parquet-java's `ExampleParquetWriter` over a seeded, taxi-shaped six-column fixture held in memory, with every writer setting matched across contenders and the produced file sizes reported next to the times. The write-side counterpart to `FlatPerformanceTest`, and the baseline the throughput stages that follow are argued against. Settled in `_designs/FLAT_WRITE_BENCHMARK.md`. | Benchmark | A measured write baseline | — | [x] |
-| 18 | User-facing documentation under `docs/content/` for the writer public API (`OutputFile`, `ParquetFileWriter`, `FileSchema.Builder`): a `how-to` guide and a `reference` page, covering the settled surface including nesting and the row-oriented layer. | Docs | Documented, stable public API | — | [ ] |
-| 19 | S3 `OutputFile` backend: sequential multipart upload — buffer to the part size, upload parts, complete on `close()`. In-flight bytes bounded to the part size times a small concurrency multiple; lazy `CreateMultipartUpload` deferred to the first part flush, with a single `PutObject` fallback for a sub-part output. Reuses the read-side S3 / SigV4 stack. | Layer | Write directly to object storage | — | [ ] |
-| 20 | Remaining codecs + optional delta and byte-stream-split encoders. | Breadth | Full codec / encoding choice | 2.4, 2.5 | [ ] |
-| 21 | Parallel column encoding + row-group pipelining. | Optimization | Write throughput | — | [ ] |
-| 22 | **Row-group-global dictionary selection**: replace the per-column-chunk optimistic build with mid-chunk `PLAIN` fallback (stage 9) with a choice made once the row group is fully buffered — each column chunk is encoded `RLE_DICTIONARY` or `PLAIN` as a whole from its true cardinality, so no chunk mixes encodings and no dictionary page is written for a chunk that ends up `PLAIN`. Trades a second encode pass and higher peak buffer occupancy for the optimal per-chunk choice; the payoff scales with the variable-width types from stage 12, where indices are far smaller than the values and the dictionary byte-limit is a poor proxy for whether encoding pays. With the whole group buffered the choice follows from the exact cardinality — and, where the byte-limit proxy is weakest, a direct comparison of the two encodings' sizes — so no predictive threshold is needed; the stage-9 streaming abort heuristic does not apply here. | Optimization | Optimal, uniform per-chunk encoding choice | 2.2 | [ ] |
+| 18 | **Row-group-global dictionary selection** (#975): replace the per-column-chunk optimistic build with mid-chunk `PLAIN` fallback (stage 9) with a choice made once the row group is fully buffered — each column chunk is encoded `RLE_DICTIONARY` or `PLAIN` as a whole from its true cardinality, so no chunk mixes encodings and no dictionary page is written for a chunk that ends up `PLAIN`. Trades a second encode pass and higher peak buffer occupancy for the optimal per-chunk choice; the payoff scales with the variable-width types from stage 12, where indices are far smaller than the values and the dictionary byte-limit is a poor proxy for whether encoding pays. With the whole group buffered the choice follows from the exact cardinality — and, where the byte-limit proxy is weakest, a direct comparison of the two encodings' sizes — so no predictive threshold is needed; the stage-9 streaming abort heuristic does not apply here. The public consequence is `WriterConfig.dictionaryPageLimitBytes`, which exists only as that predictive threshold; this stage settles what becomes of it, and precedes the writer's user documentation so the option is documented once, in whatever form it ends up with. | Optimization | Optimal, uniform per-chunk encoding choice | 2.2 | [ ] |
+| 19 | **Remaining codecs + optional delta and byte-stream-split encoders** (#976). Every codec is a new axis value on the stage 14 interop gate, and the optional encodings are ones that gate's readers must read back, so this breadth lands inside the gated series rather than after it. | Breadth | Full codec / encoding choice | 2.4, 2.5 | [ ] |
+| 20 | User-facing documentation under `docs/content/` for the writer public API (`OutputFile`, `ParquetFileWriter`, `FileSchema.Builder`): a `how-to` guide and a `reference` page, covering the settled surface including nesting, the row-oriented layer, and the codec, encoding and dictionary options stages 18–19 settle. | Docs | Documented, stable public API | — | [ ] |
+| 21 | S3 `OutputFile` backend: sequential multipart upload — buffer to the part size, upload parts, complete on `close()`. In-flight bytes bounded to the part size times a small concurrency multiple; lazy `CreateMultipartUpload` deferred to the first part flush, with a single `PutObject` fallback for a sub-part output. Reuses the read-side S3 / SigV4 stack. | Layer | Write directly to object storage | — | [ ] |
+| 22 | Parallel column encoding + row-group pipelining. | Optimization | Write throughput | — | [ ] |
 | 23 | **Page index writing**: per-column-chunk OffsetIndex (page locations) and ColumnIndex (per-page `min`/`max`, null counts, boundary order), written after the row group's pages and referenced from the footer, so the reader can skip individual pages. Extends the column-chunk statistics of increment 11 to page granularity; the `DataPageHeader` inline `statistics` are the pre-index fallback covered here. Truncation and `is_*_value_exact` follow the increment 11 / 12 rules. Its own design. | Layer | Page-level pruning on produced files | 9.2 | [ ] |
 | 24 | **Bloom filter writing**: a split-block Bloom filter per eligible column chunk (XXHASH64), serialized with its header and referenced from the column metadata, for equality-predicate pruning where `min`/`max` do not help. Its own design. | Layer | Bloom-filter pruning on produced files | 9.3 | [ ] |
 
@@ -418,17 +418,19 @@ design, then struct / list / map shredding — on `INT32`; 9–11 finish the rem
 dimensions (dictionary, compression, statistics) on the now flat-and-nested shape; 12–13
 are breadth on the settled shape. Increment 14 then gates everything those thirteen
 produce against a strict reader, 15 fixes the first thing that gate found, and 16 makes
-the result usable by an external caller with the row-oriented layer, which 18 documents.
-Between them, 16a carries the range checks the row layer established back to the columnar
-API, so which entry point a caller picks does not decide whether an out-of-range value is
-caught, and 17 measures what the two entry points cost against the incumbent — the
-baseline every throughput claim after it is argued against. Those six are the content of
-`1.1.0.Beta1` — a conformance-gated, ergonomic, measured, documented writer, local output
-only.
+the result usable by an external caller with the row-oriented layer. Between them, 16a
+carries the range checks the row layer established back to the columnar API, so which
+entry point a caller picks does not decide whether an out-of-range value is caught, and 17
+measures what the two entry points cost against the incumbent — the baseline every
+throughput claim after it is argued against, and the increment that quantified what 18 is
+worth. Then 18 makes the encoding choice optimal rather than optimistic and 19 completes
+the codec and encoding breadth, both inside the gate that 14 established, before 20
+documents the whole of it. Those eight are the content of `1.1.0.Beta1` — a
+conformance-gated, ergonomic, measured, optimally-encoding, documented writer, local
+output only.
 
-Increment 19 opens `1.1.0.Beta2` with the object-store backend, and 20–22 widen and
-optimize the surface underneath it: the remaining codecs and optional encodings, parallel
-encoding, and row-group-global dictionary selection. Together, increments 1–22 constitute
+Increment 21 opens `1.1.0.Beta2` with the object-store backend, and 22 optimizes the
+encode underneath it with parallel column encoding. Together, increments 1–22 constitute
 the write-support milestone (#9); 23–24 follow it, adding the optional index structures
 (page indexes and Bloom filters, with the per-page statistics that make page-level
 pruning possible) on the settled surface. Sequenced as separate later milestones, each
@@ -437,21 +439,20 @@ command.
 
 ## User documentation
 
-User-facing documentation under `docs/content/` is delivered at stage 18, immediately
-after the row-oriented layer settles the last of the core public surface — including
-nesting and the row-oriented entry point. Documenting the provisional `INT32`-only
-surface earlier would be throwaway, so deferring until the surface is settled is a
-recorded, intentional exception to the CLAUDE.md rule that a new public API ships with
-a docs update — not an oversight.
+User-facing documentation under `docs/content/` is delivered at stage 20, the last
+increment of `1.1.0.Beta1`, once every stage that shapes the writer's public surface has
+landed: the row-oriented layer (16), the dictionary options (18), and the codec and
+encoding values (19). Documenting the provisional `INT32`-only surface earlier would be
+throwaway, and documenting it between 16 and 18 would mean writing the `WriterConfig`
+option matrix twice, so deferring until the surface is settled is a recorded, intentional
+exception to the CLAUDE.md rule that a new public API ships with a docs update — not an
+oversight. Stage 15 changes only the default value of a `WriterConfig` option, which the
+stage 20 reference page documents along with the rest.
 
-The increments after stage 18 extend that surface additively rather than reshaping it,
-so each carries its own docs update in the normal way: stage 19 adds an S3 `OutputFile`
-factory, and stage 20 adds codec and encoding values to `WriterConfig`. Stages 21–22 are
-internal encode decisions with no public surface. Stage 15 changes only the default value
-of a `WriterConfig` option, which the stage 18 reference page documents along with the
-rest. The core surface
-(`OutputFile`, `ParquetFileWriter`, `FileSchema.Builder`) gets its `how-to`/`reference`
-pages at stage 18.
+The increments after stage 20 extend that surface additively rather than reshaping it, so
+each carries its own docs update in the normal way: stage 21 adds an S3 `OutputFile`
+factory. Stage 22 and the index stages that follow are internal encode decisions and
+additive file structures with no public API surface of their own.
 
 ## Roadmap reconciliation
 

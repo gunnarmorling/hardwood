@@ -56,7 +56,7 @@ type stays `INT32`; type breadth (stage 12) repeats this proven mechanism for th
 types — most importantly `BYTE_ARRAY`, where dictionary encoding is the dominant real-world
 encoding — inheriting the page and chunk layout unchanged. Compression (stage 10) and
 statistics (stage 11) layer on afterwards. `DELTA_*` and `BYTE_STREAM_SPLIT` remain out of
-scope (stage 20). Only the modern `RLE_DICTIONARY` form is produced; the deprecated
+scope (stage 19). Only the modern `RLE_DICTIONARY` form is produced; the deprecated
 `PLAIN_DICTIONARY` (which the reader still tolerates) is not written.
 
 ## Column-chunk layout
@@ -156,7 +156,7 @@ from the start with no dictionary page — the stage 1–8 behaviour.
 
 The mid-chunk fallback described here is the stage-9 mechanism: the encoding is chosen
 value-by-value from a byte-limit heuristic, so a chunk can carry an `RLE_DICTIONARY` prefix
-followed by `PLAIN` pages. Stage 16 ([WRITER_SUPPORT.md](WRITER_SUPPORT.md)) replaces the
+followed by `PLAIN` pages. Stage 18 ([WRITER_SUPPORT.md](WRITER_SUPPORT.md)) replaces the
 heuristic with a row-group-global decision taken once the group is buffered — each chunk is
 encoded `RLE_DICTIONARY` or `PLAIN` as a whole from its true cardinality, so no chunk mixes
 encodings and no dictionary page is written for a chunk that ends up `PLAIN`. The

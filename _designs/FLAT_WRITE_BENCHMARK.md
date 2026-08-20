@@ -13,8 +13,8 @@ none of them says how long producing a file takes, or how that compares to the i
 
 This is the first write benchmark: flat schema, three contenders, one number each. It exists to
 establish a baseline that later stages are measured against — the remaining codecs and encoders
-(stage 20), parallel column encoding (stage 21), row-group-global dictionary selection (stage
-22) are all throughput claims, and none of them can be argued without this.
+(stage 19), parallel column encoding (stage 22), row-group-global dictionary selection (stage
+18) are all throughput claims, and none of them can be argued without this.
 
 ## Placement
 
@@ -194,7 +194,7 @@ Deliberately not here:
   staging reset) and deserves its own fixture rather than a column bolted onto this one.
 - **`AvroParquetWriter`.** Added as a second parquet-java contender once the first comparison is
   settled, so the two are not confounded on introduction.
-- **Filesystem and object-store throughput.** The S3 backend arrives in stage 19; measuring it
+- **Filesystem and object-store throughput.** The S3 backend arrives in stage 21; measuring it
   is its own exercise with its own dominant term.
 - **Correctness assertions.** Covered by the equivalence tests and the interop gate.
 
@@ -218,5 +218,5 @@ still carries the dictionary page the pages written before the fallback referenc
 that is entirely distinct but stays under the byte limit — `id`, `fare`, `pickup_ts` here — is
 dictionary-encoded at a dictionary page *plus* an index stream, where the values alone would be
 smaller. parquet-java chooses per chunk once the data is in hand and writes neither. This is
-what delivery stage 22 (row-group-global dictionary selection) exists to fix, and this benchmark
+what delivery stage 18 (row-group-global dictionary selection) exists to fix, and this benchmark
 is where its payoff is measured.

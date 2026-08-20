@@ -81,7 +81,7 @@ class WriterInteropTest {
                         axis.distinct(), FEW_ROWS, axis.config(), axis.plainFallback()));
     }
 
-    /// The codec axis, over every codec the writer can produce today. Stage 20 adds the rest and
+    /// The codec axis, over every codec the writer can produce today. Stage 19 adds the rest and
     /// extends this axis with them.
     static Stream<InteropCase> codecs() {
         return sweep(List.of(CompressionCodec.UNCOMPRESSED, CompressionCodec.ZSTD),
