@@ -61,7 +61,7 @@ import dev.hardwood.benchmarks.nested.NestedListFileGenerator.NullDensity;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Benchmark)
-@Fork(value = 2, jvmArgs = { "-Xms2g", "-Xmx2g", "--add-modules", "jdk.incubator.vector" })
+@Fork(value = 2, jvmArgsAppend = { "-Xms2g", "-Xmx2g", "--add-modules", "jdk.incubator.vector" })
 @Warmup(iterations = 3, time = 1)
 @Measurement(iterations = 5, time = 1)
 public class NestedListReadBenchmark {

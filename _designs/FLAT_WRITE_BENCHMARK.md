@@ -29,9 +29,16 @@ what JMH exists to measure properly.
 
 The module already depends on `parquet-avro`, `parquet-hadoop`, `zstd-jni`, `snappy-java` and
 JMH 1.37, so the benchmark adds no dependency. It follows the conventions already established
-there: `@Fork(1)`, `@Warmup(3, 1s)`, `@Measurement(5, 1s)`, run instructions in the class
-JavaDoc. The fork's JVM arguments are *appended* rather than replaced, because replacing them
-drops the `-Dperf.rows` / `-Dperf.dir` the forked JVM's setup reads.
+there: `@Fork(2)`, `@Warmup(3, 1s)`, `@Measurement(5, 1s)`, run instructions in the class
+JavaDoc. Two forks rather than one because this is the figure every throughput stage after it
+is argued against, and a single fork folds JIT and heap-layout variance into the iteration
+error rather than reporting it.
+
+The fork's JVM arguments are *appended* rather than replaced, throughout the module. Replacing
+them drops the inherited command line, and with it the `-Dperf.rows`, `-Dperf.dir`,
+`-Dperf.dataDir`, `-Dperf.totalValues` and `-Dperf.pageVersion` that the forked JVM's setup
+reads — so an override passed on the command line is silently ignored and the benchmark runs at
+its defaults.
 
 The module carries a `log4j.properties` pinning the root logger to `WARN`, the same file the
 end-to-end suite has. Without one, Log4j 1.x defaults the root logger to `DEBUG` and
@@ -116,11 +123,15 @@ for the columnar API and as `String` for the two record-shaped ones, and `pickup
 microseconds for the two APIs that take the stored value alongside `Instant` for `RowWriter`,
 which takes the annotated one. The `Instant` conversion is genuinely in `hardwoodRow`'s number
 and genuinely absent from the other two, because that is what a caller holding records pays.
+The `Instant` objects come from the fixture, though, so what the measured region carries is the
+conversion and the pointer chase, not the allocation a caller building records would also pay.
 
 **One million rows per invocation** (~40–50 MB uncompressed), overridable with `-Dperf.rows` in
-the style of `BenchmarkData`. At the write path's current throughput that is roughly 0.15 s per
-invocation, so a benchmark method takes about five seconds and the full three contenders across
-two codecs run in well under a minute.
+the style of `BenchmarkData`, which reads the same property. A value that is not an `int` this
+benchmark can hold is rejected rather than quietly replaced by the default, so a number is never
+reported for a row count nobody asked for. At the write path's current throughput one million
+rows is roughly 0.15 s per invocation, so a benchmark method takes about five seconds per fork
+and the full three contenders across two codecs and two forks run in a couple of minutes.
 
 ## Comparability
 
@@ -157,10 +168,17 @@ small in-memory `org.apache.parquet.io.OutputFile` / `PositionOutputStream` over
 `ByteArrayOutputStream` — the shim that repository does not provide but which is a few lines to
 write.
 
+Both shims accumulate into a `ByteArrayOutputStream` and append the caller's array to it, so
+neither side copies the payload twice on its way into the buffer and the harness contributes the
+same allocation to both.
+
 This deliberately excludes filesystem I/O, because the question is encode throughput and I/O
 noise in a container would swamp the differences being measured. `-Dperf.dir` switches both
 sides to temp files on a given directory for the case where the end-to-end cost is what is
-wanted, which is a different question and a later one.
+wanted, which is a different question and a later one. parquet-java is pointed at Hadoop's
+`RawLocalFileSystem` there: the default `LocalFileSystem` writes a `.crc` sidecar beside every
+file, a second checksum pass and a second file that Hardwood's destination does not pay, in the
+one mode whose entire purpose is measuring what the filesystem costs.
 
 ## Scope
 
@@ -187,7 +205,9 @@ The benchmark is validated by being run, not by tests of its own. The bar for ac
 - All three contenders produce files of the same row count, read back through Hardwood, checked
   once from the trial setup rather than per invocation.
 - The two Hardwood contenders produce files of identical size, as the byte-identical equivalence
-  tests require; a divergence there is a writer defect, not a benchmark one.
+  tests require; a divergence there is a writer defect, not a benchmark one. The trial setup
+  enforces it rather than only printing the two sizes, so the run fails instead of quietly
+  reporting one Hardwood API as the leaner writer.
 - Run on the N300 bare-metal box for any number that gets quoted; the container's figures are
   for relative movement during development only.
 

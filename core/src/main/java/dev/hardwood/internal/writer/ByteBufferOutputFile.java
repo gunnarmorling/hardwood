@@ -36,9 +36,18 @@ public final class ByteBufferOutputFile implements OutputFile {
     public void write(ByteBuffer data) {
         requireCreated();
         int length = data.remaining();
-        byte[] chunk = new byte[length];
-        data.get(chunk);
-        sink.writeBytes(chunk);
+        if (data.hasArray()) {
+            // Append the backing array directly: staging the payload in a fresh byte[] first
+            // would double the copy on the way into the sink, which shows up as allocation in
+            // every benchmark and test that writes through this file.
+            sink.write(data.array(), data.arrayOffset() + data.position(), length);
+            data.position(data.position() + length);
+        }
+        else {
+            byte[] chunk = new byte[length];
+            data.get(chunk);
+            sink.writeBytes(chunk);
+        }
     }
 
     @Override

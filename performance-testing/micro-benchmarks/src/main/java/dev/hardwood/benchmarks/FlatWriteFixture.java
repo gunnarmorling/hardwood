@@ -54,8 +54,9 @@ final class FlatWriteFixture {
 
     /// Start of the timestamp column: 2024-01-01T00:00:00Z in microseconds.
     private static final long BASE_MICROS = 1_704_067_200_000_000L;
-    /// Mean spacing between two consecutive pickups, in microseconds.
-    private static final long PICKUP_SPACING_MICROS = 1_000_000L;
+    /// Mean spacing between two consecutive pickups, in microseconds. Also the width of the
+    /// jitter drawn on top of it, which is why it is an `int`.
+    private static final int PICKUP_SPACING_MICROS = 1_000_000;
 
     private static final double MIN_FARE = 3.5;
     private static final double FARE_SPREAD = 96.5;
@@ -126,7 +127,7 @@ final class FlatWriteFixture {
 
             for (int r = 0; r < length; r++) {
                 ids[r] = nextId++;
-                micros += PICKUP_SPACING_MICROS + random.nextInt((int) PICKUP_SPACING_MICROS);
+                micros += PICKUP_SPACING_MICROS + random.nextInt(PICKUP_SPACING_MICROS);
                 timestamps[r] = micros;
                 instants[r] = toInstant(micros);
 

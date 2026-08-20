@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.RawLocalFileSystem;
 import org.apache.parquet.column.ParquetProperties.WriterVersion;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
@@ -69,9 +71,15 @@ import dev.hardwood.writer.WriterConfig;
 ///   speed.
 /// - `hardwoodRow` writes `pickup_ts` through [dev.hardwood.writer.StructBuilder#setTimestamp],
 ///   so the annotated-value conversion the other two do not perform is in its number. That is
-///   what a caller holding records actually pays.
+///   what a caller holding records actually pays. The [Instant] objects themselves come from
+///   the fixture, so their allocation is outside the measured region and only the conversion
+///   and the pointer chase are inside it.
 /// - parquet-java writes a column index and an offset index per column chunk, which Hardwood
 ///   does not produce yet, so its files carry a little metadata Hardwood's do not.
+/// - The two Hardwood contenders write into `ByteBufferOutputFile` and parquet-java into
+///   [MemoryOutputFile], which are not the same sink. Both accumulate into a
+///   `ByteArrayOutputStream`; `ByteBufferOutputFile` takes a [ByteBuffer] and appends the
+///   array behind it, so neither side copies the payload twice on the way to the buffer.
 ///
 /// Hardwood's files come out the larger ones on this fixture: it builds a dictionary
 /// optimistically per column chunk and falls back to `PLAIN` mid-chunk, so an all-distinct
@@ -103,9 +111,9 @@ import dev.hardwood.writer.WriterConfig;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Benchmark)
-// jvmArgsAppend, not jvmArgs: the latter replaces the inherited command line, which would
-// drop the -Dperf.rows / -Dperf.dir the fork's setup reads.
-@Fork(value = 1, jvmArgsAppend = { "-Xms2g", "-Xmx2g", "--add-modules", "jdk.incubator.vector" })
+// jvmArgsAppend, not jvmArgs, as in every benchmark in this module: the latter replaces the
+// inherited command line, which would drop the -Dperf.* properties the fork's setup reads.
+@Fork(value = 2, jvmArgsAppend = { "-Xms2g", "-Xmx2g", "--add-modules", "jdk.incubator.vector" })
 @Warmup(iterations = 3, time = 1)
 @Measurement(iterations = 5, time = 1)
 public class FlatWriteBenchmark {
@@ -162,7 +170,7 @@ public class FlatWriteBenchmark {
         String configured = System.getProperty("perf.dir");
         dir = configured == null || configured.isBlank() ? null : Files.createDirectories(Path.of(configured));
 
-        fixture = FlatWriteFixture.generate(Integer.getInteger("perf.rows", DEFAULT_ROWS), BATCH_ROWS);
+        fixture = FlatWriteFixture.generate(configuredRows(), BATCH_ROWS);
         hardwoodSchema = hardwoodSchema();
         writerConfig = WriterConfig.builder()
                 .pageTargetBytes(PAGE_TARGET_BYTES)
@@ -174,8 +182,30 @@ public class FlatWriteBenchmark {
         parquetJavaSchema = MessageTypeParser.parseMessageType(PARQUET_JAVA_SCHEMA);
         parquetJavaCodec = CompressionCodecName.valueOf(codec);
         hadoopConf = new Configuration();
+        // Hadoop's LocalFileSystem writes a .crc sidecar beside every file it creates: a second
+        // checksum pass over the output and a second file, neither of which Hardwood's
+        // destination pays. RawLocalFileSystem writes the file alone, so -Dperf.dir measures the
+        // same work on both sides.
+        hadoopConf.setClass("fs.file.impl", RawLocalFileSystem.class, FileSystem.class);
 
         reportProducedFiles();
+    }
+
+    /// The record count from `-Dperf.rows`, rejecting a value this benchmark cannot use rather
+    /// than falling back to the default and reporting a number for a row count nobody asked for.
+    /// The property is shared with [BenchmarkData], which reads it as a `long`.
+    private static int configuredRows() {
+        String configured = System.getProperty("perf.rows");
+        if (configured == null || configured.isBlank()) {
+            return DEFAULT_ROWS;
+        }
+        try {
+            return Math.toIntExact(Long.parseLong(configured.trim()));
+        }
+        catch (NumberFormatException | ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "perf.rows must be an int this benchmark can hold but was '" + configured + "'", e);
+        }
     }
 
     @Benchmark
@@ -333,10 +363,20 @@ public class FlatWriteBenchmark {
         MemoryOutputFile groups = new MemoryOutputFile();
         writeGroups(ExampleParquetWriter.builder(groups));
 
+        byte[] columnarFile = columnar.toByteArray();
+        byte[] rowFile = row.toByteArray();
+        // The two Hardwood APIs write the same bytes for the same records, which the writer's
+        // equivalence tests hold them to. A divergence here is a writer defect that would
+        // otherwise be read as one contender producing a leaner file than the other.
+        if (columnarFile.length != rowFile.length) {
+            throw new IllegalStateException("The two Hardwood APIs produced files of different size: "
+                    + columnarFile.length + " bytes columnar against " + rowFile.length + " bytes row");
+        }
+
         System.out.printf("%nFlatWriteBenchmark: %,d rows, codec %s, %,d-row batches%n",
                 fixture.rows(), codec, BATCH_ROWS);
-        report("HARDWOOD_COLUMNAR", columnar.toByteArray());
-        report("HARDWOOD_ROW", row.toByteArray());
+        report("HARDWOOD_COLUMNAR", columnarFile);
+        report("HARDWOOD_ROW", rowFile);
         report("PARQUET_JAVA_GROUP", groups.toByteArray());
     }
 

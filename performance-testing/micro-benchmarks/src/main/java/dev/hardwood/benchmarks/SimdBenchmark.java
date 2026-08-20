@@ -37,7 +37,7 @@ import dev.hardwood.internal.encoding.simd.VectorSupport;
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @State(Scope.Benchmark)
-@Fork(value = 2, jvmArgs = { "-Xms512m", "-Xmx512m", "--add-modules", "jdk.incubator.vector" })
+@Fork(value = 2, jvmArgsAppend = { "-Xms512m", "-Xmx512m", "--add-modules", "jdk.incubator.vector" })
 @Warmup(iterations = 3, time = 1)
 @Measurement(iterations = 5, time = 1)
 public class SimdBenchmark {

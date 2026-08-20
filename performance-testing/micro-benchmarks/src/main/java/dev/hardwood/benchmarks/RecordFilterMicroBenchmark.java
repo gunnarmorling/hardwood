@@ -77,7 +77,7 @@ import static dev.hardwood.metadata.SchemaElement.root;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @State(Scope.Benchmark)
-@Fork(value = 2, jvmArgs = { "-Xms512m", "-Xmx512m" })
+@Fork(value = 2, jvmArgsAppend = { "-Xms512m", "-Xmx512m" })
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 5, time = 2)
 @OperationsPerInvocation(RecordFilterMicroBenchmark.BATCH_SIZE)
