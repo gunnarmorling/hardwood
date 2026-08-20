@@ -40,6 +40,7 @@ import dev.hardwood.writer.RowWriter;
 import dev.hardwood.writer.WriterConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// The flat half of the write-path interop gate (`_designs/WRITER_INTEROP_GATE.md`): Hardwood
 /// writes a single-column file, parquet-java reads it back through its Group record model, and
@@ -87,10 +88,20 @@ class WriterInteropTest {
                         axis.distinct(), FEW_ROWS, axis.config(), axis.plainOnly()));
     }
 
-    /// The codec axis, over every codec the writer can produce today. Stage 19 adds the rest and
-    /// extends this axis with them.
+    /// The codec axis, over every codec the writer produces. The two it does not — `LZ4`'s
+    /// deprecated Hadoop framing, and `LZO` — fail at writer creation, so they have no file for
+    /// this gate to read back; `WriterRoundTripTest` holds them to failing there.
+    ///
+    /// What the axis is really checking is framing. Each of these codecs has a raw block form and
+    /// a wrapped one, and the wrapped form round-trips perfectly against Hardwood's own reader
+    /// while being the wrong bytes for everyone else — which is what makes an independent reader,
+    /// rather than a round trip, the thing that settles it.
+    ///
+    /// `BROTLI` is the one codec the writer produces that is missing here, because the pinned
+    /// parquet-java cannot read it at all — see [#parquetJavaHasNoBrotliCodec()].
     static Stream<InteropCase> codecs() {
-        return sweep(List.of(CompressionCodec.UNCOMPRESSED, CompressionCodec.ZSTD),
+        return sweep(List.of(CompressionCodec.UNCOMPRESSED, CompressionCodec.GZIP, CompressionCodec.SNAPPY,
+                CompressionCodec.ZSTD, CompressionCodec.LZ4_RAW),
                 (type, codec) -> InteropCase.of("codec " + codec, type, Nullability.OPTIONAL_SOME_NULL,
                         64, FEW_ROWS, WriterConfig.builder().codec(codec).build()));
     }
@@ -243,6 +254,30 @@ class WriterInteropTest {
         for (int r = 0; r < rows; r++) {
             assertThat(read.get(r).getInteger(COLUMN, 0)).as("row %d", r).isEqualTo(values[r]);
         }
+    }
+
+    /// Why `BROTLI` is absent from the codec axis, asserted rather than left as a comment.
+    ///
+    /// parquet-java resolves the codec by name through Hadoop's `CompressionCodec` registry, and
+    /// for `BROTLI` the name is `org.apache.hadoop.io.compress.BrotliCodec` — a class that ships
+    /// in neither parquet-java 1.17.1 nor Hadoop, but in `com.github.rdblue:brotli-codec`, an
+    /// unmaintained third-party artifact whose bundled native binaries cover a few platforms
+    /// only. Putting it on this module's classpath would make the gate's result depend on the
+    /// architecture it runs on, which is the opposite of what a gate is for.
+    ///
+    /// So the codec is not unverified, only unverified *against this reader*:
+    /// `WriterDifferentialTest` reads Hardwood's `BROTLI` files back through DuckDB, which
+    /// decompresses them natively. The read direction has the same hole for the same reason —
+    /// `large_string_map.brotli.parquet` is the corpus's only `BROTLI` file and sits in
+    /// [Utils#SKIPPED_FILES] — so this is one gap in parquet-java, not a new one the write path
+    /// introduced.
+    ///
+    /// This test pins the reason, so a parquet-java that gains the codec fails here and `BROTLI`
+    /// rejoins the axis rather than staying out by inertia.
+    @Test
+    void parquetJavaHasNoBrotliCodec() {
+        assertThatThrownBy(() -> Class.forName("org.apache.hadoop.io.compress.BrotliCodec"))
+                .isInstanceOf(ClassNotFoundException.class);
     }
 
     /// Which of the two write APIs produces the file under test.

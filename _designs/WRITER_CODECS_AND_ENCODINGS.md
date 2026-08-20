@@ -1,7 +1,7 @@
 # Codec and encoding breadth (#9, stage 19)
 
-**Status: Planned.** Tracking issue: #976. Delivery stage 19 (Breadth) of
-[WRITER_SUPPORT.md](WRITER_SUPPORT.md).
+**Status: 19a (codecs) delivered; 19b (encodings) planned.** Tracking issue: #976. Delivery
+stage 19 (Breadth) of [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
 
 ## Context
 
@@ -349,12 +349,29 @@ header carries the chunk's value encoding, as it does today.
   to pin delta wrap-around; a range shorter than one miniblock and one spanning several
   blocks; empty and single-byte byte arrays; a fully shared prefix and no shared prefix for
   `DELTA_BYTE_ARRAY`; `NaN` and `-0.0` for byte-stream-split floats.
-- **The interop gate.** Its codec axis gains `GZIP`, `SNAPPY`, `LZ4_RAW` and `BROTLI` — all
-  four libraries are already test-scope dependencies of `parquet-testing-runner` — and its
+- **The interop gate.** Its codec axis gains `GZIP`, `SNAPPY` and `LZ4_RAW`, and its
   encoding axis gains one case per (encoding, type) pair, read back through parquet-java.
   A pair the pinned parquet-java cannot read is not a Hardwood defect, but neither is it
   coverage: it is recorded here with the reader version that gates it rather than dropped
-  from the sweep silently. Its existing "dictionary disabled" case becomes a file-wide
+  from the sweep silently.
+
+  `BROTLI` is the one such case on the codec axis. parquet-java resolves a codec to a Hadoop
+  codec class name, and the name it carries for `BROTLI` is
+  `org.apache.hadoop.io.compress.BrotliCodec` — a class in neither parquet-java 1.17.1 nor
+  Hadoop itself, whose `io.compress` package holds BZip2, Default, Deflate, Gzip, Lz4,
+  Passthrough, Snappy and ZStandard and no brotli. The only artifact providing it is
+  `com.github.rdblue:brotli-codec`, unmaintained and carrying native binaries for a few
+  platforms, so putting it on the gate's classpath would make the gate's verdict depend on the
+  architecture running it.
+
+  This is one hole in parquet-java rather than a write-path gap: the read side has it already,
+  `large_string_map.brotli.parquet` being the corpus's only `BROTLI` file and sitting in the
+  comparison suite's skip list for exactly this `ClassNotFoundException`. The codec's
+  independent reader is DuckDB in the differential suite, and the gate asserts the class's
+  absence, so a parquet-java that gains it fails there and `BROTLI` rejoins the axis rather
+  than staying out by inertia.
+
+  Its existing "dictionary disabled" case becomes a file-wide
   `PLAIN` policy, which is the same file by a different name. The pinned parquet-java
   (1.17.1) carries byte-stream-split readers for `FLOAT`, `DOUBLE`, `INT32`, `INT64` and
   `FIXED_LEN_BYTE_ARRAY`, so every pair in the table above is coverable there.
@@ -366,7 +383,8 @@ header carries the chunk's value encoding, as it does today.
   `DELTA_BYTE_ARRAY` chunk the answer is false, which is what a parseable `created_by`
   (stage 15) buys on this path.
 - **The differential suite.** `WriterDifferentialTest` gains the same pairs, so a second
-  independent reader sees every one of them.
+  independent reader sees every one of them. DuckDB reads all six produced codecs, which is
+  what keeps `BROTLI` covered where the gate cannot reach it.
 - **The refusals.** `LZ4` and `LZO` fail at creation with their own reasons; so do a column
   path matching no leaf, a policy illegal for its column's physical type, and a file-wide
   default illegal for any one column of the schema.
@@ -380,10 +398,13 @@ header carries the chunk's value encoding, as it does today.
 - Byte-stream-split changes no page's size on its own. Its entire effect is on what the
   codec afterwards achieves over floating-point data, so the benchmark reports it only in
   combination with each codec, never alone.
-- `FlatWriteBenchmark` gains a codec dimension and continues to report produced file size
-  next to the time. Its taxi-shaped fixture already carries the timestamp and string
-  columns these encodings target, so the stage's result is measured on the same fixture
-  stage 18's was.
+- `FlatWriteBenchmark`'s codec dimension widens from two values to the five both writers
+  produce, and it continues to report produced file size next to the time — which is the whole
+  point of a codec dimension, a codec being a trade of one against the other. `BROTLI` stays
+  out for the reason it is out of the gate: parquet-java cannot resolve the codec, so including
+  it would report one contender against nothing. Its taxi-shaped fixture already carries the
+  timestamp and string columns these encodings target, so the stage's result is measured on the
+  same fixture stage 18's was.
 
 ## What is deliberately not here
 

@@ -69,8 +69,14 @@ public class Utils {
             "delta_encoding_required_column.parquet", // Illegal character in field name (c_customer_sk:)
             "hadoop_lz4_compressed.parquet", // Empty field name in schema
 
+            // parquet-java cannot resolve the codec at all: CompressionCodecName.BROTLI names
+            // org.apache.hadoop.io.compress.BrotliCodec, which is in neither parquet-java nor
+            // Hadoop — only in the unmaintained com.github.rdblue:brotli-codec, whose native
+            // binaries cover a few platforms. Hardwood reads the file through brotli4j; what is
+            // missing is a second reader to compare against, not the ability to read it.
+            "large_string_map.brotli.parquet", // ClassNotFoundException for the codec class
+
             // parquet-java Avro reader decoding issues
-            "large_string_map.brotli.parquet", // ParquetDecodingException (block -1)
             "non_hadoop_lz4_compressed.parquet", // ParquetDecodingException (block -1)
             "nation.dict-malformed.parquet", // EOF error (intentionally malformed)
 

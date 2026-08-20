@@ -193,9 +193,17 @@ public final class WriterConfig {
             return this;
         }
 
-        /// Sets the codec each page body is compressed with; must be non-null. Only
-        /// `UNCOMPRESSED` and `ZSTD` are currently supported on the write path, and a
-        /// non-`UNCOMPRESSED` codec requires its library on the classpath.
+        /// Sets the codec each page body is compressed with; must be non-null.
+        ///
+        /// `UNCOMPRESSED`, `GZIP`, `SNAPPY`, `ZSTD`, `LZ4_RAW` and `BROTLI` are written.
+        /// Everything but the first two needs its library on the classpath, which is checked
+        /// when the writer is created rather than here.
+        ///
+        /// The other two members of [CompressionCodec] are not produced, and neither is
+        /// waiting on a later release. `LZ4` names the Hadoop framing the format deprecated in
+        /// favour of `LZ4_RAW`; files already written with it are still read, so the refusal is
+        /// on this side only. `LZO` has no maintained JVM implementation and is refused in both
+        /// directions. Asking for either fails when the writer is created.
         public Builder codec(CompressionCodec codec) {
             if (codec == null) {
                 throw new IllegalArgumentException("codec must not be null");

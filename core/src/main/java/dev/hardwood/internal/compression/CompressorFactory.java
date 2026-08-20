@@ -7,29 +7,58 @@
  */
 package dev.hardwood.internal.compression;
 
+import dev.hardwood.internal.compression.lz4.Lz4RawCompressor;
 import dev.hardwood.metadata.CompressionCodec;
 
 /// Factory for [Compressor] instances, the write-side counterpart to [DecompressorFactory].
 ///
-/// The write path currently supports `UNCOMPRESSED` and `ZSTD`; the remaining codecs are
-/// rejected until later increments add their encode side.
+/// Every codec is either produced or refused for a reason of its own. `LZ4` and `LZO` are the
+/// two refusals, and neither is waiting on a later increment: `LZ4` names the Hadoop framing the
+/// format deprecated in favour of `LZ4_RAW`, and `LZO` has no maintained JVM implementation to
+/// call. The read path decompresses `LZ4` all the same, files written before the deprecation
+/// existing, and refuses `LZO` for the reason this side does.
 public class CompressorFactory {
 
     /// Get a compressor for the given compression codec.
     ///
     /// @param codec the compression codec
     /// @return the appropriate compressor
-    /// @throws UnsupportedOperationException if the codec cannot yet be written, or the required
-    ///         library is missing
+    /// @throws UnsupportedOperationException if the codec is one this writer does not produce,
+    ///         or the required library is missing
     public Compressor getCompressor(CompressionCodec codec) {
         return switch (codec) {
             case UNCOMPRESSED -> new UncompressedCompressor();
+            case GZIP -> new GzipCompressor();
+            case SNAPPY -> {
+                CodecLibraries.require("org.xerial.snappy.Snappy",
+                        "SNAPPY",
+                        "org.xerial.snappy:snappy-java", "write");
+                yield new SnappyCompressor();
+            }
             case ZSTD -> {
-                CodecLibraries.require("com.github.luben.zstd.Zstd", "ZSTD", "com.github.luben:zstd-jni", "write");
+                CodecLibraries.require("com.github.luben.zstd.Zstd",
+                        "ZSTD",
+                        "com.github.luben:zstd-jni", "write");
                 yield new ZstdCompressor();
             }
-            default -> throw new UnsupportedOperationException(
-                    "Writing " + codec + "-compressed pages is not yet supported");
+            case LZ4_RAW -> {
+                CodecLibraries.require("net.jpountz.lz4.LZ4Factory",
+                        "LZ4_RAW",
+                        "at.yawk.lz4:lz4-java", "write");
+                yield new Lz4RawCompressor();
+            }
+            case BROTLI -> {
+                CodecLibraries.require("com.aayushatharva.brotli4j.Brotli4jLoader",
+                        "BROTLI",
+                        "com.aayushatharva.brotli4j:brotli4j", "write");
+                yield new BrotliCompressor();
+            }
+            case LZ4 -> throw new UnsupportedOperationException(
+                    "LZ4 uses the Hadoop framing the Parquet format has deprecated, so it is not written; "
+                            + "use LZ4_RAW instead. Files already written with LZ4 are still read.");
+            case LZO -> throw new UnsupportedOperationException(
+                    "LZO compression is not supported: there is no maintained JVM implementation under a "
+                            + "licence this project can depend on. The read path refuses it for the same reason.");
         };
     }
 }

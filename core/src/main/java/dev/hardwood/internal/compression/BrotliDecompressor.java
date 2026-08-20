@@ -11,29 +11,14 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-import com.aayushatharva.brotli4j.Brotli4jLoader;
 import com.aayushatharva.brotli4j.decoder.BrotliInputStream;
 
 /// Decompressor for Brotli compressed data.
 public class BrotliDecompressor implements Decompressor {
 
-    private static volatile boolean initialized = false;
-
-    private static synchronized void ensureInitialized() throws IOException {
-        if (!initialized) {
-            try {
-                Brotli4jLoader.ensureAvailability();
-                initialized = true;
-            }
-            catch (UnsatisfiedLinkError e) {
-                throw new IOException("Failed to load Brotli native library: " + e.getMessage(), e);
-            }
-        }
-    }
-
     @Override
     public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
-        ensureInitialized();
+        BrotliLoader.ensureLoaded();
 
         // Brotli4j has no direct ByteBuffer API, so extract to a byte array.
         byte[] compressedBytes = new byte[compressed.remaining()];

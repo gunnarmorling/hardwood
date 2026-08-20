@@ -192,7 +192,8 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Automatic row group flushing
 - [x] Dictionary page writing
 - [x] Data page encoding and writing
-- [x] Page compression
+- [x] Page compression (UNCOMPRESSED, GZIP, SNAPPY, ZSTD, LZ4_RAW, BROTLI; `LZ4`'s deprecated
+  Hadoop framing and `LZO` are refused at writer creation)
 - [x] Footer writing
 - [x] File finalization
 
@@ -300,7 +301,8 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] ZSTD (zstd-jni)
 - [x] BROTLI (brotli4j)
 - [x] GZIP via libdeflate (optional faster alternative, Java 22+)
-- [ ] LZO (lzo-java, optional)
+- LZO — not supported, in either direction: there is no maintained JVM implementation under a
+  licence this project can depend on. Both the read and the write path refuse it by name.
 
 ---
 

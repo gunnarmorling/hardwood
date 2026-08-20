@@ -20,6 +20,8 @@ import java.util.zip.CRC32;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.OutputFile;
@@ -1092,6 +1094,57 @@ class WriterRoundTripTest {
             assertThat(meta.totalCompressedSize()).isEqualTo(meta.totalUncompressedSize());
             assertThat(readInts(reader, 0)).containsExactly(values);
         }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = CompressionCodec.class,
+            names = { "UNCOMPRESSED", "GZIP", "SNAPPY", "ZSTD", "LZ4_RAW", "BROTLI" })
+    void everyWritableCodecRoundTripsThroughTheReader(CompressionCodec codec) throws Exception {
+        // Nulls and a small page target put several compressed pages in the chunk, each carrying
+        // a def-level stream ahead of its values, so what round-trips is a page body of the shape
+        // the writer actually produces rather than a lone value section.
+        int n = 4_000;
+        int[] values = new int[n];
+        boolean[] nulls = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            values[i] = i % 250;
+            nulls[i] = i % 7 == 0;
+        }
+
+        WriterConfig config = WriterConfig.builder().codec(codec).pageTargetBytes(1024).build();
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
+            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            ColumnMetaData meta = columnMeta(reader, 0);
+            assertThat(meta.codec()).as("declared codec").isEqualTo(codec);
+            if (codec == CompressionCodec.UNCOMPRESSED) {
+                assertThat(meta.totalCompressedSize()).as("%s stored size", codec)
+                        .isEqualTo(meta.totalUncompressedSize());
+            }
+            else {
+                assertThat(meta.totalCompressedSize()).as("%s stored size", codec)
+                        .isLessThan(meta.totalUncompressedSize());
+            }
+            assertThat(readNullable(reader, 0)).as("%s values", codec)
+                    .isEqualTo(expectedNullable(values, nulls));
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = CompressionCodec.class, names = { "LZ4", "LZO" })
+    void refusedCodecFailsBeforeAnyBytesAreWritten(CompressionCodec codec, @TempDir Path dir) {
+        // The codec resolves ahead of out.create(), so a codec this writer does not produce
+        // leaves no file at the destination rather than an empty or headerless one.
+        Path file = dir.resolve("refused.parquet");
+        WriterConfig config = WriterConfig.builder().codec(codec).build();
+
+        assertThatThrownBy(() -> ParquetFileWriter.create(OutputFile.of(file), oneColumn(), config))
+                .isInstanceOf(UnsupportedOperationException.class);
+
+        assertThat(Files.exists(file)).isFalse();
     }
 
     @Test

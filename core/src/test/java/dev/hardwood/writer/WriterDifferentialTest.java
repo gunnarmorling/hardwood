@@ -26,9 +26,12 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import dev.hardwood.OutputFile;
 import dev.hardwood.Validity;
+import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.LogicalType.TimeUnit;
 import dev.hardwood.metadata.PhysicalType;
@@ -489,11 +492,14 @@ class WriterDifferentialTest {
         return list;
     }
 
-    @Test
-    void duckDbReadsZstdCompressedColumn(@TempDir Path dir) throws Exception {
-        // ZSTD is the default codec, so this file's pages are compressed. DuckDB shares no code
-        // with hardwood's compressor, so its agreement proves the compressed bytes are
-        // spec-correct. Dictionary is disabled to force compressible PLAIN page bodies.
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = CompressionCodec.class,
+            names = { "UNCOMPRESSED", "GZIP", "SNAPPY", "ZSTD", "LZ4_RAW", "BROTLI" })
+    void duckDbReadsEveryWritableCodec(CompressionCodec codec, @TempDir Path dir) throws Exception {
+        // DuckDB shares no code with hardwood's compressors, so its agreement proves the
+        // compressed bytes are the codec's own form rather than merely one hardwood's reader
+        // accepts — the framing question every one of these codecs poses. Dictionary encoding is
+        // disabled to force compressible PLAIN page bodies.
         int n = 20_000;
         int[] v = new int[n];
         int[] r = new int[n];
@@ -506,8 +512,8 @@ class WriterDifferentialTest {
                 .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .addColumn("v", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .build();
-        WriterConfig config = WriterConfig.builder().enableDictionary(false).build();
-        Path file = dir.resolve("zstd.parquet");
+        WriterConfig config = WriterConfig.builder().enableDictionary(false).codec(codec).build();
+        Path file = dir.resolve("compressed.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
             writer.writeBatch(batch -> batch.ints(0, r).ints(1, v));
         }
@@ -524,9 +530,9 @@ class WriterDifferentialTest {
                 sum += value;
                 max = Math.max(max, value);
             }
-            assertThat(rs.getLong("n")).isEqualTo(n);
-            assertThat(rs.getLong("s")).isEqualTo(sum);
-            assertThat(rs.getLong("mx")).isEqualTo(max);
+            assertThat(rs.getLong("n")).as("%s row count", codec).isEqualTo(n);
+            assertThat(rs.getLong("s")).as("%s value sum", codec).isEqualTo(sum);
+            assertThat(rs.getLong("mx")).as("%s value max", codec).isEqualTo(max);
         }
     }
 

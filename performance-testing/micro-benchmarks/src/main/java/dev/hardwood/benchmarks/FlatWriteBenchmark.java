@@ -145,7 +145,10 @@ public class FlatWriteBenchmark {
             }
             """;
 
-    @Param({ "UNCOMPRESSED", "ZSTD" })
+    /// The codec dimension, across what both writers produce. `BROTLI` is Hardwood-only —
+    /// parquet-java resolves it through `org.apache.hadoop.io.compress.BrotliCodec`, which is
+    /// not on its classpath — so including it would report one contender against nothing.
+    @Param({ "UNCOMPRESSED", "LZ4_RAW", "SNAPPY", "ZSTD", "GZIP" })
     private String codec;
 
     private FlatWriteFixture fixture;
