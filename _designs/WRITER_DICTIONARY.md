@@ -4,6 +4,20 @@
 of [WRITER_SUPPORT.md](WRITER_SUPPORT.md). This document is the reference the dictionary
 increment implements against.
 
+**Superseded in part by later stages.** How a chunk's encoding is *chosen* has moved twice
+since; the dictionary page layout, the `RLE_DICTIONARY` index stream, and how both ride with
+the level streams are as described here.
+
+- **Stage 18** ([WRITER_DICTIONARY_SELECTION.md](WRITER_DICTIONARY_SELECTION.md), complete):
+  the streaming build with a mid-chunk `PLAIN` fallback described here is replaced by a
+  choice taken once the row group is buffered, so no chunk mixes encodings and no dictionary
+  page is written for a chunk that ends up `PLAIN`. `WriterConfig.dictionaryPageLimitBytes`,
+  the threshold that triggered the fallback, is removed with it; the memory bound that
+  remains is derived from `rowGroupTargetBytes`.
+- **Stage 19** ([WRITER_CODECS_AND_ENCODINGS.md](WRITER_CODECS_AND_ENCODINGS.md), planned):
+  `WriterConfig.enableDictionary` is replaced by a per-leaf-column encoding policy, whose
+  default `AUTO` is that choice and whose other values name an encoding outright.
+
 ## Context
 
 Through stage 8 every value section a page carries is `PLAIN`: after the optional

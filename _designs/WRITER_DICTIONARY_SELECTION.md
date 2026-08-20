@@ -3,6 +3,14 @@
 **Status: Complete.** Tracking issue: #975. Delivery stage 18
 (Optimization) of [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
 
+**Superseded in part by stage 19** ([WRITER_CODECS_AND_ENCODINGS.md](WRITER_CODECS_AND_ENCODINGS.md),
+planned): `WriterConfig.enableDictionary` is replaced by a per-leaf-column encoding policy,
+under which the decision this document describes is the default policy `AUTO`, and a caller
+declining a dictionary names the policy `PLAIN` instead — file-wide, which is what the
+removed boolean said, or for one column, which it could not say. The mechanism itself — the
+two passes, the size comparison, the analysis cap, the uniform per-chunk encoding — is
+unchanged by that stage.
+
 ## Context
 
 Stage 9 chooses a column chunk's encoding while the values are still streaming past. A
