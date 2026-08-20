@@ -13,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.zip.CRC32;
@@ -30,35 +31,42 @@ import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
 
-/// Accumulates one column's level entries for the current row group, packing them into data
-/// pages of at most the page capacity. The [RecordShredder] streams a record range's entries
-/// into this buffer through [#accept] (as a [RecordShredder.LevelSink]); a page is sealed each
-/// time the pending buffer fills — even part-way through a record — and the tail is sealed at
-/// flush. The encoded pages are held until the row group is flushed, since a column chunk's page
-/// offsets are only known when its bytes are written.
+/// Accumulates one column's chunk for the current row group in two phases.
+///
+/// **While records arrive**, the [RecordShredder] streams a record range's entries into this
+/// buffer through [#accept] (as a [RecordShredder.LevelSink]). Nothing is encoded: the levels are
+/// retained a byte per entry, each present value is interned into the dictionary or copied into
+/// the [ValueEncoder]'s store, and a page is *cut* — planned, not produced — each time the entry
+/// count reaches the page capacity, even part-way through a record.
+///
+/// **At flush**, the tail page is cut and the plan is encoded: the dictionary page where the
+/// chunk has one, then each planned page's levels and values framed, compressed and written
+/// straight to the output. Retaining the values rather than the encoded pages is what lets a
+/// page's bytes be produced after the whole chunk is known; it costs no copy that streaming did
+/// not already make, since a value is copied out of the caller's array either way.
 ///
 /// This buffer owns the **type-agnostic** half of a column chunk — the repetition and
-/// definition level streams, page sealing, compression, CRC, and (in dictionary mode) the
+/// definition level streams, page cutting, compression, CRC, and (in dictionary mode) the
 /// integer index stream. The **type-specific** half — reading the typed value, the `PLAIN`
 /// value section, the dictionary, and statistics — lives in a per-type [ValueEncoder], driven
 /// value by value as entries arrive. The shredder emits only source positions, so this buffer
 /// never sees a typed value.
 ///
 /// A page body is `[rep levels?][def levels?][value section]`, each level stream prefixed by its
-/// 4-byte little-endian length. When dictionary encoding is enabled the value section is
-/// `[1-byte index bit width][RLE/bit-packed indices]` (`RLE_DICTIONARY`); otherwise, and after a
-/// fallback, it is `[PLAIN present values]`. The assembled body is compressed with the chunk's
-/// [Compressor] before framing, and the page header records both the uncompressed and the stored
-/// compressed size; the dictionary page body is compressed the same way. The CRC-32 is taken
-/// over the stored bytes, matching what the reader validates.
+/// 4-byte little-endian length. The value section is `[1-byte index bit width][RLE/bit-packed
+/// indices]` for a dictionary-encoded chunk (`RLE_DICTIONARY`) and `[PLAIN present values]`
+/// otherwise. The assembled body is compressed with the chunk's [Compressor] before framing, and
+/// the page header records both the uncompressed and the stored compressed size; the dictionary
+/// page body is compressed the same way. The CRC-32 is taken over the stored bytes, matching what
+/// the reader validates.
 ///
-/// Dictionary encoding is column-chunk scoped: present values are interned in first-seen order
-/// through the [ValueEncoder], and each page's indices reference the dictionary page written
-/// ahead of the data pages at flush. When the dictionary would exceed `dictionaryLimitBytes` the
-/// chunk **falls back** — the pending page is sealed as `RLE_DICTIONARY` and every subsequent
-/// page is `PLAIN`. Encoding is per-page (each page's header declares its own), so a chunk may
-/// hold any mix of the two; a page sealed while the dictionary is still empty (a leading run of
-/// nulls filling a page) is `PLAIN` even ahead of later `RLE_DICTIONARY` pages.
+/// **A chunk is encoded one way throughout.** Present values are interned in first-seen order
+/// through the [ValueEncoder], which makes the chunk's cardinality exact, and at flush the
+/// dictionary page plus an index stream is weighed against the values as `PLAIN`; the smaller
+/// wins, and a chunk that decides against a dictionary resolves its indices back into values and
+/// writes no dictionary page. Each page still declares its own index bit width, sized from that
+/// page's largest index rather than the dictionary's final size, so a page whose values sit low
+/// in the dictionary pays only for the bits they need.
 final class ColumnChunkBuffer implements RecordShredder.LevelSink {
 
     private final PhysicalType type;
@@ -67,17 +75,38 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     private final long defLevelBits; // RLE level-stream bits charged per entry (0 when unlevelled)
     private final long repLevelBits;
     private long bufferedBits; // running uncompressed bit estimate across this row group's chunk
-    private final int[] pendingRep;
-    private final int[] pendingDef;
-    private final int[] pendingIndices; // dictionary indices for the current page (dictionary mode)
-    private final ByteArrayBuilder pages = new ByteArrayBuilder(); // stored (compressed) data pages
+    private final int pageValues; // level entries per data page
+
+    /// This chunk's repetition and definition levels, one unsigned byte per entry, `null` when the
+    /// column is unlevelled. Levels are retained rather than encoded as they arrive because a
+    /// page's level stream can only be cut once the page's boundaries are known at flush.
+    private final ByteArrayBuilder repLevels;
+    private final ByteArrayBuilder defLevels;
+
+    /// This chunk's dictionary indices, for the entries encoded against the dictionary. Values
+    /// the chunk did not intern live in the [ValueEncoder]'s store instead.
+    private int[] indices;
+    private int indexCount;
+    private int plainCount;  // values appended to the value encoder's store
+    private int entryCount;  // level entries accumulated across the chunk
+
+    /// The page plan: how many level entries and how many present values each data page covers,
+    /// appended as pages are cut while records arrive and consumed when the pages are encoded at
+    /// flush. The whole chunk shares one encoding, so a page carries no encoding of its own.
+    private int[] planEntries = new int[16];
+    private int[] planValueCount = new int[16];
+    private int planCount;
+    private int plannedEntries;
+    private int plannedValues;
+
+    /// What this chunk's present values would occupy `PLAIN`-encoded, accumulated as they arrive:
+    /// the other half of the encoding comparison.
+    private long plainValueBits;
 
     /// The page body under construction, reused across the chunk's pages: a fresh builder per
     /// page would regrow from nothing to the page size every time.
     private final ByteArrayBuilder body = new ByteArrayBuilder();
-    private int pendingCount;      // level entries buffered for the current page
-    private int pendingValueCount; // present values buffered for the current page
-    private long numValues;        // total level entries across sealed pages
+    private long numValues;        // total level entries across the chunk's pages
     private long dataPagesUncompressedSize; // sum of header + uncompressed body across data pages
     private long dictionaryPageUncompressedSize; // header + uncompressed body of the dictionary page
 
@@ -86,30 +115,42 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
 
     private final ValueEncoder values;
     private final boolean boundedStatistics; // whether min/max are well defined for this column's order
-    private final int dictionaryLimitBytes;
-    private boolean dictionaryActive; // true while pages are still dictionary-encoded
+    /// How large this chunk's dictionary may grow before the analysis gives up on it. The bound
+    /// exists to cap memory, not to choose an encoding: a column whose dictionary outgrows it is
+    /// written `PLAIN` because its values are too many to be worth describing, which the
+    /// comparison would have concluded anyway in all but a narrow band.
+    private final long dictionaryAnalysisCapBytes;
+    private boolean dictionaryAlive; // false once the chunk has given up its dictionary
+    /// False once the chunk has thrown away what it was counting distinct values with, after
+    /// which it can no longer state its cardinality and writes no `distinct_count`.
+    private boolean cardinalityKnown = true;
 
     /// @param column the column's schema (physical type, level depths)
     /// @param pageValues maximum number of level entries per data page
-    /// @param enableDictionary whether to dictionary-encode this chunk (with `PLAIN` fallback)
-    /// @param dictionaryLimitBytes the dictionary size past which the chunk falls back to `PLAIN`
+    /// @param enableDictionary whether this chunk may be dictionary-encoded at all
+    /// @param dictionaryAnalysisCapBytes the dictionary size past which the chunk is written `PLAIN`
     /// @param compressor compresses each page body before framing
     /// @param codec the codec `compressor` applies, recorded in the chunk metadata
     ColumnChunkBuffer(ColumnSchema column, int pageValues,
-                      boolean enableDictionary, int dictionaryLimitBytes, int statisticsTruncationLength,
+                      boolean enableDictionary, long dictionaryAnalysisCapBytes, int statisticsTruncationLength,
                       Compressor compressor, CompressionCodec codec) {
         this.type = column.type();
         this.maxDefLevel = column.maxDefinitionLevel();
         this.maxRepLevel = column.maxRepetitionLevel();
         this.defLevelBits = maxDefLevel > 0 ? LevelEncoder.bitWidth(maxDefLevel) : 0;
         this.repLevelBits = maxRepLevel > 0 ? LevelEncoder.bitWidth(maxRepLevel) : 0;
-        this.pendingIndices = new int[pageValues];
-        this.pendingDef = maxDefLevel > 0 ? new int[pageValues] : null;
-        this.pendingRep = maxRepLevel > 0 ? new int[pageValues] : null;
+        if (maxDefLevel > LevelEncoder.MAX_STORABLE_LEVEL || maxRepLevel > LevelEncoder.MAX_STORABLE_LEVEL) {
+            throw new UnsupportedOperationException("Column " + column.name() + " nests deeper than the writer"
+                    + " supports: levels must fit " + LevelEncoder.MAX_STORABLE_LEVEL);
+        }
+        this.pageValues = pageValues;
+        this.indices = new int[Math.max(1, pageValues)];
+        this.defLevels = maxDefLevel > 0 ? new ByteArrayBuilder(Math.max(1, pageValues)) : null;
+        this.repLevels = maxRepLevel > 0 ? new ByteArrayBuilder(Math.max(1, pageValues)) : null;
         this.values = ValueEncoder.forColumn(column, pageValues, enableDictionary, statisticsTruncationLength);
         this.boundedStatistics = StatisticsOrder.supportsBounds(column);
-        this.dictionaryActive = values.dictionaryCapable();
-        this.dictionaryLimitBytes = dictionaryLimitBytes;
+        this.dictionaryAlive = values.dictionaryCapable();
+        this.dictionaryAnalysisCapBytes = dictionaryAnalysisCapBytes;
         this.compressor = compressor;
         this.codec = codec;
     }
@@ -125,44 +166,80 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     @Override
     public void accept(int repetitionLevel, int definitionLevel, int valueIndex) {
         boolean present = valueIndex >= 0;
-        // Decide fallback before recording the entry: falling back seals the buffered page and
-        // resets the pending buffers, so the current entry must land in the fresh page.
-        boolean useDictionary = false;
-        int dictionaryIndex = 0;
-        if (present && dictionaryActive) {
-            dictionaryIndex = values.intern(valueIndex, dictionaryLimitBytes);
-            if (dictionaryIndex == ValueEncoder.DICTIONARY_OVERFLOW) {
-                fallBack();
-            }
-            else {
-                useDictionary = true;
-            }
-        }
         if (maxRepLevel > 0) {
-            pendingRep[pendingCount] = repetitionLevel;
+            repLevels.write(repetitionLevel);
         }
         if (maxDefLevel > 0) {
-            pendingDef[pendingCount] = definitionLevel;
+            defLevels.write(definitionLevel);
         }
         bufferedBits += repLevelBits + defLevelBits;
         if (present) {
-            if (useDictionary) {
-                pendingIndices[pendingValueCount] = dictionaryIndex;
+            if (dictionaryAlive) {
+                if (indexCount == indices.length) {
+                    indices = Arrays.copyOf(indices, ValueEncoder.grownCapacity(indices.length));
+                }
+                indices[indexCount++] = values.intern(valueIndex);
+                if (values.dictionaryPlainBytes() > dictionaryAnalysisCapBytes) {
+                    giveUpDictionary();
+                }
             }
             else {
-                values.appendPlain(pendingValueCount, valueIndex);
+                values.store(valueIndex);
+                plainCount++;
             }
-            pendingValueCount++;
             values.stat(valueIndex);
-            bufferedBits += values.valueBits(valueIndex);
+            long valueBits = values.valueBits(valueIndex);
+            plainValueBits += valueBits;
+            bufferedBits += valueBits;
         }
         else {
             values.statNull();
         }
-        pendingCount++;
-        if (pendingCount == pendingIndices.length) {
-            sealPage();
+        entryCount++;
+        if (entryCount - plannedEntries == pageValues) {
+            planPage();
         }
+    }
+
+    /// Turns the values interned so far back into stored values and releases the dictionary, so
+    /// the chunk carries its values once rather than twice. Called when the dictionary outgrows
+    /// the analysis cap, and at flush when the comparison decides against it.
+    private void giveUpDictionary() {
+        for (int i = 0; i < indexCount; i++) {
+            values.storeDictionaryValue(indices[i]);
+        }
+        plainCount += indexCount;
+        indexCount = 0;
+        values.dropDictionary();
+        dictionaryAlive = false;
+        cardinalityKnown = false;
+    }
+
+    /// Starts the next row group's chunk of this column, keeping every buffer this one grew: the
+    /// level stores, the index store, the page plan and the value encoder's store are emptied by
+    /// resetting their counts, and the dictionary and statistics — which describe one chunk and
+    /// must never carry into the next — start over.
+    void reset() {
+        if (repLevels != null) {
+            repLevels.reset();
+        }
+        if (defLevels != null) {
+            defLevels.reset();
+        }
+        values.startChunk();
+        indexCount = 0;
+        plainCount = 0;
+        entryCount = 0;
+        planCount = 0;
+        plannedEntries = 0;
+        plannedValues = 0;
+        numValues = 0;
+        bufferedBits = 0;
+        plainValueBits = 0;
+        dataPagesUncompressedSize = 0;
+        dictionaryPageUncompressedSize = 0;
+        dictionaryAlive = values.dictionaryCapable();
+        cardinalityKnown = true;
     }
 
     /// A running estimate of this chunk's buffered uncompressed bits — each entry's level bits
@@ -173,12 +250,22 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         return bufferedBits;
     }
 
-    /// Seals the trailing page, writes the whole column chunk — dictionary page (when present)
-    /// then data pages — to `out` starting at `chunkStartOffset`, and returns its metadata.
-    /// The caller captures `chunkStartOffset` before invoking this.
+    /// Cuts the trailing page, then encodes and writes the whole column chunk — dictionary page
+    /// (when present) then data pages — to `out` starting at `chunkStartOffset`, and returns its
+    /// metadata. The caller captures `chunkStartOffset` before invoking this.
     ColumnMetaData flushTo(OutputFile out, ColumnSchema column, long chunkStartOffset) throws IOException {
-        sealPage();
-        boolean hasDictionary = values.dictionaryCapable() && values.dictionarySize() > 0;
+        planPage();
+        // Read the cardinality before the dictionary can be given up below: a chunk that still
+        // has the structure it counted with can state the count exactly, whichever encoding the
+        // comparison then chooses.
+        long distinctCount = cardinalityKnown ? values.exactDistinctCount() : ValueEncoder.UNKNOWN_DISTINCT_COUNT;
+        boolean hasDictionary = dictionaryWins();
+        if (!hasDictionary && indexCount > 0) {
+            // The values are interned but the chunk is not paying for a dictionary, so resolve
+            // them back into stored values and encode those.
+            giveUpDictionary();
+        }
+        int dictionarySize = hasDictionary ? values.dictionarySize() : 0;
         long dataPageOffset = chunkStartOffset;
         Long dictionaryPageOffset = null;
         long dictionaryCompressedSize = 0;
@@ -191,12 +278,21 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
             dictionaryUncompressedSize = dictionaryPageUncompressedSize;
             out.write(ByteBuffer.wrap(dictionaryPage));
         }
+        long dataPagesCompressedSize = 0;
+        int entryFrom = 0;
+        int valueFrom = 0;
+        for (int page = 0; page < planCount; page++) {
+            dataPagesCompressedSize += writeDataPage(out, entryFrom, planEntries[page], valueFrom,
+                    planValueCount[page], dictionarySize);
+            entryFrom += planEntries[page];
+            valueFrom += planValueCount[page];
+            numValues += planEntries[page];
+        }
         // Page headers are stored uncompressed either way; only the bodies differ, so the
         // compressed total is what was actually written and the uncompressed total restores
         // each body to its pre-compression size.
-        long totalCompressed = dictionaryCompressedSize + pages.size();
+        long totalCompressed = dictionaryCompressedSize + dataPagesCompressedSize;
         long totalUncompressed = dictionaryUncompressedSize + dataPagesUncompressedSize;
-        out.write(ByteBuffer.wrap(pages.array(), 0, pages.length()));
         return new ColumnMetaData(
                 type,
                 encodings(hasDictionary),
@@ -208,7 +304,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                 Map.of(),
                 dataPageOffset,
                 dictionaryPageOffset,
-                statistics(),
+                statistics(distinctCount),
                 null,
                 null,
                 null,
@@ -217,27 +313,64 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                 null);
     }
 
-    /// The chunk statistics, with the bounds dropped when this column's sort order is not the
-    /// one its collector computes in. See [StatisticsOrder].
-    private Statistics statistics() {
+    /// Whether this chunk is written `RLE_DICTIONARY`, decided from what it actually holds: the
+    /// dictionary body plus an index stream at the bit width its cardinality needs, against the
+    /// values written `PLAIN`. Sizes are compared uncompressed — comparing compressed sizes would
+    /// mean trial-compressing both forms, which is not repaid by the rare chunk where compression
+    /// reverses the ranking — and the index stream's run headers are left out of the estimate,
+    /// being a fraction of a percent of it.
+    private boolean dictionaryWins() {
+        if (!dictionaryAlive || values.dictionarySize() == 0) {
+            return false;
+        }
+        long indexBits = (long) indexCount * LevelEncoder.bitWidth(values.dictionarySize() - 1);
+        long dictionaryBytes = values.dictionaryPlainBytes() + ceilDiv(indexBits, Byte.SIZE);
+        return dictionaryBytes < ceilDiv(plainValueBits, Byte.SIZE);
+    }
+
+    private static long ceilDiv(long numerator, long denominator) {
+        return (numerator + denominator - 1) / denominator;
+    }
+
+    /// The chunk statistics, carrying the exact distinct count where the chunk knows it, and with
+    /// the bounds dropped when this column's sort order is not the one its collector computes in.
+    /// See [StatisticsOrder].
+    private Statistics statistics(long distinctCount) {
         Statistics statistics = values.statistics();
+        if (distinctCount != ValueEncoder.UNKNOWN_DISTINCT_COUNT) {
+            statistics = new Statistics(statistics.minValue(), statistics.maxValue(), statistics.nullCount(),
+                    distinctCount, statistics.isMinMaxDeprecated(), statistics.isMinValueExact(),
+                    statistics.isMaxValueExact(), statistics.nanCount());
+        }
         return boundedStatistics ? statistics : StatisticsOrder.withoutBounds(statistics);
     }
 
-    /// Seals the current page as a dictionary-indexed page and switches the rest of the chunk
-    /// to `PLAIN`. The already-buffered indices are valid against the dictionary as it stands,
-    /// and the dictionary page (written at flush) still holds those values.
-    private void fallBack() {
-        sealPage();
-        dictionaryActive = false;
-    }
-
-    private void sealPage() {
-        if (pendingCount == 0) {
+    /// Cuts a page at the entries accumulated since the last cut, recording how many present
+    /// values it covers. Nothing is encoded here: a page's bytes are produced at flush, once the
+    /// chunk's encoding has been chosen.
+    private void planPage() {
+        int entries = entryCount - plannedEntries;
+        if (entries == 0) {
             return;
         }
-        boolean dictionaryPage = dictionaryActive && values.dictionaryCapable() && values.dictionarySize() > 0;
-        buildBody(dictionaryPage);
+        if (planCount == planEntries.length) {
+            int grown = ValueEncoder.grownCapacity(planEntries.length);
+            planEntries = Arrays.copyOf(planEntries, grown);
+            planValueCount = Arrays.copyOf(planValueCount, grown);
+        }
+        planEntries[planCount] = entries;
+        planValueCount[planCount] = indexCount + plainCount - plannedValues;
+        planCount++;
+        plannedEntries = entryCount;
+        plannedValues = indexCount + plainCount;
+    }
+
+    /// Encodes one planned page and writes it straight to `out`, returning the bytes written.
+    /// Data pages are streamed rather than buffered: the chunk's encoding is settled before any
+    /// of them is produced, so nothing has to be revisited once written.
+    private long writeDataPage(OutputFile out, int entryFrom, int entries, int valueFrom, int valueCount,
+                               int dictionarySize) throws IOException {
+        buildBody(entryFrom, entries, valueFrom, valueCount, dictionarySize);
         int uncompressedLength = body.length();
         // UNCOMPRESSED stores the body as it stands, so the page is written straight out of the
         // body buffer; every other codec produces its own array.
@@ -256,41 +389,55 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         CRC32 crc = new CRC32();
         crc.update(storedArray, 0, storedLength);
         ThriftCompactWriter header = new ThriftCompactWriter();
-        Encoding valuesEncoding = dictionaryPage ? Encoding.RLE_DICTIONARY : Encoding.PLAIN;
-        PageHeaderWriter.writeDataPageV1(header, pendingCount, uncompressedLength, storedLength,
+        Encoding valuesEncoding = dictionarySize > 0 ? Encoding.RLE_DICTIONARY : Encoding.PLAIN;
+        PageHeaderWriter.writeDataPageV1(header, entries, uncompressedLength, storedLength,
                 (int) crc.getValue(), valuesEncoding);
         byte[] headerBytes = header.toByteArray();
-        pages.writeBytes(headerBytes);
-        pages.write(storedArray, 0, storedLength);
+        out.write(ByteBuffer.wrap(headerBytes));
+        out.write(ByteBuffer.wrap(storedArray, 0, storedLength));
         dataPagesUncompressedSize += headerBytes.length + uncompressedLength;
-        numValues += pendingCount;
-        pendingCount = 0;
-        pendingValueCount = 0;
+        return (long) headerBytes.length + storedLength;
     }
 
-    /// Frames the page body: the repetition and definition level streams (each RLE, each
+    /// Frames one page's body: the repetition and definition level streams (each RLE, each
     /// prefixed by a 4-byte little-endian length) ahead of the value section. For a dictionary
     /// page the value section is a 1-byte index bit width followed by the RLE/bit-packed indices
     /// (running to the page end, not length-prefixed); otherwise it is the value encoder's
-    /// `PLAIN` present values.
-    private void buildBody(boolean dictionaryPage) {
+    /// `PLAIN` present values. `dictionarySize` is the chunk's dictionary size, which says only
+    /// whether the chunk is dictionary-encoded; the page's index bit width comes from its own
+    /// largest index.
+    private void buildBody(int entryFrom, int entries, int valueFrom, int valueCount, int dictionarySize) {
         body.reset();
         if (maxRepLevel > 0) {
-            writeLevels(body, pendingRep, maxRepLevel);
+            writeLevels(body, repLevels, entryFrom, entries, maxRepLevel);
         }
         if (maxDefLevel > 0) {
-            writeLevels(body, pendingDef, maxDefLevel);
+            writeLevels(body, defLevels, entryFrom, entries, maxDefLevel);
         }
-        if (dictionaryPage) {
-            int bitWidth = LevelEncoder.bitWidth(values.dictionarySize() - 1);
+        if (dictionarySize > 0) {
+            // Each page declares its own index bit width, so a page carries only the bits its own
+            // largest index needs rather than the bits the dictionary's final size would need.
+            // A page with no present value has no index to size, and falls back to the chunk's.
+            int bitWidth = valueCount > 0
+                    ? LevelEncoder.bitWidth(maxIndex(valueFrom, valueCount))
+                    : LevelEncoder.bitWidth(dictionarySize - 1);
             body.write(bitWidth);
-            RleBitPackingHybridEncoder indices = new RleBitPackingHybridEncoder(bitWidth);
-            indices.writeInts(pendingIndices, 0, pendingValueCount);
-            body.writeBytes(indices.toByteArray());
+            RleBitPackingHybridEncoder encoded = new RleBitPackingHybridEncoder(bitWidth);
+            encoded.writeInts(indices, valueFrom, valueCount);
+            body.writeBytes(encoded.toByteArray());
         }
         else {
-            body.writeBytes(values.encodePlain(pendingValueCount));
+            body.writeBytes(values.encodePlain(valueFrom, valueCount));
         }
+    }
+
+    /// The largest dictionary index in one page's value range.
+    private int maxIndex(int valueFrom, int valueCount) {
+        int max = 0;
+        for (int i = valueFrom; i < valueFrom + valueCount; i++) {
+            max = Math.max(max, indices[i]);
+        }
+        return max;
     }
 
     /// Builds the dictionary page: a `DICTIONARY_PAGE` header over the distinct values,
@@ -339,8 +486,9 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         return encodings;
     }
 
-    private void writeLevels(ByteArrayOutputStream body, int[] levels, int maxLevel) {
-        byte[] encoded = LevelEncoder.encode(levels, 0, pendingCount, maxLevel);
+    private void writeLevels(ByteArrayOutputStream body, ByteArrayBuilder levels, int from, int count,
+                             int maxLevel) {
+        byte[] encoded = LevelEncoder.encode(levels.array(), from, count, maxLevel);
         body.writeBytes(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(encoded.length).array());
         body.writeBytes(encoded);
     }

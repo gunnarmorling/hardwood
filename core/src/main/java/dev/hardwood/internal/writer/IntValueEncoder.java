@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.writer;
 
+import java.util.Arrays;
+
 import dev.hardwood.internal.encoding.DictionaryEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
 import dev.hardwood.metadata.Statistics;
@@ -14,10 +16,12 @@ import dev.hardwood.metadata.Statistics;
 /// [ValueEncoder] for `INT32` columns.
 final class IntValueEncoder extends ValueEncoder {
 
-    private final int[] plain;
+    private int[] plain;      // this chunk's stored values, grown as the row group fills
+    private int plainCount;
     private final int[] window;
     private final DictionaryEncoder dictionary; // null when dictionary encoding is disabled
-    private final IntStatisticsCollector statistics;
+    private final boolean unsignedOrder;
+    private IntStatisticsCollector statistics;
 
     private IntColumnSource source;
     private int size;
@@ -25,8 +29,9 @@ final class IntValueEncoder extends ValueEncoder {
     private int windowLength;
 
     IntValueEncoder(int pageValues, boolean enableDictionary, boolean unsignedOrder) {
+        this.unsignedOrder = unsignedOrder;
         this.statistics = new IntStatisticsCollector(unsignedOrder);
-        this.plain = new int[pageValues];
+        this.plain = new int[Math.max(1, pageValues)];
         this.window = new int[Math.max(1, pageValues)];
         this.dictionary = enableDictionary ? new DictionaryEncoder() : null;
     }
@@ -54,16 +59,10 @@ final class IntValueEncoder extends ValueEncoder {
     }
 
     @Override
-    int intern(int valueIndex, long dictionaryLimitBytes) {
+    int intern(int valueIndex) {
         int value = valueAt(valueIndex);
         int index = dictionary.indexOf(value);
-        if (index >= 0) {
-            return index;
-        }
-        if (dictionary.byteSize() + Integer.BYTES > dictionaryLimitBytes) {
-            return DICTIONARY_OVERFLOW;
-        }
-        return dictionary.add(value);
+        return index >= 0 ? index : dictionary.add(value);
     }
 
     @Override
@@ -72,18 +71,54 @@ final class IntValueEncoder extends ValueEncoder {
     }
 
     @Override
+    long exactDistinctCount() {
+        return dictionary != null ? dictionary.size() : UNKNOWN_DISTINCT_COUNT;
+    }
+
+    @Override
     byte[] encodeDictionaryBody() {
         return PlainEncoder.encodeInts(dictionary.values(), 0, dictionary.size());
     }
 
     @Override
-    void appendPlain(int slot, int valueIndex) {
-        plain[slot] = valueAt(valueIndex);
+    void startChunk() {
+        statistics = new IntStatisticsCollector(unsignedOrder);
+        if (dictionary != null) {
+            dictionary.clear();
+        }
+        plainCount = 0;
     }
 
     @Override
-    byte[] encodePlain(int count) {
-        return PlainEncoder.encodeInts(plain, 0, count);
+    void store(int valueIndex) {
+        append(valueAt(valueIndex));
+    }
+
+    @Override
+    void storeDictionaryValue(int dictionaryIndex) {
+        append(dictionary.values()[dictionaryIndex]);
+    }
+
+    @Override
+    long dictionaryPlainBytes() {
+        return (long) dictionary.size() * Integer.BYTES;
+    }
+
+    @Override
+    void dropDictionary() {
+        dictionary.clear();
+    }
+
+    private void append(int value) {
+        if (plainCount == plain.length) {
+            plain = Arrays.copyOf(plain, grownCapacity(plain.length));
+        }
+        plain[plainCount++] = value;
+    }
+
+    @Override
+    byte[] encodePlain(int from, int count) {
+        return PlainEncoder.encodeInts(plain, from, count);
     }
 
     @Override

@@ -211,12 +211,10 @@ The benchmark is validated by being run, not by tests of its own. The bar for ac
 - Run on the N300 bare-metal box for any number that gets quoted; the container's figures are
   for relative movement during development only.
 
-**Hardwood's files are the larger ones**, by roughly a fifth on this fixture, and that gap is
-the writer's dictionary policy rather than a settings mismatch. Stage 9 builds a dictionary
-optimistically per column chunk and falls back to `PLAIN` mid-chunk, so a chunk that falls back
-still carries the dictionary page the pages written before the fallback reference; and a column
-that is entirely distinct but stays under the byte limit — `id`, `fare`, `pickup_ts` here — is
-dictionary-encoded at a dictionary page *plus* an index stream, where the values alone would be
-smaller. parquet-java chooses per chunk once the data is in hand and writes neither. This is
-what delivery stage 18 (row-group-global dictionary selection) exists to fix, and this benchmark
-is where its payoff is measured.
+**The produced files agree in size**, within about a tenth of a percent on this fixture, which
+is what the benchmark exists to keep true. It was not always so: the writer once built a
+dictionary optimistically per column chunk and abandoned it mid-chunk, leaving a chunk carrying
+a dictionary page it had stopped using and dictionary-encoding all-distinct columns — `id`,
+`fare`, `pickup_ts` here — at a dictionary page plus an index stream where the values alone were
+smaller. That cost a fifth of the file, and this benchmark is what measured it and what measured
+delivery stage 18 closing it.

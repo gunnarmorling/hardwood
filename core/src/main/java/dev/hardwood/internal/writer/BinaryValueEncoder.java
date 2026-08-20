@@ -7,6 +7,9 @@
  */
 package dev.hardwood.internal.writer;
 
+import java.util.Arrays;
+import java.util.function.Supplier;
+
 import dev.hardwood.internal.encoding.BinaryDictionaryEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
 import dev.hardwood.metadata.Statistics;
@@ -18,10 +21,18 @@ import dev.hardwood.metadata.Statistics;
 /// `BYTE_ARRAY` bound truncation.
 final class BinaryValueEncoder extends ValueEncoder {
 
-    private final byte[][] plain;
+    /// This chunk's stored values, packed end to end: value `i` occupies
+    /// `plainData[plainOffsets[i], plainOffsets[i + 1])`. The bytes are copied rather than
+    /// referenced, both because the caller owns its arrays once `writeBatch` returns and because
+    /// one buffer per row group costs far less than one object per value.
+    private final ByteArrayBuilder plainData = new ByteArrayBuilder();
+    private int[] plainOffsets;
+    private int plainCount;
+
     private final byte[][] window;
     private final BinaryDictionaryEncoder dictionary; // null when dictionary encoding is disabled
-    private final BinaryStatistics statistics;
+    private final Supplier<BinaryStatistics> statisticsFactory;
+    private BinaryStatistics statistics;
     private final Integer typeLength; // null for BYTE_ARRAY, the fixed width for FIXED_LEN_BYTE_ARRAY
 
     private BinaryColumnSource source;
@@ -30,14 +41,15 @@ final class BinaryValueEncoder extends ValueEncoder {
     private int windowLength;
 
     BinaryValueEncoder(int pageValues, boolean enableDictionary, Integer typeLength,
-                       BinaryStatistics statistics) {
-        this.plain = new byte[pageValues][];
-        this.window = new byte[pageValues][];
+                       Supplier<BinaryStatistics> statisticsFactory) {
+        this.plainOffsets = new int[Math.max(1, pageValues) + 1];
+        this.window = new byte[Math.max(1, pageValues)][];
         this.dictionary = enableDictionary ? new BinaryDictionaryEncoder() : null;
         // FIXED_LEN_BYTE_ARRAY bounds are written whole and always exact — a fixed width already
         // bounds them — so only BYTE_ARRAY truncates. Integer.MAX_VALUE disables truncation, since
         // no value can be longer than that.
-        this.statistics = statistics;
+        this.statisticsFactory = statisticsFactory;
+        this.statistics = statisticsFactory.get();
         this.typeLength = typeLength;
     }
 
@@ -68,25 +80,20 @@ final class BinaryValueEncoder extends ValueEncoder {
     }
 
     @Override
-    int intern(int valueIndex, long dictionaryLimitBytes) {
+    int intern(int valueIndex) {
         byte[] value = valueAt(valueIndex);
         int index = dictionary.indexOf(value);
-        if (index >= 0) {
-            return index;
-        }
-        // The dictionary body is PLAIN: a 4-byte length prefix per BYTE_ARRAY value, raw bytes
-        // for FIXED_LEN_BYTE_ARRAY. Size the fallback trigger against that framed body.
-        long framedBytes = dictionary.contentBytes() + (fixedLength() ? 0L : (long) Integer.BYTES * dictionary.size());
-        long newValueBytes = value.length + (fixedLength() ? 0L : Integer.BYTES);
-        if (framedBytes + newValueBytes > dictionaryLimitBytes) {
-            return DICTIONARY_OVERFLOW;
-        }
-        return dictionary.add(value);
+        return index >= 0 ? index : dictionary.add(value);
     }
 
     @Override
     int dictionarySize() {
         return dictionary.size();
+    }
+
+    @Override
+    long exactDistinctCount() {
+        return dictionary != null ? dictionary.size() : UNKNOWN_DISTINCT_COUNT;
     }
 
     @Override
@@ -97,15 +104,50 @@ final class BinaryValueEncoder extends ValueEncoder {
     }
 
     @Override
-    void appendPlain(int slot, int valueIndex) {
-        plain[slot] = valueAt(valueIndex);
+    void startChunk() {
+        statistics = statisticsFactory.get();
+        if (dictionary != null) {
+            dictionary.clear();
+        }
+        plainCount = 0;
+        plainData.reset();
     }
 
     @Override
-    byte[] encodePlain(int count) {
+    void store(int valueIndex) {
+        append(valueAt(valueIndex));
+    }
+
+    @Override
+    void storeDictionaryValue(int dictionaryIndex) {
+        append(dictionary.values()[dictionaryIndex]);
+    }
+
+    @Override
+    long dictionaryPlainBytes() {
+        // The dictionary body is PLAIN: raw bytes for FIXED_LEN_BYTE_ARRAY, each value behind a
+        // 4-byte length prefix for BYTE_ARRAY.
+        return dictionary.contentBytes() + (fixedLength() ? 0L : (long) Integer.BYTES * dictionary.size());
+    }
+
+    @Override
+    void dropDictionary() {
+        dictionary.clear();
+    }
+
+    private void append(byte[] value) {
+        if (plainCount + 1 == plainOffsets.length) {
+            plainOffsets = Arrays.copyOf(plainOffsets, grownCapacity(plainOffsets.length));
+        }
+        plainData.write(value, 0, value.length);
+        plainOffsets[++plainCount] = plainData.length();
+    }
+
+    @Override
+    byte[] encodePlain(int from, int count) {
         return fixedLength()
-                ? PlainEncoder.encodeFixedLenByteArrays(plain, 0, count, typeLength)
-                : PlainEncoder.encodeByteArrays(plain, 0, count);
+                ? PlainEncoder.encodeFixedLenByteArrays(plainData.array(), plainOffsets, from, count, typeLength)
+                : PlainEncoder.encodeByteArrays(plainData.array(), plainOffsets, from, count);
     }
 
     @Override

@@ -492,6 +492,63 @@ class WriterRoundTripTest {
     }
 
     @Test
+    void rowGroupsDoNotShareChunkState() throws Exception {
+        // Two row groups whose values do not overlap: the first all-distinct, so it is written
+        // PLAIN, the second low-cardinality, so it is dictionary-encoded. Whatever a row group
+        // accumulates — statistics, dictionary, the encoding its values argued for — must not
+        // carry into the next one.
+        int perGroup = 1024;
+        int[] first = new int[perGroup];
+        int[] second = new int[perGroup];
+        for (int i = 0; i < perGroup; i++) {
+            first[i] = 1_000_000 + i;      // all distinct, so this chunk is written PLAIN
+            second[i] = 10 + i % 4;        // four distinct values, so this one is dictionary-encoded
+        }
+
+        WriterConfig config = WriterConfig.builder()
+                .rowGroupTargetBytes(perGroup * Integer.BYTES)
+                .build();
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
+            writer.writeBatch(batch -> batch.ints(0, first));
+            writer.writeBatch(batch -> batch.ints(0, second));
+        }
+
+        byte[] file = out.toByteArray();
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(file)))) {
+            List<RowGroup> rowGroups = reader.getFileMetaData().rowGroups();
+            assertThat(rowGroups).hasSize(2);
+
+            // Statistics describe their own row group, not everything written so far.
+            Statistics firstStats = rowGroups.get(0).columns().get(0).metaData().statistics();
+            Statistics secondStats = rowGroups.get(1).columns().get(0).metaData().statistics();
+            assertThat(StatisticsDecoder.decodeInt(firstStats.minValue())).isEqualTo(1_000_000);
+            assertThat(StatisticsDecoder.decodeInt(firstStats.maxValue())).isEqualTo(1_000_000 + perGroup - 1);
+            assertThat(StatisticsDecoder.decodeInt(secondStats.minValue())).isEqualTo(10);
+            assertThat(StatisticsDecoder.decodeInt(secondStats.maxValue())).isEqualTo(13);
+
+            // The first group's values argued for PLAIN; the second's argue for a dictionary, so
+            // the first group's verdict does not leak across the boundary either.
+            ColumnMetaData secondChunk = rowGroups.get(1).columns().get(0).metaData();
+            assertThat(secondChunk.encodings()).contains(Encoding.RLE_DICTIONARY);
+
+            // And that dictionary holds the second group's four values and nothing else. Reading
+            // the values back would not catch a dictionary carrying the first group's entries too,
+            // because the indices written against it would still resolve; the entry count does.
+            ThriftCompactReader dictionaryPage = new ThriftCompactReader(ByteBuffer.wrap(file),
+                    Math.toIntExact(secondChunk.dictionaryPageOffset()));
+            assertThat(PageHeaderReader.read(dictionaryPage).dictionaryPageHeader().numValues()).isEqualTo(4);
+
+            // And the values themselves survive, which a dictionary carrying the previous group's
+            // entries would not manage.
+            int[] expected = new int[2 * perGroup];
+            System.arraycopy(first, 0, expected, 0, perGroup);
+            System.arraycopy(second, 0, expected, perGroup, perGroup);
+            assertThat(readInts(reader, 0)).containsExactly(expected);
+        }
+    }
+
+    @Test
     void writesCorrectPageCrc() throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
@@ -537,28 +594,183 @@ class WriterRoundTripTest {
     }
 
     @Test
-    void dictionaryFallsBackToPlainOnOverflow() throws Exception {
-        // 1000 distinct values with an 8-byte dictionary limit: the dictionary fills after two
-        // entries, so the chunk seals a dictionary prefix and finishes as PLAIN.
-        int n = 1_000;
+    void dictionaryIsGivenUpWhenItOutgrowsTheAnalysisCap() throws Exception {
+        // The cap is max(rowGroupTargetBytes / 2, 1 MiB), so a 4 MiB target caps the dictionary at
+        // 2 MiB — reached after 524,288 distinct INT32 values, part-way through this column. From
+        // there the chunk holds resolved values followed by directly appended ones, which is the
+        // one path where the value store carries both, and the only path that leaves the chunk
+        // unable to state its cardinality.
+        int n = 900_000;
         int[] values = new int[n];
         for (int i = 0; i < n; i++) {
-            values[i] = i * 31 + 5;
+            values[i] = i * 3 + 7;
         }
 
-        WriterConfig config = WriterConfig.builder().dictionaryPageLimitBytes(8).build();
+        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4L << 20).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            assertThat(reader.getFileMetaData().rowGroups()).hasSize(1);
             ColumnMetaData meta = columnMeta(reader, 0);
-            // A dictionary page was written (the pre-fallback prefix) and PLAIN pages followed.
-            assertThat(meta.dictionaryPageOffset()).isNotNull();
-            assertThat(meta.encodings()).contains(Encoding.RLE_DICTIONARY, Encoding.PLAIN);
+            assertThat(meta.dictionaryPageOffset()).as("no dictionary page").isNull();
+            assertThat(meta.encodings()).doesNotContain(Encoding.RLE_DICTIONARY);
+            // The count is unknown once the dictionary is gone, and absent rather than estimated.
+            assertThat(meta.statistics().distinctCount()).as("distinct_count").isNull();
+            // Every value survives the switch from interned to stored, in order.
             assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();
         }
+    }
+
+    @Test
+    void writesExactDistinctCountWhereverTheChunkKnowsIt() throws Exception {
+        // The count is exact for as long as the chunk holds a dictionary, which is until the
+        // encoding is chosen — so it is written whichever encoding wins, and left out only where
+        // the chunk never built one.
+        int n = 1_000;
+        int[] repeating = new int[n];
+        int[] allDistinct = new int[n];
+        for (int i = 0; i < n; i++) {
+            repeating[i] = i % 8;
+            allDistinct[i] = i * 31 + 5;
+        }
+
+        assertThat(distinctCountOf(repeating, WriterConfig.defaults()))
+                .as("dictionary-encoded chunk").isEqualTo(8L);
+        assertThat(distinctCountOf(allDistinct, WriterConfig.defaults()))
+                .as("chunk the comparison sent to PLAIN").isEqualTo((long) n);
+        assertThat(distinctCountOf(repeating, WriterConfig.builder().enableDictionary(false).build()))
+                .as("chunk that never built a dictionary").isNull();
+
+        // A BOOLEAN column is never dictionary-encoded and still knows its cardinality: at most
+        // false and true can occur.
+        FileSchema booleans = FileSchema.builder("m")
+                .addColumn("b", PhysicalType.BOOLEAN, RepetitionType.REQUIRED).build();
+        boolean[] both = new boolean[n];
+        boolean[] onlyFalse = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            both[i] = i % 2 == 0;
+        }
+        assertThat(booleanDistinctCount(booleans, both)).as("BOOLEAN with both values").isEqualTo(2L);
+        assertThat(booleanDistinctCount(booleans, onlyFalse)).as("BOOLEAN with one value").isEqualTo(1L);
+    }
+
+    @Test
+    void booleanPagesCutAwayFromAWordBoundary() throws Exception {
+        // A BOOLEAN chunk retains its values one bit each, so a page's value range starts at an
+        // arbitrary bit rather than an array slot. An odd page target puts those starts away from
+        // a 64-bit word boundary: at 25 bytes a page holds 200 values, so the pages begin at bits
+        // 0, 8, 16, 24 … of their words. The value pattern is coprime with both 8 and 64, so a
+        // shift lost anywhere in the packing changes what reads back.
+        int n = 5_000;
+        boolean[] values = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            values[i] = i % 7 == 0 || i % 11 == 3;
+        }
+
+        FileSchema schema = FileSchema.builder("m")
+                .addColumn("b", PhysicalType.BOOLEAN, RepetitionType.REQUIRED).build();
+        WriterConfig config = WriterConfig.builder().pageTargetBytes(25).build();
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            writer.writeBatch(batch -> batch.booleans(0, values));
+        }
+
+        byte[] file = out.toByteArray();
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(file)))) {
+            ColumnMetaData meta = columnMeta(reader, 0);
+            assertThat(countDataPages(file, meta.dataPageOffset(), meta.numValues()))
+                    .as("pages, so most value ranges start mid-word").isGreaterThan(1);
+            assertThat(readBooleans(reader, 0)).isEqualTo(values);
+        }
+    }
+
+    private static boolean[] readBooleans(ParquetFileReader reader, int columnIndex) {
+        try (ColumnReader column = reader.columnReader(columnIndex)) {
+            boolean[] result = new boolean[Math.toIntExact(reader.getFileMetaData().numRows())];
+            int pos = 0;
+            while (column.nextBatch()) {
+                int count = column.getValueCount();
+                System.arraycopy(column.getBooleans(), 0, result, pos, count);
+                pos += count;
+            }
+            return result;
+        }
+    }
+
+    private static Long booleanDistinctCount(FileSchema schema, boolean[] values) throws Exception {
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.booleans(0, values));
+        }
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            return columnMeta(reader, 0).statistics().distinctCount();
+        }
+    }
+
+    /// The `distinct_count` a one-column file's only chunk carries, or null where it carries none.
+    private static Long distinctCountOf(int[] values, WriterConfig config) throws Exception {
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
+            writer.writeBatch(batch -> batch.ints(0, values));
+        }
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();
+            return columnMeta(reader, 0).statistics().distinctCount();
+        }
+    }
+
+    @Test
+    void allDistinctColumnIsWrittenPlain() throws Exception {
+        // Every value distinct: a dictionary would cost its own page plus an index per value,
+        // where the values alone are smaller. The chunk is PLAIN throughout and carries no
+        // dictionary page at all.
+        int n = 1_000;
+        int[] values = new int[n];
+        for (int i = 0; i < n; i++) {
+            values[i] = i * 31 + 5;
+        }
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
+            writer.writeBatch(batch -> batch.ints(0, values));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            ColumnMetaData meta = columnMeta(reader, 0);
+            assertThat(meta.dictionaryPageOffset()).isNull();
+            assertThat(meta.encodings()).doesNotContain(Encoding.RLE_DICTIONARY);
+            assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();
+        }
+    }
+
+    @Test
+    void repeatingColumnIsDictionaryEncoded() throws Exception {
+        // The mirror image: few distinct values over many rows, where the dictionary plus a
+        // narrow index stream is far smaller than the values.
+        int n = 1_000;
+        int[] values = new int[n];
+        for (int i = 0; i < n; i++) {
+            values[i] = i % 8;
+        }
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
+            writer.writeBatch(batch -> batch.ints(0, values));
+        }
+
+        byte[] file = out.toByteArray();
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(file)))) {
+            ColumnMetaData meta = columnMeta(reader, 0);
+            assertThat(meta.dictionaryPageOffset()).isNotNull();
+            assertThat(meta.encodings()).contains(Encoding.RLE_DICTIONARY);
+            assertThat(meta.encodings()).doesNotContain(Encoding.PLAIN_DICTIONARY);
+            assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();
+        }
+        // A dictionary of eight ints and 3-bit indices against 4 KB of values.
+        assertThat(file.length).isLessThan(n * Integer.BYTES / 2);
     }
 
     @Test

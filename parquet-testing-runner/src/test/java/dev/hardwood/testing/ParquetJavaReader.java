@@ -7,7 +7,11 @@
  */
 package dev.hardwood.testing;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -26,11 +30,17 @@ import org.apache.parquet.column.page.DataPageV1;
 import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.column.page.PageReader;
 import org.apache.parquet.example.data.Group;
+import org.apache.parquet.format.ColumnChunk;
+import org.apache.parquet.format.FileMetaData;
+import org.apache.parquet.format.RowGroup;
+import org.apache.parquet.format.Statistics;
+import org.apache.parquet.format.Util;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
+import org.apache.parquet.io.SeekableInputStream;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -130,7 +140,7 @@ final class ParquetJavaReader {
     /// @throws IOException if parquet-java cannot read a page
     static Pages readPages(Path file) throws IOException {
         int count = 0;
-        Set<Encoding> valueEncodings = EnumSet.noneOf(Encoding.class);
+        List<Set<Encoding>> chunkValueEncodings = new ArrayList<>();
         try (ParquetFileReader reader = ParquetFileReader
                 .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
 
@@ -139,23 +149,110 @@ final class ParquetJavaReader {
             while ((rowGroup = reader.readNextRowGroup()) != null) {
                 for (ColumnDescriptor column : columns) {
                     PageReader pageReader = rowGroup.getPageReader(column);
+                    Set<Encoding> chunkEncodings = EnumSet.noneOf(Encoding.class);
                     DataPage page;
                     while ((page = pageReader.readPage()) != null) {
                         count++;
-                        valueEncodings.add(valueEncoding(page));
+                        chunkEncodings.add(valueEncoding(page));
                     }
+                    chunkValueEncodings.add(chunkEncodings);
                 }
             }
         }
-        return new Pages(count, valueEncodings);
+        return new Pages(count, List.copyOf(chunkValueEncodings));
     }
 
-    /// What a page walk found: the data page count and the set of encodings their values
-    /// declared, across every row group and column of the file.
+    /// The index bit width each data page declares, for a file of one flat `REQUIRED` column.
+    ///
+    /// A V1 page body is `[rep levels?][def levels?][value section]`, so with neither level stream
+    /// present the first body byte *is* the value section's leading bit width. Reading it is the
+    /// only way to hold the per-page width to anything: the width a page declares is independent
+    /// of how many entries the chunk's dictionary holds, so a file whose values still decode
+    /// correctly proves nothing about which width was written.
+    ///
+    /// @param file the file to read, whose single column must be flat and `REQUIRED`
+    /// @return one width per data page, in the order the pages were walked
+    /// @throws IOException if parquet-java cannot read a page
+    static List<Integer> readIndexBitWidths(Path file) throws IOException {
+        List<Integer> widths = new ArrayList<>();
+        try (ParquetFileReader reader = ParquetFileReader
+                .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
+
+            List<ColumnDescriptor> columns = reader.getFileMetaData().getSchema().getColumns();
+            if (columns.size() != 1 || columns.get(0).getMaxDefinitionLevel() != 0
+                    || columns.get(0).getMaxRepetitionLevel() != 0) {
+                throw new IllegalArgumentException("Index bit widths are only readable from a file of one"
+                        + " flat REQUIRED column, where no level stream precedes the value section");
+            }
+            PageReadStore rowGroup;
+            while ((rowGroup = reader.readNextRowGroup()) != null) {
+                PageReader pageReader = rowGroup.getPageReader(columns.get(0));
+                DataPage page;
+                while ((page = pageReader.readPage()) != null) {
+                    Encoding encoding = valueEncoding(page);
+                    if (encoding != Encoding.RLE_DICTIONARY) {
+                        throw new IllegalStateException(
+                                "Page declares " + encoding + ", so it carries no index stream to size");
+                    }
+                    widths.add(((DataPageV1) page).getBytes().toByteArray()[0] & 0xFF);
+                }
+            }
+        }
+        return widths;
+    }
+
+    /// The `distinct_count` each column chunk's statistics carry, read from the footer's Thrift
+    /// rather than through parquet-java's `Statistics`, which does not surface the field. Reading
+    /// the raw structure is the point: it proves the writer put field 4 on the wire with the type
+    /// a third-party Thrift decoder expects, which a round trip through Hardwood's own reader
+    /// cannot.
+    ///
+    /// @param file the file to read
+    /// @return one entry per column chunk in footer order, null where the chunk carries no count
+    /// @throws IOException if the footer cannot be read
+    static List<Long> readDistinctCounts(Path file) throws IOException {
+        List<Long> counts = new ArrayList<>();
+        try (SeekableInputStream in = HadoopInputFile
+                .fromPath(hadoopPath(file), new Configuration()).newStream()) {
+            FileMetaData metaData = readThriftFooter(file, in);
+            for (RowGroup rowGroup : metaData.getRow_groups()) {
+                for (ColumnChunk chunk : rowGroup.getColumns()) {
+                    Statistics statistics = chunk.getMeta_data().getStatistics();
+                    counts.add(statistics != null && statistics.isSetDistinct_count()
+                            ? statistics.getDistinct_count()
+                            : null);
+                }
+            }
+        }
+        return counts;
+    }
+
+    /// Reads the footer as the format's own Thrift structure: seek to the four-byte length ahead
+    /// of the trailing magic, then decode that many bytes.
+    private static FileMetaData readThriftFooter(Path file, SeekableInputStream in) throws IOException {
+        long fileLength = Files.size(file);
+        in.seek(fileLength - MAGIC_LENGTH - FOOTER_LENGTH_BYTES);
+        byte[] lengthBytes = new byte[FOOTER_LENGTH_BYTES];
+        in.readFully(lengthBytes);
+        int footerLength = ByteBuffer.wrap(lengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        in.seek(fileLength - MAGIC_LENGTH - FOOTER_LENGTH_BYTES - footerLength);
+        byte[] footer = new byte[footerLength];
+        in.readFully(footer);
+        return Util.readFileMetaData(new ByteArrayInputStream(footer));
+    }
+
+    private static final int MAGIC_LENGTH = 4;
+    private static final int FOOTER_LENGTH_BYTES = 4;
+
+    /// What a page walk found: the data page count, and per column chunk the set of encodings
+    /// that chunk's data pages declared. The sets are per chunk rather than per file because a
+    /// chunk's encoding is chosen from the values that chunk holds, so two chunks of one column
+    /// may legitimately differ while neither may vary within itself.
     ///
     /// @param dataPageCount how many data pages the file holds
-    /// @param valueEncodings the distinct value encodings those pages declared
-    record Pages(int dataPageCount, Set<Encoding> valueEncodings) {
+    /// @param chunkValueEncodings the distinct value encodings each column chunk's pages declared,
+    ///        in the order the chunks were walked
+    record Pages(int dataPageCount, List<Set<Encoding>> chunkValueEncodings) {
     }
 
     /// The encoding a data page declares for its values. The writer produces DataPage V1 only, so

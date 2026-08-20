@@ -39,10 +39,6 @@ public final class WriterConfig {
     /// applies its writer-specific correctness workarounds to it by default.
     public static final String DEFAULT_CREATED_BY = defaultCreatedBy();
 
-    /// Default dictionary page-size limit: 1 MiB of dictionary values before a column
-    /// chunk falls back to `PLAIN`.
-    public static final int DEFAULT_DICTIONARY_PAGE_LIMIT_BYTES = 1 << 20;
-
     /// Default statistics truncation length: `BYTE_ARRAY` `min` / `max` bounds longer than
     /// 64 bytes are truncated and flagged inexact.
     public static final int DEFAULT_STATISTICS_TRUNCATION_LENGTH = 64;
@@ -61,7 +57,6 @@ public final class WriterConfig {
     private final long rowGroupTargetBytes;
     private final String createdBy;
     private final boolean enableDictionary;
-    private final int dictionaryPageLimitBytes;
     private final int statisticsTruncationLength;
     private final CompressionCodec codec;
     private final PrecisionLossPolicy precisionLossPolicy;
@@ -71,7 +66,6 @@ public final class WriterConfig {
         this.rowGroupTargetBytes = builder.rowGroupTargetBytes;
         this.createdBy = builder.createdBy;
         this.enableDictionary = builder.enableDictionary;
-        this.dictionaryPageLimitBytes = builder.dictionaryPageLimitBytes;
         this.statisticsTruncationLength = builder.statisticsTruncationLength;
         this.codec = builder.codec;
         this.precisionLossPolicy = builder.precisionLossPolicy;
@@ -102,14 +96,9 @@ public final class WriterConfig {
         return createdBy;
     }
 
-    /// Whether eligible columns are dictionary-encoded (with `PLAIN` fallback on overflow).
+    /// Whether eligible columns may be dictionary-encoded, where that is the smaller encoding.
     public boolean enableDictionary() {
         return enableDictionary;
-    }
-
-    /// The dictionary size in bytes at which a column chunk falls back to `PLAIN`.
-    public int dictionaryPageLimitBytes() {
-        return dictionaryPageLimitBytes;
     }
 
     /// The maximum length of a `BYTE_ARRAY` `min` / `max` statistics bound before it is
@@ -148,7 +137,6 @@ public final class WriterConfig {
         private long rowGroupTargetBytes = DEFAULT_ROW_GROUP_TARGET_BYTES;
         private String createdBy = DEFAULT_CREATED_BY;
         private boolean enableDictionary = true;
-        private int dictionaryPageLimitBytes = DEFAULT_DICTIONARY_PAGE_LIMIT_BYTES;
         private int statisticsTruncationLength = DEFAULT_STATISTICS_TRUNCATION_LENGTH;
         private CompressionCodec codec = DEFAULT_CODEC;
         private PrecisionLossPolicy precisionLossPolicy = DEFAULT_PRECISION_LOSS_POLICY;
@@ -185,21 +173,12 @@ public final class WriterConfig {
             return this;
         }
 
-        /// Enables or disables dictionary encoding. When disabled, every column chunk is
-        /// written as `PLAIN` with no dictionary page.
+        /// Enables or disables dictionary encoding. When enabled — the default — a column chunk is
+        /// dictionary-encoded where that produces less than writing its values `PLAIN`, decided
+        /// per chunk from the values it holds. When disabled, every chunk is written `PLAIN` with
+        /// no dictionary page.
         public Builder enableDictionary(boolean enableDictionary) {
             this.enableDictionary = enableDictionary;
-            return this;
-        }
-
-        /// Sets the dictionary size in bytes past which a column chunk falls back to `PLAIN`;
-        /// must be at least one `INT32` (4 bytes) so at least one value always fits.
-        public Builder dictionaryPageLimitBytes(int dictionaryPageLimitBytes) {
-            if (dictionaryPageLimitBytes < Integer.BYTES) {
-                throw new IllegalArgumentException("dictionaryPageLimitBytes must be at least "
-                        + Integer.BYTES + " but was " + dictionaryPageLimitBytes);
-            }
-            this.dictionaryPageLimitBytes = dictionaryPageLimitBytes;
             return this;
         }
 

@@ -30,18 +30,19 @@ public final class RowGroupBuffer {
 
     /// @param schema the file schema
     /// @param pageValues maximum number of level triples per data page
-    /// @param enableDictionary whether columns are dictionary-encoded (with `PLAIN` fallback)
-    /// @param dictionaryLimitBytes the dictionary size past which a chunk falls back to `PLAIN`
+    /// @param enableDictionary whether columns may be dictionary-encoded
+    /// @param dictionaryAnalysisCapBytes the dictionary size past which a chunk is written `PLAIN`
     /// @param statisticsTruncationLength the maximum `BYTE_ARRAY` `min` / `max` bound length
     /// @param compressor compresses each page body before it is buffered
     /// @param codec the codec `compressor` applies, recorded in each chunk's metadata
-    public RowGroupBuffer(FileSchema schema, int pageValues, boolean enableDictionary, int dictionaryLimitBytes,
-                          int statisticsTruncationLength, Compressor compressor, CompressionCodec codec) {
+    public RowGroupBuffer(FileSchema schema, int pageValues, boolean enableDictionary,
+                          long dictionaryAnalysisCapBytes, int statisticsTruncationLength,
+                          Compressor compressor, CompressionCodec codec) {
         this.schema = schema;
         this.columns = new ColumnChunkBuffer[schema.getColumnCount()];
         for (int c = 0; c < columns.length; c++) {
             columns[c] = new ColumnChunkBuffer(schema.getColumn(c), pageValues,
-                    enableDictionary, dictionaryLimitBytes, statisticsTruncationLength, compressor, codec);
+                    enableDictionary, dictionaryAnalysisCapBytes, statisticsTruncationLength, compressor, codec);
         }
     }
 
@@ -76,6 +77,16 @@ public final class RowGroupBuffer {
     /// Whether no rows have been buffered.
     public boolean isEmpty() {
         return rowCount == 0;
+    }
+
+    /// Starts the next row group, keeping the buffers this one grew. A row group's worth of
+    /// retained values is the writer's largest allocation, so rebuilding these per group would
+    /// make the write path's garbage scale with the number of row groups rather than with one.
+    public void reset() {
+        for (ColumnChunkBuffer column : columns) {
+            column.reset();
+        }
+        rowCount = 0;
     }
 
     /// Writes the buffered column chunks to `out` in schema order and returns the row

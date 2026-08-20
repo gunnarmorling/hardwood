@@ -24,12 +24,12 @@ import dev.hardwood.writer.WriterConfig;
 /// @param distinct how many distinct values the column cycles through
 /// @param rows how many rows to write
 /// @param config the writer configuration
-/// @param expectsPlainFallback whether the case is expected to overflow its dictionary and fall
-///        back to `PLAIN` mid-chunk
+/// @param plainOnly whether the case's values are expected to argue against a dictionary, so the
+///        chunk is written `PLAIN` even though dictionary encoding is enabled
 record InteropCase(String name, TypeFixture type, Nullability nullability, int distinct, int rows,
-        WriterConfig config, boolean expectsPlainFallback) {
+        WriterConfig config, boolean plainOnly) {
 
-    /// A case that stays within its dictionary limit.
+    /// A case whose values argue for a dictionary.
     static InteropCase of(String name, TypeFixture type, Nullability nullability, int distinct, int rows,
             WriterConfig config) {
         return new InteropCase(name, type, nullability, distinct, rows, config, false);
@@ -106,7 +106,8 @@ record InteropCase(String name, TypeFixture type, Nullability nullability, int d
     /// no value to intern, so it writes no dictionary page.
     boolean expectsDictionary() {
         return config.enableDictionary() && type.dictionaryCapable()
-                && nullability != Nullability.OPTIONAL_ALL_NULL;
+                && nullability != Nullability.OPTIONAL_ALL_NULL
+                && !plainOnly;
     }
 
     @Override

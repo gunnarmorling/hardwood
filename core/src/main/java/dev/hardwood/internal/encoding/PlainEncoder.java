@@ -106,6 +106,26 @@ public final class PlainEncoder {
         return packed;
     }
 
+    /// Encode `length` BOOLEAN values starting at `offset` from a packed bitset: value `i` is bit
+    /// `i & 63` of `bits[i >>> 6]`. The output restarts the run at bit 0 of its first byte, as
+    /// [#encodeBooleans(boolean[], int, int)] does for values held one `boolean` each, because a
+    /// page's value section begins on a byte boundary wherever the page was cut.
+    ///
+    /// @param bits the packed value bits
+    /// @param offset the index of the first value to encode
+    /// @param length the number of values to encode
+    /// @return the PLAIN-encoded bytes
+    public static byte[] encodeBooleans(long[] bits, int offset, int length) {
+        byte[] packed = new byte[(length + Byte.SIZE - 1) / Byte.SIZE];
+        for (int i = 0; i < length; i++) {
+            int index = offset + i;
+            if ((bits[index >>> 6] & (1L << index)) != 0) {
+                packed[i >> 3] |= (byte) (1 << (i & 7));
+            }
+        }
+        return packed;
+    }
+
     /// Encode `length` `BYTE_ARRAY` values starting at `offset`, each as a 4-byte little-endian
     /// length prefix followed by its bytes, matching [PlainDecoder#readByteArrays].
     ///
@@ -123,6 +143,56 @@ public final class PlainEncoder {
             byte[] value = values[offset + i];
             buffer.putInt(value.length);
             buffer.put(value);
+        }
+        return buffer.array();
+    }
+
+    /// Encode `length` `BYTE_ARRAY` values starting at `offset` from a packed buffer: value `i`
+    /// occupies `data[offsets[i], offsets[i + 1])`. Each is written as a 4-byte little-endian
+    /// length prefix followed by its bytes, as [#encodeByteArrays(byte[][], int, int)] does for
+    /// values held one array each.
+    ///
+    /// @param data the packed value bytes
+    /// @param offsets value boundaries, `length + offset + 1` entries at least
+    /// @param offset the index of the first value to encode
+    /// @param length the number of values to encode
+    /// @return the PLAIN-encoded bytes
+    public static byte[] encodeByteArrays(byte[] data, int[] offsets, int offset, int length) {
+        long total = 0;
+        for (int i = 0; i < length; i++) {
+            total += Integer.BYTES + (offsets[offset + i + 1] - offsets[offset + i]);
+        }
+        ByteBuffer buffer = ByteBuffer.allocate(Math.toIntExact(total)).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < length; i++) {
+            int from = offsets[offset + i];
+            buffer.putInt(offsets[offset + i + 1] - from);
+            buffer.put(data, from, offsets[offset + i + 1] - from);
+        }
+        return buffer.array();
+    }
+
+    /// Encode `length` `FIXED_LEN_BYTE_ARRAY` values starting at `offset` from a packed buffer as
+    /// raw concatenated bytes, the packed counterpart of
+    /// [#encodeFixedLenByteArrays(byte[][], int, int, int)].
+    ///
+    /// @param data the packed value bytes
+    /// @param offsets value boundaries, `length + offset + 1` entries at least
+    /// @param offset the index of the first value to encode
+    /// @param length the number of values to encode
+    /// @param typeLength the fixed byte length every value must have
+    /// @return the PLAIN-encoded bytes
+    /// @throws IllegalArgumentException if any value's length is not `typeLength`
+    public static byte[] encodeFixedLenByteArrays(byte[] data, int[] offsets, int offset, int length,
+                                                  int typeLength) {
+        ByteBuffer buffer = ByteBuffer.allocate(Math.multiplyExact(length, typeLength));
+        for (int i = 0; i < length; i++) {
+            int from = offsets[offset + i];
+            int valueLength = offsets[offset + i + 1] - from;
+            if (valueLength != typeLength) {
+                throw new IllegalArgumentException("FIXED_LEN_BYTE_ARRAY value has length " + valueLength
+                        + " but the column's type length is " + typeLength);
+            }
+            buffer.put(data, from, valueLength);
         }
         return buffer.array();
     }

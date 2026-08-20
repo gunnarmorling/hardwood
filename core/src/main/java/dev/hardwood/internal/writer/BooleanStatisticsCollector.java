@@ -30,6 +30,12 @@ final class BooleanStatisticsCollector {
         nullCount++;
     }
 
+    /// How many distinct values the chunk holds, which for `BOOLEAN` needs no dictionary: at most
+    /// `false` and `true` can occur.
+    int distinctCount() {
+        return (sawFalse ? 1 : 0) + (sawTrue ? 1 : 0);
+    }
+
     Statistics toStatistics() {
         byte[] minValue = null;
         byte[] maxValue = null;

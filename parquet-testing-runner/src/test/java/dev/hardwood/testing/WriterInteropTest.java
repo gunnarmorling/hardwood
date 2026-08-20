@@ -8,9 +8,12 @@
 package dev.hardwood.testing;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
 
@@ -20,12 +23,15 @@ import org.apache.parquet.example.data.Group;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import dev.hardwood.OutputFile;
 import dev.hardwood.metadata.CompressionCodec;
+import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.testing.InteropCase.Nullability;
 import dev.hardwood.testing.ParquetJavaReader.Pages;
@@ -68,17 +74,17 @@ class WriterInteropTest {
                 "single-entry dictionary", type, nullability, 1, 200, WriterConfig.defaults()));
     }
 
-    /// The encoding axis: the dictionary in its ordinary multi-entry form, overflowing to a
-    /// mid-chunk `PLAIN` fallback, and disabled outright.
+    /// The encoding axis: the dictionary in its ordinary multi-entry form, declined because every
+    /// value is distinct, and disabled outright.
     static Stream<InteropCase> encodings() {
         return sweep(List.of(
                 new EncodingAxis("multi-entry dictionary", 64, WriterConfig.defaults(), false),
-                new EncodingAxis("dictionary overflowing to PLAIN", FEW_ROWS,
-                        WriterConfig.builder().dictionaryPageLimitBytes(512).build(), true),
+                new EncodingAxis("all-distinct column written PLAIN", FEW_ROWS,
+                        WriterConfig.defaults(), true),
                 new EncodingAxis("dictionary disabled", 64,
                         WriterConfig.builder().enableDictionary(false).build(), false)),
                 (type, axis) -> new InteropCase(axis.name(), type, Nullability.OPTIONAL_SOME_NULL,
-                        axis.distinct(), FEW_ROWS, axis.config(), axis.plainFallback()));
+                        axis.distinct(), FEW_ROWS, axis.config(), axis.plainOnly()));
     }
 
     /// The codec axis, over every codec the writer can produce today. Stage 19 adds the rest and
@@ -189,8 +195,54 @@ class WriterInteropTest {
         ParquetJavaReader.assertParseableCreatedBy(footer);
         assertRowCount(testCase, footer);
         assertStatistics(testCase, footer);
+        assertDistinctCounts(testCase, file);
         assertEncodings(testCase, footer, pages);
         return new Verified(footer, pages);
+    }
+
+    /// A page whose values all resolve to dictionary index 0 declares an index bit width of zero
+    /// while its chunk's dictionary holds several entries — the shape a per-page bit width
+    /// introduces, and one no swept case produces, since a case's values cycle through their
+    /// ordinals from the first row. A zero-bit index stream has shipped unreadable before (#901),
+    /// so it is worth holding this shape to a strict reader too, not only the single-entry
+    /// dictionary whose whole chunk is zero-bit.
+    @Test
+    void pageOfOneRepeatedValueInAMultiEntryDictionary(@TempDir Path dir) throws IOException {
+        int leadingRun = 20_000;
+        int rows = leadingRun + 20_000;
+        int[] values = new int[rows];
+        for (int r = leadingRun; r < rows; r++) {
+            values[r] = 1 + (r % 7);
+        }
+
+        Path file = dir.resolve("leading-run.parquet");
+        FileSchema schema = FileSchema.builder("interop")
+                .addColumn(COLUMN, PhysicalType.INT32, RepetitionType.REQUIRED)
+                .build();
+        // A small page target cuts several pages inside the leading run, so the file carries pages
+        // whose largest index is 0 ahead of pages that need the full width.
+        WriterConfig config = WriterConfig.builder().pageTargetBytes(2048).build();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
+            writer.writeBatch(batch -> batch.ints(COLUMN, values));
+        }
+
+        assertThat(ParquetJavaReader.readDistinctCounts(file))
+                .as("the chunk's dictionary holds more than the repeated value")
+                .containsExactly(8L);
+        // The shape is asserted rather than inferred from the values decoding: a page's declared
+        // width is invisible to a reader that only checks what came back, so a return to a
+        // chunk-wide width would leave every other assertion here green.
+        List<Integer> widths = ParquetJavaReader.readIndexBitWidths(file);
+        assertThat(widths).as("a page inside the leading run declares a zero-bit index stream")
+                .contains(0);
+        assertThat(widths).as("a page past the run declares what its own largest index needs")
+                .contains(3);
+
+        List<Group> read = ParquetJavaReader.readGroups(file);
+        assertThat(read).as("row count").hasSize(rows);
+        for (int r = 0; r < rows; r++) {
+            assertThat(read.get(r).getInteger(COLUMN, 0)).as("row %d", r).isEqualTo(values[r]);
+        }
     }
 
     /// Which of the two write APIs produces the file under test.
@@ -268,34 +320,74 @@ class WriterInteropTest {
         assertThat(max).as("max").isEqualTo(testCase.type().expectedMax(testCase));
     }
 
+    /// `distinct_count` is written for a chunk that knows its cardinality exactly and left out
+    /// otherwise, read here from the footer's own Thrift rather than through parquet-java's
+    /// `Statistics`, which does not surface the field — so a wrong field id or type fails here
+    /// rather than round-tripping cleanly through the writer and reader that agree on it.
+    ///
+    /// A chunk knows the count while it still holds what it counted with, which is any chunk of a
+    /// dictionary-capable type with dictionary encoding enabled, whichever encoding the comparison
+    /// then chose, plus every `BOOLEAN` chunk. The exact value is only asserted for a single-chunk
+    /// file, since a chunk of a multi-row-group file counts its own values rather than the file's.
+    private void assertDistinctCounts(InteropCase testCase, Path file) throws IOException {
+        List<Long> counts = ParquetJavaReader.readDistinctCounts(file);
+        boolean known = testCase.type() == TypeFixture.BOOLEAN
+                || (testCase.config().enableDictionary() && testCase.type().dictionaryCapable());
+        if (!known) {
+            assertThat(counts).as("distinct_count where the chunk cannot state it")
+                    .containsOnlyNulls();
+            return;
+        }
+        assertThat(counts).as("distinct_count where the chunk knows it").doesNotContainNull();
+        if (counts.size() == 1) {
+            assertThat(counts.get(0)).as("distinct_count").isEqualTo(expectedDistinctCount(testCase));
+        }
+    }
+
+    /// How many distinct values the case's present rows carry, counted the way the value
+    /// assertions count them so a type that maps many ordinals onto few values — `BOOLEAN` onto
+    /// two — is expected to report what it actually wrote.
+    private static long expectedDistinctCount(InteropCase testCase) {
+        Set<Object> distinct = new HashSet<>();
+        for (int row = 0; row < testCase.rows(); row++) {
+            if (!testCase.isNull(row)) {
+                Object value = testCase.type().value(testCase.ordinal(row));
+                // A binary fixture hands back byte[], which compares by identity — wrap it so
+                // this counts the values the writer counts rather than the arrays holding them.
+                distinct.add(value instanceof byte[] bytes ? ByteBuffer.wrap(bytes) : value);
+            }
+        }
+        return distinct.size();
+    }
+
     /// The case actually produced the encoding it exists to cover, so a change in the writer's
     /// encoding choice becomes a failure rather than a silent loss of coverage.
     ///
-    /// The discriminating assertion is on the *page* value encodings, not the chunk's `encodings`
-    /// list: that list always contains `PLAIN`, because a dictionary page body is itself `PLAIN`,
-    /// so it cannot tell a dictionary-only chunk from one that overflowed and fell back mid-chunk.
-    /// Each page declares its own encoding, and those separate the two.
+    /// Two things are asserted, because a chunk's encoding is chosen from the values that chunk
+    /// holds. **Within a chunk** the encoding never varies — that is the guarantee the row-group
+    /// wide decision provides, and the discriminating assertion is on the *page* value encodings,
+    /// not the chunk's `encodings` list, which always contains `PLAIN` because a dictionary page
+    /// body is itself `PLAIN`. **Across chunks** the case's intent is pinned on the first chunk,
+    /// which is a full one; a case whose values argue against a dictionary must not produce one
+    /// anywhere, while a case whose values argue for one may still write a short trailing chunk
+    /// `PLAIN`, where too few values are left for a dictionary to pay for itself.
     private void assertEncodings(InteropCase testCase, ParquetMetadata footer, Pages pages) {
-        for (ColumnChunkMetaData chunk : chunks(footer)) {
-            assertThat(chunk.getEncodings()).as("declared chunk encodings")
-                    .matches(e -> e.contains(Encoding.RLE_DICTIONARY) == testCase.expectsDictionary(),
-                            testCase.expectsDictionary() ? "contains RLE_DICTIONARY" : "has no RLE_DICTIONARY");
+        for (Set<Encoding> chunkEncodings : pages.chunkValueEncodings()) {
+            assertThat(chunkEncodings).as("page value encodings within one chunk").hasSize(1);
         }
-        assertThat(pages.valueEncodings()).as("page value encodings")
-                .containsExactlyInAnyOrderElementsOf(expectedPageEncodings(testCase));
-    }
-
-    /// The value encodings the case's data pages must declare. A dictionary-encoded chunk emits
-    /// `RLE_DICTIONARY` pages throughout; one that overflows its dictionary emits `PLAIN` pages
-    /// from the fallback on, so both appear; and a chunk with no dictionary at all — dictionary
-    /// disabled, a `BOOLEAN` column, or one with no present value to intern — is `PLAIN` only.
-    private static List<Encoding> expectedPageEncodings(InteropCase testCase) {
+        Encoding expected = testCase.expectsDictionary() ? Encoding.RLE_DICTIONARY : Encoding.PLAIN;
+        assertThat(pages.chunkValueEncodings().get(0)).as("first chunk's page value encoding")
+                .containsExactly(expected);
         if (!testCase.expectsDictionary()) {
-            return List.of(Encoding.PLAIN);
+            for (ColumnChunkMetaData chunk : chunks(footer)) {
+                assertThat(chunk.getEncodings()).as("declared chunk encodings")
+                        .doesNotContain(Encoding.RLE_DICTIONARY);
+            }
         }
-        return testCase.expectsPlainFallback()
-                ? List.of(Encoding.RLE_DICTIONARY, Encoding.PLAIN)
-                : List.of(Encoding.RLE_DICTIONARY);
+        else {
+            assertThat(chunks(footer).get(0).getEncodings()).as("first chunk's declared encodings")
+                    .contains(Encoding.RLE_DICTIONARY);
+        }
     }
 
     private static List<ColumnChunkMetaData> chunks(ParquetMetadata footer) {
@@ -326,7 +418,7 @@ class WriterInteropTest {
                 .flatMap(type -> axis.stream().map(value -> factory.apply(type, value)));
     }
 
-    private record EncodingAxis(String name, int distinct, WriterConfig config, boolean plainFallback) {
+    private record EncodingAxis(String name, int distinct, WriterConfig config, boolean plainOnly) {
     }
 
     private record LayoutAxis(String name, int rows, WriterConfig config, int rowGroups, int dataPages,

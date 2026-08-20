@@ -120,10 +120,9 @@ value writer.
 
 ## Dictionary encoding
 
-Dictionary encoding reuses the stage 9 column-chunk layout verbatim — a `PLAIN` dictionary
-page ahead of `RLE_DICTIONARY` index pages, per-page encoding, and mid-chunk plain fallback
-when the dictionary outgrows `dictionaryPageLimitBytes`. Only the interning table becomes
-per-type:
+Dictionary encoding reuses the column-chunk layout verbatim — a `PLAIN` dictionary page ahead
+of `RLE_DICTIONARY` index pages, with the chunk encoded one way throughout and the choice made
+at flush from its exact cardinality (stage 18). Only the interning table becomes per-type:
 
 - **`INT64` / `FLOAT` / `DOUBLE`** — the open-addressed value→index table keys on the widened
   value (`float` / `double` via their raw bit patterns so `-0.0` and `NaN` intern by identity);
@@ -206,10 +205,10 @@ as `Integer.SIZE`. This holds only while every value is four bytes. Two changes 
   are appended — and the writer flushes once that crosses `rowGroupTargetBytes`. The estimate is
   exact for a non-dictionary column and runs high for a dictionary-encoded one, whose buffered
   index stream is smaller than the summed `PLAIN` widths, so dictionary row groups flush somewhat
-  below the target. Sizing a row group from its true encoded bytes — measured once the whole group
-  is buffered — is stage 18 (row-group-global dictionary selection), where the per-chunk
-  encoding choice is already made from the fully buffered group. The proxy is retained only to
-  bound the page-level entry count.
+  below the target. Sizing a row group from its produced bytes is stage 26 (#980); stage 18 leaves
+  the trigger counting uncompressed values deliberately, since that is what bounds the writer's
+  memory, and makes the per-chunk encoding choice from the fully buffered group without changing
+  when the group is cut. The proxy is retained only to bound the page-level entry count.
 
 ## Component architecture
 

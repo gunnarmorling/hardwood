@@ -319,9 +319,9 @@ class WriterDifferentialTest {
     }
 
     @Test
-    void duckDbReadsDictionaryFallbackColumn(@TempDir Path dir) throws Exception {
-        // High cardinality with a tiny dictionary limit forces a mixed chunk: a dictionary
-        // prefix then PLAIN pages. DuckDB must read both page encodings in one column chunk.
+    void duckDbReadsPlainChunkOfHighCardinalityColumn(@TempDir Path dir) throws Exception {
+        // Every value distinct, so the chunk is written PLAIN with no dictionary page. DuckDB
+        // must read a column chunk that carries no dictionary at all.
         int n = 5_000;
         int[] v = new int[n];
         for (int i = 0; i < n; i++) {
@@ -331,7 +331,7 @@ class WriterDifferentialTest {
         FileSchema schema = FileSchema.builder("schema")
                 .addColumn("v", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .build();
-        WriterConfig config = WriterConfig.builder().dictionaryPageLimitBytes(64).build();
+        WriterConfig config = WriterConfig.defaults();
         Path file = dir.resolve("fallback.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
             writer.writeBatch(batch -> batch.ints(0, v));

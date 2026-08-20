@@ -31,6 +31,27 @@ public final class LevelEncoder {
         return encoder.toByteArray();
     }
 
+    /// Encodes `count` levels starting at `offset` from a byte-backed store, using the bit width
+    /// for `maxLevel`. A level is bounded by the schema's nesting depth, so the writer retains a
+    /// row group's levels one unsigned byte per entry rather than one `int`.
+    ///
+    /// @param levels the level values, each read unsigned
+    /// @param offset index of the first level to encode
+    /// @param count number of levels to encode
+    /// @param maxLevel the column's maximum level, which fixes the bit width
+    /// @return the RLE/bit-packed hybrid bytes, without the 4-byte length prefix
+    public static byte[] encode(byte[] levels, int offset, int count, int maxLevel) {
+        RleBitPackingHybridEncoder encoder = new RleBitPackingHybridEncoder(bitWidth(maxLevel));
+        for (int i = 0; i < count; i++) {
+            encoder.writeInt(levels[offset + i] & 0xFF);
+        }
+        return encoder.toByteArray();
+    }
+
+    /// The largest level a byte-backed level store can hold, and so the deepest nesting the
+    /// writer accepts.
+    public static final int MAX_STORABLE_LEVEL = 0xFF;
+
     /// Minimum number of bits needed to represent levels in `[0, maxLevel]`, matching the
     /// reader's `getBitWidth`.
     public static int bitWidth(int maxLevel) {

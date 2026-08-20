@@ -11,7 +11,8 @@ import dev.hardwood.metadata.Statistics;
 
 /// Writer for the Thrift Statistics struct, the inverse of [StatisticsReader].
 ///
-/// Emits the null count (field 3) and the preferred `min_value` / `max_value`
+/// Emits the null count (field 3), the distinct count (field 4) where it is known exactly,
+/// and the preferred `min_value` / `max_value`
 /// (fields 6 / 5) — the sort-order-correct bounds modern readers prefer over the
 /// deprecated `min` / `max` (fields 2 / 1), which are not written. A `min` / `max`
 /// that is absent (a fully null column) is omitted; the null count is always written.
@@ -30,6 +31,13 @@ public class StatisticsWriter {
             if (statistics.nullCount() != null) {
                 writer.writeFieldBegin(3, ThriftCompactConstants.FieldType.I64);
                 writer.writeI64(statistics.nullCount());
+            }
+
+            // 4: distinct_count, written only where the writer knows it exactly — the spec asks
+            // for the count of distinct values occurring, not an estimate of it.
+            if (statistics.distinctCount() != null) {
+                writer.writeFieldBegin(4, ThriftCompactConstants.FieldType.I64);
+                writer.writeI64(statistics.distinctCount());
             }
 
             // 5: max_value (preferred over deprecated field 1)

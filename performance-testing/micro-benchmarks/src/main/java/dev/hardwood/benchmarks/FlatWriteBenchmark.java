@@ -81,13 +81,10 @@ import dev.hardwood.writer.WriterConfig;
 ///   `ByteArrayOutputStream`; `ByteBufferOutputFile` takes a [ByteBuffer] and appends the
 ///   array behind it, so neither side copies the payload twice on the way to the buffer.
 ///
-/// Hardwood's files come out the larger ones on this fixture: it builds a dictionary
-/// optimistically per column chunk and falls back to `PLAIN` mid-chunk, so an all-distinct
-/// column pays for a dictionary page it barely uses. That is the gap the writer's remaining
-/// dictionary work closes, and this benchmark is where it is measured.
-///
 /// Everything a caller can match is matched: page target, row-group target, codec, dictionary
-/// encoding and its page limit, writer version, and page checksums. The row-group target is an
+/// encoding, writer version, and page checksums. The dictionary page limit is parquet-java's
+/// alone — Hardwood chooses a chunk's encoding by comparing sizes rather than by consulting a
+/// limit, so there is nothing to match it to. The row-group target is an
 /// explicit 16 MiB on both sides so a million rows produces a handful of row groups and the
 /// flush path is exercised, rather than a single group at the 128 MiB default. **The size of
 /// each produced file is reported from the trial setup**, because a contender that is faster
@@ -128,7 +125,10 @@ public class FlatWriteBenchmark {
 
     private static final int PAGE_TARGET_BYTES = 1 << 20;
     private static final long ROW_GROUP_TARGET_BYTES = 16L << 20;
-    private static final int DICTIONARY_PAGE_LIMIT_BYTES = 1 << 20;
+    /// parquet-java's dictionary page limit. Hardwood has no counterpart: it decides a chunk's
+    /// encoding by comparing sizes rather than by consulting a limit, so this is one setting the
+    /// two sides cannot match.
+    private static final int PARQUET_JAVA_DICTIONARY_PAGE_LIMIT_BYTES = 1 << 20;
 
     private static final String COLUMNAR_FILE = "hardwood-columnar.parquet";
     private static final String ROW_FILE = "hardwood-row.parquet";
@@ -175,7 +175,6 @@ public class FlatWriteBenchmark {
         writerConfig = WriterConfig.builder()
                 .pageTargetBytes(PAGE_TARGET_BYTES)
                 .rowGroupTargetBytes(ROW_GROUP_TARGET_BYTES)
-                .dictionaryPageLimitBytes(DICTIONARY_PAGE_LIMIT_BYTES)
                 .enableDictionary(true)
                 .codec(CompressionCodec.valueOf(codec))
                 .build();
@@ -305,7 +304,7 @@ public class FlatWriteBenchmark {
                 .withPageRowCountLimit(Integer.MAX_VALUE)
                 .withRowGroupSize(ROW_GROUP_TARGET_BYTES)
                 .withDictionaryEncoding(true)
-                .withDictionaryPageSize(DICTIONARY_PAGE_LIMIT_BYTES)
+                .withDictionaryPageSize(PARQUET_JAVA_DICTIONARY_PAGE_LIMIT_BYTES)
                 .withWriterVersion(WriterVersion.PARQUET_1_0)
                 .withPageWriteChecksumEnabled(true)
                 .withValidation(false)

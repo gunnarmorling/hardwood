@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.writer;
 
+import java.util.Arrays;
+
 import dev.hardwood.internal.encoding.LongDictionaryEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
 import dev.hardwood.metadata.Statistics;
@@ -17,10 +19,11 @@ import dev.hardwood.metadata.Statistics;
 /// bits.
 final class DoubleValueEncoder extends ValueEncoder {
 
-    private final double[] plain;
+    private double[] plain;      // this chunk's stored values, grown as the row group fills
+    private int plainCount;
     private final double[] window;
     private final LongDictionaryEncoder dictionary; // null when dictionary encoding is disabled
-    private final DoubleStatisticsCollector statistics = new DoubleStatisticsCollector();
+    private DoubleStatisticsCollector statistics = new DoubleStatisticsCollector();
 
     private DoubleColumnSource source;
     private int size;
@@ -28,7 +31,7 @@ final class DoubleValueEncoder extends ValueEncoder {
     private int windowLength;
 
     DoubleValueEncoder(int pageValues, boolean enableDictionary) {
-        this.plain = new double[pageValues];
+        this.plain = new double[Math.max(1, pageValues)];
         this.window = new double[Math.max(1, pageValues)];
         this.dictionary = enableDictionary ? new LongDictionaryEncoder() : null;
     }
@@ -56,16 +59,10 @@ final class DoubleValueEncoder extends ValueEncoder {
     }
 
     @Override
-    int intern(int valueIndex, long dictionaryLimitBytes) {
+    int intern(int valueIndex) {
         long bits = Double.doubleToRawLongBits(valueAt(valueIndex));
         int index = dictionary.indexOf(bits);
-        if (index >= 0) {
-            return index;
-        }
-        if (dictionary.byteSize() + Long.BYTES > dictionaryLimitBytes) {
-            return DICTIONARY_OVERFLOW;
-        }
-        return dictionary.add(bits);
+        return index >= 0 ? index : dictionary.add(bits);
     }
 
     @Override
@@ -74,18 +71,54 @@ final class DoubleValueEncoder extends ValueEncoder {
     }
 
     @Override
+    long exactDistinctCount() {
+        return dictionary != null ? dictionary.size() : UNKNOWN_DISTINCT_COUNT;
+    }
+
+    @Override
     byte[] encodeDictionaryBody() {
         return PlainEncoder.encodeLongs(dictionary.values(), 0, dictionary.size());
     }
 
     @Override
-    void appendPlain(int slot, int valueIndex) {
-        plain[slot] = valueAt(valueIndex);
+    void startChunk() {
+        statistics = new DoubleStatisticsCollector();
+        if (dictionary != null) {
+            dictionary.clear();
+        }
+        plainCount = 0;
     }
 
     @Override
-    byte[] encodePlain(int count) {
-        return PlainEncoder.encodeDoubles(plain, 0, count);
+    void store(int valueIndex) {
+        append(valueAt(valueIndex));
+    }
+
+    @Override
+    void storeDictionaryValue(int dictionaryIndex) {
+        append(Double.longBitsToDouble(dictionary.values()[dictionaryIndex]));
+    }
+
+    @Override
+    long dictionaryPlainBytes() {
+        return (long) dictionary.size() * Long.BYTES;
+    }
+
+    @Override
+    void dropDictionary() {
+        dictionary.clear();
+    }
+
+    private void append(double value) {
+        if (plainCount == plain.length) {
+            plain = Arrays.copyOf(plain, grownCapacity(plain.length));
+        }
+        plain[plainCount++] = value;
+    }
+
+    @Override
+    byte[] encodePlain(int from, int count) {
+        return PlainEncoder.encodeDoubles(plain, from, count);
     }
 
     @Override

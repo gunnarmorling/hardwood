@@ -61,6 +61,18 @@ public final class ParquetFileWriter implements Closeable {
     /// append granularity depends on it; the row group flushes on actual buffered bytes.
     private static final int ASSUMED_BYTE_ARRAY_LENGTH = 16;
 
+    /// Fraction of the row-group target one column's dictionary may occupy while the writer
+    /// decides how to encode that column. The bound is on memory, not on the encoding choice, so
+    /// it is derived from the target that already states how much the writer may hold rather than
+    /// being a knob of its own. Half is deliberately generous: a dictionary larger than half the
+    /// data it describes cannot beat writing the values `PLAIN` by more than a few percent, so the
+    /// cap bounds the pathological case without ever overruling a decision worth making.
+    private static final int DICTIONARY_ANALYSIS_SHARE = 2;
+
+    /// Floor under the derived cap, so a small row-group target does not reduce every chunk to
+    /// `PLAIN` by starving the analysis.
+    private static final long MIN_DICTIONARY_ANALYSIS_BYTES = 1 << 20;
+
     private final OutputFile out;
     private final FileSchema schema;
     private final WriterConfig config;
@@ -81,7 +93,7 @@ public final class ParquetFileWriter implements Closeable {
     private long cumulativeBits;
     private long cumulativeRecords;
 
-    private RowGroupBuffer current;
+    private final RowGroupBuffer current;
     private long numRows;
     private boolean closed;
 
@@ -102,12 +114,15 @@ public final class ParquetFileWriter implements Closeable {
         this.shredder = new RecordShredder(schema);
         this.compressor = compressor;
         this.ranges = LogicalTypeValueRange.forSchema(schema);
-        this.current = newRowGroupBuffer();
+        // One buffer serves every row group: flushing it resets it in place, so the writer's
+        // largest allocation is made once per file rather than once per row group.
+        this.current = new RowGroupBuffer(schema, pageValues, config.enableDictionary(),
+                dictionaryAnalysisCapBytes(config), config.statisticsTruncationLength(), compressor, config.codec());
     }
 
-    private RowGroupBuffer newRowGroupBuffer() {
-        return new RowGroupBuffer(schema, pageValues, config.enableDictionary(), config.dictionaryPageLimitBytes(),
-                config.statisticsTruncationLength(), compressor, config.codec());
+    /// How large one column's dictionary may grow while the writer decides that column's encoding.
+    private static long dictionaryAnalysisCapBytes(WriterConfig config) {
+        return Math.max(config.rowGroupTargetBytes() / DICTIONARY_ANALYSIS_SHARE, MIN_DICTIONARY_ANALYSIS_BYTES);
     }
 
     /// Opens a writer with the default [WriterConfig].
@@ -283,7 +298,7 @@ public final class ParquetFileWriter implements Closeable {
         RowGroup rowGroup = current.flushTo(out);
         rowGroups.add(rowGroup);
         numRows += rowGroup.numRows();
-        current = newRowGroupBuffer();
+        current.reset();
     }
 
     /// One `ColumnOrder` per leaf column, in schema order. The format requires the list wherever

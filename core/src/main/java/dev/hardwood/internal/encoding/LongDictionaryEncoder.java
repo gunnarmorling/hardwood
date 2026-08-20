@@ -61,6 +61,14 @@ public final class LongDictionaryEncoder {
         return index;
     }
 
+    /// Empties the dictionary for a new column chunk, keeping the hash table and value array
+    /// it has grown to. Only the slots are cleared: entries past the new size are unreachable
+    /// until they are overwritten, since every lookup goes through the table.
+    public void clear() {
+        Arrays.fill(slotIndex, EMPTY);
+        size = 0;
+    }
+
     /// The number of distinct values assigned so far.
     public int size() {
         return size;
