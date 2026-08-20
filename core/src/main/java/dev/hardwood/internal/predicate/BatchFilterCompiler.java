@@ -123,7 +123,7 @@ public final class BatchFilterCompiler {
     }
 
     private static Result compileLeaf(ResolvedPredicate leaf, FileSchema schema, IntUnaryOperator projection) {
-        int fileIdx = leafColumnIndex(leaf);
+        int fileIdx = ResolvedPredicate.leafColumnIndex(leaf);
         if (fileIdx == -1 || !isTopLevel(schema, fileIdx) || !isSupported(leaf)) {
             return null;
         }
@@ -231,22 +231,6 @@ public final class BatchFilterCompiler {
                 : new MergePlan.And(planChildren);
         out.columns = touchedColumns;
         return out;
-    }
-
-    private static int leafColumnIndex(ResolvedPredicate leaf) {
-        return switch (leaf) {
-            case ResolvedPredicate.LongPredicate p -> p.columnIndex();
-            case ResolvedPredicate.DoublePredicate p -> p.columnIndex();
-            case ResolvedPredicate.IntPredicate p -> p.columnIndex();
-            case ResolvedPredicate.FloatPredicate p -> p.columnIndex();
-            case ResolvedPredicate.BooleanPredicate p -> p.columnIndex();
-            case ResolvedPredicate.BinaryPredicate p -> p.columnIndex();
-            case ResolvedPredicate.IntInPredicate p -> p.columnIndex();
-            case ResolvedPredicate.LongInPredicate p -> p.columnIndex();
-            case ResolvedPredicate.IsNullPredicate p -> p.columnIndex();
-            case ResolvedPredicate.IsNotNullPredicate p -> p.columnIndex();
-            default -> -1;
-        };
     }
 
     private static boolean isTopLevel(FileSchema schema, int columnIndex) {

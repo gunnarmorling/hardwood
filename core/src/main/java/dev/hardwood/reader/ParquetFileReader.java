@@ -575,7 +575,8 @@ public class ParquetFileReader implements AutoCloseable {
         return ColumnReader.createFromIterator(
                 column, schema, iterator, context, fixedListFastPathEnabled, 0, iterator,
                 resolveBatchSize(batchSize, projected, rowGroups),
-                NestedColumnWorker.IndexMode.REAL_VIEW, false);
+                NestedColumnWorker.IndexMode.REAL_VIEW, false
+        );
     }
 
     ColumnReaders buildColumnReaders(ColumnProjection projection, FilterPredicate filter) {
