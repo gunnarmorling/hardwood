@@ -25,6 +25,7 @@ behavior of each control — predicate pushdown, projection, row limits, splits,
 | Physical types (comparison) | `int`, `long`, `float`, `double`, `boolean`, `String` |
 | Logical types (comparison) | `LocalDate`, `Instant`, `LocalTime`, `BigDecimal`, `UUID` |
 | Combinators | `and`, `or`, `not` (`and` / `or` accept varargs for three or more conditions) |
+| Column form | Leaf columns only, by name or dot-separated path (`address.city`); group, `LIST`, and `MAP` names and leaves below a repeated group are rejected |
 
 All predicates, including those wrapped in `not`, are pushed down to the statistics level for
 row-group and page skipping.

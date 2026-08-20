@@ -325,6 +325,41 @@ class FilterPredicateResolverTest {
                 .hasMessageContaining("group");
     }
 
+    @Test
+    void resolveGroupWithRepeatedChildIsReportedAsGroup() {
+        // `address` is OPTIONAL and only its child is REPEATED, so the rejection must name the
+        // group rather than claim the column itself is repeated.
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement address = new SchemaElement("address", null, null, RepetitionType.OPTIONAL, 1,
+                null, null, null, null, null);
+        SchemaElement tags = new SchemaElement("tags", PhysicalType.INT32, null, RepetitionType.REPEATED,
+                null, null, null, null, null, null);
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, address, tags));
+
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("address"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("is a group")
+                .hasMessageNotContaining("repeated");
+    }
+
+    @Test
+    void resolveRepeatedGroupIsReportedAsRepeated() {
+        // A REPEATED group carries no LIST or MAP annotation, so it is caught by its own
+        // repetition level rather than by the annotation checks.
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement addresses = new SchemaElement("addresses", null, null, RepetitionType.REPEATED, 1,
+                null, null, null, null, null);
+        SchemaElement city = new SchemaElement("city", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.OPTIONAL, null, null, null, null, null, null);
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, addresses, city));
+
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("addresses"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("repeated");
+    }
+
     // ==================== Type validation ====================
 
     @Test

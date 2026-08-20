@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
 
+import dev.hardwood.internal.schema.SchemaPathResolver;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
@@ -239,64 +240,45 @@ public class FilterPredicateResolver {
     // ==================== Column resolution ====================
 
     /// Resolves a column name to its [ColumnSchema].
-    /// Group fields are rejected because filter predicates currently require leaf columns.
+    ///
+    /// Only leaf columns can carry a predicate. A name denoting a group — a struct, a `LIST`, or a
+    /// `MAP` — is rejected rather than resolved to one of the group's leaves, which would answer a
+    /// different question than the one that was asked.
     ///
     /// @return the resolved column schema
-    /// @throws IllegalArgumentException if the column is not found or does not resolve to a supported leaf column
+    /// @throws IllegalArgumentException if the column is not found, or names a group rather than a
+    ///         leaf column
     private static ColumnSchema resolveColumn(String columnName, FileSchema schema) {
         try {
             return schema.getColumn(columnName);
         }
         catch (IllegalArgumentException e) {
-            SchemaNode node = resolveSchemaNode(columnName, schema);
+            SchemaNode node = SchemaPathResolver.resolve(schema, columnName).node();
             if (node instanceof SchemaNode.GroupNode group) {
                 if (group.isList() || group.isMap() || group.maxRepetitionLevel() > 0) {
-                    throw new IllegalArgumentException(
-                            "Filter predicates do not support repeated columns. "
-                                    + "Column '" + columnName + "' is repeated.");
+                    throw repeatedColumnRejected(columnName);
                 }
-                else {
-                    throw new IllegalArgumentException(
-                            "Filter predicates require a leaf column. "
-                                    + "Column '" + columnName + "' is a group.");
-                }
+                throw new IllegalArgumentException(
+                        "Filter predicates require a leaf column. "
+                                + "Column '" + columnName + "' is a group.");
             }
             throw new IllegalArgumentException(
                     "Column '" + columnName + "' not found in schema", e);
         }
     }
 
-    private static SchemaNode resolveSchemaNode(String fieldPath, FileSchema schema) {
-        SchemaNode current = schema.getRootNode();
-        String[] parts = fieldPath.split("\\.");
-
-        for (String part : parts) {
-            if (!(current instanceof SchemaNode.GroupNode group)) {
-                return null;
-            }
-            SchemaNode next = null;
-            for (SchemaNode child : group.children()) {
-                if (child.name().equals(part)) {
-                    next = child;
-                    break;
-                }
-            }
-            if (next == null) {
-                return null;
-            }
-            current = next;
-        }
-        return current;
-    }
-
     // ==================== Type validation ====================
 
     private static void rejectRepeated(String columnName, ColumnSchema columnSchema) {
         if (columnSchema.maxRepetitionLevel() > 0) {
-            throw new IllegalArgumentException(
-                    "Filter predicates do not support repeated columns. "
-                    + "Column '" + columnName + "' is repeated.");
+            throw repeatedColumnRejected(columnName);
         }
+    }
+
+    private static IllegalArgumentException repeatedColumnRejected(String columnName) {
+        return new IllegalArgumentException(
+                "Filter predicates do not support repeated columns. "
+                        + "Column '" + columnName + "' is repeated.");
     }
 
     private static void validateType(String columnName, PhysicalType expectedType,

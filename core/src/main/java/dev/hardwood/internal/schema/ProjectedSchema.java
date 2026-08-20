@@ -199,49 +199,18 @@ public final class ProjectedSchema {
                                             List<Integer> includedOriginalIndices,
                                             List<Integer> includedFieldIndices,
                                             int[] originalToProjected) {
-        String[] parts = name.split("\\.");
-
-        // Find the top-level field
-        List<SchemaNode> children = schema.getRootNode().children();
-        SchemaNode current = null;
-        int topLevelFieldIndex = -1;
-
-        for (int i = 0; i < children.size(); i++) {
-            if (children.get(i).name().equals(parts[0])) {
-                current = children.get(i);
-                topLevelFieldIndex = i;
-                break;
-            }
+        SchemaPathResolver.Resolution resolution = SchemaPathResolver.resolve(schema, name);
+        if (resolution.blockedByPrimitive()) {
+            throw new IllegalArgumentException("Cannot navigate into primitive column: " + name);
         }
-
-        if (current == null) {
+        if (resolution.node() == null) {
             throw new IllegalArgumentException("Column not found: " + name);
         }
 
-        includedFieldIndices.add(topLevelFieldIndex);
-
-        // Navigate through the path
-        for (int p = 1; p < parts.length; p++) {
-            if (!(current instanceof SchemaNode.GroupNode group)) {
-                throw new IllegalArgumentException("Cannot navigate into primitive column: " + name);
-            }
-
-            SchemaNode found = null;
-            for (SchemaNode child : group.children()) {
-                if (child.name().equals(parts[p])) {
-                    found = child;
-                    break;
-                }
-            }
-
-            if (found == null) {
-                throw new IllegalArgumentException("Column not found: " + name);
-            }
-            current = found;
-        }
+        includedFieldIndices.add(resolution.topLevelChildIndex());
 
         // Collect all columns under this node
-        collectColumnsFromNode(current, includedOriginalIndices, originalToProjected);
+        collectColumnsFromNode(resolution.node(), includedOriginalIndices, originalToProjected);
     }
 
     /// Recursively collects all column indices under a schema node.

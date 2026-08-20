@@ -133,6 +133,11 @@ Filters work with all reader types: `RowReader`, `ColumnReader`, `AvroRowReader`
 
 ### Limitations
 
+- **Predicates apply to leaf columns only
+  ([#977](https://github.com/hardwood-hq/hardwood/issues/977)).** A name that denotes a group — a
+  struct, a `LIST`, or a `MAP` — is rejected with `IllegalArgumentException` at reader creation, as
+  is any leaf below a repeated group. Filter on a leaf instead: `isNull("address.city")` rather
+  than `isNull("address")`. Column projection accepts a group name; predicates do not.
 - **Record-level filtering only applies to flat schemas
   ([#222](https://github.com/hardwood-hq/hardwood/issues/222)).** When the schema contains
   nested columns (structs, lists, or maps), record-level filtering is not active. Row-group
