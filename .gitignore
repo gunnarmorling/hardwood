@@ -64,6 +64,11 @@ hardwood-cli-early-access-*/
 .claude/settings.local.json
 __pycache__/
 
+# Local agent tooling (Serena MCP, Codex, caveman agent skills)
+.serena/
+.agents/
+.codex/
+
 # Local scratch / non-source workspace
 _tmp/
 _reviews/

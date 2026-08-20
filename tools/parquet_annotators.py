@@ -35,6 +35,10 @@ Legacy-only fixture helpers (set `converted_type` and clear `logicalType`):
 - `annotate_map_as_legacy_key_value` — for MAP groups (MAP_KEY_VALUE on the
   inner group, no annotation on the outer group).
 
+File-level metadata helpers:
+- `remove_key_value_metadata_entry` — drop one named entry from the file-level
+  `key_value_metadata` list, e.g. the `ARROW:schema` entry PyArrow always adds.
+
 Only the subset of parquet.thrift that PyArrow emits, plus the LogicalType
 union, is modelled in the embedded IDL.
 """
@@ -253,6 +257,27 @@ def _write_parquet_footer(path: str, data_before_footer: bytes, file_metadata) -
         f.write(new_footer)
         f.write(struct.pack('<I', len(new_footer)))
         f.write(b'PAR1')
+
+
+def remove_key_value_metadata_entry(path: str, key: str) -> None:
+    """Rewrite `path` so its file-level `key_value_metadata` no longer contains `key`.
+
+    PyArrow always embeds an `ARROW:schema` entry alongside any custom metadata set via
+    `Schema.with_metadata`, and `write_table(..., store_schema=False)` suppresses the
+    *entire* `key_value_metadata` list rather than just that one entry — there is no
+    writer option to drop it selectively. This trims a single named entry after the
+    fact, so a fixture's key-value metadata can be limited to exactly the entries a
+    test cares about.
+    """
+    data_before_footer, file_metadata = _read_parquet_footer(path)
+
+    kv = file_metadata.key_value_metadata or []
+    remaining = [entry for entry in kv if entry.key != key]
+    if len(remaining) == len(kv):
+        raise ValueError(f"{path} has no key-value metadata entry named '{key}'")
+    file_metadata.key_value_metadata = remaining
+
+    _write_parquet_footer(path, data_before_footer, file_metadata)
 
 
 def corrupt_data_page_offset_negative(path: str) -> None:

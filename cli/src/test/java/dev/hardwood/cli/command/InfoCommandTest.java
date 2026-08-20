@@ -23,6 +23,11 @@ class InfoCommandTest implements InfoCommandContract {
         return "nonexistent.parquet";
     }
 
+    @Override
+    public String kvMetadataFile() {
+        return getClass().getResource("/cli_info_kv_metadata_test.parquet").getPath();
+    }
+
     @Test
     void rejectsRemoteUri() {
         Cli.Result result = Cli.launch("info", "-f", "gs://bucket/data.parquet");

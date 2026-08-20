@@ -1899,6 +1899,61 @@ print("\nGenerated kv_metadata_test.parquet:")
 print("  - Custom key-value metadata: app.version=1.2.3, writer.tool=hardwood-test, empty.value=''")
 print("  - Also contains ARROW:schema metadata from pyarrow")
 
+# ===== CLI `info` command key-value metadata test file =====
+# Mirrors what real files carry in practice — Arrow's own embedded schema plus
+# the row-metadata JSON Spark and pandas write — alongside two synthetic edge
+# cases (a value short enough to print in full, and an empty one) that real
+# writers don't reliably produce on demand.
+
+cli_info_kv_schema = pa.schema([
+    ('id', pa.int64(), False),
+    ('name', pa.string(), True)
+])
+
+cli_info_kv_table = pa.table({
+    'id': [1, 2, 3],
+    'name': ['alice', 'bob', 'charlie']
+}, schema=cli_info_kv_schema)
+
+# JSON is minified (no spaces) so the truncation cutoff below is easy to compute:
+# both are well past MAX_VALUE_WIDTH (60 chars) in InfoCommand.
+cli_info_kv_pandas_metadata = (
+    b'{"index_columns":["__index_level_0__"],"column_indexes":[{"name":null,'
+    b'"field_name":null,"pandas_type":"unicode","numpy_type":"object","metadata":'
+    b'{"encoding":"UTF-8"}}],"columns":[{"name":"order_id","field_name":"order_id",'
+    b'"pandas_type":"int64","numpy_type":"int64","metadata":null},{"name":"customer",'
+    b'"field_name":"customer","pandas_type":"unicode","numpy_type":"object","metadata":'
+    b'null}],"creator":{"library":"pyarrow","version":"24.0.0"},"pandas_version":"2.2.0"}'
+)
+cli_info_kv_spark_metadata = (
+    b'{"type":"struct","fields":[{"name":"order_id","type":"long","nullable":false,'
+    b'"metadata":{}},{"name":"customer","type":"string","nullable":true,"metadata":{}},'
+    b'{"name":"amount","type":"double","nullable":true,"metadata":{}}]}'
+)
+
+cli_info_kv_metadata = {
+    b'short.key': b'1.2.3',
+    b'empty.key': b'',
+    b'pandas': cli_info_kv_pandas_metadata,
+    b'org.apache.spark.sql.parquet.row.metadata': cli_info_kv_spark_metadata,
+}
+cli_info_kv_schema_with_meta = cli_info_kv_schema.with_metadata(cli_info_kv_metadata)
+cli_info_kv_table = cli_info_kv_table.cast(cli_info_kv_schema_with_meta)
+
+cli_info_kv_path = 'core/src/test/resources/cli_info_kv_metadata_test.parquet'
+pq.write_table(cli_info_kv_table, cli_info_kv_path,
+               use_dictionary=False,
+               compression=None,
+               data_page_version='1.0')
+# PyArrow appends its own ARROW:schema entry alongside the 4 custom ones above,
+# for 5 total — left in place (rather than stripped via remove_key_value_metadata_entry)
+# since it's exactly the kind of entry `info` needs to show a realistic reader.
+
+print("\nGenerated cli_info_kv_metadata_test.parquet:")
+print("  - short.key=1.2.3 (no truncation), empty.key='' (0 bytes)")
+print("  - pandas / org.apache.spark.sql.parquet.row.metadata: realistic JSON (truncated)")
+print("  - plus PyArrow's own ARROW:schema entry")
+
 # ===== Column-level key-value metadata test file =====
 # pyarrow doesn't write Thrift-level ColumnMetaData key_value_metadata (field 8),
 # so we generate a base file and patch the Thrift footer manually.

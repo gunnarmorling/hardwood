@@ -8,14 +8,18 @@
 package dev.hardwood.cli.command;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import org.aesh.command.Command;
 import org.aesh.command.CommandDefinition;
 import org.aesh.command.CommandResult;
 import org.aesh.command.invocation.CommandInvocation;
 import org.aesh.command.option.Mixin;
+import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.Sizes;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.FileMetaData;
@@ -25,8 +29,17 @@ import dev.hardwood.reader.ParquetFileReader;
 @CommandDefinition(name = "info", description = "Display high-level file information.", generateHelp = true)
 public class InfoCommand implements Command<CommandInvocation> {
 
+    /// Values longer than this are cut short with a trailing `…` in the key/value
+    /// metadata section — these routinely carry kilobytes of embedded JSON or a
+    /// base64-encoded Arrow schema, which would otherwise bury the rest of the
+    /// command's output.
+    private static final int MAX_VALUE_WIDTH = 60;
+
     @Mixin
     FileMixin fileMixin;
+
+    @Option(name = "kv-key", description = "Print only the full, untruncated value of this key-value metadata entry.")
+    String kvKey;
 
     @Override
     public CommandResult execute(CommandInvocation ci) {
@@ -37,28 +50,85 @@ public class InfoCommand implements Command<CommandInvocation> {
 
         try (ParquetFileReader reader = ParquetFileReader.open(inputFile)) {
             FileMetaData metadata = reader.getFileMetaData();
-
-            long totalCompressed = 0;
-            long totalUncompressed = 0;
-            for (RowGroup rg : metadata.rowGroups()) {
-                for (ColumnChunk cc : rg.columns()) {
-                    totalCompressed += cc.metaData().totalCompressedSize();
-                    totalUncompressed += cc.metaData().totalUncompressedSize();
-                }
-            }
-
-            System.out.println("Format Version:    " + metadata.version());
-            System.out.println("Created By:        " + (metadata.createdBy() != null ? metadata.createdBy() : "unknown"));
-            System.out.println("Row Groups:        " + metadata.rowGroups().size());
-            System.out.println("Total Rows:        " + metadata.numRows());
-            System.out.println("Uncompressed Size: " + Sizes.format(totalUncompressed));
-            System.out.println("Compressed Size:   " + Sizes.format(totalCompressed));
+            return kvKey != null ? printSingleKeyValue(metadata, kvKey) : printSummary(metadata);
         }
         catch (IOException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }
+    }
 
+    private static CommandResult printSummary(FileMetaData metadata) {
+        long totalCompressed = 0;
+        long totalUncompressed = 0;
+        for (RowGroup rg : metadata.rowGroups()) {
+            for (ColumnChunk cc : rg.columns()) {
+                totalCompressed += cc.metaData().totalCompressedSize();
+                totalUncompressed += cc.metaData().totalUncompressedSize();
+            }
+        }
+
+        System.out.println("Format Version:    " + metadata.version());
+        System.out.println("Created By:        " + (metadata.createdBy() != null ? metadata.createdBy() : "unknown"));
+        System.out.println("Row Groups:        " + metadata.rowGroups().size());
+        System.out.println("Total Rows:        " + metadata.numRows());
+        System.out.println("Uncompressed Size: " + Sizes.format(totalUncompressed));
+        System.out.println("Compressed Size:   " + Sizes.format(totalCompressed));
+
+        Map<String, String> keyValueMetadata = metadata.keyValueMetadata();
+        if (!keyValueMetadata.isEmpty()) {
+            System.out.println();
+            System.out.println("Key/Value Metadata (" + keyValueMetadata.size() + "):");
+            printKeyValueMetadata(keyValueMetadata);
+        }
         return CommandResult.SUCCESS;
+    }
+
+    /// Handles `--kv-key`: prints exactly the named entry's value, untruncated, with
+    /// no summary block around it, so the output can be piped straight into another
+    /// tool (e.g. `hardwood info -f x.parquet --kv-key ARROW:schema | base64 -d`).
+    private static CommandResult printSingleKeyValue(FileMetaData metadata, String key) {
+        Map<String, String> keyValueMetadata = metadata.keyValueMetadata();
+        if (!keyValueMetadata.containsKey(key)) {
+            System.err.println("No key-value metadata entry named '" + key + "'.");
+            return CommandResult.FAILURE;
+        }
+        System.out.println(keyValueMetadata.get(key));
+        return CommandResult.SUCCESS;
+    }
+
+    /// Prints one aligned line per entry: key left-padded to the widest key in this
+    /// file, byte-length right-aligned to the widest size, then the value truncated
+    /// to [MAX_VALUE_WIDTH]. A value that truncates to nothing (the empty string)
+    /// is omitted rather than leaving a trailing gutter of blank spaces.
+    private static void printKeyValueMetadata(Map<String, String> keyValueMetadata) {
+        int keyWidth = 0;
+        int sizeWidth = 0;
+        for (Map.Entry<String, String> entry : keyValueMetadata.entrySet()) {
+            keyWidth = Math.max(keyWidth, entry.getKey().length());
+            sizeWidth = Math.max(sizeWidth, Sizes.format(byteLength(entry.getValue())).length());
+        }
+
+        for (Map.Entry<String, String> entry : keyValueMetadata.entrySet()) {
+            String size = Sizes.format(byteLength(entry.getValue()));
+            String line = "  " + padRight(entry.getKey(), keyWidth) + "  " + Fmt.fmt("%" + sizeWidth + "s", size);
+            String truncated = truncate(entry.getValue());
+            System.out.println(truncated.isEmpty() ? line : line + "  " + truncated);
+        }
+    }
+
+    private static String padRight(String value, int width) {
+        return value.length() >= width ? value : value + " ".repeat(width - value.length());
+    }
+
+    private static int byteLength(String value) {
+        return value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static String truncate(String value) {
+        if (value.length() <= MAX_VALUE_WIDTH) {
+            return value;
+        }
+        return value.substring(0, MAX_VALUE_WIDTH) + "…";
     }
 }

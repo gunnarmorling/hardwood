@@ -27,7 +27,7 @@ run the CLI via Docker without installing it locally — see the [Docker section
 
 | Command | Description |
 |---------|-------------|
-| `hardwood info` | Display high-level file information |
+| `hardwood info` | Display high-level file information, including key-value metadata |
 | `hardwood schema` | Print the file schema, including logical-type annotations such as `VARIANT(1)` on Variant groups |
 | `hardwood print` | Print rows as an ASCII table (head, tail, or all); Variant columns are decoded to JSON-like text |
 | `hardwood convert` | Convert a Parquet file to CSV or JSON (head, tail, or all); Variant columns are emitted as a JSON string in CSV and as a native JSON subtree in JSON |
@@ -51,6 +51,9 @@ hardwood schema -f data.parquet
 
 # Print the schema as Avro or Protobuf
 hardwood schema -F AVRO -f data.parquet
+
+# Print the full value of one key-value metadata entry
+hardwood info -f data.parquet --kv-key ARROW:schema
 
 # Show first 20 rows
 hardwood print -n 20 -f data.parquet
@@ -111,6 +114,26 @@ and as a comment in Protobuf:
 ```proto
 // Parquet name: total (usd)
 optional double total__usd_ = 1;
+```
+
+## Key-value metadata
+
+`hardwood info` prints a file's key-value metadata below the size summary, one
+line per entry: the key, its value's byte length, and the value itself. Values
+longer than 60 characters are truncated with a trailing `…`, since these
+routinely carry kilobytes of embedded JSON (e.g. `org.apache.spark.sql.parquet.row.metadata`) or a base64-encoded Arrow IPC schema (`ARROW:schema`):
+
+```
+Key/Value Metadata (2):
+  ARROW:schema                               4.1 KiB  /////5AEAABAAAAAAAAKAAwABgAFAAgACgAAAAABBAAM…
+  org.apache.spark.sql.parquet.row.metadata  1.8 KiB  {"type":"struct","fields":[{"name":"order_id"…
+```
+
+Pass `--kv-key <name>` to print one entry's value in full, untruncated, with no
+other output — safe to pipe into another tool:
+
+```shell
+hardwood info -f data.parquet --kv-key ARROW:schema | base64 -d | xxd | head
 ```
 
 ## Interactive exploration (`dive`)

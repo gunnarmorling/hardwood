@@ -391,6 +391,9 @@
                   <header>${maven.multiModuleProjectDirectory}/etc/license.txt</header>
                   <excludes>
                     <exclude>.claude/**</exclude>
+                    <exclude>.serena/**</exclude>
+                    <exclude>.agents/**</exclude>
+                    <exclude>.codex/**</exclude>
                     <exclude>_tmp/**</exclude>
                     <exclude>.venv/**</exclude>
                     <exclude>.docker-venv/**</exclude>

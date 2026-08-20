@@ -57,6 +57,7 @@ output, and how to chain a few commands into a diagnosis.
 | Pages (data + dictionary) and their min/max stats                    | `hardwood inspect pages -f FILE [-c COLUMN]`    |
 | The dictionary entries of a column                                   | `hardwood inspect dictionary -f FILE -c COLUMN` |
 | Rows out as CSV or JSON                                              | `hardwood convert -f FILE -F csv\|json`         |
+| Embedded metadata from other engines (Arrow, Spark, pandas)          | `hardwood info -f FILE`, `--kv-key KEY`         |
 | Interactive exploration (hand off to the user)                       | `hardwood dive -f FILE`                         |
 
 ## Key output signals to read for
@@ -68,6 +69,11 @@ spot these:
   (`parquet-cpp-arrow version 24.0.0`, `parquet-mr`, `spark`, …). Writers differ
   in whether they emit statistics, page indexes, and which encodings they use —
   this line is often the first clue in a "pushdown doesn't work" mystery.
+- **`info` → `Key/Value Metadata (N):`** lists file-level metadata other engines
+  embed alongside the data — `ARROW:schema` (Arrow), `org.apache.spark.sql.parquet.row.metadata`
+  (Spark), `pandas` (pandas/PyArrow). This is the first thing to check when the
+  same file reads differently in two engines: values are truncated by default,
+  so use `--kv-key <name>` to print one entry in full.
 - **`inspect pages` → the `(stats: …)` suffix** after the column name tells you
   whether page-level statistics exist and where they come from:
   - `(stats: ColumnIndex)` — a Page Index (ColumnIndex + OffsetIndex sidecars)
@@ -299,7 +305,8 @@ Trailing Magic: PAR1
 
 | Command                                | Useful flags                                                                                                                          |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `info`, `footer`                       | `-f FILE`                                                                                                                             |
+| `info`                                 | `-f FILE`, `--kv-key NAME` (print one key-value metadata entry in full)                                                               |
+| `footer`                               | `-f FILE`                                                                                                                             |
 | `schema`                               | `-f FILE`, `-F NATIVE\|AVRO\|PROTO`                                                                                                   |
 | `print`                                | `-f FILE`, `-n N\|ALL`, `-c a,b`, `-w MAX_WIDTH`, `-s SAMPLE`, `--no-truncate`, `--transpose`, `-i` (row index), `-d` (row delimiter) |
 | `convert`                              | `-f FILE`, `-F csv\|json`, `-o OUT`, `-c a,b`, `-n N\|ALL`                                                                            |
