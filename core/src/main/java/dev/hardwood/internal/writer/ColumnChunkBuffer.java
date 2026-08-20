@@ -30,6 +30,7 @@ import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// Accumulates one column's chunk for the current row group in two phases.
 ///
@@ -125,14 +126,19 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// which it can no longer state its cardinality and writes no `distinct_count`.
     private boolean cardinalityKnown = true;
 
+    /// This column's resolved encoding policy. [ColumnEncoding#AUTO] leaves the choice to the
+    /// size comparison at flush; anything else names the encoding every chunk of this column
+    /// carries, and no dictionary is built at all.
+    private final ColumnEncoding encoding;
+
     /// @param column the column's schema (physical type, level depths)
     /// @param pageValues maximum number of level entries per data page
-    /// @param enableDictionary whether this chunk may be dictionary-encoded at all
+    /// @param encoding this column's resolved encoding policy
     /// @param dictionaryAnalysisCapBytes the dictionary size past which the chunk is written `PLAIN`
     /// @param compressor compresses each page body before framing
     /// @param codec the codec `compressor` applies, recorded in the chunk metadata
     ColumnChunkBuffer(ColumnSchema column, int pageValues,
-                      boolean enableDictionary, long dictionaryAnalysisCapBytes, int statisticsTruncationLength,
+                      ColumnEncoding encoding, long dictionaryAnalysisCapBytes, int statisticsTruncationLength,
                       Compressor compressor, CompressionCodec codec) {
         this.type = column.type();
         this.maxDefLevel = column.maxDefinitionLevel();
@@ -147,7 +153,8 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         this.indices = new int[Math.max(1, pageValues)];
         this.defLevels = maxDefLevel > 0 ? new ByteArrayBuilder(Math.max(1, pageValues)) : null;
         this.repLevels = maxRepLevel > 0 ? new ByteArrayBuilder(Math.max(1, pageValues)) : null;
-        this.values = ValueEncoder.forColumn(column, pageValues, enableDictionary, statisticsTruncationLength);
+        this.encoding = encoding;
+        this.values = ValueEncoder.forColumn(column, pageValues, encoding, statisticsTruncationLength);
         this.boundedStatistics = StatisticsOrder.supportsBounds(column);
         this.dictionaryAlive = values.dictionaryCapable();
         this.dictionaryAnalysisCapBytes = dictionaryAnalysisCapBytes;
@@ -389,7 +396,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         CRC32 crc = new CRC32();
         crc.update(storedArray, 0, storedLength);
         ThriftCompactWriter header = new ThriftCompactWriter();
-        Encoding valuesEncoding = dictionarySize > 0 ? Encoding.RLE_DICTIONARY : Encoding.PLAIN;
+        Encoding valuesEncoding = dictionarySize > 0 ? Encoding.RLE_DICTIONARY : valueEncoding();
         PageHeaderWriter.writeDataPageV1(header, entries, uncompressedLength, storedLength,
                 (int) crc.getValue(), valuesEncoding);
         byte[] headerBytes = header.toByteArray();
@@ -427,8 +434,27 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
             body.writeBytes(encoded.toByteArray());
         }
         else {
-            body.writeBytes(values.encodePlain(valueFrom, valueCount));
+            body.writeBytes(values.encode(storedEncoding(), valueFrom, valueCount));
         }
+    }
+
+    /// The encoding a chunk without a dictionary writes its values with: the column's policy,
+    /// with [ColumnEncoding#AUTO] resolving to `PLAIN` — the outcome of a comparison the
+    /// dictionary lost, or of a chunk with nothing to intern.
+    private ColumnEncoding storedEncoding() {
+        return encoding == ColumnEncoding.AUTO ? ColumnEncoding.PLAIN : encoding;
+    }
+
+    /// The metadata [Encoding] naming what [#storedEncoding] produces.
+    private Encoding valueEncoding() {
+        return switch (storedEncoding()) {
+            case PLAIN -> Encoding.PLAIN;
+            case DELTA_BINARY_PACKED -> Encoding.DELTA_BINARY_PACKED;
+            case DELTA_LENGTH_BYTE_ARRAY -> Encoding.DELTA_LENGTH_BYTE_ARRAY;
+            case DELTA_BYTE_ARRAY -> Encoding.DELTA_BYTE_ARRAY;
+            case BYTE_STREAM_SPLIT -> Encoding.BYTE_STREAM_SPLIT;
+            case AUTO -> throw new IllegalStateException("AUTO resolves before it is written");
+        };
     }
 
     /// The largest dictionary index in one page's value range.
@@ -472,16 +498,23 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     }
 
     /// The deduplicated set of encodings the chunk actually uses: `RLE` for the level streams
-    /// (when the column is levelled), `PLAIN` for the dictionary body and any plain/all-null
-    /// data pages, and `RLE_DICTIONARY` when a dictionary page is present.
+    /// where the column is levelled, the encoding its data pages carry, and `PLAIN` additionally
+    /// where a dictionary page is present, that body being `PLAIN` itself.
+    ///
+    /// `PLAIN` is listed only when something in the chunk is actually plain. Listing it
+    /// unconditionally was true while a chunk was either `PLAIN` or a dictionary whose body is,
+    /// and stops being true of a chunk written with an optional encoding.
     private List<Encoding> encodings(boolean hasDictionary) {
         List<Encoding> encodings = new ArrayList<>(3);
         if (maxDefLevel > 0 || maxRepLevel > 0) {
             encodings.add(Encoding.RLE);
         }
-        encodings.add(Encoding.PLAIN);
         if (hasDictionary) {
+            encodings.add(Encoding.PLAIN);
             encodings.add(Encoding.RLE_DICTIONARY);
+        }
+        else {
+            encodings.add(valueEncoding());
         }
         return encodings;
     }

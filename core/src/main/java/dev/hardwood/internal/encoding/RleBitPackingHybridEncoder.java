@@ -26,7 +26,6 @@ import java.util.Arrays;
 public final class RleBitPackingHybridEncoder {
 
     private final int bitWidth;
-    private final long mask;
 
     private byte[] buffer = new byte[64];
     private int length;
@@ -52,7 +51,6 @@ public final class RleBitPackingHybridEncoder {
             throw new IllegalArgumentException("Invalid RLE bit width: " + bitWidth + ". Must be between 0 and 32");
         }
         this.bitWidth = bitWidth;
-        this.mask = bitWidth == 0 ? 0 : (bitWidth == 32 ? 0xFFFFFFFFL : (1L << bitWidth) - 1);
     }
 
     /// Appends `count` values starting at `offset`.
@@ -162,20 +160,12 @@ public final class RleBitPackingHybridEncoder {
     }
 
     /// Packs the eight buffered values into `bitWidth` bytes, LSB-first, matching the
-    /// decoder's little-endian bit order.
+    /// decoder's little-endian bit order. The layout is [BitPacker]'s, shared with
+    /// DELTA_BINARY_PACKED's 32-value miniblocks.
     private void packGroup() {
-        long acc = 0;
-        int bits = 0;
-        for (int i = 0; i < 8; i++) {
-            acc |= (bufferedValues[i] & mask) << bits;
-            bits += bitWidth;
-            while (bits >= 8) {
-                write((int) (acc & 0xFF));
-                acc >>>= 8;
-                bits -= 8;
-            }
-        }
-        // 8·bitWidth is a whole number of bytes, so no partial byte remains.
+        int packed = BitPacker.packedLength(8, bitWidth);
+        ensureCapacity(packed);
+        length += BitPacker.pack(bufferedValues, 0, 8, bitWidth, buffer, length);
     }
 
     private void writeUnsignedVarInt(int value) {
@@ -188,9 +178,13 @@ public final class RleBitPackingHybridEncoder {
     }
 
     private void write(int b) {
-        if (length == buffer.length) {
-            buffer = Arrays.copyOf(buffer, buffer.length * 2);
-        }
+        ensureCapacity(1);
         buffer[length++] = (byte) b;
+    }
+
+    private void ensureCapacity(int extra) {
+        if (length + extra > buffer.length) {
+            buffer = Arrays.copyOf(buffer, Math.max(length + extra, buffer.length * 2));
+        }
     }
 }

@@ -35,6 +35,7 @@ import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.testing.InteropCase.Nullability;
 import dev.hardwood.testing.ParquetJavaReader.Pages;
+import dev.hardwood.writer.ColumnEncoding;
 import dev.hardwood.writer.ParquetFileWriter;
 import dev.hardwood.writer.RowWriter;
 import dev.hardwood.writer.WriterConfig;
@@ -83,9 +84,42 @@ class WriterInteropTest {
                 new EncodingAxis("all-distinct column written PLAIN", FEW_ROWS,
                         WriterConfig.defaults(), true),
                 new EncodingAxis("dictionary disabled", 64,
-                        WriterConfig.builder().enableDictionary(false).build(), false)),
+                        WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build(), false)),
                 (type, axis) -> new InteropCase(axis.name(), type, Nullability.OPTIONAL_SOME_NULL,
                         axis.distinct(), FEW_ROWS, axis.config(), axis.plainOnly()));
+    }
+
+    /// The optional-encoding axis: one case per legal (encoding, physical type) pair, written
+    /// under a file-wide policy and read back through parquet-java.
+    ///
+    /// These are the encodings Hardwood could read but not write before stage 19b, so this axis
+    /// is the first time its own output for them is put in front of another implementation. The
+    /// pairs come from the same legality table [ColumnEncoding] states, restricted to the types
+    /// this gate writes.
+    static Stream<InteropCase> optionalEncodings() {
+        return Stream.of(TypeFixture.values()).flatMap(type -> Stream.of(
+                ColumnEncoding.DELTA_BINARY_PACKED, ColumnEncoding.DELTA_LENGTH_BYTE_ARRAY,
+                ColumnEncoding.DELTA_BYTE_ARRAY, ColumnEncoding.BYTE_STREAM_SPLIT)
+                .filter(encoding -> legal(encoding, type))
+                .map(encoding -> InteropCase.of("encoding " + encoding, type,
+                        Nullability.OPTIONAL_SOME_NULL, 64, FEW_ROWS,
+                        WriterConfig.builder().encoding(encoding).build())));
+    }
+
+    /// Mirrors the legality table from outside the writer, so a pair dropped from it has to be
+    /// dropped here too rather than silently leaving this axis.
+    private static boolean legal(ColumnEncoding encoding, TypeFixture type) {
+        PhysicalType physical = type.physicalType();
+        return switch (encoding) {
+            case AUTO, PLAIN -> true;
+            case DELTA_BINARY_PACKED -> physical == PhysicalType.INT32 || physical == PhysicalType.INT64;
+            case DELTA_LENGTH_BYTE_ARRAY -> physical == PhysicalType.BYTE_ARRAY;
+            case DELTA_BYTE_ARRAY -> physical == PhysicalType.BYTE_ARRAY
+                    || physical == PhysicalType.FIXED_LEN_BYTE_ARRAY;
+            case BYTE_STREAM_SPLIT -> physical == PhysicalType.INT32 || physical == PhysicalType.INT64
+                    || physical == PhysicalType.FLOAT || physical == PhysicalType.DOUBLE
+                    || physical == PhysicalType.FIXED_LEN_BYTE_ARRAY;
+        };
     }
 
     /// The codec axis, over every codec the writer produces. The two it does not — `LZ4`'s
@@ -154,6 +188,12 @@ class WriterInteropTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource
     void encodings(InteropCase testCase, @TempDir Path dir) throws IOException {
+        verify(testCase, dir);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void optionalEncodings(InteropCase testCase, @TempDir Path dir) throws IOException {
         verify(testCase, dir);
     }
 
@@ -367,7 +407,8 @@ class WriterInteropTest {
     private void assertDistinctCounts(InteropCase testCase, Path file) throws IOException {
         List<Long> counts = ParquetJavaReader.readDistinctCounts(file);
         boolean known = testCase.type() == TypeFixture.BOOLEAN
-                || (testCase.config().enableDictionary() && testCase.type().dictionaryCapable());
+                || (testCase.config().defaultEncoding() == ColumnEncoding.AUTO
+                        && testCase.type().dictionaryCapable());
         if (!known) {
             assertThat(counts).as("distinct_count where the chunk cannot state it")
                     .containsOnlyNulls();
@@ -410,7 +451,8 @@ class WriterInteropTest {
         for (Set<Encoding> chunkEncodings : pages.chunkValueEncodings()) {
             assertThat(chunkEncodings).as("page value encodings within one chunk").hasSize(1);
         }
-        Encoding expected = testCase.expectsDictionary() ? Encoding.RLE_DICTIONARY : Encoding.PLAIN;
+        Encoding expected = testCase.expectsDictionary() ? Encoding.RLE_DICTIONARY
+                : valueEncodingOf(testCase.config().defaultEncoding());
         assertThat(pages.chunkValueEncodings().get(0)).as("first chunk's page value encoding")
                 .containsExactly(expected);
         if (!testCase.expectsDictionary()) {
@@ -423,6 +465,18 @@ class WriterInteropTest {
             assertThat(chunks(footer).get(0).getEncodings()).as("first chunk's declared encodings")
                     .contains(Encoding.RLE_DICTIONARY);
         }
+    }
+
+    /// parquet-java's name for the page encoding a file-wide policy produces. `AUTO` reaches
+    /// here only for a case whose values argued against a dictionary, which is `PLAIN`.
+    private static Encoding valueEncodingOf(ColumnEncoding encoding) {
+        return switch (encoding) {
+            case AUTO, PLAIN -> Encoding.PLAIN;
+            case DELTA_BINARY_PACKED -> Encoding.DELTA_BINARY_PACKED;
+            case DELTA_LENGTH_BYTE_ARRAY -> Encoding.DELTA_LENGTH_BYTE_ARRAY;
+            case DELTA_BYTE_ARRAY -> Encoding.DELTA_BYTE_ARRAY;
+            case BYTE_STREAM_SPLIT -> Encoding.BYTE_STREAM_SPLIT;
+        };
     }
 
     private static List<ColumnChunkMetaData> chunks(ParquetMetadata footer) {

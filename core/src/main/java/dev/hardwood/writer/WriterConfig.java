@@ -7,6 +7,9 @@
  */
 package dev.hardwood.writer;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import dev.hardwood.internal.BuildInfo;
 import dev.hardwood.internal.compression.CodecLibraries;
 import dev.hardwood.metadata.CompressionCodec;
@@ -19,6 +22,11 @@ import dev.hardwood.metadata.CompressionCodec;
 ///   many uncompressed bytes.
 /// - **Row-group target** — the writer flushes a row group once its buffered
 ///   uncompressed data reaches this many bytes, bounding how much it holds in memory.
+///
+/// How a column's values are stored is a [ColumnEncoding], set file-wide or per leaf column;
+/// how the resulting page bodies are compressed is the [CompressionCodec]. Neither belongs to
+/// the schema — Parquet scopes both per column chunk rather than per column — so both are
+/// configured here and neither survives a round trip through [dev.hardwood.schema.FileSchema].
 ///
 /// Obtain the defaults with [#defaults] or override individual knobs through [#builder].
 public final class WriterConfig {
@@ -53,10 +61,15 @@ public final class WriterConfig {
     /// than silently dropping the digits that do not fit.
     public static final PrecisionLossPolicy DEFAULT_PRECISION_LOSS_POLICY = PrecisionLossPolicy.REJECT;
 
+    /// Default encoding policy: [ColumnEncoding#AUTO], leaving each column chunk's encoding to
+    /// the size comparison the writer makes once the row group is buffered.
+    public static final ColumnEncoding DEFAULT_ENCODING = ColumnEncoding.AUTO;
+
     private final int pageTargetBytes;
     private final long rowGroupTargetBytes;
     private final String createdBy;
-    private final boolean enableDictionary;
+    private final ColumnEncoding defaultEncoding;
+    private final Map<String, ColumnEncoding> columnEncodings;
     private final int statisticsTruncationLength;
     private final CompressionCodec codec;
     private final PrecisionLossPolicy precisionLossPolicy;
@@ -65,7 +78,8 @@ public final class WriterConfig {
         this.pageTargetBytes = builder.pageTargetBytes;
         this.rowGroupTargetBytes = builder.rowGroupTargetBytes;
         this.createdBy = builder.createdBy;
-        this.enableDictionary = builder.enableDictionary;
+        this.defaultEncoding = builder.defaultEncoding;
+        this.columnEncodings = Map.copyOf(builder.columnEncodings);
         this.statisticsTruncationLength = builder.statisticsTruncationLength;
         this.codec = builder.codec;
         this.precisionLossPolicy = builder.precisionLossPolicy;
@@ -96,9 +110,24 @@ public final class WriterConfig {
         return createdBy;
     }
 
-    /// Whether eligible columns may be dictionary-encoded, where that is the smaller encoding.
-    public boolean enableDictionary() {
-        return enableDictionary;
+    /// The encoding policy for columns with no override of their own.
+    public ColumnEncoding defaultEncoding() {
+        return defaultEncoding;
+    }
+
+    /// The per-column encoding policies, keyed by dotted leaf path. Unmodifiable, and empty
+    /// where no column was named.
+    public Map<String, ColumnEncoding> columnEncodings() {
+        return columnEncodings;
+    }
+
+    /// The policy governing `columnPath`: its own override where it has one, the file-wide
+    /// default otherwise.
+    ///
+    /// @param columnPath the column's dotted leaf path
+    /// @return the policy in force for that column
+    public ColumnEncoding encodingFor(String columnPath) {
+        return columnEncodings.getOrDefault(columnPath, defaultEncoding);
     }
 
     /// The maximum length of a `BYTE_ARRAY` `min` / `max` statistics bound before it is
@@ -136,7 +165,8 @@ public final class WriterConfig {
         private int pageTargetBytes = DEFAULT_PAGE_TARGET_BYTES;
         private long rowGroupTargetBytes = DEFAULT_ROW_GROUP_TARGET_BYTES;
         private String createdBy = DEFAULT_CREATED_BY;
-        private boolean enableDictionary = true;
+        private ColumnEncoding defaultEncoding = DEFAULT_ENCODING;
+        private final Map<String, ColumnEncoding> columnEncodings = new LinkedHashMap<>();
         private int statisticsTruncationLength = DEFAULT_STATISTICS_TRUNCATION_LENGTH;
         private CompressionCodec codec = DEFAULT_CODEC;
         private PrecisionLossPolicy precisionLossPolicy = DEFAULT_PRECISION_LOSS_POLICY;
@@ -173,12 +203,35 @@ public final class WriterConfig {
             return this;
         }
 
-        /// Enables or disables dictionary encoding. When enabled — the default — a column chunk is
-        /// dictionary-encoded where that produces less than writing its values `PLAIN`, decided
-        /// per chunk from the values it holds. When disabled, every chunk is written `PLAIN` with
-        /// no dictionary page.
-        public Builder enableDictionary(boolean enableDictionary) {
-            this.enableDictionary = enableDictionary;
+        /// Sets the encoding policy for every column without an override of its own; must be
+        /// non-null. Defaults to [ColumnEncoding#AUTO].
+        ///
+        /// A default that no column of the schema can carry is rejected when the writer is
+        /// created, so a file-wide `BYTE_STREAM_SPLIT` over a schema holding a `BYTE_ARRAY`
+        /// column fails rather than quietly resolving that column to something else.
+        public Builder encoding(ColumnEncoding encoding) {
+            if (encoding == null) {
+                throw new IllegalArgumentException("encoding must not be null");
+            }
+            this.defaultEncoding = encoding;
+            return this;
+        }
+
+        /// Sets the encoding policy for one leaf column, overriding the file-wide default; both
+        /// arguments must be non-null.
+        ///
+        /// The column is named by its **dotted leaf path** as the schema spells it, synthetic
+        /// `list.element` and `key_value.key` segments included — `readings.list.element`, not
+        /// `readings`. A path matching no leaf column of the schema, or a policy its physical
+        /// type cannot carry, is rejected when the writer is created.
+        public Builder encoding(String columnPath, ColumnEncoding encoding) {
+            if (columnPath == null) {
+                throw new IllegalArgumentException("columnPath must not be null");
+            }
+            if (encoding == null) {
+                throw new IllegalArgumentException("encoding must not be null for column " + columnPath);
+            }
+            this.columnEncodings.put(columnPath, encoding);
             return this;
         }
 

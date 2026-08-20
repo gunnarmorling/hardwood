@@ -66,7 +66,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Implement `DictionaryDecoder<T>`
 - [x] Dictionary page serialization
 - [x] Dictionary page deserialization
-- [x] Fallback to plain encoding when dictionary grows too large
+- [x] Chosen against plain encoding per column chunk, by comparing their sizes
 
 ### 2.3 RLE/Bit-Packing Hybrid
 - [x] Implement `RleBitPackingHybridEncoder`
@@ -84,24 +84,24 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Block/miniblock structure
   - [x] Min delta calculation per block
   - [x] Bit width calculation per miniblock
-  - [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+  - [x] Encoder implementation
   - [x] Decoder implementation
 - [x] DELTA_LENGTH_BYTE_ARRAY
   - [x] Length encoding with DELTA_BINARY_PACKED
   - [x] Raw byte concatenation
-  - [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+  - [x] Encoder implementation
   - [x] Decoder implementation
 - [x] DELTA_BYTE_ARRAY
   - [x] Prefix length calculation
   - [x] Suffix extraction
-  - [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+  - [x] Encoder implementation
   - [x] Decoder implementation
 
 ### 2.5 Byte Stream Split (BYTE_STREAM_SPLIT)
 - [x] Float byte separation/interleaving
 - [x] Double byte separation/interleaving
 - [x] FIXED_LEN_BYTE_ARRAY support
-- [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+- [x] Encoder implementation
 - [x] Decoder implementation
 
 ---
@@ -181,7 +181,8 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 ### 6.1 Writer Architecture
 - [x] Implement `RowWriter` — the row-oriented layer over the columnar core, obtained from
   `ParquetFileWriter.rowWriter()` (see `_designs/WRITER_ROW_API.md`)
-- [x] Implement `WriterConfig` (row group size, page size, dictionary size, codec, version)
+- [x] Implement `WriterConfig` (row-group and page targets, per-column encoding policy,
+  codec, statistics truncation, precision-loss policy, `created_by`)
 - [ ] Implement `RowGroupWriter`
 - [ ] Implement `ColumnWriter`
 - [ ] Implement `PageWriter`
@@ -191,7 +192,8 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Row group size tracking
 - [x] Automatic row group flushing
 - [x] Dictionary page writing
-- [x] Data page encoding and writing
+- [x] Data page encoding and writing (`AUTO` dictionary-or-`PLAIN` per chunk, or a named
+  per-column policy: `PLAIN`, the three delta encodings, `BYTE_STREAM_SPLIT`)
 - [x] Page compression (UNCOMPRESSED, GZIP, SNAPPY, ZSTD, LZ4_RAW, BROTLI; `LZ4`'s deprecated
   Hadoop framing and `LZO` are refused at writer creation)
 - [x] Footer writing

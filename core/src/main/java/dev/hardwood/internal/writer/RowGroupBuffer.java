@@ -18,6 +18,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// Buffers the column chunks of a single row group. A record range's shredded levels are
 /// appended across all columns; at flush the column chunks are written contiguously in
@@ -30,19 +31,19 @@ public final class RowGroupBuffer {
 
     /// @param schema the file schema
     /// @param pageValues maximum number of level triples per data page
-    /// @param enableDictionary whether columns may be dictionary-encoded
+    /// @param encodings each leaf column's resolved encoding policy, in schema order
     /// @param dictionaryAnalysisCapBytes the dictionary size past which a chunk is written `PLAIN`
     /// @param statisticsTruncationLength the maximum `BYTE_ARRAY` `min` / `max` bound length
     /// @param compressor compresses each page body before it is buffered
     /// @param codec the codec `compressor` applies, recorded in each chunk's metadata
-    public RowGroupBuffer(FileSchema schema, int pageValues, boolean enableDictionary,
+    public RowGroupBuffer(FileSchema schema, int pageValues, ColumnEncoding[] encodings,
                           long dictionaryAnalysisCapBytes, int statisticsTruncationLength,
                           Compressor compressor, CompressionCodec codec) {
         this.schema = schema;
         this.columns = new ColumnChunkBuffer[schema.getColumnCount()];
         for (int c = 0; c < columns.length; c++) {
             columns[c] = new ColumnChunkBuffer(schema.getColumn(c), pageValues,
-                    enableDictionary, dictionaryAnalysisCapBytes, statisticsTruncationLength, compressor, codec);
+                    encodings[c], dictionaryAnalysisCapBytes, statisticsTruncationLength, compressor, codec);
         }
     }
 

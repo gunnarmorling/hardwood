@@ -20,6 +20,7 @@ import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.writer.ColumnEncoding;
 import dev.hardwood.writer.ParquetFileWriter;
 import dev.hardwood.writer.WriterConfig;
 
@@ -80,7 +81,7 @@ public final class WideSchemaFileGenerator {
         WriterConfig config = WriterConfig.builder()
                 .pageTargetBytes(ROWS_PER_ROW_GROUP * VALUE_BYTES)
                 .rowGroupTargetBytes(rowGroupTargetBytes)
-                .enableDictionary(false)
+                .encoding(ColumnEncoding.PLAIN)
                 .codec(CompressionCodec.UNCOMPRESSED)
                 .build();
 

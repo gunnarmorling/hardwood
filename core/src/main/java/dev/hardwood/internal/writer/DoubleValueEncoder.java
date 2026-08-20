@@ -9,9 +9,12 @@ package dev.hardwood.internal.writer;
 
 import java.util.Arrays;
 
+import dev.hardwood.internal.encoding.ByteStreamSplitEncoder;
 import dev.hardwood.internal.encoding.LongDictionaryEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
+import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// [ValueEncoder] for `DOUBLE` columns. Values intern by their raw IEEE-754 bit pattern through
 /// an `INT64` [LongDictionaryEncoder] — the 8-byte little-endian `PLAIN` layout of a `DOUBLE`
@@ -30,10 +33,10 @@ final class DoubleValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    DoubleValueEncoder(int pageValues, boolean enableDictionary) {
+    DoubleValueEncoder(int pageValues, boolean buildDictionary) {
         this.plain = new double[Math.max(1, pageValues)];
         this.window = new double[Math.max(1, pageValues)];
-        this.dictionary = enableDictionary ? new LongDictionaryEncoder() : null;
+        this.dictionary = buildDictionary ? new LongDictionaryEncoder() : null;
     }
 
     @Override
@@ -117,8 +120,13 @@ final class DoubleValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encodePlain(int from, int count) {
-        return PlainEncoder.encodeDoubles(plain, from, count);
+    byte[] encode(ColumnEncoding encoding, int from, int count) {
+        return switch (encoding) {
+            case PLAIN -> PlainEncoder.encodeDoubles(plain, from, count);
+            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
+                    PlainEncoder.encodeDoubles(plain, from, count), 0, count, Double.BYTES);
+            default -> throw unsupported(encoding, PhysicalType.DOUBLE);
+        };
     }
 
     @Override

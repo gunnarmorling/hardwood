@@ -643,7 +643,7 @@ class WriterRoundTripTest {
                 .as("dictionary-encoded chunk").isEqualTo(8L);
         assertThat(distinctCountOf(allDistinct, WriterConfig.defaults()))
                 .as("chunk the comparison sent to PLAIN").isEqualTo((long) n);
-        assertThat(distinctCountOf(repeating, WriterConfig.builder().enableDictionary(false).build()))
+        assertThat(distinctCountOf(repeating, WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build()))
                 .as("chunk that never built a dictionary").isNull();
 
         // A BOOLEAN column is never dictionary-encoded and still knows its cardinality: at most
@@ -855,7 +855,7 @@ class WriterRoundTripTest {
             values[i] = i % 3;
         }
 
-        WriterConfig config = WriterConfig.builder().enableDictionary(false).build();
+        WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.writeBatch(batch -> batch.ints(0, values));
@@ -1050,7 +1050,7 @@ class WriterRoundTripTest {
         int[] values = new int[n];
         Arrays.fill(values, 42);
 
-        WriterConfig config = WriterConfig.builder().enableDictionary(false).build();
+        WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.writeBatch(batch -> batch.ints(0, values));

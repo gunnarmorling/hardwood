@@ -11,8 +11,13 @@ import java.util.Arrays;
 import java.util.function.Supplier;
 
 import dev.hardwood.internal.encoding.BinaryDictionaryEncoder;
+import dev.hardwood.internal.encoding.ByteStreamSplitEncoder;
+import dev.hardwood.internal.encoding.DeltaByteArrayEncoder;
+import dev.hardwood.internal.encoding.DeltaLengthByteArrayEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
+import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// [ValueEncoder] for binary columns. Serves both `BYTE_ARRAY` (variable length, a 4-byte
 /// length prefix per value) and `FIXED_LEN_BYTE_ARRAY` (a schema-declared fixed width, no
@@ -40,11 +45,11 @@ final class BinaryValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    BinaryValueEncoder(int pageValues, boolean enableDictionary, Integer typeLength,
+    BinaryValueEncoder(int pageValues, boolean buildDictionary, Integer typeLength,
                        Supplier<BinaryStatistics> statisticsFactory) {
         this.plainOffsets = new int[Math.max(1, pageValues) + 1];
         this.window = new byte[Math.max(1, pageValues)][];
-        this.dictionary = enableDictionary ? new BinaryDictionaryEncoder() : null;
+        this.dictionary = buildDictionary ? new BinaryDictionaryEncoder() : null;
         // FIXED_LEN_BYTE_ARRAY bounds are written whole and always exact — a fixed width already
         // bounds them — so only BYTE_ARRAY truncates. Integer.MAX_VALUE disables truncation, since
         // no value can be longer than that.
@@ -144,10 +149,32 @@ final class BinaryValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encodePlain(int from, int count) {
-        return fixedLength()
-                ? PlainEncoder.encodeFixedLenByteArrays(plainData.array(), plainOffsets, from, count, typeLength)
-                : PlainEncoder.encodeByteArrays(plainData.array(), plainOffsets, from, count);
+    byte[] encode(ColumnEncoding encoding, int from, int count) {
+        return switch (encoding) {
+            case PLAIN -> fixedLength()
+                    ? PlainEncoder.encodeFixedLenByteArrays(plainData.array(), plainOffsets, from, count, typeLength)
+                    : PlainEncoder.encodeByteArrays(plainData.array(), plainOffsets, from, count);
+            case DELTA_LENGTH_BYTE_ARRAY ->
+                DeltaLengthByteArrayEncoder.encode(plainData.array(), plainOffsets, from, count);
+            case DELTA_BYTE_ARRAY ->
+                DeltaByteArrayEncoder.encode(plainData.array(), plainOffsets, from, count);
+            // The values are stored end to end and every one of them is typeLength bytes, so
+            // the page's range is already the contiguous run the split reads.
+            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
+                    plainData.array(), plainOffsets[from], count, requireFixedLength(encoding));
+            default -> throw unsupported(encoding, physicalType());
+        };
+    }
+
+    private PhysicalType physicalType() {
+        return fixedLength() ? PhysicalType.FIXED_LEN_BYTE_ARRAY : PhysicalType.BYTE_ARRAY;
+    }
+
+    private int requireFixedLength(ColumnEncoding encoding) {
+        if (!fixedLength()) {
+            throw unsupported(encoding, PhysicalType.BYTE_ARRAY);
+        }
+        return typeLength;
     }
 
     @Override

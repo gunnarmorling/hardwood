@@ -11,6 +11,7 @@ import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// The per-physical-type half of a column chunk's value section: the typed value read window
 /// over the batch source, the typed `PLAIN` buffer, the (optional) dictionary, and the typed
@@ -25,26 +26,38 @@ import dev.hardwood.schema.ColumnSchema;
 abstract class ValueEncoder {
 
     /// Selects the encoder for a column's physical type. `pageValues` sizes the per-page value
-    /// buffer and the read window; `enableDictionary` requests dictionary encoding where the type
-    /// supports it; `statisticsTruncationLength` bounds `BYTE_ARRAY` `min` / `max` bounds.
-    static ValueEncoder forColumn(ColumnSchema column, int pageValues, boolean enableDictionary,
+    /// buffer and the read window; `encoding` is the column's resolved policy, which builds a
+    /// dictionary only under [ColumnEncoding#AUTO]; `statisticsTruncationLength` bounds
+    /// `BYTE_ARRAY` `min` / `max` bounds.
+    static ValueEncoder forColumn(ColumnSchema column, int pageValues, ColumnEncoding encoding,
                                   int statisticsTruncationLength) {
         PhysicalType type = column.type();
         boolean unsigned = isUnsigned(column);
+        // Only AUTO decides between a dictionary and something else, so only AUTO needs one
+        // built: a column under a named policy pays neither the interning nor the index array.
+        boolean dictionary = encoding == ColumnEncoding.AUTO;
         return switch (type) {
-            case INT32 -> new IntValueEncoder(pageValues, enableDictionary, unsigned);
-            case INT64 -> new LongValueEncoder(pageValues, enableDictionary, unsigned);
-            case FLOAT -> new FloatValueEncoder(pageValues, enableDictionary);
-            case DOUBLE -> new DoubleValueEncoder(pageValues, enableDictionary);
+            case INT32 -> new IntValueEncoder(pageValues, dictionary, unsigned);
+            case INT64 -> new LongValueEncoder(pageValues, dictionary, unsigned);
+            case FLOAT -> new FloatValueEncoder(pageValues, dictionary);
+            case DOUBLE -> new DoubleValueEncoder(pageValues, dictionary);
             case BOOLEAN -> new BooleanValueEncoder(pageValues);
-            case BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary, null,
+            case BYTE_ARRAY -> new BinaryValueEncoder(pageValues, dictionary, null,
                     () -> BinaryStatistics.forColumn(column, statisticsTruncationLength));
-            case FIXED_LEN_BYTE_ARRAY -> new BinaryValueEncoder(pageValues, enableDictionary,
+            case FIXED_LEN_BYTE_ARRAY -> new BinaryValueEncoder(pageValues, dictionary,
                     requireTypeLength(column),
                     () -> BinaryStatistics.forColumn(column, statisticsTruncationLength));
             default -> throw new IllegalArgumentException(
                     "Writer does not support physical type " + type + " for column " + column.name());
         };
+    }
+
+    /// Rejects an encoding this physical type cannot carry. Configuration validation has already
+    /// excluded every such pair at writer creation, so reaching here is a writer defect rather
+    /// than a caller's mistake.
+    static IllegalStateException unsupported(ColumnEncoding encoding, PhysicalType type) {
+        return new IllegalStateException(
+                "Encoding " + encoding + " is not applicable to a " + type + " column");
     }
 
     /// The capacity a filled value store grows to: half again as much, so a row group's worth of
@@ -127,8 +140,13 @@ abstract class ValueEncoder {
     /// and the batch the value arrived in is gone by then.
     abstract void store(int valueIndex);
 
-    /// `PLAIN`-encodes `count` stored values starting at `from`, the value range of one page.
-    abstract byte[] encodePlain(int from, int count);
+    /// Encodes `count` stored values starting at `from` — the value range of one page — with
+    /// `encoding`, which is this column's resolved policy and never [ColumnEncoding#AUTO]: a
+    /// chunk that kept its dictionary writes an index stream instead and never reaches here.
+    ///
+    /// Each page encodes its range standalone, carrying whatever header or baseline its encoding
+    /// needs, because a reader may seek to any page and must decode it without the page before.
+    abstract byte[] encode(ColumnEncoding encoding, int from, int count);
 
     /// Extends the chunk statistics with the present value at `valueIndex`.
     abstract void stat(int valueIndex);

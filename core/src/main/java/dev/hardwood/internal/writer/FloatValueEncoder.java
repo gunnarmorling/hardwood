@@ -9,9 +9,12 @@ package dev.hardwood.internal.writer;
 
 import java.util.Arrays;
 
+import dev.hardwood.internal.encoding.ByteStreamSplitEncoder;
 import dev.hardwood.internal.encoding.DictionaryEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
+import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// [ValueEncoder] for `FLOAT` columns. Values intern by their raw IEEE-754 bit pattern through
 /// an `INT32` [DictionaryEncoder] — the 4-byte little-endian `PLAIN` layout of a `FLOAT` and of
@@ -29,10 +32,10 @@ final class FloatValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    FloatValueEncoder(int pageValues, boolean enableDictionary) {
+    FloatValueEncoder(int pageValues, boolean buildDictionary) {
         this.plain = new float[Math.max(1, pageValues)];
         this.window = new float[Math.max(1, pageValues)];
-        this.dictionary = enableDictionary ? new DictionaryEncoder() : null;
+        this.dictionary = buildDictionary ? new DictionaryEncoder() : null;
     }
 
     @Override
@@ -116,8 +119,13 @@ final class FloatValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encodePlain(int from, int count) {
-        return PlainEncoder.encodeFloats(plain, from, count);
+    byte[] encode(ColumnEncoding encoding, int from, int count) {
+        return switch (encoding) {
+            case PLAIN -> PlainEncoder.encodeFloats(plain, from, count);
+            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
+                    PlainEncoder.encodeFloats(plain, from, count), 0, count, Float.BYTES);
+            default -> throw unsupported(encoding, PhysicalType.FLOAT);
+        };
     }
 
     @Override

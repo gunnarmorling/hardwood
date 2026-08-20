@@ -195,7 +195,7 @@ class WriterVariableWidthTypeRoundTripTest {
             values[i] = bytes(("value-" + i + "-").repeat(10));
         }
         FileSchema schema = oneColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED, null);
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(8192).enableDictionary(false).build();
+        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(8192).encoding(ColumnEncoding.PLAIN).build();
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {

@@ -78,6 +78,11 @@ enum TypeFixture {
         this.dictionaryCapable = dictionaryCapable;
     }
 
+    /// The physical type this fixture writes, which is what decides the encodings it may carry.
+    PhysicalType physicalType() {
+        return physicalType;
+    }
+
     /// Whether the writer dictionary-encodes this type at all. `BOOLEAN` never is — a two-value
     /// dictionary cannot beat the bit-packed `PLAIN` layout — so a dictionary case degenerates to
     /// a `PLAIN` one for it.

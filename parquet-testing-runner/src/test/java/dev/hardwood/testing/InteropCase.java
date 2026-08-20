@@ -8,6 +8,7 @@
 package dev.hardwood.testing;
 
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.writer.ColumnEncoding;
 import dev.hardwood.writer.WriterConfig;
 
 /// One point of the write-path interop gate's flat matrix: a single-column file described by its
@@ -105,7 +106,7 @@ record InteropCase(String name, TypeFixture type, Nullability nullability, int d
     /// Whether the produced column chunks should declare `RLE_DICTIONARY`. An all-null chunk has
     /// no value to intern, so it writes no dictionary page.
     boolean expectsDictionary() {
-        return config.enableDictionary() && type.dictionaryCapable()
+        return config.defaultEncoding() == ColumnEncoding.AUTO && type.dictionaryCapable()
                 && nullability != Nullability.OPTIONAL_ALL_NULL
                 && !plainOnly;
     }

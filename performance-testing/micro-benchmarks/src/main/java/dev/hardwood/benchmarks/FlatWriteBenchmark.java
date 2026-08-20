@@ -178,7 +178,6 @@ public class FlatWriteBenchmark {
         writerConfig = WriterConfig.builder()
                 .pageTargetBytes(PAGE_TARGET_BYTES)
                 .rowGroupTargetBytes(ROW_GROUP_TARGET_BYTES)
-                .enableDictionary(true)
                 .codec(CompressionCodec.valueOf(codec))
                 .build();
         parquetJavaSchema = MessageTypeParser.parseMessageType(PARQUET_JAVA_SCHEMA);

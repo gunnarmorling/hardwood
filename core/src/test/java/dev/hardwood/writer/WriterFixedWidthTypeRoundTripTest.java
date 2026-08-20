@@ -179,7 +179,7 @@ class WriterFixedWidthTypeRoundTripTest {
     void disablingDictionaryWritesPlainDoubles() throws Exception {
         double[] values = { 1.0, 1.0, 2.0, 2.0 };
         FileSchema schema = oneColumn("v", PhysicalType.DOUBLE, RepetitionType.REQUIRED);
-        WriterConfig config = WriterConfig.builder().enableDictionary(false).build();
+        WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build();
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {

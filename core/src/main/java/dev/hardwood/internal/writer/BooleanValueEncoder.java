@@ -10,7 +10,9 @@ package dev.hardwood.internal.writer;
 import java.util.Arrays;
 
 import dev.hardwood.internal.encoding.PlainEncoder;
+import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// [ValueEncoder] for `BOOLEAN` columns. Booleans are never dictionary-encoded — a two-value
 /// dictionary cannot beat the bit-packed `PLAIN` layout — so every page is `PLAIN`.
@@ -129,7 +131,13 @@ final class BooleanValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encodePlain(int from, int count) {
+    byte[] encode(ColumnEncoding encoding, int from, int count) {
+        // BOOLEAN carries no optional encoding: the delta encodings are for integers and byte
+        // arrays, byte-stream-split needs a fixed byte width a bit-packed boolean has not, and
+        // RLE for boolean data pages is a separate increment.
+        if (encoding != ColumnEncoding.PLAIN) {
+            throw unsupported(encoding, PhysicalType.BOOLEAN);
+        }
         return PlainEncoder.encodeBooleans(plain, from, count);
     }
 

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.parquet.CorruptDeltaByteArrays;
 import org.apache.parquet.CorruptStatistics;
 import org.apache.parquet.VersionParser;
 import org.apache.parquet.VersionParser.ParsedVersion;
@@ -121,6 +122,15 @@ final class ParquetJavaReader {
                     .as("PARQUET-251 discards %s statistics written by '%s'", gated, createdBy)
                     .isFalse();
         }
+
+        // PARQUET-251's counterpart, reached by an encoding rather than by statistics: a
+        // DELTA_BYTE_ARRAY chunk is forced onto a slower sequential read when the writer is one
+        // parquet-java knows the defect of, or one it cannot identify at all. A parseable
+        // created_by is what keeps hardwood's own files off that path, and the assertion is here
+        // rather than beside the encoding because it is a property of the footer, not the chunk.
+        assertThat(CorruptDeltaByteArrays.requiresSequentialReads(parsed, Encoding.DELTA_BYTE_ARRAY))
+                .as("PARQUET-246 forces sequential DELTA_BYTE_ARRAY reads for '%s'", createdBy)
+                .isFalse();
     }
 
     /// Walks every data page of every column chunk through parquet-java's page readers, and

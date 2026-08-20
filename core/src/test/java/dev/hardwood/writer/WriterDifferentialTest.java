@@ -492,6 +492,145 @@ class WriterDifferentialTest {
         return list;
     }
 
+    @Test
+    void duckDbReadsDeltaBinaryPackedLongs(@TempDir Path dir) throws Exception {
+        // A second reader for the encodings stage 19b taught the writer. DuckDB shares no code
+        // with either side of hardwood, so agreement here is about the bytes rather than about
+        // hardwood's encoder and decoder agreeing with each other.
+        ColumnEncoding encoding = ColumnEncoding.DELTA_BINARY_PACKED;
+        int n = 20_000;
+        int[] r = new int[n];
+        long[] v = new long[n];
+        long timestamp = 1_700_000_000_000L;
+        for (int i = 0; i < n; i++) {
+            r[i] = i;
+            // Values that move in small steps at a large magnitude: what delta encoding is for,
+            // and the shape whose deltas need far fewer bits than the values do.
+            timestamp += 1 + (i % 7);
+            v[i] = timestamp;
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("v", PhysicalType.INT64, RepetitionType.REQUIRED)
+                .build();
+        WriterConfig config = WriterConfig.builder()
+                .encoding("v", encoding)
+                .pageTargetBytes(4096)
+                .build();
+        Path file = dir.resolve("encoded.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
+            writer.writeBatch(batch -> batch.ints(0, r).longs(1, v));
+        }
+
+        List<Long> actual = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
+                        "SELECT v FROM read_parquet('" + file.toAbsolutePath() + "') ORDER BY r")) {
+            while (rs.next()) {
+                actual.add(rs.getLong("v"));
+            }
+        }
+
+        List<Long> expected = new ArrayList<>(n);
+        for (long value : v) {
+            expected.add(value);
+        }
+        assertThat(actual).as("%s values", encoding).containsExactlyElementsOf(expected);
+    }
+
+    @Test
+    void duckDbReadsByteStreamSplitDoubles(@TempDir Path dir) throws Exception {
+        // Floating point is what byte-stream-split is for, and it is also all DuckDB 1.4.4
+        // accepts: it rejects the encoding outright for INT32, INT64 and FIXED_LEN_BYTE_ARRAY,
+        // which the format has allowed since parquet-format 2.10 ("BYTE_STREAM_SPLIT encoding is
+        // only supported for FLOAT or DOUBLE data"). Those three are not left unchecked — the
+        // interop gate reads all of them back through parquet-java — so what is missing here is
+        // DuckDB's second opinion on them, not coverage.
+        int n = 20_000;
+        int[] r = new int[n];
+        double[] v = new double[n];
+        for (int i = 0; i < n; i++) {
+            r[i] = i;
+            v[i] = 1000.0 + i * 0.015625;
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("v", PhysicalType.DOUBLE, RepetitionType.REQUIRED)
+                .build();
+        WriterConfig config = WriterConfig.builder()
+                .encoding("v", ColumnEncoding.BYTE_STREAM_SPLIT)
+                .pageTargetBytes(4096)
+                .build();
+        Path file = dir.resolve("split.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
+            writer.writeBatch(batch -> batch.ints(0, r).doubles(1, v));
+        }
+
+        List<Double> actual = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
+                        "SELECT v FROM read_parquet('" + file.toAbsolutePath() + "') ORDER BY r")) {
+            while (rs.next()) {
+                actual.add(rs.getDouble("v"));
+            }
+        }
+
+        List<Double> expected = new ArrayList<>(n);
+        for (double value : v) {
+            expected.add(value);
+        }
+        assertThat(actual).as("BYTE_STREAM_SPLIT values").containsExactlyElementsOf(expected);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = ColumnEncoding.class, names = { "DELTA_LENGTH_BYTE_ARRAY", "DELTA_BYTE_ARRAY" })
+    void duckDbReadsOptionalByteArrayEncodings(ColumnEncoding encoding, @TempDir Path dir) throws Exception {
+        // Sorted paths sharing long prefixes — what DELTA_BYTE_ARRAY targets — including the
+        // empty value, which is the edge where a prefix and a suffix are both nothing.
+        int n = 5_000;
+        int[] r = new int[n];
+        byte[][] v = new byte[n][];
+        for (int i = 0; i < n; i++) {
+            r[i] = i;
+            v[i] = i == 0 ? new byte[0]
+                    : ("/var/log/service/part-" + String.format("%06d", i)).getBytes(StandardCharsets.UTF_8);
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
+                        new LogicalType.StringType())
+                .build();
+        WriterConfig config = WriterConfig.builder()
+                .encoding("v", encoding)
+                .pageTargetBytes(4096)
+                .build();
+        Path file = dir.resolve("encoded.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
+            writer.writeBatch(batch -> batch.ints(0, r).bytes(1, v));
+        }
+
+        List<String> actual = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(
+                        "SELECT v FROM read_parquet('" + file.toAbsolutePath() + "') ORDER BY r")) {
+            while (rs.next()) {
+                actual.add(rs.getString("v"));
+            }
+        }
+
+        List<String> expected = new ArrayList<>(n);
+        for (byte[] value : v) {
+            expected.add(new String(value, StandardCharsets.UTF_8));
+        }
+        assertThat(actual).as("%s values", encoding).containsExactlyElementsOf(expected);
+    }
+
     @ParameterizedTest(name = "{0}")
     @EnumSource(value = CompressionCodec.class,
             names = { "UNCOMPRESSED", "GZIP", "SNAPPY", "ZSTD", "LZ4_RAW", "BROTLI" })
@@ -512,7 +651,7 @@ class WriterDifferentialTest {
                 .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .addColumn("v", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .build();
-        WriterConfig config = WriterConfig.builder().enableDictionary(false).codec(codec).build();
+        WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).codec(codec).build();
         Path file = dir.resolve("compressed.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
             writer.writeBatch(batch -> batch.ints(0, r).ints(1, v));

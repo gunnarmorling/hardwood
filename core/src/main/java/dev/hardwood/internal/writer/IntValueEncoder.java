@@ -9,9 +9,13 @@ package dev.hardwood.internal.writer;
 
 import java.util.Arrays;
 
+import dev.hardwood.internal.encoding.ByteStreamSplitEncoder;
+import dev.hardwood.internal.encoding.DeltaBinaryPackedEncoder;
 import dev.hardwood.internal.encoding.DictionaryEncoder;
 import dev.hardwood.internal.encoding.PlainEncoder;
+import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.writer.ColumnEncoding;
 
 /// [ValueEncoder] for `INT32` columns.
 final class IntValueEncoder extends ValueEncoder {
@@ -28,12 +32,12 @@ final class IntValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    IntValueEncoder(int pageValues, boolean enableDictionary, boolean unsignedOrder) {
+    IntValueEncoder(int pageValues, boolean buildDictionary, boolean unsignedOrder) {
         this.unsignedOrder = unsignedOrder;
         this.statistics = new IntStatisticsCollector(unsignedOrder);
         this.plain = new int[Math.max(1, pageValues)];
         this.window = new int[Math.max(1, pageValues)];
-        this.dictionary = enableDictionary ? new DictionaryEncoder() : null;
+        this.dictionary = buildDictionary ? new DictionaryEncoder() : null;
     }
 
     @Override
@@ -117,8 +121,14 @@ final class IntValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encodePlain(int from, int count) {
-        return PlainEncoder.encodeInts(plain, from, count);
+    byte[] encode(ColumnEncoding encoding, int from, int count) {
+        return switch (encoding) {
+            case PLAIN -> PlainEncoder.encodeInts(plain, from, count);
+            case DELTA_BINARY_PACKED -> DeltaBinaryPackedEncoder.encodeInts(plain, from, count);
+            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
+                    PlainEncoder.encodeInts(plain, from, count), 0, count, Integer.BYTES);
+            default -> throw unsupported(encoding, PhysicalType.INT32);
+        };
     }
 
     @Override

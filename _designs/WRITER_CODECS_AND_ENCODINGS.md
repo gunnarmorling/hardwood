@@ -1,7 +1,7 @@
 # Codec and encoding breadth (#9, stage 19)
 
-**Status: 19a (codecs) delivered; 19b (encodings) planned.** Tracking issue: #976. Delivery
-stage 19 (Breadth) of [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
+**Status: Completed** (19a codecs, 19b encodings). Tracking issue: #976. Delivery stage 19
+(Breadth) of [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
 
 ## Context
 
@@ -310,14 +310,23 @@ Encoding specifics that the format pins and the tests hold:
 
 - `DELTA_BINARY_PACKED` writes 128-value blocks of four 32-value miniblocks. A trailing
   block writes zero as the bit width of each miniblock it does not need and no bytes for
-  them. Deltas are computed with wrap-around at the column's width, so an `INT32` column
-  spanning the full range encodes without its deltas overflowing. The two sides of this meet
-  in an idiom worth naming: `DeltaBinaryPackedDecoder` reconstructs an `INT32` column by
-  accumulating in a `long` and narrowing with a cast, so the encoder's wrapped delta is
-  correct only if it survives that narrowing. The alternating-extremes case in the round-trip
-  suite is what holds the pair together rather than each half separately, and where they
-  disagree it is the decoder that moves: the encoding belongs to the format, and the reader is
-  the side that has never been fed a writer producing this shape.
+  them; a miniblock holding any value is written whole, the decoder taking its length from the
+  width alone, so a partly-filled one is padded with the block minimum.
+
+  Deltas are computed with wrap-around at the column's width, so an `INT32` column spanning the
+  full range encodes without its deltas overflowing. `DeltaBinaryPackedDecoder` reconstructs
+  such a column by accumulating in a `long` and narrowing with a cast, and that narrowing is
+  what recovers the value: the low bits of the sum are the type's own arithmetic either way.
+  The existing decoder needs no change to read this — the alternating-extremes cases in the
+  round-trip suite are what hold the pair together.
+
+  **The block minimum is signed and the residues unsigned**, and the two are not
+  interchangeable. Taking the minimum as a signed value is what keeps a descending column cheap:
+  its deltas are negative, and measuring them against a negative minimum leaves residues near
+  zero. Comparing them unsigned instead makes every negative delta look enormous and drives the
+  bit width to the full type — which round-trips perfectly and costs an order of magnitude more
+  than it needs to. Encoding size is therefore asserted, not just symmetry: a uniform step must
+  pack into a fraction of a byte per value.
 - `DELTA_LENGTH_BYTE_ARRAY` is the lengths as `DELTA_BINARY_PACKED` followed by the
   concatenated bytes; `DELTA_BYTE_ARRAY` is the prefix lengths, then the suffixes in that
   same form. For `FIXED_LEN_BYTE_ARRAY` the suffix lengths are still written, the values
@@ -383,8 +392,14 @@ header carries the chunk's value encoding, as it does today.
   `DELTA_BYTE_ARRAY` chunk the answer is false, which is what a parseable `created_by`
   (stage 15) buys on this path.
 - **The differential suite.** `WriterDifferentialTest` gains the same pairs, so a second
-  independent reader sees every one of them. DuckDB reads all six produced codecs, which is
-  what keeps `BROTLI` covered where the gate cannot reach it.
+  independent reader sees them. DuckDB reads all six produced codecs, which is what keeps
+  `BROTLI` covered where the gate cannot reach it.
+
+  The two readers cover byte-stream-split between them rather than each alone. DuckDB 1.4.4
+  accepts the encoding for `FLOAT` and `DOUBLE` only, rejecting `INT32`, `INT64` and
+  `FIXED_LEN_BYTE_ARRAY` outright — a restriction predating parquet-format 2.10, which added
+  them. Those three are read back through parquet-java on the gate instead, so every pair in
+  the table above has an independent reader; what varies is which one.
 - **The refusals.** `LZ4` and `LZO` fail at creation with their own reasons; so do a column
   path matching no leaf, a policy illegal for its column's physical type, and a file-wide
   default illegal for any one column of the schema.

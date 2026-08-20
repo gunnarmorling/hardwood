@@ -14,8 +14,10 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import dev.hardwood.Experimental;
@@ -45,11 +47,11 @@ import dev.hardwood.schema.FileSchema;
 /// [ColumnBatch] slices; the writer packs each column into size-bounded data pages — a
 /// levelled column's pages carrying an RLE definition-level stream ahead of the values — and
 /// flushes a row group once its buffered data reaches the configured target, so peak memory is
-/// bounded regardless of how much is written. Columns are dictionary-encoded by default (a
-/// dictionary page plus `RLE_DICTIONARY` index pages), falling back to `PLAIN` when the
-/// dictionary grows past the configured limit. Each page body is compressed with the
-/// configured codec (`ZSTD` by default, or `UNCOMPRESSED`). All of these are configurable
-/// through [WriterConfig]. The row groups and footer are finalized on [#close()].
+/// bounded regardless of how much is written. Each column chunk is encoded one way throughout:
+/// by default the writer weighs a dictionary against `PLAIN` once the row group is buffered and
+/// takes the smaller, or a [ColumnEncoding] set per column names the encoding outright. Each page
+/// body is compressed with the configured codec (`ZSTD` by default). All of these are
+/// configurable through [WriterConfig]. The row groups and footer are finalized on [#close()].
 ///
 /// The file is produced front to back and is valid only after `close()` returns.
 public final class ParquetFileWriter implements Closeable {
@@ -105,7 +107,8 @@ public final class ParquetFileWriter implements Closeable {
     private Mode mode = Mode.UNSET;
     private RowWriter rowWriter;
 
-    private ParquetFileWriter(OutputFile out, FileSchema schema, WriterConfig config, Compressor compressor) {
+    private ParquetFileWriter(OutputFile out, FileSchema schema, WriterConfig config, Compressor compressor,
+            ColumnEncoding[] encodings) {
         this.out = out;
         this.schema = schema;
         this.config = config;
@@ -116,7 +119,7 @@ public final class ParquetFileWriter implements Closeable {
         this.ranges = LogicalTypeValueRange.forSchema(schema);
         // One buffer serves every row group: flushing it resets it in place, so the writer's
         // largest allocation is made once per file rather than once per row group.
-        this.current = new RowGroupBuffer(schema, pageValues, config.enableDictionary(),
+        this.current = new RowGroupBuffer(schema, pageValues, encodings,
                 dictionaryAnalysisCapBytes(config), config.statisticsTruncationLength(), compressor, config.codec());
     }
 
@@ -146,6 +149,8 @@ public final class ParquetFileWriter implements Closeable {
     /// @throws IOException if the destination cannot be opened
     /// @throws UnsupportedOperationException if the schema has a column of an unsupported
     ///         physical type, or the configured codec cannot be written
+    /// @throws IllegalArgumentException if an encoding policy names a column the schema does not
+    ///         have, or one its physical type cannot carry
     public static ParquetFileWriter create(OutputFile out, FileSchema schema, WriterConfig config)
             throws IOException {
         for (int c = 0; c < schema.getColumnCount(); c++) {
@@ -156,12 +161,57 @@ public final class ParquetFileWriter implements Closeable {
                                 + column.name() + " is " + column.type());
             }
         }
-        // Resolve the codec before touching the output, so an unsupported codec or a missing
-        // codec library fails before any bytes are written rather than leaving a partial file.
+        // Everything the configuration says about this schema is settled before the output is
+        // touched, so a file the writer cannot honour is never begun: the encoding policies
+        // against the schema's columns, then the codec and its library.
+        ColumnEncoding[] encodings = resolveEncodings(schema, config);
         Compressor compressor = new CompressorFactory().getCompressor(config.codec());
         out.create();
         out.write(ByteBuffer.wrap(MAGIC));
-        return new ParquetFileWriter(out, schema, config, compressor);
+        return new ParquetFileWriter(out, schema, config, compressor, encodings);
+    }
+
+    /// Resolves each leaf column's encoding policy, rejecting a configuration this schema cannot
+    /// carry.
+    ///
+    /// Two things are rejected, and neither could be reported later: a path naming no leaf column
+    /// is a typo whose only other effect would be to write the file in an encoding the caller did
+    /// not ask for, and a policy illegal for a column's physical type has no honest resolution —
+    /// quietly writing that column some other way is the silent divergence this check exists to
+    /// prevent. The file-wide default is held to the same rule as an override, so a default no
+    /// column of the schema can carry fails rather than applying to none of them.
+    private static ColumnEncoding[] resolveEncodings(FileSchema schema, WriterConfig config) {
+        Map<String, ColumnEncoding> overrides = config.columnEncodings();
+        if (!overrides.isEmpty()) {
+            Set<String> leafPaths = new LinkedHashSet<>();
+            for (int c = 0; c < schema.getColumnCount(); c++) {
+                leafPaths.add(schema.getColumn(c).fieldPath().toString());
+            }
+            for (String path : overrides.keySet()) {
+                if (!leafPaths.contains(path)) {
+                    throw new IllegalArgumentException("Encoding configured for column '" + path
+                            + "', which the schema does not have. Its leaf columns are: " + leafPaths);
+                }
+            }
+        }
+
+        ColumnEncoding[] encodings = new ColumnEncoding[schema.getColumnCount()];
+        for (int c = 0; c < schema.getColumnCount(); c++) {
+            ColumnSchema column = schema.getColumn(c);
+            // Keyed on the dotted path rather than the leaf name: a schema may repeat a name at
+            // several depths, and only the path identifies one leaf.
+            String path = column.fieldPath().toString();
+            ColumnEncoding encoding = config.encodingFor(path);
+            if (!encoding.supports(column.type())) {
+                throw new IllegalArgumentException("Encoding " + encoding + " cannot be written for column '"
+                        + path + "', which is " + column.type()
+                        + (overrides.containsKey(path)
+                                ? ". Choose an encoding that column's type can carry."
+                                : ". It is the file-wide default; set a per-column encoding instead."));
+            }
+            encodings[c] = encoding;
+        }
+        return encodings;
     }
 
     /// Writes one aligned batch of column values, flushing row groups as the buffered
