@@ -250,4 +250,6 @@ faster than before the stage, because a column that stops interning stops paying
 table too — and produces a file of the same size, since a column abandoned early is one the
 comparison would have rejected anyway. What a small cap risks is the column whose cardinality
 saturates late: it looks all-distinct over its first values and is written `PLAIN` on that
-evidence, losing a dictionary that would have paid.
+evidence, losing a dictionary that would have paid. Tightening the cap therefore waits on a way
+to keep deciding after it fires, which is delivery stage 25 (#979): the cap goes on bounding
+memory, and a bounded-error distinct counter carries the decision.
