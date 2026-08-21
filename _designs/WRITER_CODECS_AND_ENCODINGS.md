@@ -82,7 +82,7 @@ row group and `PLAIN` in the next, each chunk measured on what it holds — whil
 policy holds for every chunk of its column, and the codec is uniform for the whole file. The
 caller cannot address a single chunk, and nothing in this stage changes that: row-group
 boundaries follow from `rowGroupTargetBytes` and the data, so there is no stable chunk for a
-configuration to name. Stage 29 (#985) is where that changes — a caller-placed boundary is
+configuration to name. Stage 30 (#985) is where that changes — a caller-placed boundary is
 an addressable point, and the configuration it carries supersedes this one for the row groups
 after it, so what is settled here becomes what a file *starts* with rather than what it is
 stuck with. The other form of per-chunk variation is a decision the writer takes from what it
@@ -251,10 +251,10 @@ resolution, so a misconfigured file fails before it exists.
 |---|---|
 | Dictionary analysis | Not run. Values go straight to the value store, so the chunk pays neither the interning nor the index array |
 | The analysis cap | Not consulted: it bounds a dictionary this chunk never builds |
-| `Statistics.distinct_count` | Absent, as for any chunk that counted nothing — the same position stage 28 addresses |
+| `Statistics.distinct_count` | Absent, as for any chunk that counted nothing — the same position stage 29 addresses |
 | `min` / `max` / `null_count` | Unchanged: statistics are accumulated from values, independently of encoding |
 | Level streams | Unchanged: `RLE`, length-prefixed, ahead of the value section |
-| Page cuts | Unchanged: planned from retained plain widths, which stage 27 revisits for every column |
+| Page cuts | Unchanged: planned from retained plain widths, which stage 28 revisits for every column |
 | Row-group flush | Unchanged: the target bounds buffered uncompressed bytes, which is a memory bound, not a size prediction |
 
 A chunk under a named policy still accumulates each value's `PLAIN` width as it arrives, even

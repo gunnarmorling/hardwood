@@ -297,7 +297,7 @@ group is flushed and the footer written.
 
 Because `writeBatch` consumes its sources synchronously — `RecordShredder.bind` and
 `appendRecords` both complete within the call — the staging arrays can be refilled as soon as it
-returns. Stage 22 (parallel encode) must preserve that, or give the row writer a second staging
+returns. Stage 23 (parallel encode) must preserve that, or give the row writer a second staging
 generation to write into; it is noted here so the coupling is not rediscovered.
 
 A staged array is passed to `ColumnBatch` directly when its fill count equals its capacity, and
@@ -347,7 +347,7 @@ later.
 The rule bites on the *name*, not on the parameter type: it is an unqualified `set` or `add`
 competing with typed siblings that a call can silently resolve to the wrong way. A distinctly
 named `setValue(String | int, Object)` mirroring the reader's `getValue` is outside it, because
-no call to `setInt` can resolve to `setValue` by accident, and it is planned as stage 33 of
+no call to `setInt` can resolve to `setValue` by accident, and it is planned as stage 34 of
 `_designs/WRITER_SUPPORT.md`. Its justification is narrower than `getValue`'s: a reader must
 always be able to handle a column whose type it learns at runtime, whereas a writer usually
 knows the schema it declared — except in the generic case, a copier or a format bridge, which
@@ -361,7 +361,7 @@ knows it only at runtime and otherwise has to switch on `PhysicalType` to pick a
   view epic (#940) and needs its schema reconciliation, not a second ad-hoc mapper here.
 - **`VARIANT` values.** The writer has no Variant encoder; a shredded Variant group can still be
   written field by field through the binary setters. `setVariant` therefore waits on a Variant
-  writer rather than on this layer, planned as stage 34 of `_designs/WRITER_SUPPORT.md`.
+  writer rather than on this layer, planned as stage 35 of `_designs/WRITER_SUPPORT.md`.
 - **`INT96`.** Not writable at all.
 - **Shapes the columnar path rejects.** The layer produces `ColumnBatch` inputs, so it inherits
   every limitation of the core: notably a nullable struct enclosing a repeated field, which the

@@ -13,7 +13,7 @@ none of them says how long producing a file takes, or how that compares to the i
 
 This is the first write benchmark: flat schema, three contenders, one number each. It exists to
 establish a baseline that later stages are measured against — the remaining codecs and encoders
-(stage 19), parallel column encoding (stage 22), row-group-global dictionary selection (stage
+(stage 19), parallel column encoding (stage 23), row-group-global dictionary selection (stage
 18) are all throughput claims, and none of them can be argued without this.
 
 ## Placement
@@ -148,7 +148,7 @@ rules.
 
 Two things stay unmatched because they are properties of the writers rather than settings.
 parquet-java writes a column index and an offset index per column chunk, which Hardwood does not
-produce yet (delivery stage 23). And the 16 MiB row-group target means different things on the
+produce yet (delivery stage 24). And the 16 MiB row-group target means different things on the
 two sides — Hardwood counts buffered *uncompressed* bytes, parquet-java its own buffered size
 estimate — so the same target yields a different number of row groups, which the benchmark
 prints alongside each file's size.
@@ -191,10 +191,12 @@ Deliberately not here:
 
 - **Nested shapes.** `NestedWriteBenchmark` follows once the flat one is telling us something;
   the nested write path has more surface (offsets, per-instance validity, the row layer's
-  staging reset) and deserves its own fixture rather than a column bolted onto this one.
+  staging reset) and deserves its own fixture rather than a column bolted onto this one. It
+  arrives with stage 21 (#989), along with the encoding, cardinality and schema-width axes this
+  fixture holds fixed — see [WRITE_PATH_BENCHMARK_COVERAGE.md](WRITE_PATH_BENCHMARK_COVERAGE.md).
 - **`AvroParquetWriter`.** Added as a second parquet-java contender once the first comparison is
   settled, so the two are not confounded on introduction.
-- **Filesystem and object-store throughput.** The S3 backend arrives in stage 21; measuring it
+- **Filesystem and object-store throughput.** The S3 backend arrives in stage 22; measuring it
   is its own exercise with its own dominant term.
 - **Correctness assertions.** Covered by the equivalence tests and the interop gate.
 

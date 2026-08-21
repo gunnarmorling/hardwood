@@ -156,12 +156,12 @@ in the same commit that introduces them. Concretely:
 | 17 (flat write benchmark) | None — it measures throughput over the shapes the gate already covers |
 | 18 (row-group-global dictionary selection) | The encoding axis loses the mid-chunk `PLAIN` fallback and gains the whole-chunk choice |
 | 19 (codecs, delta / BSS encoders) | The codec axis gains the remaining codecs; the encoding axis gains the delta and byte-stream-split forms, one case per encoding and legal physical type |
-| 21 (S3 `OutputFile`) | None — the backend does not change the bytes |
-| 22 (parallel encoding) | None — the output is byte-identical by construction, which its own tests assert |
-| 23 (page index) | The footer assertions gain the OffsetIndex and ColumnIndex, read through parquet-java |
-| 24 (Bloom filters) | The footer assertions gain the Bloom filter, read and probed through parquet-java |
+| 22 (S3 `OutputFile`) | None — the backend does not change the bytes |
+| 23 (parallel encoding) | None — the output is byte-identical by construction, which its own tests assert |
+| 24 (page index) | The footer assertions gain the OffsetIndex and ColumnIndex, read through parquet-java |
+| 25 (Bloom filters) | The footer assertions gain the Bloom filter, read and probed through parquet-java |
 
-Honouring the contract is not left to judgement: stage 30
+Honouring the contract is not left to judgement: stage 31
 ([WRITE_COVERAGE_ASSERTION.md](WRITE_COVERAGE_ASSERTION.md)) derives the space the writer can
 produce from its own capability tables and fails the build on any cell no test produced, so an
 increment that widens the writer without widening the matrix fails in the commit that widens

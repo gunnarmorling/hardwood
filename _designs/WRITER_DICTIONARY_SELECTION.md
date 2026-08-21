@@ -144,7 +144,7 @@ values occupy `PLAIN`-encoded, which is what the retention matches for every typ
 store is the one structure it does not account for. It remains a bound on what the writer holds
 rather than on what a row group occupies on disk — the two differ by whatever the chunk's chosen
 encoding and codec achieve, by an order of magnitude on a dictionary-friendly column. A target on
-the produced size is delivery stage 26 (#980).
+the produced size is delivery stage 27 (#980).
 
 ## Memory
 
@@ -180,7 +180,7 @@ level store, which is a byte per entry against the one to a few bits a level enc
 levelled column holds more than the target states by that difference — immaterial beside a
 fixed-width value, and the dominant term for a flat `OPTIONAL` `BOOLEAN`.
 
-Parallel encode (stage 22) applies inside a row group before it applies across row groups. Its
+Parallel encode (stage 23) applies inside a row group before it applies across row groups. Its
 work units are the column chunks of one group, which after the analysis are independent — each
 chunk's encoding is already fixed, no adaptive state is shared between them, and their output
 sizes are predictable enough to schedule. That keeps peak memory at one row group's retention
@@ -226,8 +226,8 @@ Deliberately not here, each reachable only from this shape and sequenced separat
   encode this comparison does not do.
 - **Per-chunk codec choice**, which `ColumnMetaData.codec` allows, for a chunk the analysis
   finds incompressible.
-- **Bloom filter sizing** from exact cardinality (stage 24), and page boundary choice and
-  `ColumnIndex.boundary_order` for the page index (stage 23).
+- **Bloom filter sizing** from exact cardinality (stage 25), and page boundary choice and
+  `ColumnIndex.boundary_order` for the page index (stage 24).
 
 The dictionary page limit is parquet-java's alone, so `FlatWriteBenchmark` records it among the
 asymmetries between the contenders rather than among the settings they match.
@@ -260,5 +260,5 @@ table too — and produces a file of the same size, since a column abandoned ear
 comparison would have rejected anyway. What a small cap risks is the column whose cardinality
 saturates late: it looks all-distinct over its first values and is written `PLAIN` on that
 evidence, losing a dictionary that would have paid. Tightening the cap therefore waits on a way
-to keep deciding after it fires, which is delivery stage 25 (#979): the cap goes on bounding
+to keep deciding after it fires, which is delivery stage 26 (#979): the cap goes on bounding
 memory, and a bounded-error distinct counter carries the decision.

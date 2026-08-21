@@ -205,7 +205,7 @@ as `Integer.SIZE`. This holds only while every value is four bytes. Two changes 
   are appended — and the writer flushes once that crosses `rowGroupTargetBytes`. The estimate is
   exact for a non-dictionary column and runs high for a dictionary-encoded one, whose buffered
   index stream is smaller than the summed `PLAIN` widths, so dictionary row groups flush somewhat
-  below the target. Sizing a row group from its produced bytes is stage 26 (#980); stage 18 leaves
+  below the target. Sizing a row group from its produced bytes is stage 27 (#980); stage 18 leaves
   the trigger counting uncompressed values deliberately, since that is what bounds the writer's
   memory, and makes the per-chunk encoding choice from the fully buffered group without changing
   when the group is cut. The proxy is retained only to bound the page-level entry count.
