@@ -327,12 +327,20 @@ they can be added without a breaking change or a boxing penalty:
 - **String-keyed map sugar.** `MapBuilder.putString(String, String)`, `putLong(String, long)`
   and the rest.
 
-One rule keeps both open: **no `Object`-typed setter anywhere in this API.** There is no
-`set(String, Object)` mirroring the reader's `getValue`, no `ListBuilder.add(Object)`, and no
-`Collection<?>` overload. Any of them would make the boxing path the one that binds by default —
-`addInt(1)` and `add(1)` are not the same program — and would create overload ambiguity against
-the primitive forms added later. The reader's `getValue` exists because a reader must be able to
-handle a column whose type it learns at runtime; a writer always knows the schema it declared.
+One rule keeps both open: **no *unqualified* `Object`-typed setter anywhere in this API.** There
+is no `set(String, Object)`, no `ListBuilder.add(Object)`, and no `Collection<?>` overload. Any
+of them would make the boxing path the one that binds by default — `addInt(1)` and `add(1)` are
+not the same program — and would create overload ambiguity against the primitive forms added
+later.
+
+The rule bites on the *name*, not on the parameter type: it is an unqualified `set` or `add`
+competing with typed siblings that a call can silently resolve to the wrong way. A distinctly
+named `setValue(String | int, Object)` mirroring the reader's `getValue` is outside it, because
+no call to `setInt` can resolve to `setValue` by accident, and it is planned as stage 33 of
+`_designs/WRITER_SUPPORT.md`. Its justification is narrower than `getValue`'s: a reader must
+always be able to handle a column whose type it learns at runtime, whereas a writer usually
+knows the schema it declared — except in the generic case, a copier or a format bridge, which
+knows it only at runtime and otherwise has to switch on `PhysicalType` to pick a setter.
 
 ## Out of scope
 
@@ -341,7 +349,8 @@ handle a column whose type it learns at runtime; a writer always knows the schem
 - **Typed binding** — writing a POJO or record directly. That is the write side of the typed
   view epic (#940) and needs its schema reconciliation, not a second ad-hoc mapper here.
 - **`VARIANT` values.** The writer has no Variant encoder; a shredded Variant group can still be
-  written field by field through the binary setters.
+  written field by field through the binary setters. `setVariant` therefore waits on a Variant
+  writer rather than on this layer, planned as stage 34 of `_designs/WRITER_SUPPORT.md`.
 - **`INT96`.** Not writable at all.
 - **Shapes the columnar path rejects.** The layer produces `ColumnBatch` inputs, so it inherits
   every limitation of the core: notably a nullable struct enclosing a repeated field, which the
