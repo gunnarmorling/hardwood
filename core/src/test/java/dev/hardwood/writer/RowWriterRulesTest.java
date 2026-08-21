@@ -333,6 +333,41 @@ class RowWriterRulesTest {
         }
     }
 
+    /// Two sibling fields of one name would leave the by-name setters ambiguous and the second
+    /// field's index unreachable through them, so the row layer refuses the schema when the
+    /// view is opened. `FileSchema.Builder` permits the shape, and a file carrying it can be
+    /// read, so the rejection has to live here.
+    @Test
+    void twoFieldsOfOneNameAreRejectedUpFront() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .addColumn("id", PhysicalType.INT64, RepetitionType.OPTIONAL)
+                .build();
+
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            assertThatThrownBy(writer::rowWriter)
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("two fields named 'id'")
+                    .hasMessageContaining("the record");
+        }
+    }
+
+    @Test
+    void twoFieldsOfOneNameInsideANestedStructAreRejectedUpFront() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("address", RepetitionType.OPTIONAL, address -> address
+                        .addColumn("city", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)
+                        .addColumn("city", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL))
+                .build();
+
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            assertThatThrownBy(writer::rowWriter)
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("two fields named 'city'")
+                    .hasMessageContaining("struct address");
+        }
+    }
+
     /// Runs a body against an open row writer over the standard schema. The file it produces
     /// is irrelevant to these tests; only the rejection is.
     private static void withRowWriter(RowWriterBody body) throws Exception {

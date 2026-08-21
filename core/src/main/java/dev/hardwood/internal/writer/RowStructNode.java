@@ -13,11 +13,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
 import dev.hardwood.Validity;
+import dev.hardwood.internal.util.StringToIntMap;
 import dev.hardwood.row.PqInterval;
 import dev.hardwood.writer.ColumnBatch;
 import dev.hardwood.writer.ListBuilder;
@@ -32,12 +32,18 @@ import dev.hardwood.writer.StructBuilder;
 final class RowStructNode extends RowNode implements StructBuilder {
 
     private final RowNode[] children;
-    private final Map<String, Integer> byName;
 
-    /// The field name at each child index, so the by-index setters have the inverse of the
-    /// resolution the by-name ones perform. Built by inverting `byName` rather than reading
-    /// its key order, so the mapping holds whatever `Map` the plan hands over.
+    /// The field name at each child index, in schema order: what the by-index setters address
+    /// and [#byName] is built from.
     private final String[] fieldNames;
+
+    /// Field name to child index. The by-name surface is a boundary that resolves to an index
+    /// and then does exactly what the by-index one does, so the resolution runs once per field
+    /// per record — which a `Map<String, Integer>` would make an unboxing per call. This is the
+    /// same open-addressed, primitive-valued map the read side resolves names through in
+    /// `TopLevelFieldMap` and `FlatRowReader`, and it returns a negative index for a name the
+    /// struct does not have.
+    private final StringToIntMap byName;
 
     /// Per-instance nulls of an `OPTIONAL` struct, or `null` when the struct is `REQUIRED`.
     private final NullMaskStage nulls;
@@ -48,13 +54,20 @@ final class RowStructNode extends RowNode implements StructBuilder {
 
     private boolean active;
 
-    RowStructNode(String path, RowNode[] children, Map<String, Integer> byName, boolean nullable) {
+    RowStructNode(String path, RowNode[] children, String[] fieldNames, boolean nullable) {
         super(path);
         this.children = children;
-        this.byName = byName;
-        this.fieldNames = new String[children.length];
-        for (Map.Entry<String, Integer> field : byName.entrySet()) {
-            fieldNames[field.getValue()] = field.getKey();
+        this.fieldNames = fieldNames;
+        this.byName = new StringToIntMap(fieldNames.length);
+        for (int i = 0; i < fieldNames.length; i++) {
+            // Two fields of one name would make the by-name surface ambiguous, and the index
+            // the loser resolves to unreachable. Caught while the map is built rather than by
+            // a separate pass, because a collision is exactly what building it detects.
+            if (byName.get(fieldNames[i]) >= 0) {
+                throw new UnsupportedOperationException(
+                        "Schema has two fields named '" + fieldNames[i] + "' under " + describe());
+            }
+            byName.put(fieldNames[i], i);
         }
         this.nulls = nullable ? new NullMaskStage() : null;
         this.set = new boolean[children.length];
@@ -424,10 +437,10 @@ final class RowStructNode extends RowNode implements StructBuilder {
     /// a second set of the same field, and any use after the scope has ended.
     private int claim(String fieldName) {
         checkActive();
-        Integer index = byName.get(fieldName);
-        if (index == null) {
+        int index = byName.get(fieldName);
+        if (index < 0) {
             throw new IllegalArgumentException("No field named '" + fieldName + "' in " + describe()
-                    + "; it has " + String.join(", ", byName.keySet()));
+                    + "; it has " + String.join(", ", fieldNames));
         }
         return markSet(index);
     }

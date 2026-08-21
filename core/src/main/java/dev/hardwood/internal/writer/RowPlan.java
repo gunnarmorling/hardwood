@@ -8,9 +8,7 @@
 package dev.hardwood.internal.writer;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 import dev.hardwood.metadata.RepetitionType;
@@ -204,16 +202,15 @@ public final class RowPlan {
                                              PrecisionLossPolicy policy) {
         List<SchemaNode> children = group.children();
         RowNode[] nodes = new RowNode[children.size()];
-        Map<String, Integer> byName = new LinkedHashMap<>();
+        String[] fieldNames = new String[children.size()];
         for (int i = 0; i < children.size(); i++) {
             SchemaNode child = children.get(i);
             nodes[i] = buildNode(child, childPath(path, child.name()), schema, nullable || nullableAncestor, policy);
-            if (byName.putIfAbsent(child.name(), i) != null) {
-                throw new UnsupportedOperationException(
-                        "Schema has two fields named '" + child.name() + "' under " + describe(path));
-            }
+            fieldNames[i] = child.name();
         }
-        return new RowStructNode(path, nodes, byName, nullable);
+        // The node builds its own name-to-index map from these, and rejects a duplicate name
+        // as it does so.
+        return new RowStructNode(path, nodes, fieldNames, nullable);
     }
 
     private static RowNode buildNode(SchemaNode node, String path, FileSchema schema, boolean nullableAncestor,
@@ -281,9 +278,5 @@ public final class RowPlan {
 
     private static String childPath(String path, String name) {
         return path.isEmpty() ? name : path + "." + name;
-    }
-
-    private static String describe(String path) {
-        return path.isEmpty() ? "the record" : "struct " + path;
     }
 }
