@@ -216,8 +216,10 @@ public sealed interface ScreenState {
     /// modal is currently open (-1 when closed). `logicalTypes` controls
     /// whether values render via their logical type (default) or the raw
     /// physical-type form — toggled with `t`. Inside the record modal,
-    /// `modalCursorLine` is the per-line cursor (collapsed fields = 1 line,
-    /// expanded fields = N lines); `expandedColumns` is the set of fields
+    /// `modalCursorLine` is the line of the field the cursor sits on and
+    /// `modalScroll` is the first body line the modal shows; the two move
+    /// independently because `↑`/`↓` step between expandable fields while
+    /// `PgDn`/`PgUp` scroll the body. `expandedColumns` is the set of fields
     /// whose pretty-printed value is rendered inline (multi-line, no
     /// element caps). `expandedRows` is parallel to `rows` and holds the
     /// multi-line pretty-printed form of each cell, populated by
@@ -233,13 +235,23 @@ public sealed interface ScreenState {
             int modalRow,
             boolean logicalTypes,
             java.util.Set<Integer> expandedColumns,
-            int modalCursorLine)
+            int modalCursorLine,
+            int modalScroll)
             implements ScreenState {
         public DataPreview {
             columnNames = java.util.List.copyOf(columnNames);
             rows = java.util.List.copyOf(rows);
             expandedRows = java.util.List.copyOf(expandedRows);
             expandedColumns = java.util.Set.copyOf(expandedColumns);
+        }
+
+        public DataPreview(long firstRow, int pageSize, java.util.List<String> columnNames,
+                           java.util.List<java.util.List<String>> rows,
+                           java.util.List<java.util.List<String>> expandedRows,
+                           int columnScroll, int selectedRow, int modalRow, boolean logicalTypes,
+                           java.util.Set<Integer> expandedColumns, int modalCursorLine) {
+            this(firstRow, pageSize, columnNames, rows, expandedRows, columnScroll, selectedRow,
+                    modalRow, logicalTypes, expandedColumns, modalCursorLine, 0);
         }
     }
 }

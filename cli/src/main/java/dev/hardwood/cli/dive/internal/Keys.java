@@ -66,6 +66,9 @@ public final class Keys {
     /// Fallback terminal width before the first frame renders.
     private static final int DEFAULT_VIEWPORT_COLUMNS = 120;
 
+    /// Fallback terminal height before the first frame renders.
+    private static final int DEFAULT_VIEWPORT_ROWS = 40;
+
     /// Side channel from a list screen's render → its handle: the visible
     /// row count the screen settled on. Used to size PgDn/PgUp jumps so
     /// they advance by exactly one viewport instead of a hard-coded 20.
@@ -75,11 +78,14 @@ public final class Keys {
     /// handling consistent with the most recently rendered column window.
     private static int observedViewportColumns = -1;
 
-    /// Side channel for geometry-dependent handlers. Renderers record the
-    /// area they actually received so the next key event can make the same
-    /// width- and height-dependent decisions as the drawing code.
-    private static int observedAreaWidth = -1;
-    private static int observedAreaHeight = -1;
+    /// Side channel from Data preview's render → its handle. The record modal
+    /// derives its wrapping budget and viewport height from the area it is
+    /// drawn into, and the key handler has to reach the same answers as the
+    /// drawing code — which field is expandable, how far a page scrolls.
+    /// Scoped to the one screen that owns it: a second writer would silently
+    /// change how the modal navigates.
+    private static int observedDataPreviewWidth = -1;
+    private static int observedDataPreviewHeight = -1;
 
     /// Called by a list screen's `render` to record the body row count it
     /// can show. The next `handle` will use this as the PgDn/PgUp stride.
@@ -110,35 +116,32 @@ public final class Keys {
         return observedViewportRows > 0;
     }
 
-    /// Records the area available to a screen's renderer.
-    public static void observeArea(int width, int height) {
-        observedAreaWidth = Math.max(1, width);
-        observedAreaHeight = Math.max(1, height);
+    /// Called by Data preview's `render` to record the area it was drawn into.
+    public static void observeDataPreviewArea(int width, int height) {
+        observedDataPreviewWidth = Math.max(1, width);
+        observedDataPreviewHeight = Math.max(1, height);
     }
 
-    /// True iff a renderer has recorded its available width and height.
-    public static boolean hasObservedArea() {
-        return observedAreaWidth > 0 && observedAreaHeight > 0;
+    /// Width of the area Data preview last rendered into, or a pre-render
+    /// fallback.
+    public static int dataPreviewAreaWidth() {
+        return observedDataPreviewWidth > 0 ? observedDataPreviewWidth : DEFAULT_VIEWPORT_COLUMNS;
     }
 
-    /// Width of the most recently observed screen area, or `-1` before render.
-    public static int observedAreaWidth() {
-        return observedAreaWidth;
+    /// Height of the area Data preview last rendered into, or a pre-render
+    /// fallback.
+    public static int dataPreviewAreaHeight() {
+        return observedDataPreviewHeight > 0 ? observedDataPreviewHeight : DEFAULT_VIEWPORT_ROWS;
     }
 
-    /// Height of the most recently observed screen area, or `-1` before render.
-    public static int observedAreaHeight() {
-        return observedAreaHeight;
-    }
-
-    /// Test hook — clears the observed viewport so handler-only tests
-    /// that ran after a render-path test don't see a viewport seeded
-    /// by that render and trigger unwanted auto-resize.
-    public static void resetObservedViewport() {
+    /// Test hook — clears every observed geometry so handler-only tests that
+    /// ran after a render-path test don't see a viewport or area seeded by
+    /// that render and trigger unwanted auto-resize.
+    public static void resetObservedGeometry() {
         observedViewportRows = -1;
         observedViewportColumns = -1;
-        observedAreaWidth = -1;
-        observedAreaHeight = -1;
+        observedDataPreviewWidth = -1;
+        observedDataPreviewHeight = -1;
     }
 
     /// Conditional-keybar builder. Each `add(enabled, binding)` appends the

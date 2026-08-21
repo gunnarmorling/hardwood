@@ -8,10 +8,12 @@
 package dev.hardwood.cli.dive;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
@@ -48,7 +50,7 @@ class DiveRenderTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        Keys.resetObservedViewport();
+        Keys.resetObservedGeometry();
         Path path = Path.of(getClass().getResource("/column_index_pushdown.parquet").getPath());
         model = ParquetModel.open(InputFile.of(path), path.toString());
     }
@@ -266,64 +268,125 @@ class DiveRenderTest {
     }
 
     @Test
-    void dataPreviewScalarOnlyOverflowRemainsReachable() {
+    void dataPreviewScalarOnlyRecordIsCursorlessAndScrollsWithPageKeys() {
         List<String> names = numberedValues("f", 30);
         List<String> values = numberedValues("v", 30);
         ScreenState.DataPreview state = openModal(names, values, values);
         NavigationStack stack = rooted(state);
         Rect area = new Rect(0, 0, 100, 24);
+
         RenderHarness.RenderedFrame first = RenderHarness.render(area, state, model);
-        assertThat(first.contains("▶f0"))
-                .as("a selected scalar field has no action marker")
+        assertThat(first.contains("▶f"))
+                .as("nothing in the record can be expanded, so no cursor is drawn")
                 .isFalse();
-
-        for (int line = 1; line < names.size(); line++) {
-            assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
-                    .as("move to scalar line %s", line)
-                    .isTrue();
-            assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine())
-                    .isEqualTo(line);
-        }
-
-        ScreenState.DataPreview atLast = (ScreenState.DataPreview) stack.top();
-        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, atLast, model);
-        assertThat(rendered.contains("f29")).isTrue();
-        assertThat(rendered.contains("▶f29"))
-                .as("a selected scalar field is highlighted without an expand marker")
+        assertThat(first.contains("Enter expand"))
+                .as("the hint does not offer an expansion that cannot happen")
                 .isFalse();
-        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack)).isTrue();
-        assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(28);
+        assertThat(first.contains("e/c all")).isFalse();
+        assertThat(first.contains("↑↓ field"))
+                .as("there is no expandable field to step to")
+                .isFalse();
+        assertThat(first.contains("PgDn/PgUp scroll"))
+                .as("the body overflows, so paging is what reaches the rest")
+                .isTrue();
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack)).isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack)).isFalse();
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.PAGE_DOWN), model, stack)).isTrue();
+        ScreenState.DataPreview scrolled = (ScreenState.DataPreview) stack.top();
+        assertThat(RenderHarness.render(area, scrolled, model).contains("f29"))
+                .as("PgDn reaches the tail of a record no cursor can walk")
+                .isTrue();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.PAGE_DOWN), model, stack))
+                .as("already against the bottom")
+                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.PAGE_UP), model, stack)).isTrue();
+        assertThat(((ScreenState.DataPreview) stack.top()).modalScroll()).isZero();
     }
 
     @Test
-    void dataPreviewMixedOverflowRemainsReachablePastLastExpandableField() {
-        List<String> names = new java.util.ArrayList<>(numberedValues("f", 30));
-        List<String> values = new java.util.ArrayList<>(numberedValues("v", 30));
-        List<String> expanded = new java.util.ArrayList<>(values);
+    void dataPreviewOverflowStillStepsBetweenExpandableFieldsOnly() {
+        List<String> names = new ArrayList<>(numberedValues("f", 30));
+        List<String> values = new ArrayList<>(numberedValues("v", 30));
+        List<String> expanded = new ArrayList<>(values);
+        names.set(0, "items");
+        values.set(0, "[1, 2]");
+        expanded.set(0, "[\n  1,\n  2\n]");
+        names.set(20, "more");
+        values.set(20, "[3, 4]");
+        expanded.set(20, "[\n  3,\n  4\n]");
+        ScreenState.DataPreview state = openModal(names, values, expanded);
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 100, 24);
+        RenderHarness.RenderedFrame first = RenderHarness.render(area, state, model);
+        assertThat(first.contains("▶items")).isTrue();
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack)).isTrue();
+        ScreenState.DataPreview atMore = (ScreenState.DataPreview) stack.top();
+        assertThat(atMore.modalCursorLine())
+                .as("↓ skips the 19 scalars between the two expandable fields "
+                        + "even though the body overflows")
+                .isEqualTo(20);
+        RenderHarness.RenderedFrame second = RenderHarness.render(area, atMore, model);
+        assertThat(second.contains("▶more"))
+                .as("the body scrolled far enough to show the newly selected field")
+                .isTrue();
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
+                .as("no expandable field after the last one")
+                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack)).isTrue();
+        assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isZero();
+    }
+
+    @Test
+    void dataPreviewExpandingAFieldScrollsItsNewLinesIntoView() {
+        List<String> names = new ArrayList<>(numberedValues("f", 30));
+        List<String> values = new ArrayList<>(numberedValues("v", 30));
+        List<String> expanded = new ArrayList<>(values);
+        names.set(20, "items");
+        values.set(20, "[alpha, beta, gamma]");
+        expanded.set(20, "[\n  alpha,\n  beta,\n  gamma\n]");
+        ScreenState.DataPreview state = openModal(names, values, expanded);
+        NavigationStack stack = rooted(state);
+        Rect area = new Rect(0, 0, 100, 24);
+        RenderHarness.render(area, state, model);
+
+        // ↓ lands on `items`, leaving it on the last visible line.
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack)).isTrue();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isTrue();
+
+        ScreenState.DataPreview opened = (ScreenState.DataPreview) stack.top();
+        assertThat(opened.expandedColumns()).containsExactly(20);
+        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, opened, model);
+        assertThat(rendered.contains("▶items")).isTrue();
+        assertThat(rendered.contains("gamma"))
+                .as("expanding scrolls so the revealed lines are on screen, "
+                        + "not just the field's key line")
+                .isTrue();
+    }
+
+    @Test
+    void dataPreviewPageKeysScrollTheBodyWithoutMovingTheCursor() {
+        List<String> names = new ArrayList<>(numberedValues("f", 30));
+        List<String> values = new ArrayList<>(numberedValues("v", 30));
+        List<String> expanded = new ArrayList<>(values);
         names.set(0, "items");
         values.set(0, "[1, 2]");
         expanded.set(0, "[\n  1,\n  2\n]");
         ScreenState.DataPreview state = openModal(names, values, expanded);
         NavigationStack stack = rooted(state);
         Rect area = new Rect(0, 0, 100, 24);
-        RenderHarness.RenderedFrame first = RenderHarness.render(area, state, model);
-        assertThat(first.contains("▶items"))
-                .as("the expandable field shows an action marker")
-                .isTrue();
+        RenderHarness.render(area, state, model);
 
-        for (int line = 1; line < names.size(); line++) {
-            assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
-                    .as("move to line %s after the expandable field", line)
-                    .isTrue();
-        }
-
-        ScreenState.DataPreview atLast = (ScreenState.DataPreview) stack.top();
-        assertThat(atLast.modalCursorLine()).isEqualTo(29);
-        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, atLast, model);
-        assertThat(rendered.contains("f29")).isTrue();
-        assertThat(rendered.contains("▶f29"))
-                .as("a scalar remains selectable for scrolling without an action marker")
-                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.PAGE_DOWN), model, stack)).isTrue();
+        ScreenState.DataPreview scrolled = (ScreenState.DataPreview) stack.top();
+        assertThat(scrolled.modalCursorLine())
+                .as("paging reads ahead; it does not drag the selection along")
+                .isZero();
+        assertThat(scrolled.modalScroll()).isPositive();
+        assertThat(RenderHarness.render(area, scrolled, model).contains("f29")).isTrue();
     }
 
     @Test
@@ -367,8 +430,11 @@ class DiveRenderTest {
         assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
                 .as("there is no next actionable field")
                 .isFalse();
-        assertThat(rendered.contains("↑↓ navigate"))
+        assertThat(rendered.contains("↑↓ field"))
                 .as("the hint omits navigation when neither direction can move")
+                .isFalse();
+        assertThat(rendered.contains("PgDn/PgUp scroll"))
+                .as("the body fits, so there is nothing to scroll to")
                 .isFalse();
         assertThat(rendered.contains("Enter expand"))
                 .as("the selected field remains expandable")
@@ -376,33 +442,91 @@ class DiveRenderTest {
     }
 
     @Test
-    void dataPreviewFittedScalarCursorShowsNavigationHintWhenFieldIsReachable() {
+    void dataPreviewValueFillingTheBudgetExactlyIsNotActionable() {
+        // maxKeyWidth 4 ("note") at width 100 leaves an 85-cell value budget.
+        int budget = 85;
+        ScreenState.DataPreview fits = openModal(
+                List.of("note"), List.of("x".repeat(budget)), List.of("x".repeat(budget)));
+        NavigationStack stack = rooted(fits);
+        Rect area = new Rect(0, 0, 100, 24);
+
+        assertThat(RenderHarness.render(area, fits, model).contains("▶note"))
+                .as("a value the collapsed line shows in full is not actionable")
+                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isFalse();
+
+        ScreenState.DataPreview overflows = openModal(
+                List.of("note"), List.of("x".repeat(budget + 1)), List.of("x".repeat(budget + 1)));
+        assertThat(RenderHarness.render(area, overflows, model).contains("▶note"))
+                .as("one cell over the budget and expanding reveals something")
+                .isTrue();
+    }
+
+    @Test
+    void dataPreviewActionabilityMeasuresDisplayCellsNotChars() {
+        // 100 chars but only 50 display cells: each 'e' carries a zero-width
+        // combining accent. The collapsed line shows all of it, so Enter has
+        // nothing to reveal.
+        String accented = "e\u0301".repeat(50);
         ScreenState.DataPreview state = openModal(
-                List.of("items", "id", "status"),
-                List.of("[a, b, c, d]", "1", "ready"),
-                List.of("[\n  a,\n  b,\n  c,\n  d\n]", "1", "ready"));
+                List.of("note"), List.of(accented), List.of(accented));
         NavigationStack stack = rooted(state);
-        Rect area = new Rect(0, 0, 100, 10);
-        RenderHarness.render(area, state, model);
+        Rect area = new Rect(0, 0, 100, 24);
+
+        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, state, model);
+        assertThat(rendered.contains("…"))
+                .as("the value fits the budget in cells, so it is not truncated")
+                .isFalse();
+        assertThat(rendered.contains("▶note"))
+                .as("a fully visible value must not be offered as expandable")
+                .isFalse();
+        assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isFalse();
+    }
+
+    @Test
+    void dataPreviewModalOpensOnTheFirstExpandableField() {
+        List<String> names = List.of("id", "name", "tags");
+        List<String> values = List.of("1", "bob", "[a, b]");
+        List<String> expanded = List.of("1", "bob", "[\n  a,\n  b\n]");
+        Rect area = new Rect(0, 0, 100, 24);
+        ScreenState.DataPreview closed = closedPreview(names, values, expanded, area);
+        NavigationStack stack = rooted(closed);
+        RenderHarness.render(area, closed, model);
 
         assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isTrue();
-        for (int line = 1; line <= 6; line++) {
-            assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack))
-                    .as("move through overflowing content to scalar line %s", line)
-                    .isTrue();
-        }
-        assertThat(DataPreviewScreen.handle(
-                new KeyEvent(KeyCode.CHAR, KeyModifiers.NONE, 'c'), model, stack)).isTrue();
 
-        ScreenState.DataPreview collapsed = (ScreenState.DataPreview) stack.top();
-        assertThat(collapsed.modalCursorLine()).isEqualTo(1);
-        RenderHarness.RenderedFrame rendered = RenderHarness.render(area, collapsed, model);
+        ScreenState.DataPreview opened = (ScreenState.DataPreview) stack.top();
+        assertThat(opened.columnNames())
+                .as("the synthetic state must survive the open, not be re-paged")
+                .isEqualTo(names);
+        assertThat(opened.modalCursorLine())
+                .as("id and name are scalars; the cursor opens on tags")
+                .isEqualTo(2);
+        assertThat(RenderHarness.render(area, opened, model).contains("▶tags")).isTrue();
+    }
 
-        assertThat(DataPreviewScreen.handle(key(KeyCode.UP), model, stack))
-                .as("the expandable field above the scalar remains reachable")
-                .isTrue();
-        assertThat(rendered.contains("↑↓ navigate"))
-                .as("the hint reflects that navigation can move from the scalar")
+    @Test
+    void dataPreviewModalOpensScrolledToAnExpandableFieldBelowTheFold() {
+        List<String> names = new ArrayList<>(numberedValues("f", 30));
+        List<String> values = new ArrayList<>(numberedValues("v", 30));
+        List<String> expanded = new ArrayList<>(values);
+        names.set(25, "items");
+        values.set(25, "[1, 2]");
+        expanded.set(25, "[\n  1,\n  2\n]");
+        Rect area = new Rect(0, 0, 100, 24);
+        ScreenState.DataPreview closed = closedPreview(names, values, expanded, area);
+        NavigationStack stack = rooted(closed);
+        RenderHarness.render(area, closed, model);
+
+        assertThat(DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack)).isTrue();
+
+        ScreenState.DataPreview opened = (ScreenState.DataPreview) stack.top();
+        assertThat(opened.modalCursorLine()).isEqualTo(25);
+        assertThat(opened.modalScroll())
+                .as("the only expandable field sits past the first screenful")
+                .isPositive();
+        assertThat(RenderHarness.render(area, opened, model).contains("▶items"))
+                .as("opening scrolls the field it selected into view")
                 .isTrue();
     }
 
@@ -466,15 +590,29 @@ class DiveRenderTest {
         assertThat(renderToString(buffer, screenArea)).contains("Press ? or Esc to close");
     }
 
+    /// A Data preview state with the record modal already open on row 0 and
+    /// the cursor at line 0 — the shape render assertions want, without
+    /// going through the open path.
     private static ScreenState.DataPreview openModal(
             List<String> names, List<String> values, List<String> expandedValues) {
         return new ScreenState.DataPreview(
                 0, 1, names, List.of(values), List.of(expandedValues),
-                0, 0, 0, true, java.util.Set.of(), 0);
+                0, 0, 0, true, Set.of(), 0);
+    }
+
+    /// A Data preview state with the modal closed, for tests that open it
+    /// with `Enter` and assert on where the cursor lands. `pageSize` matches
+    /// the stride `area` will make `handle` observe, so opening doesn't
+    /// re-page the synthetic rows away.
+    private static ScreenState.DataPreview closedPreview(
+            List<String> names, List<String> values, List<String> expandedValues, Rect area) {
+        return new ScreenState.DataPreview(
+                0, area.height() - 3, names, List.of(values), List.of(expandedValues),
+                0, 0, -1, true, Set.of(), 0);
     }
 
     private static List<String> numberedValues(String prefix, int count) {
-        return java.util.stream.IntStream.range(0, count)
+        return IntStream.range(0, count)
                 .mapToObj(i -> prefix + i)
                 .toList();
     }

@@ -155,9 +155,9 @@ navigable session. Typical things to reach for it for:
   the highlighted entry.
 - **Preview a few rows** without exporting — Data preview paginates with
   `PgDn`/`PgUp` (`g`/`G` for first/last); `Enter` opens a per-row modal.
-  When the modal fits, `↑`/`↓` skip fields whose full value is already
-  visible; when it overflows, they scroll one rendered line at a time.
-  `Enter` expands the focused field when it reveals additional content.
+  In the modal `↑`/`↓` step between the fields whose full value isn't
+  already on screen, `Enter` expands the focused one inline, and
+  `PgDn`/`PgUp` scroll the body.
 - **Decode key/value metadata** — Spark JSON schemas pretty-print, Arrow
   IPC schemas decode to a hex dump.
 - **Compare a column across row groups** — from Schema, `Enter` on a
@@ -173,7 +173,7 @@ navigable session. Typical things to reach for it for:
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` | Move selection |
-| `PgDn` / `PgUp` (or `Shift-↓` / `Shift-↑`) | Page down / up |
+| `PgDn` / `PgUp` (or `Shift-↓` / `Shift-↑`) | Page down / up; scroll the body of the Data preview row modal |
 | `g` / `G` | Jump to first / last row |
 | `Enter` | Drill into the selected item |
 | `Esc` / `Backspace` | Go back one level |

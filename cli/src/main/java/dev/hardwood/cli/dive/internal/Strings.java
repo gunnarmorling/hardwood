@@ -10,6 +10,8 @@ package dev.hardwood.cli.dive.internal;
 import java.util.ArrayList;
 import java.util.List;
 
+import dev.tamboui.text.CharWidth;
+
 /// Small string helpers shared by `dive` screens. Kept here so the
 /// truncation/padding behavior — including the ellipsis character — stays
 /// consistent across every screen that draws columnar content.
@@ -86,6 +88,10 @@ public final class Strings {
     /// Splits `value` into display lines of at most `width` cells without
     /// respecting word boundaries. Hard line breaks in the source are
     /// preserved; each segment is then chunked at `width` if it's longer.
+    ///
+    /// Chunking measures display cells, not `char`s, so that a line's rendered
+    /// width matches what callers budgeted for: wide glyphs (CJK, emoji) count
+    /// double and combining marks count zero.
     public static List<String> hardWrap(String value, int width) {
         List<String> out = new ArrayList<>();
         if (width <= 0) {
@@ -97,11 +103,17 @@ public final class Strings {
                 out.add("");
                 continue;
             }
-            int i = 0;
-            while (i < line.length()) {
-                int end = Math.min(line.length(), i + width);
-                out.add(line.substring(i, end));
-                i = end;
+            String rest = line;
+            while (!rest.isEmpty()) {
+                String chunk = CharWidth.substringByWidth(rest, width);
+                if (chunk.isEmpty()) {
+                    // A single glyph wider than the whole budget: emit it on
+                    // its own line and overflow by one cell rather than loop
+                    // forever making no progress.
+                    chunk = rest.substring(0, rest.offsetByCodePoints(0, 1));
+                }
+                out.add(chunk);
+                rest = rest.substring(chunk.length());
             }
         }
         return out;

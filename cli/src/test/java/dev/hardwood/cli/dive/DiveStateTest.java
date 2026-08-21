@@ -29,6 +29,7 @@ import dev.hardwood.cli.dive.internal.PagesScreen;
 import dev.hardwood.cli.dive.internal.RowGroupDetailScreen;
 import dev.hardwood.cli.dive.internal.RowGroupsScreen;
 import dev.hardwood.cli.dive.internal.SchemaScreen;
+import dev.tamboui.layout.Rect;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.KeyModifiers;
@@ -48,7 +49,7 @@ class DiveStateTest {
         // behind. Data preview's auto-resize keys off Keys.viewportStride
         // so a stale observation would force a re-load and break the
         // explicit page-size assertions in this suite.
-        Keys.resetObservedViewport();
+        Keys.resetObservedGeometry();
         // 10 000 rows × 2 columns (id, value) in 1 RG / ~10 pages; has a Column Index.
         // Covers pagination, schema navigation, and column-index drills without
         // needing multiple fixtures.
@@ -733,13 +734,15 @@ class DiveStateTest {
         ScreenState.DataPreview opened = (ScreenState.DataPreview) stack.top();
         assertThat(opened.modalRow()).isEqualTo(2);
 
-        // ↑/↓ inside the modal navigate the per-line cursor — the modalRow
-        // stays put (row stepping is intentionally not available inside the
-        // modal; users close it and pick another row from the table).
-        DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack);
+        // ↑/↓ inside the modal move the field cursor — the modalRow stays put
+        // (row stepping is intentionally not available inside the modal; users
+        // close it and pick another row from the table). This fixture is two
+        // scalar columns, so there is no expandable field to step to and the
+        // cursor has nowhere to go.
+        assertThat(DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack)).isFalse();
         ScreenState.DataPreview moved = (ScreenState.DataPreview) stack.top();
         assertThat(moved.modalRow()).isEqualTo(2);
-        assertThat(moved.modalCursorLine()).isEqualTo(1);
+        assertThat(moved.modalCursorLine()).isZero();
 
         // Esc closes the modal.
         DataPreviewScreen.handle(key(KeyCode.ESCAPE), model, stack);
@@ -753,6 +756,11 @@ class DiveStateTest {
         try (ParquetModel listModel = ParquetModel.open(InputFile.of(file), file.toString())) {
             ScreenState.DataPreview initial = DataPreviewScreen.initialState(listModel, 5);
             NavigationStack stack = rooted(initial);
+            // Render first, as the runtime loop does: which fields are
+            // expandable depends on the width the modal is drawn at, so a
+            // handler-only run would answer from a default terminal size
+            // rather than the one under test.
+            RenderHarness.render(new Rect(0, 0, 100, 24), initial, listModel);
 
             // Opening skips id (line 0) and selects tags (line 1).
             DataPreviewScreen.handle(key(KeyCode.ENTER), listModel, stack);
@@ -778,31 +786,36 @@ class DiveStateTest {
     }
 
     @Test
-    void dataPreviewRowModalEnterTogglesInlineExpansion() {
-        ScreenState.DataPreview initial = DataPreviewScreen.initialState(model, 5);
-        NavigationStack stack = rooted(initial);
+    void dataPreviewRowModalEnterTogglesInlineExpansion() throws Exception {
+        // Needs a record with an expandable field: id is scalar, tags and
+        // scores are lists whose full value doesn't fit the collapsed line.
+        Path file = Path.of(getClass().getResource("/list_basic_test.parquet").getPath());
+        try (ParquetModel listModel = ParquetModel.open(InputFile.of(file), file.toString())) {
+            ScreenState.DataPreview initial = DataPreviewScreen.initialState(listModel, 5);
+            NavigationStack stack = rooted(initial);
+            RenderHarness.render(new Rect(0, 0, 100, 24), initial, listModel);
 
-        DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack);
-        ScreenState.DataPreview opened = (ScreenState.DataPreview) stack.top();
-        assertThat(opened.modalRow()).isEqualTo(0);
-        assertThat(opened.modalCursorLine()).isEqualTo(0);
-        assertThat(opened.expandedColumns()).isEmpty();
+            DataPreviewScreen.handle(key(KeyCode.ENTER), listModel, stack);
+            ScreenState.DataPreview opened = (ScreenState.DataPreview) stack.top();
+            assertThat(opened.modalRow()).isZero();
+            assertThat(opened.modalCursorLine())
+                    .as("the cursor opens on tags, the first expandable field")
+                    .isEqualTo(1);
+            assertThat(opened.expandedColumns()).isEmpty();
 
-        // ↓ moves the per-line cursor within the modal.
-        DataPreviewScreen.handle(key(KeyCode.DOWN), model, stack);
-        assertThat(((ScreenState.DataPreview) stack.top()).modalCursorLine()).isEqualTo(1);
+            // Enter expands the field at the cursor (column 1).
+            DataPreviewScreen.handle(key(KeyCode.ENTER), listModel, stack);
+            assertThat(((ScreenState.DataPreview) stack.top()).expandedColumns())
+                    .containsExactly(1);
 
-        // Enter expands the field at the cursor (column 1).
-        DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack);
-        assertThat(((ScreenState.DataPreview) stack.top()).expandedColumns()).containsExactly(1);
+            // Enter again on the same field collapses it.
+            DataPreviewScreen.handle(key(KeyCode.ENTER), listModel, stack);
+            assertThat(((ScreenState.DataPreview) stack.top()).expandedColumns()).isEmpty();
 
-        // Enter again on the same field collapses it.
-        DataPreviewScreen.handle(key(KeyCode.ENTER), model, stack);
-        assertThat(((ScreenState.DataPreview) stack.top()).expandedColumns()).isEmpty();
-
-        // Esc closes the row modal entirely.
-        DataPreviewScreen.handle(key(KeyCode.ESCAPE), model, stack);
-        assertThat(((ScreenState.DataPreview) stack.top()).modalRow()).isEqualTo(-1);
+            // Esc closes the row modal entirely.
+            DataPreviewScreen.handle(key(KeyCode.ESCAPE), listModel, stack);
+            assertThat(((ScreenState.DataPreview) stack.top()).modalRow()).isEqualTo(-1);
+        }
     }
 
     @Test
