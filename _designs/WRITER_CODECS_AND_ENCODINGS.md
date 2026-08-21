@@ -149,17 +149,11 @@ group is buffered. Every other policy names an encoding outright, and a column t
 one builds no dictionary at all — its chunks carry that encoding in every row group of the
 file.
 
-That is the writer's entire encoding configuration, and `WriterConfig.enableDictionary` is
-removed with this stage rather than sitting beside it. Dictionary-or-`PLAIN` is the whole of
-what `AUTO` decides, so the boolean was a two-valued encoding policy written before there
-were encodings to name it with: `enableDictionary(false)` is `PLAIN` as the file-wide
-default, exactly. Keeping both would leave two spellings of one decision and a precedence
-rule between them to document, and would keep the per-column and file-wide scopes on
-separate knobs. Nothing has shipped that depends on the option — the writer's first release
-is `1.1.0.Beta1`, which this stage precedes — and stage 20 then documents one concept
-instead of two. Its call sites are `WriterConfig`, `ParquetFileWriter`, `RowGroupBuffer`,
-`ColumnChunkBuffer`, `ValueEncoder` and its per-type subclasses, four `core` writer tests,
-`InteropCase` / `WriterInteropTest`, `FlatWriteBenchmark` and `WideSchemaFileGenerator`.
+That is the writer's entire encoding configuration: there is no separate switch for the
+dictionary. Dictionary-or-`PLAIN` is the whole of what `AUTO` decides, so a boolean beside the
+policy would be a second spelling of one decision, with a precedence rule between the two to
+document and the per-column and file-wide scopes split across them. Declining a dictionary is
+therefore naming `PLAIN` — file-wide for the whole file, or for the one column that wants it.
 
 Delta and byte-stream-split are not candidates for `AUTO`. Its comparison works
 because both of its candidates' sizes follow from what pass 1 already retains — the exact
@@ -182,7 +176,7 @@ WriterConfig config = WriterConfig.builder()
         .encoding("readings.list.element", ColumnEncoding.BYTE_STREAM_SPLIT)
         .build();
 
-// Every column PLAIN, which is what enableDictionary(false) used to say:
+// Every column PLAIN, and so no dictionary anywhere in the file:
 WriterConfig plain = WriterConfig.builder()
         .encoding(ColumnEncoding.PLAIN)
         .build();
@@ -269,10 +263,10 @@ decide when the row group has reached its target and what page cuts are planned 
 the writer's measure of buffered data, not a term of the `AUTO` comparison alone, and
 dropping it for policied columns would silently unbound a file written entirely under one.
 
-The policy reaches the encode path in place of the `enableDictionary` boolean that
-`RowGroupBuffer`, `ColumnChunkBuffer` and `ValueEncoder.forColumn` pass down today: each
-column chunk is constructed with its resolved `ColumnEncoding`, and dictionary capability
-becomes `AUTO` and a dictionary-capable type rather than a flag and a type.
+The policy is what `RowGroupBuffer`, `ColumnChunkBuffer` and `ValueEncoder.forColumn` pass
+down: each column chunk is constructed with its resolved `ColumnEncoding`, and whether it
+builds a dictionary at all follows from that policy being `AUTO` and the type being
+dictionary-capable.
 
 ### Page independence
 
@@ -350,9 +344,8 @@ header carries the chunk's value encoding, as it does today.
   that already exists for it. Every codec likewise: `core`'s optional codec libraries are
   on its own test classpath, so all six are exercisable there.
 - **Policy resolution**, on its own: an override beating the file-wide default, the default
-  beating `AUTO`, a file-wide `PLAIN` producing what `enableDictionary(false)` produced —
-  asserted as byte-identical output against the pre-stage files where the suites already
-  pin them — and a policy on one column leaving its neighbours on `AUTO`.
+  beating `AUTO`, a file-wide `PLAIN` producing a file with no dictionary page anywhere, and a
+  policy on one column leaving its neighbours on `AUTO` and their dictionaries intact.
 - **Encoder / decoder symmetry**, per encoder, over the edges: a single value; all values
   equal; alternating `Integer.MIN_VALUE` / `MAX_VALUE` and `Long.MIN_VALUE` / `MAX_VALUE`
   to pin delta wrap-around; a range shorter than one miniblock and one spanning several

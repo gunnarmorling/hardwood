@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.OutputFile;
+import dev.hardwood.Validity;
 import dev.hardwood.internal.writer.ByteBufferOutputFile;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.CompressionCodec;
@@ -30,6 +32,7 @@ import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ColumnReader;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.schema.FileSchema.ElementBuilder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -129,6 +132,66 @@ class WriterEncodingPolicyTest {
             assertThat(reader.getFileMetaData().rowGroups().size()).as("row groups").isGreaterThan(1);
         }
         assertRoundTrip(file, type, null, rows);
+    }
+
+    @ParameterizedTest(name = "{0} / {1}")
+    @MethodSource("legalPairs")
+    void roundTripsAColumnWithNoPresentValueAtAll(ColumnEncoding encoding, PhysicalType type)
+            throws Exception {
+        // Every page's present-value count is zero, which is the `count == 0` branch each encoder
+        // carries: a delta stream with no first value to seed it, and a split with no streams.
+        // The chunk still has a definition-level stream, so the page bodies are not empty.
+        boolean[] nulls = new boolean[ROWS];
+        Arrays.fill(nulls, true);
+        WriterConfig config = WriterConfig.builder()
+                .encoding(encoding)
+                .pageTargetBytes(1024)
+                .build();
+
+        byte[] file = write(type, RepetitionType.OPTIONAL, config, nulls);
+
+        assertRoundTrip(file, type, nulls);
+        try (ParquetFileReader reader = open(file)) {
+            assertThat(columnMeta(reader).statistics().nullCount()).as("every row null")
+                    .isEqualTo(ROWS);
+        }
+    }
+
+    @ParameterizedTest(name = "{0} / {1}")
+    @MethodSource("legalPairs")
+    void roundTripsARepeatedLeafInsideAList(ColumnEncoding encoding, PhysicalType type) throws Exception {
+        // A repeated leaf, so the page bodies carry a repetition-level stream ahead of the
+        // definition levels and the values — the shape a flat column never produces. The values
+        // are read back rather than only the declared encoding.
+        int lists = 400;
+        FileSchema schema = FileSchema.builder("schema")
+                .list("v", RepetitionType.OPTIONAL, element -> declareElement(element, type))
+                .build();
+        WriterConfig config = WriterConfig.builder()
+                .encoding("v.list.element", encoding)
+                .pageTargetBytes(512)
+                .build();
+
+        // Lists of varying length, including an empty one, so the repetition levels are not
+        // uniform and the leaf count differs from the record count.
+        int[] offsets = new int[lists + 1];
+        for (int i = 0; i < lists; i++) {
+            offsets[i + 1] = offsets[i] + (i % 4);
+        }
+        int leaves = offsets[lists];
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            writer.writeBatch(batch -> fill(batch.list("v", offsets), type, "v.list.element", leaves, null));
+        }
+        byte[] file = out.toByteArray();
+
+        try (ParquetFileReader reader = open(file)) {
+            assertThat(meta(reader, 0).encodings()).as("the leaf's declared encodings")
+                    .contains(encoding == ColumnEncoding.AUTO ? Encoding.PLAIN : expected(encoding));
+            assertThat(readLeafValues(reader, type)).as("%s / %s leaf values", encoding, type)
+                    .containsExactlyElementsOf(expectedValues(type, leaves));
+        }
     }
 
     // ==================== Metadata ====================
@@ -454,8 +517,24 @@ class WriterEncodingPolicyTest {
             case BOOLEAN -> r % 3 == 0;
             case INT32 -> 1_000_000 + r * 3;
             case INT64 -> 1_700_000_000_000L + r * 1_000L;
-            case FLOAT -> 100.0f + r * 0.25f;
-            case DOUBLE -> 100.0 + r * 0.015625;
+            // The low ordinals are the bit patterns a byte-stream-split can misplace without
+            // producing anything that looks wrong: both signed zeros, NaN, the infinities.
+            case FLOAT -> switch (r % 512) {
+                case 0 -> 0.0f;
+                case 1 -> -0.0f;
+                case 2 -> Float.NaN;
+                case 3 -> Float.POSITIVE_INFINITY;
+                case 4 -> Float.NEGATIVE_INFINITY;
+                default -> 100.0f + r * 0.25f;
+            };
+            case DOUBLE -> switch (r % 512) {
+                case 0 -> 0.0;
+                case 1 -> -0.0;
+                case 2 -> Double.NaN;
+                case 3 -> Double.POSITIVE_INFINITY;
+                case 4 -> Double.NEGATIVE_INFINITY;
+                default -> 100.0 + r * 0.015625;
+            };
             case BYTE_ARRAY -> ("/data/part-" + String.format("%05d", r)).getBytes(StandardCharsets.UTF_8);
             case FIXED_LEN_BYTE_ARRAY -> String.format("%06d", r % 1000).getBytes(StandardCharsets.UTF_8);
             default -> throw new IllegalArgumentException(type.toString());
@@ -486,6 +565,10 @@ class WriterEncodingPolicyTest {
     }
 
     private static void fill(ColumnBatch batch, PhysicalType type, int rows, boolean[] nulls) {
+        fill(batch, type, "v", rows, nulls);
+    }
+
+    private static void fill(ColumnBatch batch, PhysicalType type, String column, int rows, boolean[] nulls) {
         switch (type) {
             case BOOLEAN -> {
                 boolean[] values = new boolean[rows];
@@ -493,10 +576,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (boolean) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.booleans("v", values);
+                    batch.booleans(column, values);
                 }
                 else {
-                    batch.booleans("v", values, nulls);
+                    batch.booleans(column, values, nulls);
                 }
             }
             case INT32 -> {
@@ -505,10 +588,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (int) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.ints("v", values);
+                    batch.ints(column, values);
                 }
                 else {
-                    batch.ints("v", values, nulls);
+                    batch.ints(column, values, nulls);
                 }
             }
             case INT64 -> {
@@ -517,10 +600,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (long) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.longs("v", values);
+                    batch.longs(column, values);
                 }
                 else {
-                    batch.longs("v", values, nulls);
+                    batch.longs(column, values, nulls);
                 }
             }
             case FLOAT -> {
@@ -529,10 +612,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (float) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.floats("v", values);
+                    batch.floats(column, values);
                 }
                 else {
-                    batch.floats("v", values, nulls);
+                    batch.floats(column, values, nulls);
                 }
             }
             case DOUBLE -> {
@@ -541,10 +624,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (double) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.doubles("v", values);
+                    batch.doubles(column, values);
                 }
                 else {
-                    batch.doubles("v", values, nulls);
+                    batch.doubles(column, values, nulls);
                 }
             }
             case BYTE_ARRAY -> {
@@ -553,10 +636,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (byte[]) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.bytes("v", values);
+                    batch.bytes(column, values);
                 }
                 else {
-                    batch.bytes("v", values, nulls);
+                    batch.bytes(column, values, nulls);
                 }
             }
             case FIXED_LEN_BYTE_ARRAY -> {
@@ -565,10 +648,10 @@ class WriterEncodingPolicyTest {
                     values[r] = (byte[]) value(type, r);
                 }
                 if (nulls == null) {
-                    batch.fixed("v", values);
+                    batch.fixed(column, values);
                 }
                 else {
-                    batch.fixed("v", values, nulls);
+                    batch.fixed(column, values, nulls);
                 }
             }
             default -> throw new IllegalArgumentException(type.toString());
@@ -607,7 +690,7 @@ class WriterEncodingPolicyTest {
 
     private static void readBatch(ColumnReader column, PhysicalType type, List<Object> into) {
         int count = column.getRecordCount();
-        dev.hardwood.Validity validity = column.getLeafValidity();
+        Validity validity = column.getLeafValidity();
         switch (type) {
             case BOOLEAN -> {
                 boolean[] batch = column.getBooleans();
@@ -681,6 +764,77 @@ class WriterEncodingPolicyTest {
             writer.writeBatch(batch -> batch.ints("a", values).ints("b", values));
         }
         return out.toByteArray();
+    }
+
+    /// Declares a list's element of this type, with the fixed width where one is needed.
+    private static void declareElement(ElementBuilder element, PhysicalType type) {
+        if (type == PhysicalType.FIXED_LEN_BYTE_ARRAY) {
+            element.primitive(type, RepetitionType.REQUIRED, FIXED_WIDTH);
+        }
+        else {
+            element.primitive(type, RepetitionType.REQUIRED);
+        }
+    }
+
+    /// The values rows `0..count` carry, boxed the way [#readLeafValues] returns them.
+    private static List<Object> expectedValues(PhysicalType type, int count) {
+        List<Object> values = new ArrayList<>(count);
+        for (int r = 0; r < count; r++) {
+            Object value = value(type, r);
+            values.add(value instanceof byte[] bytes ? ByteBuffer.wrap(bytes) : value);
+        }
+        return values;
+    }
+
+    /// Every leaf value of a repeated column, flattened across its records — a list's leaf count
+    /// differs from its record count, so the values are what there is to compare.
+    private static List<Object> readLeafValues(ParquetFileReader reader, PhysicalType type) {
+        List<Object> read = new ArrayList<>();
+        try (ColumnReader column = reader.columnReader(0)) {
+            while (column.nextBatch()) {
+                int count = column.getValueCount();
+                switch (type) {
+                    case BOOLEAN -> {
+                        boolean[] batch = column.getBooleans();
+                        for (int i = 0; i < count; i++) {
+                            read.add(batch[i]);
+                        }
+                    }
+                    case INT32 -> {
+                        int[] batch = column.getInts();
+                        for (int i = 0; i < count; i++) {
+                            read.add(batch[i]);
+                        }
+                    }
+                    case INT64 -> {
+                        long[] batch = column.getLongs();
+                        for (int i = 0; i < count; i++) {
+                            read.add(batch[i]);
+                        }
+                    }
+                    case FLOAT -> {
+                        float[] batch = column.getFloats();
+                        for (int i = 0; i < count; i++) {
+                            read.add(batch[i]);
+                        }
+                    }
+                    case DOUBLE -> {
+                        double[] batch = column.getDoubles();
+                        for (int i = 0; i < count; i++) {
+                            read.add(batch[i]);
+                        }
+                    }
+                    case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> {
+                        byte[][] batch = column.getBinaries();
+                        for (int i = 0; i < count; i++) {
+                            read.add(ByteBuffer.wrap(batch[i]));
+                        }
+                    }
+                    default -> throw new IllegalArgumentException(type.toString());
+                }
+            }
+        }
+        return read;
     }
 
     private static ParquetFileReader open(byte[] file) throws Exception {

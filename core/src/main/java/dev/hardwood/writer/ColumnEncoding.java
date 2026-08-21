@@ -28,9 +28,8 @@ import dev.hardwood.metadata.PhysicalType;
 /// | `DELTA_BYTE_ARRAY` | `BYTE_ARRAY`, `FIXED_LEN_BYTE_ARRAY` |
 /// | `BYTE_STREAM_SPLIT` | `INT32`, `INT64`, `FLOAT`, `DOUBLE`, `FIXED_LEN_BYTE_ARRAY` |
 ///
-/// There is no policy that demands a dictionary. A dictionary is the one encoding the writer
-/// cannot promise — a chunk holding too many distinct values has to be written some other way —
-/// so it stays what [#AUTO] arrives at rather than something to ask for.
+/// No policy demands a dictionary: dictionary encoding is an outcome [#AUTO] may arrive at,
+/// not something to ask for.
 public enum ColumnEncoding {
 
     /// Let the writer choose, per column chunk, between a dictionary and `PLAIN`.

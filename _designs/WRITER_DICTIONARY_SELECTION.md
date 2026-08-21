@@ -4,7 +4,7 @@
 (Optimization) of [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
 
 **Superseded in part by stage 19** ([WRITER_CODECS_AND_ENCODINGS.md](WRITER_CODECS_AND_ENCODINGS.md),
-planned): `WriterConfig.enableDictionary` is replaced by a per-leaf-column encoding policy,
+complete): `WriterConfig.enableDictionary` is replaced by a per-leaf-column encoding policy,
 under which the decision this document describes is the default policy `AUTO`, and a caller
 declining a dictionary names the policy `PLAIN` instead — file-wide, which is what the
 removed boolean said, or for one column, which it could not say. The mechanism itself — the
@@ -221,8 +221,9 @@ likewise derives its default from the row-group size.
 Deliberately not here, each reachable only from this shape and sequenced separately:
 
 - **Sorted dictionaries** and `DictionaryPageHeader.is_sorted`.
-- **Encoding selection beyond dictionary-or-plain** — `DELTA_*` and `BYTE_STREAM_SPLIT` as the
-  landing place for a chunk the analysis rejects for a dictionary (stage 19, #976).
+- **Automatic selection beyond dictionary-or-plain** — `DELTA_*` and `BYTE_STREAM_SPLIT` are
+  written on request as of stage 19 (#976), but choosing one without being asked needs a trial
+  encode this comparison does not do.
 - **Per-chunk codec choice**, which `ColumnMetaData.codec` allows, for a chunk the analysis
   finds incompressible.
 - **Bloom filter sizing** from exact cardinality (stage 24), and page boundary choice and

@@ -20,6 +20,24 @@ public final class BitPacker {
     private BitPacker() {
     }
 
+    /// Rejects a group this packer cannot write whole.
+    ///
+    /// Only whole bytes are flushed, so a group whose bits do not divide by eight would leave up
+    /// to seven of them in the accumulator: the packed values would be short by a byte and
+    /// unreadable, with nothing to say so. Both callers pack a multiple of eight bits at every
+    /// width — that is a property of their group sizes, not of this method — so the check costs
+    /// nothing and turns a future caller's silent truncation into a failure at the call.
+    private static void checkGroup(int count, int bitWidth, int maxBitWidth) {
+        if (bitWidth < 0 || bitWidth > maxBitWidth) {
+            throw new IllegalArgumentException(
+                    "bitWidth must be between 0 and " + maxBitWidth + " but was " + bitWidth);
+        }
+        if ((long) count * bitWidth % Byte.SIZE != 0) {
+            throw new IllegalArgumentException("Packing " + count + " values at " + bitWidth
+                    + " bits does not fill a whole number of bytes; this packer writes whole bytes only");
+        }
+    }
+
     /// The bytes `count` values at `bitWidth` bits occupy.
     ///
     /// @param count how many values are packed
@@ -43,6 +61,7 @@ public final class BitPacker {
     /// @param outOffset where to write the first byte
     /// @return the number of bytes written
     public static int pack(int[] values, int offset, int count, int bitWidth, byte[] out, int outOffset) {
+        checkGroup(count, bitWidth, Integer.SIZE);
         if (bitWidth == 0) {
             return 0;
         }
@@ -78,6 +97,7 @@ public final class BitPacker {
     /// @param outOffset where to write the first byte
     /// @return the number of bytes written
     public static int pack(long[] values, int offset, int count, int bitWidth, byte[] out, int outOffset) {
+        checkGroup(count, bitWidth, Long.SIZE);
         if (bitWidth == 0) {
             return 0;
         }

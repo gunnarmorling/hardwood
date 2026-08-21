@@ -8,6 +8,7 @@
 package dev.hardwood.internal.encoding;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Random;
 
 import org.junit.jupiter.api.Test;
@@ -42,7 +43,7 @@ class DeltaBinaryPackedEncoderTest {
         // Every delta is zero, so each block records a zero minimum and a zero bit width and
         // writes no miniblock bytes at all — the encoding's most compact shape.
         int[] values = new int[300];
-        java.util.Arrays.fill(values, 42);
+        Arrays.fill(values, 42);
 
         byte[] encoded = DeltaBinaryPackedEncoder.encodeInts(values, 0, values.length);
 
@@ -185,7 +186,7 @@ class DeltaBinaryPackedEncoderTest {
     @Test
     void roundTripsAConstantLongColumn() throws IOException {
         long[] values = new long[300];
-        java.util.Arrays.fill(values, Long.MIN_VALUE);
+        Arrays.fill(values, Long.MIN_VALUE);
 
         assertThat(decodeLongs(DeltaBinaryPackedEncoder.encodeLongs(values, 0, values.length), values.length))
                 .containsExactly(values);

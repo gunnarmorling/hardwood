@@ -55,19 +55,29 @@ import dev.hardwood.writer.ColumnEncoding;
 ///
 /// A page body is `[rep levels?][def levels?][value section]`, each level stream prefixed by its
 /// 4-byte little-endian length. The value section is `[1-byte index bit width][RLE/bit-packed
-/// indices]` for a dictionary-encoded chunk (`RLE_DICTIONARY`) and `[PLAIN present values]`
-/// otherwise. The assembled body is compressed with the chunk's [Compressor] before framing, and
+/// indices]` for a dictionary-encoded chunk (`RLE_DICTIONARY`), and otherwise the present values
+/// under whichever encoding the column's [ColumnEncoding] resolves to — `PLAIN`, one of the
+/// delta encodings, or `BYTE_STREAM_SPLIT`. The assembled body is compressed with the chunk's
+/// [Compressor] before framing, and
 /// the page header records both the uncompressed and the stored compressed size; the dictionary
 /// page body is compressed the same way. The CRC-32 is taken over the stored bytes, matching what
 /// the reader validates.
 ///
-/// **A chunk is encoded one way throughout.** Present values are interned in first-seen order
-/// through the [ValueEncoder], which makes the chunk's cardinality exact, and at flush the
+/// **A chunk is encoded one way throughout**, under the column's [ColumnEncoding].
+///
+/// Under [ColumnEncoding#AUTO] the writer decides: present values are interned in first-seen
+/// order through the [ValueEncoder], which makes the chunk's cardinality exact, and at flush the
 /// dictionary page plus an index stream is weighed against the values as `PLAIN`; the smaller
 /// wins, and a chunk that decides against a dictionary resolves its indices back into values and
 /// writes no dictionary page. Each page still declares its own index bit width, sized from that
 /// page's largest index rather than the dictionary's final size, so a page whose values sit low
 /// in the dictionary pays only for the bits they need.
+///
+/// Under any other policy the encoding is settled before a value arrives: no dictionary is built,
+/// so the chunk pays neither the interning nor the index array and states no `distinct_count`.
+/// Each value's `PLAIN` width is still accumulated, because that total is what bounds the
+/// buffered row group and plans the page cuts — it is the writer's measure of buffered data, not
+/// a term of the `AUTO` comparison alone.
 final class ColumnChunkBuffer implements RecordShredder.LevelSink {
 
     private final PhysicalType type;
@@ -409,8 +419,8 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// Frames one page's body: the repetition and definition level streams (each RLE, each
     /// prefixed by a 4-byte little-endian length) ahead of the value section. For a dictionary
     /// page the value section is a 1-byte index bit width followed by the RLE/bit-packed indices
-    /// (running to the page end, not length-prefixed); otherwise it is the value encoder's
-    /// `PLAIN` present values. `dictionarySize` is the chunk's dictionary size, which says only
+    /// (running to the page end, not length-prefixed); otherwise it is the page's present values
+    /// under [#storedEncoding]. `dictionarySize` is the chunk's dictionary size, which says only
     /// whether the chunk is dictionary-encoded; the page's index bit width comes from its own
     /// largest index.
     private void buildBody(int entryFrom, int entries, int valueFrom, int valueCount, int dictionarySize) {

@@ -24,9 +24,8 @@ import dev.hardwood.metadata.CompressionCodec;
 ///   uncompressed data reaches this many bytes, bounding how much it holds in memory.
 ///
 /// How a column's values are stored is a [ColumnEncoding], set file-wide or per leaf column;
-/// how the resulting page bodies are compressed is the [CompressionCodec]. Neither belongs to
-/// the schema — Parquet scopes both per column chunk rather than per column — so both are
-/// configured here and neither survives a round trip through [dev.hardwood.schema.FileSchema].
+/// how the resulting page bodies are compressed is the [CompressionCodec]. Both are configured
+/// here rather than on the schema.
 ///
 /// Obtain the defaults with [#defaults] or override individual knobs through [#builder].
 public final class WriterConfig {
@@ -122,11 +121,12 @@ public final class WriterConfig {
     }
 
     /// The policy governing `columnPath`: its own override where it has one, the file-wide
-    /// default otherwise.
+    /// default otherwise. Package-private — [ParquetFileWriter] resolves every column through
+    /// it at creation, and a caller has [#defaultEncoding] and [#columnEncodings] to read.
     ///
     /// @param columnPath the column's dotted leaf path
     /// @return the policy in force for that column
-    public ColumnEncoding encodingFor(String columnPath) {
+    ColumnEncoding encodingFor(String columnPath) {
         return columnEncodings.getOrDefault(columnPath, defaultEncoding);
     }
 

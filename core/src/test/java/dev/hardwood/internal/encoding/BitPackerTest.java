@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.encoding;
 
+import java.util.Arrays;
 import java.util.Random;
 
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// [BitPacker] against an independent bit reader, at every width both callers can ask for.
 ///
@@ -80,7 +82,7 @@ class BitPackerTest {
         // The saturated case at width 64: every bit set, so a packer that dropped the top bit
         // of a value or shifted by the wrong amount cannot round-trip.
         long[] values = new long[32];
-        java.util.Arrays.fill(values, -1L);
+        Arrays.fill(values, -1L);
 
         byte[] out = new byte[BitPacker.packedLength(32, 64)];
         BitPacker.pack(values, 0, 32, 64, out, 0);
@@ -98,13 +100,39 @@ class BitPackerTest {
     }
 
     @Test
+    void refusesAGroupItCannotWriteWhole() {
+        // Only whole bytes are flushed, so a group whose bits do not divide by eight would be
+        // short by a byte and unreadable. Both real callers are safe at every width by virtue of
+        // their group sizes; the guard is what stops a future one truncating silently.
+        assertThatThrownBy(() -> BitPacker.pack(new int[5], 0, 5, 3, new byte[8], 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole number of bytes");
+        assertThatThrownBy(() -> BitPacker.pack(new long[5], 0, 5, 3, new byte[8], 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whole number of bytes");
+    }
+
+    @Test
+    void refusesAWidthItsValueTypeCannotHold() {
+        assertThatThrownBy(() -> BitPacker.pack(new int[8], 0, 8, 33, new byte[64], 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bitWidth");
+        assertThatThrownBy(() -> BitPacker.pack(new long[8], 0, 8, 65, new byte[128], 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bitWidth");
+        assertThatThrownBy(() -> BitPacker.pack(new long[8], 0, 8, -1, new byte[8], 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bitWidth");
+    }
+
+    @Test
     void packsAtAnOffsetIntoTheDestination() {
         // The delta encoder packs miniblock after miniblock into one growing buffer, so the
         // destination offset has to be honoured and nothing before it disturbed.
         int[] values = new int[8];
-        java.util.Arrays.fill(values, 0xFF);
+        Arrays.fill(values, 0xFF);
         byte[] out = new byte[12];
-        java.util.Arrays.fill(out, (byte) 0x5a);
+        Arrays.fill(out, (byte) 0x5a);
 
         int written = BitPacker.pack(values, 0, 8, 8, out, 4);
 
