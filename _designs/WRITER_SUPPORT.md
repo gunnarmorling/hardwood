@@ -458,7 +458,14 @@ decision better taken alongside 23. Only 29 among them adds public API; 26 and 2
 two ends of the same question — how large a row group is, and where one ends — so a
 decision taken in either is worth carrying to the other. Increment 30 stands apart from all of
 them: it depends on nothing after 19 and gates everything, turning 14's extension contract
-into something the build checks. Sequenced as separate later milestones, each
+into something the build checks. Increments 31–34 are one thread rather than four: each closes
+a place where the write API cannot express something the read API can, so that code holding a
+file read through one can write it through the other. 31 and 32 are what a columnar copy needs
+— the value shapes the reader emits, and nesting described the way the writer addresses it —
+and are worth taking together for that reason. 33 and 34 are the two reader accessors with no
+setter, and are independent of each other and of the rest: 33 is a decision about the
+`Object`-typed setter rule, and 34 is a Variant encoder that happens to surface as a setter.
+Sequenced as separate later milestones, each
 its own design and sequence: DataPage V2, the Avro write adapter, and a CLI write/convert
 command.
 
