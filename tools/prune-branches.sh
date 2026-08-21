@@ -7,11 +7,15 @@
 #  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
 #
 
-# prune-branches.sh — interactively delete branches that have been merged into main.
+# prune-branches.sh — interactively delete worktrees and branches that have been
+# merged into main.
 #
-# Three categories are handled, each with a different (and increasingly safe) delete:
+# Four categories are handled, each with a different (and increasingly safe) delete:
 #
-#   1. LOCAL branches whose PR is merged          -> git branch -D <b>
+#   0. WORKTREES whose checkout is merged          -> git worktree remove <path>
+#         Runs first: while a branch is checked out it cannot be deleted, so
+#         removing the worktree is what lets category 1 offer the branch.
+#   1. LOCAL branches whose PR is merged           -> git branch -D <b>
 #   2. Branches you OWN on 'origin' (merged)       -> git push origin --delete <b>
 #         "own" = tip commit authored by your git user.email.
 #         DESTRUCTIVE: this removes the branch from the shared hardwood-hq repo.
@@ -42,6 +46,7 @@ set -euo pipefail
 
 DRY_RUN=false
 DO_FETCH=true
+DO_WORKTREES=true
 DO_LOCAL=true
 DO_ORIGIN=true
 DO_FORKS=true
@@ -50,12 +55,13 @@ usage() {
   cat <<'EOF'
 Usage: prune-branches.sh [options]
 
-  --dry-run     Show what would be deleted; never prompt, never delete.
-  --no-fetch    Skip the initial `git fetch origin --prune`.
-  --no-local    Skip category 1 (local branches).
-  --no-origin   Skip category 2 (your branches on origin).
-  --no-forks    Skip category 3 (contributor fork tracking refs).
-  -h, --help    This help.
+  --dry-run       Show what would be deleted; never prompt, never delete.
+  --no-fetch      Skip the initial `git fetch origin --prune`.
+  --no-worktrees  Skip category 0 (worktrees on merged checkouts).
+  --no-local      Skip category 1 (local branches).
+  --no-origin     Skip category 2 (your branches on origin).
+  --no-forks      Skip category 3 (contributor fork tracking refs).
+  -h, --help      This help.
 
 A branch is "obsolete" when its tip commit is the head of a MERGED GitHub PR.
 Requires `gh` (authenticated).
@@ -66,6 +72,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)  DRY_RUN=true ;;
     --no-fetch) DO_FETCH=false ;;
+    --no-worktrees) DO_WORKTREES=false ;;
     --no-local) DO_LOCAL=false ;;
     --no-origin) DO_ORIGIN=false ;;
     --no-forks) DO_FORKS=false ;;
@@ -182,9 +189,6 @@ provably_merged() { # $1 = ref, $2 = display name, $3 = merge oid, $4 = pr numbe
 #                     origin/HEAD symref, which resolves to the trunk tip.
 #   docs / release    Publishing jobs track these by name. Their content is
 #                     merged; their job is to keep existing.
-#   worktree branches Refuse cleanly instead of letting `git branch -D` error out.
-
-CHECKED_OUT=$(git worktree list --porcelain | sed -n 's#^branch refs/heads/##p')
 
 is_protected() { # $1 = bare branch name (no remote prefix)
   local b=$1
@@ -194,8 +198,24 @@ is_protected() { # $1 = bare branch name (no remote prefix)
     v[0-9]*|[0-9]*.[0-9]*) return 0 ;; # v1.0.0.CR2, 1.0.0.Beta2, ...
     *[Rr]elease*)        return 0 ;;   # aalmiray_releases, release-*, ...
   esac
-  grep -Fxq "$b" <<<"$CHECKED_OUT" && return 0
   return 1
+}
+
+# Being checked out blocks `git branch -D` and nothing else, so it is a category 1
+# concern only — deliberately NOT folded into is_protected(). Doing so also
+# shielded origin/<b> and <fork>/<b> from categories 2 and 3, where whether a
+# local worktree happens to sit on the branch has no bearing on the remote ref.
+#
+# Recomputed after every worktree removal: freeing a branch in category 0 is
+# precisely what makes it deletable in category 1.
+CHECKED_OUT=''
+refresh_checked_out() {
+  CHECKED_OUT=$(git worktree list --porcelain | sed -n 's#^branch refs/heads/##p')
+}
+refresh_checked_out
+
+is_checked_out() { # $1 = bare branch name
+  grep -Fxq "$1" <<<"$CHECKED_OUT"
 }
 
 # --- confirmation + counters -------------------------------------------------
@@ -218,6 +238,67 @@ tip_line() { # $1 = a committish; prints "<short-sha> <subject>"
 }
 
 # ============================================================================
+# 0. WORKTREES whose checkout is merged
+# ============================================================================
+# Keyed on the worktree's HEAD commit rather than on its branch, so a detached
+# worktree parked on a merged PR head is caught the same way a branch is.
+#
+# Two states mean someone is still using the tree. Both are reported and kept:
+#   locked  `git worktree add` under a claude session locks the worktree for the
+#           lifetime of that session. Removing it would pull the tree out from
+#           under a running agent, so a lock is a hard no — this script never
+#           unlocks and never passes --force.
+#   dirty   Uncommitted work exists nowhere else. Ignored build output (target/,
+#           ...) does not count: `git status --porcelain` omits it.
+KEPT_WORKTREES=()
+
+if $DO_WORKTREES; then
+  echo
+  echo "== worktrees on merged checkouts =="
+  # The main worktree holds the repository itself and is always listed first.
+  # Nor can a worktree be removed from inside itself.
+  MAIN_WORKTREE=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+  HERE=$(git rev-parse --show-toplevel)
+  while IFS=$'\t' read -r path head branch locked; do
+    [[ "$path" == "$MAIN_WORKTREE" || "$path" == "$HERE" ]] && continue
+    is_protected "$branch" && continue
+    hit=$(merged_pr_at "$head")
+    [[ -z "$hit" ]] && continue
+    IFS=$'\t' read -r pr headref merge <<<"$hit"
+    label=${branch:-'(detached)'}
+    provably_merged "$head" "$path [$label]" "$merge" "$pr" || continue
+    if [[ -n "$locked" ]]; then
+      KEPT_WORKTREES+=("$path [$label] (PR #$pr) — locked: $locked")
+      continue
+    fi
+    if [[ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]]; then
+      KEPT_WORKTREES+=("$path [$label] (PR #$pr) — uncommitted changes")
+      continue
+    fi
+    printf '  %s  [%s]  (PR #%s)  %s\n' "$path" "$label" "$pr" "$(tip_line "$head")"
+    if confirm "git worktree remove $path"; then
+      # Freeing the branch here is what lets category 1 offer it below.
+      git worktree remove "$path" && { deleted=$((deleted + 1)); refresh_checked_out; }
+    elif $DRY_RUN; then
+      # A dry run removes nothing, so the branch would still read as checked out
+      # and category 1 would show an empty list — the opposite of what a real run
+      # does. Drop it from the cache instead to preview the full cascade.
+      CHECKED_OUT=$(grep -Fxv "$branch" <<<"$CHECKED_OUT" || true)
+    else
+      skipped=$((skipped + 1))
+    fi
+  done < <(git worktree list --porcelain | awk '
+      /^worktree /  { path = substr($0, 10) }
+      /^HEAD /      { head = $2 }
+      /^branch /    { branch = substr($0, 19) }          # strip "branch refs/heads/"
+      /^locked/     { locked = (length($0) > 7) ? substr($0, 8) : "held by another process" }
+      /^$/          { if (path != "") print path "\t" head "\t" branch "\t" locked
+                      path = head = branch = locked = "" }
+      END           { if (path != "") print path "\t" head "\t" branch "\t" locked }
+    ')
+fi
+
+# ============================================================================
 # 1. LOCAL branches
 # ============================================================================
 if $DO_LOCAL; then
@@ -229,6 +310,7 @@ if $DO_LOCAL; then
   # is deliberately kept — those commits exist nowhere else.
   while IFS= read -r b; do
     is_protected "$b" && continue
+    is_checked_out "$b" && continue   # `git branch -D` would only error out
     hit=$(merged_pr_at "$(git rev-parse "refs/heads/$b")")
     [[ -z "$hit" ]] && continue
     IFS=$'\t' read -r pr head merge <<<"$hit"
@@ -311,6 +393,14 @@ if [[ -n "${UNPROVEN[*]+x}" ]]; then
   echo "   (usually commits pushed to the branch after its PR merged — those exist"
   echo "    nowhere else, so review them by hand before removing the ref.)"
   for u in "${UNPROVEN[@]}"; do echo "  $u"; done
+  echo
+fi
+
+if [[ -n "${KEPT_WORKTREES[*]+x}" ]]; then
+  echo "== kept: merged worktrees still in use =="
+  echo "   (unlock by ending the claude session holding it, or commit/discard the"
+  echo "    changes, then re-run.)"
+  for w in "${KEPT_WORKTREES[@]}"; do echo "  $w"; done
   echo
 fi
 
