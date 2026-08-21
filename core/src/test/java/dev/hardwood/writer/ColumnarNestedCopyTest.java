@@ -56,6 +56,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 ///   a `REQUIRED` leaf under an `OPTIONAL` struct reports nulls — and the writer refuses a mask
 ///   on a `REQUIRED` column. For `BYTE_ARRAY` the same slots come back as Java `null`s that the
 ///   all-present setter rejects, so they must be plugged with a placeholder first.
+///
+/// The fixture is sized so the reader hands the copy more than one batch, on boundaries that
+/// have nothing to do with the ones the source was written on. Byte-identity across that
+/// mismatch is the assertion worth making, because it is what makes a batch an arrival unit
+/// rather than a property of the file — and it is what lets a copier submit whatever the
+/// reader gives it. It holds while the row-group target is not crossed inside an arriving
+/// batch; a target small enough to be crossed mid-batch moves the cut with the arrival
+/// granularity, and the copy then reproduces the data but not the layout.
 class ColumnarNestedCopyTest {
 
     @Test
@@ -76,6 +84,7 @@ class ColumnarNestedCopyTest {
         byte[] source = writeSource(schema);
 
         // ---- the copy ----
+        int batches = 0;
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileReader reader = open(source);
              ColumnReaders readers = reader.columnReaders(ColumnProjection.all());
@@ -84,6 +93,7 @@ class ColumnarNestedCopyTest {
             List<List<GroupRef>> layerGroups = deriveLayerGroups(schema);
 
             while (readers.nextBatch()) {
+                batches++;
                 writer.writeBatch(batch -> {
                     Set<String> alreadySet = new HashSet<>();
                     for (int c = 0; c < schema.getColumnCount(); c++) {
@@ -120,6 +130,11 @@ class ColumnarNestedCopyTest {
             }
         }
 
+        // The reader's batches do not coincide with the ones the source was written in, so
+        // the copy is only a pass-through if they need not: a batch is an arrival unit, not a
+        // property of the file. Without this the loop below runs once and neither the
+        // per-batch reset of `alreadySet` nor offsets restarting at a batch are exercised.
+        assertThat(batches).isGreaterThan(1);
         assertThat(out.toByteArray()).isEqualTo(source);
     }
 
@@ -160,7 +175,12 @@ class ColumnarNestedCopyTest {
     /// absent, and the reader reports that as a Java `null` in the `byte[][]`. The writer
     /// validates every slot of an all-present array before the levels get a chance to mark it
     /// ignorable, so the holes have to be plugged with a placeholder it will never encode.
-    private static byte[][] plugHoles(byte[][] values, int fixedLength) {
+    ///
+    /// Plugged into a copy of the array, not in place: [ColumnReader#getBinaries] memoizes
+    /// what it returns for the batch, so writing placeholders into it would leave a second
+    /// reader of the same column seeing empty arrays where the reader reported absence.
+    private static byte[][] plugHoles(byte[][] source, int fixedLength) {
+        byte[][] values = source.clone();
         byte[] filler = new byte[fixedLength];
         for (int i = 0; i < values.length; i++) {
             if (values[i] == null) {
@@ -226,22 +246,50 @@ class ColumnarNestedCopyTest {
         throw new IllegalStateException("No child " + name);
     }
 
+    /// Enough records that the reader hands the copy more than one batch, cycling the four
+    /// container states every nested column has — present with entries, present and empty,
+    /// absent, and (for the struct) present with its own `OPTIONAL` leaf unset — so a batch
+    /// boundary falls somewhere inside each of them rather than only between whole shapes.
+    private static final int RECORDS = 4_000;
+
+    /// Entries on the wide records' list. The reader sizes a batch to a 6 MB value budget
+    /// divided by the bytes one row occupies, and a list's fan-out multiplies that width, so
+    /// this is the cheapest lever that makes the file arrive in more than one batch.
+    private static final int WIDE_TAGS = 250;
+
     private static byte[] writeSource(FileSchema schema) throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
             RowWriter rows = writer.rowWriter();
-            rows.writeRow(row -> row
-                    .setInt("id", 1)
-                    .setStruct("address", a -> a.setString("city", "Berlin").setInt("zip", 10115))
-                    .setList("tags", t -> t.addString("a").addString("b"))
-                    .setMap("props", p -> p.addEntry(e -> e.setString("key", "x").setLong("value", 7))));
-            rows.writeRow(row -> row
-                    .setInt("id", 2)
-                    .setList("tags", t -> { }));
-            rows.writeRow(row -> row
-                    .setInt("id", 3)
-                    .setStruct("address", a -> a.setString("city", "Aarhus"))
-                    .setMap("props", p -> p.addEntry(e -> e.setString("key", "y").setLong("value", 9))));
+            for (int i = 0; i < RECORDS; i++) {
+                int id = i;
+                rows.writeRow(row -> {
+                    row.setInt("id", id);
+                    switch (id % 4) {
+                        case 0 -> row
+                                .setStruct("address", a -> a.setString("city", "Berlin" + id)
+                                        .setInt("zip", 10115 + id))
+                                .setList("tags", t -> {
+                                    for (int e = 0; e < WIDE_TAGS; e++) {
+                                        t.addString("a" + id + "-" + e);
+                                    }
+                                })
+                                .setMap("props", p -> p.addEntry(
+                                        e -> e.setString("key", "x" + id).setLong("value", id)));
+                        // An absent struct, an empty list and an absent map.
+                        case 1 -> row.setList("tags", t -> { });
+                        // A present struct whose OPTIONAL leaf is unset, and an empty map.
+                        case 2 -> row
+                                .setStruct("address", a -> a.setString("city", "Aarhus" + id))
+                                .setMap("props", p -> { });
+                        // A null list distinct from case 1's empty one, and a null map value.
+                        default -> row
+                                .setNull("tags")
+                                .setMap("props", p -> p.addEntry(
+                                        e -> e.setString("key", "y" + id).setNull("value")));
+                    }
+                });
+            }
         }
         return out.toByteArray();
     }

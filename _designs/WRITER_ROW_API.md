@@ -102,6 +102,17 @@ that walks a row generically — a copy, a projection, a format bridge — can r
 and write at position `i` without a name in the loop. A write layer that only understood names
 would force such code to route every field through a string it does not otherwise need.
 
+The two positions are the same one only where the write schema mirrors what was read. The
+reader's index is the position in *projected* schema order — `FlatRowReader.getFieldName` maps
+it through `ProjectedSchema.toOriginalIndex` — while the writer's is declaration order in the
+schema being written. Reading a whole file into its own schema makes them identical, which is
+the copy case; a projection does not, and reading three of ten columns while writing the
+ten-column schema shifts every position. Where the columns that then line up share a physical
+type, the values land in the wrong fields instead of being rejected, because an index carries
+no evidence of what it was supposed to name. `getFieldName` on both sides is the cheap check
+that turns it into a failure, which is why the writer exposes it rather than leaving the
+caller to consult the schema.
+
 ### Maps
 
 A `MAP`'s entries are a repeated struct of `key` and `value`, so the map builder reuses

@@ -33,9 +33,18 @@ import dev.hardwood.row.PqInterval;
 /// ```
 ///
 /// Every setter has an index-taking mirror, and [#getFieldCount] and [#getFieldName] report
-/// the positions those indices address — the same pair
-/// [dev.hardwood.row.FieldAccessor] exposes on the read side, so a loop that walks a row's
-/// fields by index reads back and writes forward through the same positions.
+/// the positions those indices address — the same pair [dev.hardwood.row.FieldAccessor]
+/// exposes on the read side.
+///
+/// A loop that walks a row's fields by index can therefore read back and write forward
+/// through the same positions, **provided the write schema mirrors what was read**. The
+/// reader's index is the position in *projected* schema order; this one is the position in
+/// the write schema's declaration order. They are the same position when the whole file is
+/// read into its own schema, and they diverge under a projection: reading three of ten
+/// columns and writing into the ten-column schema shifts every position, and where the
+/// columns that land on each other happen to share a type the values are written to the
+/// wrong fields rather than rejected. Comparing [#getFieldName] against the reader's for
+/// each index costs one string comparison per field and turns that into a failure.
 ///
 /// A field that is never set is written as null if it is `OPTIONAL`, and fails the record if
 /// it is `REQUIRED`; [#setNull] states the same thing explicitly, and a `null` value handed

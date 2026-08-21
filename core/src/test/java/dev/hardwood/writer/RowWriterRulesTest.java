@@ -101,6 +101,17 @@ class RowWriterRulesTest {
                 .hasMessageContaining("No field named 'nope'"));
     }
 
+    /// A null name is not a field either, and says so the same way. The name resolves through
+    /// a map that hashes its key, so without this it would surface as a bare `NullPointerException`
+    /// from inside that map rather than as a rejection naming the struct.
+    @Test
+    void nullFieldNameIsRejectedTheSameWayAnUnknownOneIs() throws Exception {
+        withRowWriter(rows -> assertThatThrownBy(() -> rows.writeRow(row -> row.setInt(null, 1)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("No field named 'null'")
+                .hasMessageContaining("the record"));
+    }
+
     @Test
     void setterThatDoesNotFitTheFieldIsRejected() throws Exception {
         withRowWriter(rows -> assertThatThrownBy(() -> rows.writeRow(row -> row.setLong("id", 1)))

@@ -86,6 +86,8 @@ public final class RowWriter {
     /// @throws IllegalArgumentException if the filler names a field the schema does not have,
     ///         sets one twice, uses a setter that does not fit a field's declared type, or
     ///         leaves a `REQUIRED` field unset
+    /// @throws IndexOutOfBoundsException if the filler addresses a field by an index the
+    ///         struct it is setting does not have
     /// @throws IllegalStateException if the writer is closed
     public void writeRow(Consumer<StructBuilder> filler) throws IOException {
         writer.ensureOpen();

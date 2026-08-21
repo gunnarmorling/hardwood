@@ -437,7 +437,10 @@ final class RowStructNode extends RowNode implements StructBuilder {
     /// a second set of the same field, and any use after the scope has ended.
     private int claim(String fieldName) {
         checkActive();
-        int index = byName.get(fieldName);
+        // Resolved to "not a field" rather than passed to the map, which hashes the key and
+        // would fail a null name as a bare NPE out of a utility class instead of naming the
+        // struct it was looked up in.
+        int index = fieldName == null ? -1 : byName.get(fieldName);
         if (index < 0) {
             throw new IllegalArgumentException("No field named '" + fieldName + "' in " + describe()
                     + "; it has " + String.join(", ", fieldNames));
