@@ -238,20 +238,17 @@ final class CoverageDomain {
 
     /// The boundary classes `annotation` must be exercised at.
     ///
-    /// An annotation that narrows its physical type has ends to reach and values to refuse either
-    /// side of them, through both write APIs. One that narrows nothing has only the physical
-    /// type's own extremes, and nothing to refuse. `UNKNOWN` admits no value at all, so it has
-    /// its nulls and the refusal of anything else.
+    /// An annotation that narrows its physical type has the ends of that range to reach; one
+    /// that narrows nothing has the extremes of the order it puts on the type. `UNKNOWN` admits
+    /// no value at all, so what it has to show is the nulls it carries.
+    ///
+    /// Values outside the range are not among these. The writer refuses them before anything is
+    /// encoded, so they reach no file and this assertion — which is over what files contained —
+    /// cannot observe them. `WriterAnnotationRangeTest` in core owns that half, and owns it
+    /// alone.
     static Set<BoundaryClass> boundaryClasses(Annotation annotation) {
-        LogicalTypeValueRange range = rangeOf(annotation);
-        if (range.holdsNoValue()) {
-            return EnumSet.of(BoundaryClass.NULLS_ONLY,
-                    BoundaryClass.VALUE_REJECTED_BATCH, BoundaryClass.VALUE_REJECTED_ROW);
-        }
-        if (range.isBounded()) {
-            return EnumSet.of(BoundaryClass.MIN, BoundaryClass.MAX, BoundaryClass.INTERIOR,
-                    BoundaryClass.BELOW_MIN_BATCH, BoundaryClass.BELOW_MIN_ROW,
-                    BoundaryClass.ABOVE_MAX_BATCH, BoundaryClass.ABOVE_MAX_ROW);
+        if (rangeOf(annotation).holdsNoValue()) {
+            return EnumSet.of(BoundaryClass.NULLS_ONLY);
         }
         return EnumSet.of(BoundaryClass.MIN, BoundaryClass.MAX, BoundaryClass.INTERIOR);
     }

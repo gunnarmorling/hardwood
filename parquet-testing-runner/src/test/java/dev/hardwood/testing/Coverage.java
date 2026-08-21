@@ -98,8 +98,12 @@ final class Coverage {
         GROUP
     }
 
-    /// Where in an annotation's declared range a written value sits, or how one outside it was
-    /// refused.
+    /// Where in an annotation's declared range a written value sits.
+    ///
+    /// Only values that reach a file appear here. A value the annotation cannot hold produces no
+    /// bytes at all — the writer refuses it before anything is encoded — so it is not a shape
+    /// this assertion can observe, and the refusal is asserted in core by
+    /// `WriterAnnotationRangeTest` instead.
     ///
     /// For an annotation that narrows its physical type, [#MIN] and [#MAX] are the ends
     /// `LogicalTypeValueRange` computes. For one that narrows nothing they are the extremes of
@@ -117,26 +121,8 @@ final class Coverage {
         /// A value strictly between the two.
         INTERIOR,
 
-        /// A value below the declared minimum, refused by the columnar API.
-        BELOW_MIN_BATCH,
-
-        /// A value below the declared minimum, refused by the row API.
-        BELOW_MIN_ROW,
-
-        /// A value above the declared maximum, refused by the columnar API.
-        ABOVE_MAX_BATCH,
-
-        /// A value above the declared maximum, refused by the row API.
-        ABOVE_MAX_ROW,
-
         /// The nulls an `UNKNOWN` column carries, that annotation admitting no value at all.
-        NULLS_ONLY,
-
-        /// A value on an `UNKNOWN` column, refused by the columnar API.
-        VALUE_REJECTED_BATCH,
-
-        /// A value on an `UNKNOWN` column, refused by the row API.
-        VALUE_REJECTED_ROW
+        NULLS_ONLY
     }
 
     /// The cell for one physical type carrying one page encoding.

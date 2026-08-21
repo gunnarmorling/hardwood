@@ -8,6 +8,8 @@
 package dev.hardwood.writer;
 
 import java.nio.ByteBuffer;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -19,6 +21,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import dev.hardwood.InputFile;
 import dev.hardwood.Validity;
 import dev.hardwood.internal.writer.ByteBufferOutputFile;
+import dev.hardwood.internal.writer.LogicalTypeValueRange;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -37,20 +40,45 @@ class WriterAnnotationRangeTest {
 
     /// Every annotation that narrows what its physical type may hold, with the extremes of the
     /// range it declares.
+    ///
+    /// The bounds are constants rather than values read back out of `LogicalTypeValueRange`. That
+    /// is the point of the table: the writer derives them by arithmetic on the annotation, and a
+    /// test that derived them the same way would agree with it by construction whatever the
+    /// arithmetic said.
+    ///
+    /// The parameters are crossed rather than sampled where crossing them is what a defect would
+    /// hide behind — both signednesses of each narrow `INT` width, both settings of a `TIME`'s
+    /// UTC flag against each unit (the flag changes no bound, and a bound that moved with it
+    /// would be a defect), and a `DECIMAL` at the smallest precision and at the largest each
+    /// carrier holds, with a scale of zero and a scale as large as the precision.
     static Stream<Arguments> boundedColumns() {
         return Stream.of(
                 arguments(PhysicalType.INT32, new LogicalType.IntType(8, true), -128L, 127L),
                 arguments(PhysicalType.INT32, new LogicalType.IntType(8, false), 0L, 255L),
                 arguments(PhysicalType.INT32, new LogicalType.IntType(16, true), -32_768L, 32_767L),
                 arguments(PhysicalType.INT32, new LogicalType.IntType(16, false), 0L, 65_535L),
+
+                arguments(PhysicalType.INT32, new LogicalType.DecimalType(0, 1), -9L, 9L),
+                arguments(PhysicalType.INT32, new LogicalType.DecimalType(1, 1), -9L, 9L),
                 arguments(PhysicalType.INT32, new LogicalType.DecimalType(2, 9), -999_999_999L, 999_999_999L),
+                arguments(PhysicalType.INT32, new LogicalType.DecimalType(9, 9), -999_999_999L, 999_999_999L),
+                arguments(PhysicalType.INT64, new LogicalType.DecimalType(0, 1), -9L, 9L),
                 arguments(PhysicalType.INT64, new LogicalType.DecimalType(4, 18),
                         -999_999_999_999_999_999L, 999_999_999_999_999_999L),
+                arguments(PhysicalType.INT64, new LogicalType.DecimalType(18, 18),
+                        -999_999_999_999_999_999L, 999_999_999_999_999_999L),
+
                 arguments(PhysicalType.INT32, new LogicalType.TimeType(true, LogicalType.TimeUnit.MILLIS),
+                        0L, 86_399_999L),
+                arguments(PhysicalType.INT32, new LogicalType.TimeType(false, LogicalType.TimeUnit.MILLIS),
                         0L, 86_399_999L),
                 arguments(PhysicalType.INT64, new LogicalType.TimeType(false, LogicalType.TimeUnit.MICROS),
                         0L, 86_399_999_999L),
+                arguments(PhysicalType.INT64, new LogicalType.TimeType(true, LogicalType.TimeUnit.MICROS),
+                        0L, 86_399_999_999L),
                 arguments(PhysicalType.INT64, new LogicalType.TimeType(true, LogicalType.TimeUnit.NANOS),
+                        0L, 86_399_999_999_999L),
+                arguments(PhysicalType.INT64, new LogicalType.TimeType(false, LogicalType.TimeUnit.NANOS),
                         0L, 86_399_999_999_999L));
     }
 
@@ -64,6 +92,50 @@ class WriterAnnotationRangeTest {
                 arguments(PhysicalType.INT32, new LogicalType.DateType(), Integer.MIN_VALUE + 0L),
                 arguments(PhysicalType.INT64, new LogicalType.TimestampType(true, LogicalType.TimeUnit.NANOS),
                         Long.MIN_VALUE));
+    }
+
+    /// The annotations with nothing to bound, each named for the reason it has nothing: a value
+    /// of the physical type is a value of the column, whatever bits it carries.
+    ///
+    /// This list plus the kinds [#boundedColumns] and the `UNKNOWN` cases cover is the whole
+    /// sealed hierarchy, which [#everyAnnotationIsEitherRangeCheckedOrDeclaredNotToBe] asserts.
+    private static final Set<Class<? extends LogicalType>> NOT_RANGE_CHECKED = Set.of(
+            LogicalType.StringType.class, LogicalType.EnumType.class, LogicalType.JsonType.class,
+            LogicalType.BsonType.class, LogicalType.UuidType.class, LogicalType.Float16Type.class,
+            LogicalType.IntervalType.class, LogicalType.GeometryType.class,
+            LogicalType.GeographyType.class, LogicalType.DateType.class,
+            LogicalType.TimestampType.class, LogicalType.ListType.class, LogicalType.MapType.class,
+            LogicalType.VariantType.class);
+
+    /// Every member of the sealed [LogicalType] hierarchy is either exercised by this class or
+    /// declared to have nothing to range-check.
+    ///
+    /// The tables here are written by hand, and deliberately so: their bounds are constants
+    /// rather than values read back out of `LogicalTypeValueRange`, which is what makes them an
+    /// independent check on the arithmetic the writer applies rather than a restatement of it.
+    /// The cost of writing them by hand is that they can fall behind the hierarchy, and this is
+    /// what stops them: an annotation added to the writer fails here until someone decides which
+    /// of the two it is.
+    @Test
+    void everyAnnotationIsEitherRangeCheckedOrDeclaredNotToBe() {
+        Set<Class<?>> checked = new HashSet<>(NOT_RANGE_CHECKED);
+        checked.add(LogicalType.NullType.class);
+        boundedColumns().forEach(row -> checked.add(row.get()[1].getClass()));
+
+        assertThat(LogicalType.class.getPermittedSubclasses())
+                .as("every LogicalType is range-checked here or declared not to be")
+                .allSatisfy(member -> assertThat(checked).contains(member));
+    }
+
+    /// The bounded table's rows really are bounded, and the unbounded table's really are not, as
+    /// the writer resolves them — so a row filed under the wrong one fails rather than passing
+    /// vacuously.
+    @ParameterizedTest(name = "{1}")
+    @MethodSource("boundedColumns")
+    void aBoundedRowIsBounded(PhysicalType type, LogicalType annotation, long min, long max) {
+        assertThat(LogicalTypeValueRange.of(single(type, annotation).getColumn(0)).isBounded())
+                .as("%s bounds its column", annotation)
+                .isTrue();
     }
 
     @ParameterizedTest(name = "{1}")

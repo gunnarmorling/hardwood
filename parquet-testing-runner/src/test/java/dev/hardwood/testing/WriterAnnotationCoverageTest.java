@@ -33,12 +33,9 @@ import dev.hardwood.testing.CoverageDomain.Annotation;
 import dev.hardwood.writer.ColumnBatch;
 import dev.hardwood.writer.ColumnEncoding;
 import dev.hardwood.writer.ParquetFileWriter;
-import dev.hardwood.writer.RowWriter;
-import dev.hardwood.writer.StructBuilder;
 import dev.hardwood.writer.WriterConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// The annotation half of the write-path interop gate, driven by the domain rather than by a
 /// table beside it.
@@ -55,8 +52,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /// - **The ends of the declared range.** An annotation narrows what its physical type may hold,
 ///   and [LogicalTypeValueRange] computes by how much. The ends are where the comparator is
 ///   fragile — an unsigned maximum is spelled as a negative, a binary `DECIMAL` bound needs sign
-///   extension, a `BYTE_ARRAY` maximum past the truncation length must truncate *and* increment —
-///   and a value outside them has to be refused by both write APIs rather than by one.
+///   extension, a `BYTE_ARRAY` maximum past the truncation length must truncate *and* increment.
+///
+/// What it deliberately does not cover is the refusal of a value *outside* that range. A refused
+/// value produces no bytes, so parquet-java has nothing to say about it and this module adds
+/// nothing by asserting it; core's `WriterAnnotationRangeTest` owns that half, holds the writer
+/// to the message it reports, and pins the bounds as constants of its own rather than deriving
+/// them from the same class the writer applies.
 ///
 /// Its cases come from [CoverageDomain#annotations], which is also what
 /// [WriteCoverageVerdictTest] requires, so an annotation added to the writer produces a case here
@@ -126,28 +128,6 @@ class WriterAnnotationCoverageTest {
         }
     }
 
-    /// A value outside the declared range is refused, through the columnar API and through the
-    /// row API alike.
-    ///
-    /// Both are asserted because both apply the range: a check present in one and missing from
-    /// the other would let the entry point a caller happens to pick decide whether a file ends up
-    /// holding values its own annotation says cannot exist.
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("annotations")
-    void outOfRangeValuesAreRefused(Annotation annotation, @TempDir Path dir) {
-        for (BoundaryClass boundary : refused(annotation)) {
-            Object value = value(annotation, boundary);
-            Path file = dir.resolve(boundary + ".parquet");
-
-            assertThatThrownBy(() -> write(annotation, file, WriterConfig.defaults(),
-                    List.of(value), false, batchApi(boundary)))
-                    .as("%s at %s", annotation, boundary)
-                    .isInstanceOf(IllegalArgumentException.class);
-
-            CoverageRegistry.observeBoundary(annotation.key(), annotation.carrierKey(), boundary);
-        }
-    }
-
     // ==================== The values ====================
 
     /// The boundary classes whose values a file actually holds: the ends and the interior, or —
@@ -157,23 +137,6 @@ class WriterAnnotationCoverageTest {
             return List.of(BoundaryClass.NULLS_ONLY);
         }
         return List.of(BoundaryClass.MIN, BoundaryClass.INTERIOR, BoundaryClass.MAX);
-    }
-
-    /// The boundary classes whose values must be refused, and by which API.
-    private static List<BoundaryClass> refused(Annotation annotation) {
-        if (holdsNoValue(annotation)) {
-            return List.of(BoundaryClass.VALUE_REJECTED_BATCH, BoundaryClass.VALUE_REJECTED_ROW);
-        }
-        if (!CoverageDomain.rangeOf(annotation).isBounded()) {
-            return List.of();
-        }
-        return List.of(BoundaryClass.BELOW_MIN_BATCH, BoundaryClass.BELOW_MIN_ROW,
-                BoundaryClass.ABOVE_MAX_BATCH, BoundaryClass.ABOVE_MAX_ROW);
-    }
-
-    private static boolean batchApi(BoundaryClass boundary) {
-        return boundary == BoundaryClass.BELOW_MIN_BATCH || boundary == BoundaryClass.ABOVE_MAX_BATCH
-                || boundary == BoundaryClass.VALUE_REJECTED_BATCH;
     }
 
     /// The value `annotation` takes at one boundary class, in the representation its carrier's
@@ -211,10 +174,7 @@ class WriterAnnotationCoverageTest {
         return switch (boundary) {
             case MIN -> min;
             case MAX -> max;
-            case INTERIOR, NULLS_ONLY, VALUE_REJECTED_BATCH, VALUE_REJECTED_ROW ->
-                    min < 0 && max > 0 ? 0 : min + 1;
-            case BELOW_MIN_BATCH, BELOW_MIN_ROW -> min - 1;
-            case ABOVE_MAX_BATCH, ABOVE_MAX_ROW -> max + 1;
+            case INTERIOR, NULLS_ONLY -> min < 0 && max > 0 ? 0 : min + 1;
         };
     }
 
@@ -222,7 +182,7 @@ class WriterAnnotationCoverageTest {
     ///
     /// A binary `DECIMAL` is the one annotation that narrows such a column, and it narrows it by
     /// magnitude: its values are big-endian two's complement unscaled values, so the ends are the
-    /// declared bound and its negation. Every other annotation over a binary carrier narrows
+    /// declared bound and its negation, sign-extended to the column's length where it has one. Every other annotation over a binary carrier narrows
     /// nothing, and takes the extremes of the unsigned order the format compares those columns in
     /// — for a `BYTE_ARRAY` the empty value and a long run of `0xff`, whose bound is past the
     /// truncation length and so has to be truncated upwards to still bound the column.
@@ -233,9 +193,7 @@ class WriterAnnotationCoverageTest {
             BigInteger value = switch (boundary) {
                 case MIN -> bound.negate();
                 case MAX -> bound;
-                case INTERIOR, NULLS_ONLY, VALUE_REJECTED_BATCH, VALUE_REJECTED_ROW -> BigInteger.ZERO;
-                case BELOW_MIN_BATCH, BELOW_MIN_ROW -> bound.add(BigInteger.ONE).negate();
-                case ABOVE_MAX_BATCH, ABOVE_MAX_ROW -> bound.add(BigInteger.ONE);
+                case INTERIOR, NULLS_ONLY -> BigInteger.ZERO;
             };
             return unscaled(value, annotation.typeLength());
         }
@@ -319,26 +277,13 @@ class WriterAnnotationCoverageTest {
                 : WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build();
     }
 
+    /// Writes a one-column file holding `values` through the columnar API.
     private void write(Annotation annotation, Path file, WriterConfig config, List<Object> values,
             boolean allNull) throws IOException {
-        write(annotation, file, config, values, allNull, true);
-    }
-
-    /// Writes a one-column file holding `values`, through whichever of the two APIs is asked for.
-    private void write(Annotation annotation, Path file, WriterConfig config, List<Object> values,
-            boolean allNull, boolean batchApi) throws IOException {
 
         try (ParquetFileWriter writer = ParquetFileWriter.create(
                 OutputFile.of(file), CoverageDomain.schemaOf(annotation), config)) {
-
-            if (batchApi) {
-                writer.writeBatch(batch -> set(batch, annotation, values, allNull));
-                return;
-            }
-            RowWriter rows = writer.rowWriter();
-            for (Object value : values) {
-                rows.writeRow(record -> setRow(record, annotation, value, allNull));
-            }
+            writer.writeBatch(batch -> set(batch, annotation, values, allNull));
         }
     }
 
@@ -364,21 +309,6 @@ class WriterAnnotationCoverageTest {
             }
             case BYTE_ARRAY -> batch.bytes(COLUMN, binaries(values), nulls);
             case FIXED_LEN_BYTE_ARRAY -> batch.fixed(COLUMN, binaries(values), nulls);
-            default -> throw new IllegalStateException("No carrier setter for " + annotation.carrier());
-        }
-    }
-
-    private static void setRow(StructBuilder record, Annotation annotation, Object value,
-            boolean allNull) {
-
-        if (allNull) {
-            record.setNull(COLUMN);
-            return;
-        }
-        switch (annotation.carrier()) {
-            case INT32 -> record.setInt(COLUMN, Math.toIntExact((long) value));
-            case INT64 -> record.setLong(COLUMN, (long) value);
-            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> record.setBinary(COLUMN, (byte[]) value);
             default -> throw new IllegalStateException("No carrier setter for " + annotation.carrier());
         }
     }
