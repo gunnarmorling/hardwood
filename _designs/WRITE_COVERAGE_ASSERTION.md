@@ -32,11 +32,13 @@ hand:
   `isAdjustedToUTC` — MILLIS only ever adjusted, MICROS only ever local — so a path that drops
   the flag on one unit could not fail. `DecimalType` appeared at no carrier's precision boundary
   and never with `scale == precision`.
-- The boundary values were physical rather than logical. `TypeFixture` carries
-  `Integer.MIN_VALUE`, `NaN`, `-0.0`, the empty binary and bytes above `0x7f`. An annotation
-  declares a **narrower** range — `LogicalTypeValueRange` computes it exactly — and no test
-  wrote a column at that range's ends: unsigned `INT(8)` at 0 and 255, `DECIMAL(2, 9)` at
-  ±999999999, `TIME(MILLIS)` at 86399999.
+- The boundary values the gate wrote were physical rather than logical. `TypeFixture` carries
+  `Integer.MIN_VALUE`, `NaN`, `-0.0`, the empty binary and bytes above `0x7f`; an annotation
+  declares a **narrower** range, which `LogicalTypeValueRange` computes exactly, and no file
+  the gate produced held a column at that range's ends. Core's `WriterAnnotationRangeTest` and
+  `WriterReaderSymmetryTest` do write them, against Hardwood's own reader, over a hand-picked
+  subset of the annotations. What was missing is the strict reader's opinion of those values,
+  and any assurance that the subset keeps pace with the annotations the writer emits.
 
 The ends of a range are where the statistics comparator is fragile, which is what makes them
 worth reaching. An unsigned `INT(32)` maximum is stored as `-1` and must compare unsigned; a
