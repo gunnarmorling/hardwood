@@ -7,6 +7,7 @@
  */
 package dev.hardwood.writer;
 
+import dev.hardwood.internal.writer.EncodingSupport;
 import dev.hardwood.metadata.PhysicalType;
 
 /// How a column's values are encoded, set file-wide or per leaf column through
@@ -67,15 +68,6 @@ public enum ColumnEncoding {
     /// @param type the column's physical type
     /// @return `true` when the combination is legal
     boolean supports(PhysicalType type) {
-        return switch (this) {
-            case AUTO, PLAIN -> true;
-            case DELTA_BINARY_PACKED -> type == PhysicalType.INT32 || type == PhysicalType.INT64;
-            case DELTA_LENGTH_BYTE_ARRAY -> type == PhysicalType.BYTE_ARRAY;
-            case DELTA_BYTE_ARRAY -> type == PhysicalType.BYTE_ARRAY
-                    || type == PhysicalType.FIXED_LEN_BYTE_ARRAY;
-            case BYTE_STREAM_SPLIT -> type == PhysicalType.INT32 || type == PhysicalType.INT64
-                    || type == PhysicalType.FLOAT || type == PhysicalType.DOUBLE
-                    || type == PhysicalType.FIXED_LEN_BYTE_ARRAY;
-        };
+        return EncodingSupport.supports(this, type);
     }
 }

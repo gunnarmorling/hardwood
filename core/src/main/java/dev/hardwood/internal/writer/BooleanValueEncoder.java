@@ -68,7 +68,7 @@ final class BooleanValueEncoder extends ValueEncoder {
 
     @Override
     boolean dictionaryCapable() {
-        return false;
+        return EncodingSupport.dictionaryCapable(PhysicalType.BOOLEAN);
     }
 
     @Override

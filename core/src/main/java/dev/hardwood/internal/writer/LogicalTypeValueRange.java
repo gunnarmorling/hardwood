@@ -120,6 +120,24 @@ public final class LogicalTypeValueRange {
         return logicalType;
     }
 
+    /// The smallest value an integral column may hold, meaningful only where [#isBounded()] and
+    /// the column's physical type is `INT32` or `INT64`.
+    public long min() {
+        return min;
+    }
+
+    /// The largest value an integral column may hold, meaningful only where [#isBounded()] and
+    /// the column's physical type is `INT32` or `INT64`.
+    public long max() {
+        return max;
+    }
+
+    /// The largest unscaled magnitude a binary `DECIMAL` column may hold, `null` for any other
+    /// column.
+    public BigInteger unscaledBound() {
+        return unscaledBound;
+    }
+
     /// Whether `value` is within an integral column's declared range.
     public boolean contains(long value) {
         return value >= min && value <= max;
