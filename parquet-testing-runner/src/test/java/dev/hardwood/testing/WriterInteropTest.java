@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,6 +30,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import dev.hardwood.OutputFile;
+import dev.hardwood.internal.writer.EncodingSupport;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -106,20 +108,52 @@ class WriterInteropTest {
                         WriterConfig.builder().encoding(encoding).build())));
     }
 
-    /// Mirrors the legality table from outside the writer, so a pair dropped from it has to be
-    /// dropped here too rather than silently leaving this axis.
+    /// The legality table the writer itself applies, rather than a copy of it: a pair dropped
+    /// from `EncodingSupport` leaves this axis in the same commit that drops it.
     private static boolean legal(ColumnEncoding encoding, TypeFixture type) {
-        PhysicalType physical = type.physicalType();
-        return switch (encoding) {
-            case AUTO, PLAIN -> true;
-            case DELTA_BINARY_PACKED -> physical == PhysicalType.INT32 || physical == PhysicalType.INT64;
-            case DELTA_LENGTH_BYTE_ARRAY -> physical == PhysicalType.BYTE_ARRAY;
-            case DELTA_BYTE_ARRAY -> physical == PhysicalType.BYTE_ARRAY
-                    || physical == PhysicalType.FIXED_LEN_BYTE_ARRAY;
-            case BYTE_STREAM_SPLIT -> physical == PhysicalType.INT32 || physical == PhysicalType.INT64
-                    || physical == PhysicalType.FLOAT || physical == PhysicalType.DOUBLE
-                    || physical == PhysicalType.FIXED_LEN_BYTE_ARRAY;
-        };
+        return EncodingSupport.supports(encoding, type.physicalType());
+    }
+
+    /// The codec axis crossed with the optional encodings, which [#optionalEncodings] leaves at
+    /// the default codec and [#codecs] leaves at the default encoding — so between them the four
+    /// encodings stage 19b added meet no codec but one.
+    ///
+    /// The pair is what matters here rather than the type: a codec compresses a page body, and
+    /// what these encodings change is the shape of that body. `BYTE_STREAM_SPLIT` is the case
+    /// that makes the point — it changes no page's size on its own, and exists entirely for what
+    /// the codec after it can then do — so each encoding is swept over the codecs on one type it
+    /// is legal for rather than over all of them.
+    static Stream<InteropCase> optionalEncodingCodecs() {
+        return Stream.of(
+                new EncodingCodecAxis(ColumnEncoding.DELTA_BINARY_PACKED, TypeFixture.INT64),
+                new EncodingCodecAxis(ColumnEncoding.DELTA_LENGTH_BYTE_ARRAY, TypeFixture.BYTE_ARRAY),
+                new EncodingCodecAxis(ColumnEncoding.DELTA_BYTE_ARRAY, TypeFixture.BYTE_ARRAY),
+                new EncodingCodecAxis(ColumnEncoding.BYTE_STREAM_SPLIT, TypeFixture.DOUBLE))
+                .flatMap(axis -> PARQUET_JAVA_CODECS.stream()
+                        .map(codec -> InteropCase.of(axis.encoding() + " under " + codec, axis.type(),
+                                Nullability.OPTIONAL_SOME_NULL, 64, FEW_ROWS,
+                                WriterConfig.builder()
+                                        .encoding(axis.encoding())
+                                        .codec(codec)
+                                        .build())));
+    }
+
+    /// The `FIXED_LEN_BYTE_ARRAY` lengths the writer has a reason to see, against every encoding
+    /// legal for the type.
+    ///
+    /// The length is part of what two of those encoders do rather than a detail above them:
+    /// `BYTE_STREAM_SPLIT` scatters a value across one stream per byte position, so the number of
+    /// streams *is* the length, and `DELTA_BYTE_ARRAY` splits each value into the prefix it
+    /// shares with the one before and the suffix it does not. The flat matrix declares this type
+    /// at one length, so neither encoder is otherwise seen at the lengths the annotations fix —
+    /// two for `FLOAT16`, twelve for `INTERVAL`, sixteen for `UUID`.
+    static Stream<FixedLengthCase> fixedLengths() {
+        return Stream.of(2, 8, 12, 16).flatMap(typeLength -> Stream.of(
+                new FixedLengthCase(typeLength, ColumnEncoding.AUTO, Encoding.RLE_DICTIONARY),
+                new FixedLengthCase(typeLength, ColumnEncoding.PLAIN, Encoding.PLAIN),
+                new FixedLengthCase(typeLength, ColumnEncoding.DELTA_BYTE_ARRAY, Encoding.DELTA_BYTE_ARRAY),
+                new FixedLengthCase(typeLength, ColumnEncoding.BYTE_STREAM_SPLIT,
+                        Encoding.BYTE_STREAM_SPLIT)));
     }
 
     /// The codec axis, over every codec the writer produces. The two it does not — `LZ4`'s
@@ -134,11 +168,16 @@ class WriterInteropTest {
     /// `BROTLI` is the one codec the writer produces that is missing here, because the pinned
     /// parquet-java cannot read it at all — see [#parquetJavaHasNoBrotliCodec()].
     static Stream<InteropCase> codecs() {
-        return sweep(List.of(CompressionCodec.UNCOMPRESSED, CompressionCodec.GZIP, CompressionCodec.SNAPPY,
-                CompressionCodec.ZSTD, CompressionCodec.LZ4_RAW),
+        return sweep(PARQUET_JAVA_CODECS,
                 (type, codec) -> InteropCase.of("codec " + codec, type, Nullability.OPTIONAL_SOME_NULL,
                         64, FEW_ROWS, WriterConfig.builder().codec(codec).build()));
     }
+
+    /// Every codec the writer produces that the pinned parquet-java can also read, which is all
+    /// of them but `BROTLI` — see [#parquetJavaHasNoBrotliCodec()].
+    private static final List<CompressionCodec> PARQUET_JAVA_CODECS = List.of(
+            CompressionCodec.UNCOMPRESSED, CompressionCodec.GZIP, CompressionCodec.SNAPPY,
+            CompressionCodec.ZSTD, CompressionCodec.LZ4_RAW);
 
     /// The layout axis: one page, several pages within one row group, and several row groups.
     ///
@@ -201,6 +240,43 @@ class WriterInteropTest {
     @MethodSource
     void codecs(InteropCase testCase, @TempDir Path dir) throws IOException {
         verify(testCase, dir);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource
+    void optionalEncodingCodecs(InteropCase testCase, @TempDir Path dir) throws IOException {
+        verify(testCase, dir);
+    }
+
+    /// A `FIXED_LEN_BYTE_ARRAY` column of one length under one encoding, read back through
+    /// parquet-java and asserted value by value, with the encoding the pages declared held to the
+    /// one the policy asked for — without which a length that quietly fell back to `PLAIN` would
+    /// pass as covered.
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("fixedLengths")
+    void fixedLengths(FixedLengthCase testCase, @TempDir Path dir) throws IOException {
+        Path file = dir.resolve("fixed.parquet");
+        byte[][] values = testCase.values();
+
+        FileSchema schema = FileSchema.builder("interop")
+                .addColumn(COLUMN, PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.OPTIONAL,
+                        testCase.typeLength())
+                .build();
+        WriterConfig config = WriterConfig.builder().encoding(testCase.policy()).build();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
+            writer.writeBatch(batch -> batch.fixed(COLUMN, values));
+        }
+
+        List<Group> rows = ParquetJavaReader.readGroups(file);
+        assertThat(rows).as("row count").hasSize(values.length);
+        for (int r = 0; r < values.length; r++) {
+            assertThat(rows.get(r).getBinary(COLUMN, 0).getBytes()).as("row %d", r)
+                    .isEqualTo(values[r]);
+        }
+
+        for (Set<Encoding> chunk : ParquetJavaReader.readPages(file).chunkValueEncodings()) {
+            assertThat(chunk).as("page encodings").containsExactly(testCase.expected());
+        }
     }
 
     @ParameterizedTest(name = "{0}")
@@ -526,6 +602,42 @@ class WriterInteropTest {
         @Override
         public String toString() {
             return base.toString();
+        }
+    }
+
+    private record EncodingCodecAxis(ColumnEncoding encoding, TypeFixture type) {
+    }
+
+    /// One `FIXED_LEN_BYTE_ARRAY` length written under one encoding policy, with the page
+    /// encoding that policy must produce.
+    ///
+    /// The values share a prefix and differ in their last byte, which is what
+    /// `DELTA_BYTE_ARRAY` exists to exploit, and there are few enough distinct ones that
+    /// [ColumnEncoding#AUTO] arrives at a dictionary rather than at `PLAIN`.
+    ///
+    /// @param typeLength the column's declared length
+    /// @param policy the encoding policy the file is written under
+    /// @param expected the encoding its data pages must then declare
+    record FixedLengthCase(int typeLength, ColumnEncoding policy, Encoding expected) {
+
+        private static final int ROWS = 200;
+
+        private static final int DISTINCT = 8;
+
+        byte[][] values() {
+            byte[][] values = new byte[ROWS][];
+            for (int r = 0; r < ROWS; r++) {
+                byte[] value = new byte[typeLength];
+                Arrays.fill(value, (byte) 0x2a);
+                value[typeLength - 1] = (byte) (r % DISTINCT);
+                values[r] = value;
+            }
+            return values;
+        }
+
+        @Override
+        public String toString() {
+            return "FIXED_LEN_BYTE_ARRAY(" + typeLength + ") / " + policy;
         }
     }
 

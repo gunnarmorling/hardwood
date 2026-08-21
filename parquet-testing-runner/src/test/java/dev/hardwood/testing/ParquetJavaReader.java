@@ -15,7 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.hadoop.conf.Configuration;
@@ -39,10 +41,19 @@ import org.apache.parquet.format.Util;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.example.GroupReadSupport;
+import org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.apache.parquet.hadoop.util.HadoopInputFile;
 import org.apache.parquet.io.SeekableInputStream;
+import org.apache.parquet.schema.GroupType;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.PrimitiveType;
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
+import org.apache.parquet.schema.Type;
+
+import dev.hardwood.metadata.CompressionCodec;
+import dev.hardwood.metadata.PhysicalType;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -66,6 +77,7 @@ final class ParquetJavaReader {
     /// @throws IOException if parquet-java cannot read the file — which, for a file Hardwood
     ///         wrote, is the gate failing
     static List<Group> readGroups(Path file) throws IOException {
+        observe(file);
         List<Group> rows = new ArrayList<>();
         try (ParquetReader<Group> reader = ParquetReader
                 .builder(new GroupReadSupport(), hadoopPath(file))
@@ -87,6 +99,7 @@ final class ParquetJavaReader {
     /// @return the parsed footer
     /// @throws IOException if parquet-java cannot parse the footer
     static ParquetMetadata readFooter(Path file) throws IOException {
+        observe(file);
         try (ParquetFileReader reader = ParquetFileReader
                 .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
             return reader.getFooter();
@@ -149,6 +162,7 @@ final class ParquetJavaReader {
     /// @return what the walk found
     /// @throws IOException if parquet-java cannot read a page
     static Pages readPages(Path file) throws IOException {
+        observe(file);
         int count = 0;
         List<Set<Encoding>> chunkValueEncodings = new ArrayList<>();
         try (ParquetFileReader reader = ParquetFileReader
@@ -184,6 +198,7 @@ final class ParquetJavaReader {
     /// @return one width per data page, in the order the pages were walked
     /// @throws IOException if parquet-java cannot read a page
     static List<Integer> readIndexBitWidths(Path file) throws IOException {
+        observe(file);
         List<Integer> widths = new ArrayList<>();
         try (ParquetFileReader reader = ParquetFileReader
                 .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
@@ -221,6 +236,7 @@ final class ParquetJavaReader {
     /// @return one entry per column chunk in footer order, null where the chunk carries no count
     /// @throws IOException if the footer cannot be read
     static List<Long> readDistinctCounts(Path file) throws IOException {
+        observe(file);
         List<Long> counts = new ArrayList<>();
         try (SeekableInputStream in = HadoopInputFile
                 .fromPath(hadoopPath(file), new Configuration()).newStream()) {
@@ -235,6 +251,132 @@ final class ParquetJavaReader {
             }
         }
         return counts;
+    }
+
+    /// Records what this file contains into [CoverageRegistry], so that the write-path coverage
+    /// assertion described in `_designs/WRITE_COVERAGE_ASSERTION.md` counts it as produced.
+    ///
+    /// Every entry point of this class calls it, which is what keeps the recording free of any
+    /// opt-in: a test contributes by reading its file back, and one added later contributes by
+    /// existing. The file is walked once however many entry points a single test uses.
+    ///
+    /// What is recorded comes out of the bytes rather than out of the test's intent — the
+    /// encoding each data page declares, the codec and null count the footer reports, the
+    /// annotation its schema carries. A page that cannot be read fails here, as it does in
+    /// [#readPages].
+    ///
+    /// @param file the file to record
+    /// @throws IOException if parquet-java cannot read the file
+    static void observe(Path file) throws IOException {
+        if (!CoverageRegistry.claim(file)) {
+            return;
+        }
+        try (ParquetFileReader reader = ParquetFileReader
+                .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
+
+            ParquetMetadata footer = reader.getFooter();
+            MessageType schema = footer.getFileMetaData().getSchema();
+            observeGroupAnnotations(schema);
+
+            List<ColumnDescriptor> columns = schema.getColumns();
+            List<BlockMetaData> blocks = footer.getBlocks();
+            int blockIndex = 0;
+            PageReadStore rowGroup;
+            while ((rowGroup = reader.readNextRowGroup()) != null) {
+                Map<String, ColumnChunkMetaData> chunks = new HashMap<>();
+                for (ColumnChunkMetaData chunk : blocks.get(blockIndex++).getColumns()) {
+                    chunks.put(chunk.getPath().toDotString(), chunk);
+                }
+                for (ColumnDescriptor column : columns) {
+                    Set<Encoding> encodings = EnumSet.noneOf(Encoding.class);
+                    PageReader pageReader = rowGroup.getPageReader(column);
+                    DataPage page;
+                    while ((page = pageReader.readPage()) != null) {
+                        encodings.add(valueEncoding(page));
+                    }
+                    observeChunk(column, chunks.get(String.join(".", column.getPath())), encodings);
+                }
+            }
+        }
+    }
+
+    /// Records one column chunk under the physical type, length, annotation, encodings, codec and
+    /// repetition shape parquet-java reports for it.
+    private static void observeChunk(ColumnDescriptor column, ColumnChunkMetaData chunk,
+            Set<Encoding> encodings) {
+
+        if (chunk == null || encodings.isEmpty()) {
+            return;
+        }
+        PrimitiveType primitive = column.getPrimitiveType();
+        Integer typeLength = primitive.getPrimitiveTypeName() == PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+                ? primitive.getTypeLength()
+                : null;
+        CoverageRegistry.observeColumnChunk(
+                physicalType(primitive.getPrimitiveTypeName()),
+                typeLength,
+                LogicalTypeKey.of(primitive.getLogicalTypeAnnotation()),
+                encodings,
+                CompressionCodec.valueOf(chunk.getCodec().name()),
+                repetitionShape(column, chunk));
+    }
+
+    /// Records the annotation of every group node of `group`, which carry `LIST` and `MAP` and
+    /// have no column chunk of their own.
+    private static void observeGroupAnnotations(GroupType group) {
+        for (Type field : group.getFields()) {
+            if (field.isPrimitive()) {
+                continue;
+            }
+            if (field.getLogicalTypeAnnotation() != null) {
+                CoverageRegistry.observeGroupAnnotation(
+                        LogicalTypeKey.of(field.getLogicalTypeAnnotation()));
+            }
+            observeGroupAnnotations(field.asGroupType());
+        }
+    }
+
+    /// The repetition shape of a column chunk.
+    ///
+    /// The three `OPTIONAL` shapes share a descriptor and differ only in the definition levels
+    /// the chunk's values produced, so they are told apart by its null count against its value
+    /// count — the latter counting nulls, as the format's `num_values` does. A chunk whose
+    /// statistics do not state a null count is reported as `null`, leaving the shape unrecorded
+    /// rather than guessed.
+    private static Coverage.RepetitionShape repetitionShape(ColumnDescriptor column,
+            ColumnChunkMetaData chunk) {
+
+        if (column.getMaxRepetitionLevel() > 0) {
+            return Coverage.RepetitionShape.REPEATED;
+        }
+        if (column.getMaxDefinitionLevel() == 0) {
+            return Coverage.RepetitionShape.REQUIRED;
+        }
+        if (chunk.getStatistics() == null || !chunk.getStatistics().isNumNullsSet()) {
+            return null;
+        }
+        long nulls = chunk.getStatistics().getNumNulls();
+        if (nulls == 0) {
+            return Coverage.RepetitionShape.OPTIONAL_ALL_PRESENT;
+        }
+        return nulls == chunk.getValueCount()
+                ? Coverage.RepetitionShape.OPTIONAL_ALL_NULL
+                : Coverage.RepetitionShape.OPTIONAL_SOME_NULL;
+    }
+
+    /// The Hardwood physical type parquet-java's primitive type names denote. The two disagree on
+    /// one spelling only: what the format calls `BYTE_ARRAY` parquet-java calls `BINARY`.
+    private static PhysicalType physicalType(PrimitiveTypeName name) {
+        return switch (name) {
+            case BOOLEAN -> PhysicalType.BOOLEAN;
+            case INT32 -> PhysicalType.INT32;
+            case INT64 -> PhysicalType.INT64;
+            case INT96 -> PhysicalType.INT96;
+            case FLOAT -> PhysicalType.FLOAT;
+            case DOUBLE -> PhysicalType.DOUBLE;
+            case BINARY -> PhysicalType.BYTE_ARRAY;
+            case FIXED_LEN_BYTE_ARRAY -> PhysicalType.FIXED_LEN_BYTE_ARRAY;
+        };
     }
 
     /// Reads the footer as the format's own Thrift structure: seek to the four-byte length ahead

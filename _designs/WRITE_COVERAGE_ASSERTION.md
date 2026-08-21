@@ -1,6 +1,6 @@
 # Write-path coverage assertion (#9, stage 30)
 
-**Status: Proposed.** Tracking issue: #990. Delivery stage 30 (Gate) of
+**Status: Complete.** Tracking issue: #990. Delivery stage 30 (Gate) of
 [WRITER_SUPPORT.md](WRITER_SUPPORT.md). Extends the gate established in
 [WRITER_INTEROP_GATE.md](WRITER_INTEROP_GATE.md).
 
@@ -18,33 +18,33 @@ produced the dictionary, `PLAIN` chunk or page count it exists to cover, "withou
 change to the writer's encoding choice or page sizing would silently empty an axis rather
 than fail it". That reasoning stops at the case. Nothing applies it to the matrix as a whole.
 
-Stage 19 is what makes the gap material. The writer now produces six codecs and resolves five
-named encoding policies plus `AUTO`, each legal on a different subset of the seven writable
-physical types. The space multiplied; the sweep did not, and by construction cannot: it varies
-one axis at a time, so `DELTA_BYTE_ARRAY` never meets a codec other than the base case and
-`BYTE_STREAM_SPLIT` never meets a `FIXED_LEN_BYTE_ARRAY` of a length other than eight.
+Stage 19 is what made the gap material. The writer produces six codecs and resolves five named
+encoding policies plus `AUTO`, each legal on a different subset of the seven writable physical
+types. The space multiplied; the sweep did not, and by construction cannot: it varies one axis
+at a time, so `DELTA_BYTE_ARRAY` met no codec but the base case and `BYTE_STREAM_SPLIT` met no
+`FIXED_LEN_BYTE_ARRAY` of a length other than eight.
 
-Two further gaps sit in the annotation half of the gate, where the tables are enumerated by
+Two further gaps sat in the annotation half of the gate, where the tables are enumerated by
 hand:
 
-- `IntType` appears at four of its eight width/sign combinations. `TimeType` and
-  `TimestampType` appear at three of six each, with the unit confounded with
+- `IntType` appeared at four of its eight width/sign combinations. `TimeType` and
+  `TimestampType` appeared at three of six each, with the unit confounded with
   `isAdjustedToUTC` — MILLIS only ever adjusted, MICROS only ever local — so a path that drops
-  the flag on one unit cannot fail. `DecimalType` appears at no carrier's precision boundary
+  the flag on one unit could not fail. `DecimalType` appeared at no carrier's precision boundary
   and never with `scale == precision`.
-- The boundary values are physical rather than logical. `TypeFixture` carries
+- The boundary values were physical rather than logical. `TypeFixture` carries
   `Integer.MIN_VALUE`, `NaN`, `-0.0`, the empty binary and bytes above `0x7f`. An annotation
   declares a **narrower** range — `LogicalTypeValueRange` computes it exactly — and no test
-  writes a column at that range's ends. Unsigned `INT(8)` is never written at 0 and 255,
-  `DECIMAL(2, 9)` never at ±999999999, `TIME(MILLIS)` never at 86399999.
+  wrote a column at that range's ends: unsigned `INT(8)` at 0 and 255, `DECIMAL(2, 9)` at
+  ±999999999, `TIME(MILLIS)` at 86399999.
 
 The ends of a range are where the statistics comparator is fragile, which is what makes them
 worth reaching. An unsigned `INT(32)` maximum is stored as `-1` and must compare unsigned; a
 binary `DECIMAL` bound needs sign extension; a `BYTE_ARRAY` maximum of all-`0xff` bytes past
 `statisticsTruncationLength` must truncate *and* increment, or it stops bounding the column.
-The gate already reduces bounds with parquet-java's comparator, so a value written at the end
-of its range is checked against an independent implementation of the order — but only if some
-test writes one.
+The gate reduces bounds with parquet-java's comparator, so a value written at the end of its
+range is checked against an independent implementation of the order — but only if some test
+writes one.
 
 ## Goal
 
@@ -59,27 +59,32 @@ from the bytes each test produced, and a verdict that diffs them.
 ### Observation
 
 Every write-path test already funnels its file through `ParquetJavaReader`, so that is where
-observation belongs. `readPages` and `readFooter` record what they walked past into a
-`CoverageRegistry`:
+observation belongs. Each of its entry points opens with `observe`, which walks the file once —
+however many entry points one test uses — and records into `CoverageRegistry`:
 
-- from each data page header, the `(physical type, page value encoding, codec, repetition
-  shape)` the page declared, plus the column's `FIXED_LEN_BYTE_ARRAY` length where it has one;
-- from the footer schema, each column's `(annotation, carrier physical type, dictionary or
-  not)`.
+- per column chunk, the physical type, the `FIXED_LEN_BYTE_ARRAY` length where it has one, the
+  encodings its data pages declared, the codec its bodies are compressed with, and its
+  repetition shape;
+- per group node, the annotation it carries, which is where `LIST` and `MAP` live.
 
-No test opts in. `WriterInteropTest`, `WriterNestedInteropTest`, `WriterLogicalTypeInteropTest`
-and `RowWriterLogicalTypeInteropTest` contribute by running, and so does every test added
-later.
+The repetition shape is the one thing not stated outright by the file. The three `OPTIONAL`
+shapes share a descriptor and differ only in the definition levels the values produced, so they
+are told apart by the chunk's null count against its value count, the latter counting nulls as
+the format's `num_values` does. A chunk whose statistics state no null count leaves its shape
+unrecorded rather than guessed.
+
+No test opts in. `WriterInteropTest`, `WriterNestedInteropTest`, `WriterLogicalTypeInteropTest`,
+`RowWriterLogicalTypeInteropTest` and `WriterAnnotationCoverageTest` contribute by running, and
+so does every test added later.
 
 What is recorded is what parquet-java found in the file, never what the test intended to
 write. This is the same distinction the gate draws when it reads page-level value encodings
 rather than the column chunk's `encodings` union: a writer that silently stopped producing an
 encoding would still satisfy a registry keyed on intent.
 
-The third registry has no file to read. `LogicalTypeValueRange` governs values as they are
-offered to the writer, so range coverage is recorded by the helper that writes them: the
-`(annotation, boundary class)` pair each column's values reached, and each rejection a test
-asserted.
+Boundary coverage has no file to read. `LogicalTypeValueRange` governs values on their way
+*into* the writer, so a value it refuses produces no bytes at all; those cells are recorded by
+the test that offers the value, as an `(annotation, carrier, boundary class)` triple.
 
 ### Domain
 
@@ -126,12 +131,17 @@ smaller one:
 | page encoding × codec | 36 | Framing over an unusual page body — the axis stage 19 widened on both sides at once. |
 | physical type × repetition shape | 28 | The level streams and the value stream are written together and read together. |
 | `FIXED_LEN_BYTE_ARRAY` length × page encoding | 16 | `BYTE_STREAM_SPLIT` scatters by byte position and `DELTA_BYTE_ARRAY` shares prefixes; both are length-sensitive, and the flat fixture pins the length at eight. |
-| annotation × {dictionary, non-dictionary} | ~90 | An annotation's comparator governs the chunk's bounds in either storage form, and the dictionary path reaches them through a different accumulator. |
-| annotation × boundary class | ~115 | Below. |
+| annotation × carrier × {dictionary, non-dictionary} | 95 | An annotation's comparator governs the chunk's bounds in either storage form, and the dictionary path reaches those bounds through a different accumulator. |
+| annotation × carrier × boundary class | 245 | Below. |
 
-Around 300 required cells, each with a stated reason, against a cross product in the tens of
-thousands. The projections accumulate independently, so the existing one-axis-at-a-time sweep
-fills most of them without being restructured.
+443 required cells, each with a stated reason, against a cross product in the tens of thousands.
+The projections accumulate independently, so the sweep the flat matrix already runs fills the
+first three without being restructured.
+
+The carrier is part of the two annotation cells because it is part of what the annotation means:
+a `DECIMAL(1, 0)` over an `INT32` is bounded by arithmetic on the precision and the same
+annotation over a `BYTE_ARRAY` by the magnitude its bytes spell, so neither can stand in for the
+other.
 
 ### Annotation parameters
 
@@ -196,21 +206,33 @@ sit next to `ParquetJavaReader`, which is the module's single point of contact w
 reader.
 
 The verdict spans test classes, so it cannot be an `@AfterAll`, and Surefire may fork per
-class, so it cannot rely on a static registry surviving to the end of the run. A
-`TestExecutionListener`, registered through `META-INF/services`, appends the run's
-observations to `target/write-coverage/` on `testPlanExecutionFinished`; a second Surefire
-execution then runs `WriteCoverageVerdictTest`, which merges what the forks recorded and
-asserts the projections. The intermediate files are the report: a failure names the empty
-cells rather than a count.
+class, so it cannot rely on a static registry surviving to the end of the run.
+`WriteCoverageListener`, a `TestExecutionListener` registered through `META-INF/services`,
+empties `target/write-coverage/` as the run starts and writes what the run recorded as it ends,
+under a name unique to the process so that forks do not overwrite one another. A second Surefire
+execution then runs `WriteCoverageVerdictTest`, which merges those files and asserts the
+projections. That execution sets `hardwood.writeCoverage=verify`, under which the listener
+stands down rather than clearing what it is about to read.
 
-## Landing
+A failure names the empty cells, grouped under the projection each belongs to, rather than
+reporting a count. Alongside them `target/write-coverage-report.txt` states how much of each
+projection was reached, which is what a burndown is read off.
 
-The first verdict against the current suite reports every gap this document names and, in all
-likelihood, gaps it does not. The mechanism therefore lands with those gaps waived against
-#990, and the waivers are burned down after — the same shape as the `parquet.thrift` field
-oracle, which landed with its unverified fields enumerated as PENDING rather than waiting
-until none remained. A single commit that filled every gap first would hide which gaps were
-real, and the burndown is where the defects are.
+## What fills the projections
+
+The first four projections are filled by the flat matrix, which two axes extend to reach the
+interactions a one-axis-at-a-time sweep cannot: the optional encodings against every codec
+parquet-java reads, and the `FIXED_LEN_BYTE_ARRAY` lengths the annotations fix against every
+encoding the type can carry.
+
+The two annotation projections are filled by `WriterAnnotationCoverageTest`, which takes its
+cases from the same `CoverageDomain.annotations()` the verdict requires. An annotation added to
+the writer therefore produces a case there and a requirement here in the same commit, rather
+than one without the other. For each annotation it writes a file in every storage form the
+annotation has — holding the page encoding to the form the case is for, so that a dictionary
+that quietly resolved to `PLAIN` does not pass as having covered both — a file holding the ends
+of the declared range and a point inside it, and, where the annotation bounds anything, a value
+either side of those ends offered to each write API in turn and asserted refused.
 
 ## Non-goals
 
