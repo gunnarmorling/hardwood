@@ -161,6 +161,12 @@ in the same commit that introduces them. Concretely:
 | 23 (page index) | The footer assertions gain the OffsetIndex and ColumnIndex, read through parquet-java |
 | 24 (Bloom filters) | The footer assertions gain the Bloom filter, read and probed through parquet-java |
 
+Honouring the contract is a judgement call until stage 30
+([WRITE_COVERAGE_ASSERTION.md](WRITE_COVERAGE_ASSERTION.md)), which derives the space the
+writer can produce from its own capability tables and fails the build on any cell no test
+produced. From there an increment that widens the writer without widening the matrix fails in
+the commit that widens it.
+
 ## Placement
 
 `parquet-testing-runner`, alongside the read-direction comparison it inverts. Three test
