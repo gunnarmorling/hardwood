@@ -131,14 +131,15 @@ final class BooleanValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encode(ColumnEncoding encoding, int from, int count) {
+    void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count) {
         // BOOLEAN carries no optional encoding: the delta encodings are for integers and byte
         // arrays, byte-stream-split needs a fixed byte width a bit-packed boolean has not, and
         // RLE for boolean data pages is a separate increment.
         if (encoding != ColumnEncoding.PLAIN) {
             throw unsupported(encoding, PhysicalType.BOOLEAN);
         }
-        return PlainEncoder.encodeBooleans(plain, from, count);
+        int at = out.reserve(PlainEncoder.booleansLength(count));
+        PlainEncoder.encodeBooleans(plain, from, count, out.array(), at);
     }
 
     @Override

@@ -121,14 +121,19 @@ final class IntValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encode(ColumnEncoding encoding, int from, int count) {
-        return switch (encoding) {
-            case PLAIN -> PlainEncoder.encodeInts(plain, from, count);
-            case DELTA_BINARY_PACKED -> DeltaBinaryPackedEncoder.encodeInts(plain, from, count);
-            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
-                    PlainEncoder.encodeInts(plain, from, count), 0, count, Integer.BYTES);
+    void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count) {
+        switch (encoding) {
+            case PLAIN -> {
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, Integer.BYTES));
+                PlainEncoder.encodeInts(plain, from, count, out.array(), at);
+            }
+            case BYTE_STREAM_SPLIT -> {
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, Integer.BYTES));
+                ByteStreamSplitEncoder.splitInts(plain, from, count, out.array(), at);
+            }
+            case DELTA_BINARY_PACKED -> out.writeBytes(DeltaBinaryPackedEncoder.encodeInts(plain, from, count));
             default -> throw unsupported(encoding, PhysicalType.INT32);
-        };
+        }
     }
 
     @Override

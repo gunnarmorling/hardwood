@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.encoding;
 
+import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
 /// Encoder for RLE/Bit-Packing Hybrid encoding, the inverse of
@@ -25,7 +26,7 @@ import java.util.Arrays;
 /// length from the stream rather than from the page's value count.
 public final class RleBitPackingHybridEncoder {
 
-    private final int bitWidth;
+    private int bitWidth;
 
     private byte[] buffer = new byte[64];
     private int length;
@@ -47,10 +48,14 @@ public final class RleBitPackingHybridEncoder {
 
     /// @param bitWidth number of bits per value, 0–32
     public RleBitPackingHybridEncoder(int bitWidth) {
+        requireValidBitWidth(bitWidth);
+        this.bitWidth = bitWidth;
+    }
+
+    private static void requireValidBitWidth(int bitWidth) {
         if (bitWidth < 0 || bitWidth > 32) {
             throw new IllegalArgumentException("Invalid RLE bit width: " + bitWidth + ". Must be between 0 and 32");
         }
-        this.bitWidth = bitWidth;
     }
 
     /// Appends `count` values starting at `offset`.
@@ -97,26 +102,55 @@ public final class RleBitPackingHybridEncoder {
     /// Finishes the stream and returns the encoded bytes. The encoder must not be written
     /// to afterwards.
     public byte[] toByteArray() {
-        if (!finished) {
-            if (bitWidth == 0) {
-                if (repeatCount > 0) {
-                    writeRleRun();
-                }
-            }
-            else if (repeatCount >= 8) {
+        finish();
+        return Arrays.copyOf(buffer, length);
+    }
+
+    /// Finishes the stream and appends the encoded bytes to `out`, which is what a caller
+    /// assembling a larger buffer wants: [#toByteArray] would copy the bytes once for the
+    /// caller to copy them again. The encoder must not be written to afterwards.
+    public void writeTo(ByteArrayOutputStream out) {
+        finish();
+        out.write(buffer, 0, length);
+    }
+
+    /// Empties the encoder for another stream at `bitWidth`, keeping the buffer it grew. One
+    /// encoder can then serve every page of a column chunk — each page's index stream is its
+    /// own, at its own bit width — instead of one being allocated and regrown per page.
+    public void reset(int bitWidth) {
+        requireValidBitWidth(bitWidth);
+        this.bitWidth = bitWidth;
+        length = 0;
+        numBufferedValues = 0;
+        previousValue = 0;
+        repeatCount = 0;
+        bitPackedRunHeaderIndex = -1;
+        bitPackedGroupCount = 0;
+        finished = false;
+    }
+
+    /// Closes whichever run is open, after which [#length] bytes of [#buffer] are the stream.
+    private void finish() {
+        if (finished) {
+            return;
+        }
+        if (bitWidth == 0) {
+            if (repeatCount > 0) {
                 writeRleRun();
             }
-            else if (numBufferedValues > 0) {
-                Arrays.fill(bufferedValues, numBufferedValues, 8, 0);
-                writeOrAppendBitPackedRun();
-                endPreviousBitPackedRun();
-            }
-            else {
-                endPreviousBitPackedRun();
-            }
-            finished = true;
         }
-        return Arrays.copyOf(buffer, length);
+        else if (repeatCount >= 8) {
+            writeRleRun();
+        }
+        else if (numBufferedValues > 0) {
+            Arrays.fill(bufferedValues, numBufferedValues, 8, 0);
+            writeOrAppendBitPackedRun();
+            endPreviousBitPackedRun();
+        }
+        else {
+            endPreviousBitPackedRun();
+        }
+        finished = true;
     }
 
     private void writeOrAppendBitPackedRun() {

@@ -149,21 +149,35 @@ final class BinaryValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encode(ColumnEncoding encoding, int from, int count) {
-        return switch (encoding) {
-            case PLAIN -> fixedLength()
-                    ? PlainEncoder.encodeFixedLenByteArrays(plainData.array(), plainOffsets, from, count, typeLength)
-                    : PlainEncoder.encodeByteArrays(plainData.array(), plainOffsets, from, count);
-            case DELTA_LENGTH_BYTE_ARRAY ->
-                DeltaLengthByteArrayEncoder.encode(plainData.array(), plainOffsets, from, count);
-            case DELTA_BYTE_ARRAY ->
-                DeltaByteArrayEncoder.encode(plainData.array(), plainOffsets, from, count);
+    void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count) {
+        switch (encoding) {
+            case PLAIN -> {
+                int length = fixedLength()
+                        ? PlainEncoder.fixedWidthLength(count, typeLength)
+                        : PlainEncoder.byteArraysLength(plainOffsets, from, count);
+                int at = out.reserve(length);
+                if (fixedLength()) {
+                    PlainEncoder.encodeFixedLenByteArrays(plainData.array(), plainOffsets, from, count,
+                            typeLength, out.array(), at);
+                }
+                else {
+                    PlainEncoder.encodeByteArrays(plainData.array(), plainOffsets, from, count, out.array(), at);
+                }
+            }
             // The values are stored end to end and every one of them is typeLength bytes, so
             // the page's range is already the contiguous run the split reads.
-            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
-                    plainData.array(), plainOffsets[from], count, requireFixedLength(encoding));
+            case BYTE_STREAM_SPLIT -> {
+                int width = requireFixedLength(encoding);
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, width));
+                ByteStreamSplitEncoder.encode(plainData.array(), plainOffsets[from], count, width,
+                        out.array(), at);
+            }
+            case DELTA_LENGTH_BYTE_ARRAY ->
+                out.writeBytes(DeltaLengthByteArrayEncoder.encode(plainData.array(), plainOffsets, from, count));
+            case DELTA_BYTE_ARRAY ->
+                out.writeBytes(DeltaByteArrayEncoder.encode(plainData.array(), plainOffsets, from, count));
             default -> throw unsupported(encoding, physicalType());
-        };
+        }
     }
 
     private PhysicalType physicalType() {

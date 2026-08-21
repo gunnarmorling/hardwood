@@ -121,14 +121,19 @@ final class LongValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encode(ColumnEncoding encoding, int from, int count) {
-        return switch (encoding) {
-            case PLAIN -> PlainEncoder.encodeLongs(plain, from, count);
-            case DELTA_BINARY_PACKED -> DeltaBinaryPackedEncoder.encodeLongs(plain, from, count);
-            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
-                    PlainEncoder.encodeLongs(plain, from, count), 0, count, Long.BYTES);
+    void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count) {
+        switch (encoding) {
+            case PLAIN -> {
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, Long.BYTES));
+                PlainEncoder.encodeLongs(plain, from, count, out.array(), at);
+            }
+            case BYTE_STREAM_SPLIT -> {
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, Long.BYTES));
+                ByteStreamSplitEncoder.splitLongs(plain, from, count, out.array(), at);
+            }
+            case DELTA_BINARY_PACKED -> out.writeBytes(DeltaBinaryPackedEncoder.encodeLongs(plain, from, count));
             default -> throw unsupported(encoding, PhysicalType.INT64);
-        };
+        }
     }
 
     @Override

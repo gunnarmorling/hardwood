@@ -141,12 +141,18 @@ abstract class ValueEncoder {
     abstract void store(int valueIndex);
 
     /// Encodes `count` stored values starting at `from` — the value range of one page — with
-    /// `encoding`, which is this column's resolved policy and never [ColumnEncoding#AUTO]: a
-    /// chunk that kept its dictionary writes an index stream instead and never reaches here.
+    /// `encoding`, appending them to `out`. `encoding` is this column's resolved policy and never
+    /// [ColumnEncoding#AUTO]: a chunk that kept its dictionary writes an index stream instead and
+    /// never reaches here.
     ///
     /// Each page encodes its range standalone, carrying whatever header or baseline its encoding
     /// needs, because a reader may seek to any page and must decode it without the page before.
-    abstract byte[] encode(ColumnEncoding encoding, int from, int count);
+    ///
+    /// The section goes into the page body directly rather than into an array the caller copies
+    /// in. Where the encoded length follows from the count — every encoding but the delta family,
+    /// whose length is a property of the values — the room is reserved in `out` and filled in
+    /// place, so a page's value bytes are produced exactly once.
+    abstract void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count);
 
     /// Extends the chunk statistics with the present value at `valueIndex`.
     abstract void stat(int valueIndex);

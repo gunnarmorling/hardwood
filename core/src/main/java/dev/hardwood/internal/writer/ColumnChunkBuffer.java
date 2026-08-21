@@ -11,7 +11,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -124,6 +123,12 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// The page body under construction, reused across the chunk's pages: a fresh builder per
     /// page would regrow from nothing to the page size every time.
     private final ByteArrayBuilder body = new ByteArrayBuilder();
+
+    /// The RLE encoder every one of this chunk's streams runs through — the level streams and,
+    /// for a dictionary-encoded chunk, each page's index stream. Reset per stream rather than
+    /// allocated per stream, for the same reason [#body] is: each would otherwise regrow its
+    /// buffer from 64 bytes to the stream's size, three times per page.
+    private final RleBitPackingHybridEncoder rle = new RleBitPackingHybridEncoder(0);
     private long numValues;        // total level entries across the chunk's pages
     private long dataPagesUncompressedSize; // sum of header + uncompressed body across data pages
     private long dictionaryPageUncompressedSize; // header + uncompressed body of the dictionary page
@@ -495,12 +500,12 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                     ? LevelEncoder.bitWidth(maxIndex(valueFrom, valueCount))
                     : LevelEncoder.bitWidth(dictionarySize - 1);
             body.write(bitWidth);
-            RleBitPackingHybridEncoder encoded = new RleBitPackingHybridEncoder(bitWidth);
-            encoded.writeInts(indices, valueFrom, valueCount);
-            body.writeBytes(encoded.toByteArray());
+            rle.reset(bitWidth);
+            rle.writeInts(indices, valueFrom, valueCount);
+            rle.writeTo(body);
         }
         else {
-            body.writeBytes(values.encode(storedEncoding(), valueFrom, valueCount));
+            values.encodeInto(body, storedEncoding(), valueFrom, valueCount);
         }
     }
 
@@ -585,10 +590,27 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         return encodings;
     }
 
-    private void writeLevels(ByteArrayOutputStream body, ByteArrayBuilder levels, int from, int count,
+    /// Appends one level stream to the page body: a 4-byte little-endian length, then the stream.
+    /// The length is only known once the stream is encoded, so its four bytes are reserved and
+    /// filled afterwards rather than the stream being built elsewhere to be measured and copied.
+    private void writeLevels(ByteArrayBuilder body, ByteArrayBuilder levels, int from, int count,
                              int maxLevel) {
-        byte[] encoded = LevelEncoder.encode(levels.array(), from, count, maxLevel);
-        body.writeBytes(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(encoded.length).array());
-        body.writeBytes(encoded);
+        int lengthAt = body.reserve(Integer.BYTES);
+        int start = body.length();
+        rle.reset(LevelEncoder.bitWidth(maxLevel));
+        byte[] stored = levels.array();
+        for (int i = 0; i < count; i++) {
+            rle.writeInt(stored[from + i] & 0xFF);
+        }
+        rle.writeTo(body);
+        // After the stream has been written: appending may have replaced the backing array.
+        writeIntLittleEndian(body.array(), lengthAt, body.length() - start);
+    }
+
+    private static void writeIntLittleEndian(byte[] dest, int at, int value) {
+        dest[at] = (byte) value;
+        dest[at + 1] = (byte) (value >>> 8);
+        dest[at + 2] = (byte) (value >>> 16);
+        dest[at + 3] = (byte) (value >>> 24);
     }
 }

@@ -119,13 +119,13 @@ final class FloatValueEncoder extends ValueEncoder {
     }
 
     @Override
-    byte[] encode(ColumnEncoding encoding, int from, int count) {
-        return switch (encoding) {
-            case PLAIN -> PlainEncoder.encodeFloats(plain, from, count);
-            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.encode(
-                    PlainEncoder.encodeFloats(plain, from, count), 0, count, Float.BYTES);
+    void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count) {
+        int at = out.reserve(PlainEncoder.fixedWidthLength(count, Float.BYTES));
+        switch (encoding) {
+            case PLAIN -> PlainEncoder.encodeFloats(plain, from, count, out.array(), at);
+            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.splitFloats(plain, from, count, out.array(), at);
             default -> throw unsupported(encoding, PhysicalType.FLOAT);
-        };
+        }
     }
 
     @Override

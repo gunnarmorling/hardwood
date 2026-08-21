@@ -8,6 +8,7 @@
 package dev.hardwood.internal.encoding;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Random;
 
 import org.junit.jupiter.api.Test;
@@ -168,5 +169,70 @@ class ByteStreamSplitEncoderTest {
         new ByteStreamSplitDecoder(split, 0, values.length, PhysicalType.DOUBLE, null)
                 .readDoubles(read, null, 0);
         return read;
+    }
+
+    // ==================== Splitting straight from a typed store ====================
+
+    /// The writer splits from its typed value store rather than from a `PLAIN` buffer, which
+    /// saves materializing one per page. The two must produce the same bytes — including for the
+    /// values whose bit patterns are special, where taking the bits raw is what keeps a `NaN`'s
+    /// payload and a negative zero's sign bit intact.
+    @Test
+    void splittingFromTheTypedStoreMatchesSplittingPlainBytes() {
+        int[] ints = { 0, -1, Integer.MIN_VALUE, Integer.MAX_VALUE, 1, -2, 0x0A0B0C0D };
+        long[] longs = { 0L, -1L, Long.MIN_VALUE, Long.MAX_VALUE, 1L, -2L, 0x0102030405060708L };
+        float[] floats = { 0.0f, -0.0f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY,
+                Float.MIN_VALUE, Float.MAX_VALUE, -1.5f };
+        double[] doubles = { 0.0, -0.0, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY,
+                Double.MIN_VALUE, Double.MAX_VALUE, -1.5 };
+
+        assertThat(splitInto(ints.length, Integer.BYTES,
+                (dest, at) -> ByteStreamSplitEncoder.splitInts(ints, 0, ints.length, dest, at)))
+                .isEqualTo(ByteStreamSplitEncoder.encode(
+                        PlainEncoder.encodeInts(ints, 0, ints.length), 0, ints.length, Integer.BYTES));
+        assertThat(splitInto(longs.length, Long.BYTES,
+                (dest, at) -> ByteStreamSplitEncoder.splitLongs(longs, 0, longs.length, dest, at)))
+                .isEqualTo(ByteStreamSplitEncoder.encode(
+                        PlainEncoder.encodeLongs(longs, 0, longs.length), 0, longs.length, Long.BYTES));
+        assertThat(splitInto(floats.length, Float.BYTES,
+                (dest, at) -> ByteStreamSplitEncoder.splitFloats(floats, 0, floats.length, dest, at)))
+                .isEqualTo(ByteStreamSplitEncoder.encode(
+                        PlainEncoder.encodeFloats(floats, 0, floats.length), 0, floats.length, Float.BYTES));
+        assertThat(splitInto(doubles.length, Double.BYTES,
+                (dest, at) -> ByteStreamSplitEncoder.splitDoubles(doubles, 0, doubles.length, dest, at)))
+                .isEqualTo(ByteStreamSplitEncoder.encode(
+                        PlainEncoder.encodeDoubles(doubles, 0, doubles.length), 0, doubles.length, Double.BYTES));
+    }
+
+    /// A sub-range splits the same way wherever in the destination it lands, which is what the
+    /// page path relies on: it writes into a body that already holds this page's level streams.
+    @Test
+    void splittingHonoursTheDestinationOffsetAndValueRange() {
+        long[] values = { 11L, 22L, 33L, 44L, 55L };
+        int from = 1;
+        int count = 3;
+        int padding = 7;
+
+        byte[] dest = new byte[padding + count * Long.BYTES];
+        Arrays.fill(dest, (byte) 0xEE);
+        ByteStreamSplitEncoder.splitLongs(values, from, count, dest, padding);
+
+        byte[] expected = ByteStreamSplitEncoder.encode(
+                PlainEncoder.encodeLongs(values, from, count), 0, count, Long.BYTES);
+        assertThat(Arrays.copyOfRange(dest, padding, dest.length)).isEqualTo(expected);
+        for (int i = 0; i < padding; i++) {
+            assertThat(dest[i]).as("byte %d before the destination offset", i).isEqualTo((byte) 0xEE);
+        }
+    }
+
+    @FunctionalInterface
+    private interface Split {
+        void into(byte[] dest, int destOffset);
+    }
+
+    private static byte[] splitInto(int count, int byteWidth, Split split) {
+        byte[] dest = new byte[count * byteWidth];
+        split.into(dest, 0);
+        return dest;
     }
 }
