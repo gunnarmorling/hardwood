@@ -84,7 +84,8 @@ strict reader, and that coverage carries over unchanged.
 
 - No chunk mixes encodings, so no dictionary page is written for a chunk that ends up `PLAIN`.
 - `Statistics.distinct_count` can be set from the exact cardinality, which the streaming design
-  cannot know.
+  cannot know — for as long as the chunk still holds the dictionary it counted with, which stage
+  26a's early abandonment and the analysis cap each end early for the columns they fire on.
 - Dictionary indices are assigned after every value is known, so the dictionary can be written
   in sorted value order and flagged `DictionaryPageHeader.is_sorted` — a later increment, but
   only reachable from this shape.
@@ -194,7 +195,8 @@ Delivered here:
 - The analysis pass, the size-comparison rule, and whole-chunk encoding in pass 2.
 - Per-column retention with the representation switch, and level retention.
 - Direct-streamed chunk output in pass 2.
-- `Statistics.distinct_count` from the exact cardinality.
+- `Statistics.distinct_count` from the exact cardinality, wherever the chunk reaches flush still
+  holding what it counted with.
 - **Removal of `WriterConfig.dictionaryPageLimitBytes`** and its `DEFAULT_` constant. The option
   is the streaming fallback threshold, and this stage removes the fallback it triggers; a
   caller who wants no dictionary keeps `enableDictionary(false)`, and one who wants the smaller

@@ -133,10 +133,11 @@ cost of being wrong is a larger file; the rule is tuned so that caution is the d
 - **The round trip and the gate.** Every abandoned chunk is a `PLAIN` chunk, a shape both cover
   already; the interop gate and the differential suite run unchanged.
 - **The benchmark.** `WriteEncodingBenchmark`'s `AUTO` case should converge on its
-  `PLAIN_ON_DISTINCT` case in both time and allocation while the two files stay 36 bytes apart.
-  That convergence is the acceptance criterion, and the class already asserts the size
-  relationship, so a change that buys speed by writing different files fails rather than
-  reports.
+  `PLAIN_ON_DISTINCT` case in both time and allocation, and the two files should agree in size:
+  identical once `AUTO` stops stating the `distinct_count` that separated them. That convergence
+  is the acceptance criterion, and the class asserts the size relationship within a slack that
+  covers the statistic either way, so a change that buys speed by writing different pages fails
+  rather than reports.
 
 ## Result
 

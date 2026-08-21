@@ -121,10 +121,15 @@ final class DoubleValueEncoder extends ValueEncoder {
 
     @Override
     void encodeInto(ByteArrayBuilder out, ColumnEncoding encoding, int from, int count) {
-        int at = out.reserve(PlainEncoder.fixedWidthLength(count, Double.BYTES));
         switch (encoding) {
-            case PLAIN -> PlainEncoder.encodeDoubles(plain, from, count, out.array(), at);
-            case BYTE_STREAM_SPLIT -> ByteStreamSplitEncoder.splitDoubles(plain, from, count, out.array(), at);
+            case PLAIN -> {
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, Double.BYTES));
+                PlainEncoder.encodeDoubles(plain, from, count, out.array(), at);
+            }
+            case BYTE_STREAM_SPLIT -> {
+                int at = out.reserve(PlainEncoder.fixedWidthLength(count, Double.BYTES));
+                ByteStreamSplitEncoder.splitDoubles(plain, from, count, out.array(), at);
+            }
             default -> throw unsupported(encoding, PhysicalType.DOUBLE);
         }
     }

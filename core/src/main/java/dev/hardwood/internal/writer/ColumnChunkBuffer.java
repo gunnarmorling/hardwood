@@ -597,11 +597,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                              int maxLevel) {
         int lengthAt = body.reserve(Integer.BYTES);
         int start = body.length();
-        rle.reset(LevelEncoder.bitWidth(maxLevel));
-        byte[] stored = levels.array();
-        for (int i = 0; i < count; i++) {
-            rle.writeInt(stored[from + i] & 0xFF);
-        }
+        LevelEncoder.writeInto(rle, levels.array(), from, count, maxLevel);
         rle.writeTo(body);
         // After the stream has been written: appending may have replaced the backing array.
         writeIntLittleEndian(body.array(), lengthAt, body.length() - start);

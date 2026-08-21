@@ -105,10 +105,13 @@ same pages as `AUTO` while skipping the interning that produced them. The gap be
 cases is the upper bound on what stage 26a (#992) can buy, measured through public API, on the
 fixture stage 18 was argued on, without touching the analysis cap.
 
-The two files are not byte-identical, and the difference is confined to one field: a chunk
-that still holds the dictionary it counted with states `distinct_count`, and a chunk under a
-named policy has counted nothing and omits it. That is a few bytes per column chunk in the
-footer, and it is the gap stage 29 (#982) closes.
+The two files agree, and what could separate them is one field: a chunk that still holds the
+dictionary it counted with states `distinct_count`, and a chunk that has counted nothing omits
+it — a few bytes per column chunk in the footer, and the gap stage 29 (#982) closes. When this
+axis was first measured that field was the whole difference between the two cases, because
+`AUTO` reached flush still holding the dictionaries it then rejected; since stage 26a (#992)
+those chunks give the dictionary up early and state no count either, so the two cases produce
+byte-identical files.
 
 **Codec** is `{ZSTD, UNCOMPRESSED}`. `ZSTD` is `WriterConfig`'s default wherever zstd-jni is on
 the classpath, so it is the configuration nearly every produced file actually uses, and it is
@@ -305,10 +308,11 @@ still.
 - The encoding cases are read back in the trial setup and their chunk encodings asserted to be
   the ones the case names. This is what catches a case whose policy silently failed to apply —
   a benchmark reporting `AUTO`'s number under a delta case's name is worse than no number.
-- `AUTO` and `PLAIN_ON_DISTINCT` must produce files of the same size on this fixture, but for
-  the `distinct_count` the `AUTO` chunks state and the policied ones omit — a few bytes per
-  column chunk. A divergence beyond that means the flush-time comparison is keeping a
-  dictionary for a column the case declares all-distinct, and the case is mis-specified.
+- `AUTO` and `PLAIN_ON_DISTINCT` must produce files of the same size on this fixture, within a
+  slack that covers a `distinct_count` per column chunk — the one field the two cases can differ
+  in, and which they no longer do since stage 26a. A divergence beyond that slack means the
+  flush-time comparison is keeping a dictionary for a column the case declares all-distinct, and
+  the case is mis-specified.
 - The recorded baseline states the box, the pinned clock, the JDK, the row count and the
   commit it was taken at. A number without those is not comparable with the next one.
 
