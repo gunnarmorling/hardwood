@@ -235,10 +235,16 @@ faster, 569 against 696 ms, and smaller, 11.34 MB against 13.11 MB: the reordere
 less work for the codec as well as more compressible. `DELTA_INTEGERS` halves the uncompressed
 file, 12.20 MB against 25.45 MB, and costs 71 ms over `PLAIN` to produce.
 
+The table above is the writer as stage 21a found it, at commit `765feb67`. Stage 26a (#992)
+acted on the first row of it: `AUTO` now abandons a losing dictionary on the chunk's prefix and
+costs 537 ms and 131 MB uncompressed, inside the error bars of `PLAIN_ON_DISTINCT`. See
+[WRITER_DICTIONARY_EARLY_ABANDONMENT.md](WRITER_DICTIONARY_EARLY_ABANDONMENT.md). The
+measurement is left as it was taken, because it is what the change was argued from.
+
 ### What this settles
 
-- The candidate worth acting on is the discarded interning, and stage 26a (#992) is where it is
-  scoped. The number here is what it is worth, and the profile names the frame.
+- The candidate worth acting on is the discarded interning, and stage 26a (#992) is where it was
+  scoped and closed. The number here is what it was worth, and the profile named the frame.
 - The per-value call chain and the per-page allocations are not refuted, but neither shows at
   this fixture's shape. They are 21b's question, where schema width shrinks the values a page
   amortizes its fixed costs over.

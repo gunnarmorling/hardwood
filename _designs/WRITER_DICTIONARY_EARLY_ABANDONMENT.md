@@ -1,8 +1,9 @@
 # Early abandonment of a losing dictionary (#9, stage 26a)
 
-**Status: Planned.** Tracking issue: #992. Delivery stage 26a (Optimization) of
+**Status: Completed.** Tracking issue: #992. Delivery stage 26a (Optimization) of
 [WRITER_SUPPORT.md](WRITER_SUPPORT.md), delivered ahead of its place in the sequence because
-stage 21a's measurement is what justifies it.
+stage 21a's measurement is what justifies it. What it delivered is in
+[Result](#result).
 
 ## Context
 
@@ -136,6 +137,30 @@ cost of being wrong is a larger file; the rule is tuned so that caution is the d
   That convergence is the acceptance criterion, and the class already asserts the size
   relationship, so a change that buys speed by writing different files fails rather than
   reports.
+
+## Result
+
+`WriteEncodingBenchmark` on the N300, 1.50 GHz pinned, single core, 1 M rows, five-second
+iterations, guard CLEAN:
+
+| | `AUTO` before | `AUTO` after | `PLAIN_ON_DISTINCT` |
+|---|---|---|---|
+| uncompressed | 926 ± 51 ms | **537 ± 63 ms** | 517 ± 39 ms |
+| `ZSTD` | 1086 ± 7 ms | **708 ± 34 ms** | 699 ± 56 ms |
+| allocation, uncompressed | 203 MB/op | **131 MB/op** | 128 MB/op |
+| allocation, `ZSTD` | 234 MB/op | **162 MB/op** | 159 MB/op |
+
+A 42% cut uncompressed and 35% under the default codec, and `AUTO` now sits inside the error
+bars of the case that skips the interning by configuration — which was the acceptance
+criterion, because that case is the ceiling. What remains between them is the probe's own
+8192-value prefix, which is the price of deciding from evidence rather than from a caller's
+declaration.
+
+The two cases now produce **byte-identical files** — 25,447,105 uncompressed and 13,111,190
+under `ZSTD` — where they were 36 bytes apart before. Those 36 bytes were the nine
+`distinct_count` fields `AUTO` used to state and no longer can, which is the cost recorded
+below. Sizes are compared within one machine: `created_by` carries the build revision, so the
+same writer produces files of different length from different checkouts.
 
 ## What this does not do
 

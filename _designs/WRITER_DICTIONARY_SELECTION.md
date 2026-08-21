@@ -253,12 +253,16 @@ writes a million rows in about 210 ms against about 150 ms before the stage. Tho
 hashed in full, into dictionaries that grow to a row group's worth of entries, and are then
 resolved back into values when the comparison rejects them.
 
-The cost is a property of the analysis cap rather than of the design. A cap small enough that an
-all-distinct column gives up its dictionary early takes the same fixture to about 130 ms —
-faster than before the stage, because a column that stops interning stops paying for the hash
-table too — and produces a file of the same size, since a column abandoned early is one the
-comparison would have rejected anyway. What a small cap risks is the column whose cardinality
-saturates late: it looks all-distinct over its first values and is written `PLAIN` on that
-evidence, losing a dictionary that would have paid. Tightening the cap therefore waits on a way
-to keep deciding after it fires, which is delivery stage 26b (#979): the cap goes on bounding
-memory, and a bounded-error distinct counter carries the decision.
+The cost is a property of *when* the comparison is made rather than of the design, and stage 26a
+([WRITER_DICTIONARY_EARLY_ABANDONMENT.md](WRITER_DICTIONARY_EARLY_ABANDONMENT.md)) moves it
+earlier: the same comparison runs over the chunk's prefix at 8192 present values and doubling,
+and a dictionary losing two probes running is given up there. A column that stops interning
+stops paying for the hash table, so the fixture writes in about 40% less time and produces the
+same file, a column abandoned early being one the comparison would have rejected anyway.
+
+What early abandonment risks is the column whose cardinality saturates late: it looks
+all-distinct over its first values and would be written `PLAIN` on that evidence, losing a
+dictionary that would have paid. Requiring two consecutive losing probes bounds that to a column
+still minting distinct values past the second probe. Removing the residual, and letting the
+analysis cap bound memory without also being an encoding verdict, is delivery stage 26b (#979):
+the cap goes on bounding memory, and a bounded-error distinct counter carries the decision.
