@@ -412,10 +412,10 @@ public class PageDecoder {
         PhysicalType type = column.type();
 
         // Try to decode into primitive arrays for supported type/encoding combinations
-        switch (encoding) {
+        return switch (encoding) {
             case PLAIN -> {
                 PlainDecoder decoder = new PlainDecoder(data, offset, type, column.typeLength());
-                return switch (type) {
+                yield switch (type) {
                     case INT64 -> {
                         long[] values = new long[numValues];
                         decoder.readLongs(values, definitionLevels, maxDefLevel);
@@ -450,7 +450,7 @@ public class PageDecoder {
             }
             case DELTA_BINARY_PACKED -> {
                 DeltaBinaryPackedDecoder decoder = new DeltaBinaryPackedDecoder(data, offset);
-                return switch (type) {
+                yield switch (type) {
                     case INT64 -> {
                         long[] values = new long[numValues];
                         decoder.readLongs(values, definitionLevels, maxDefLevel);
@@ -461,15 +461,22 @@ public class PageDecoder {
                         decoder.readInts(values, definitionLevels, maxDefLevel);
                         yield new Page.IntPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
                     }
-                    default -> throw new UnsupportedOperationException(
-                            "DELTA_BINARY_PACKED not supported for type: " + type);
+                    default -> throw undefinedOverType(Encoding.DELTA_BINARY_PACKED, type,
+                            PhysicalType.INT32, PhysicalType.INT64);
                 };
             }
             case BYTE_STREAM_SPLIT -> {
+                // The decoder derives its byte width from the physical type, so an undefined pair
+                // has to be refused before it is constructed — otherwise the width lookup, and not
+                // the format check, is what the file fails on.
+                if (type == PhysicalType.BOOLEAN || type == PhysicalType.BYTE_ARRAY
+                        || type == PhysicalType.INT96) {
+                    throw byteStreamSplitUndefinedOverType(type);
+                }
                 int numNonNullValues = countNonNullValues(numValues, definitionLevels);
                 ByteStreamSplitDecoder decoder = new ByteStreamSplitDecoder(
                         data, offset, numNonNullValues, type, column.typeLength());
-                return switch (type) {
+                yield switch (type) {
                     case INT64 -> {
                         long[] values = new long[numValues];
                         decoder.readLongs(values, definitionLevels, maxDefLevel);
@@ -495,8 +502,7 @@ public class PageDecoder {
                         decoder.readByteArrays(values, definitionLevels, maxDefLevel);
                         yield new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
                     }
-                    default -> throw new UnsupportedOperationException(
-                            "BYTE_STREAM_SPLIT not supported for type: " + type);
+                    default -> throw byteStreamSplitUndefinedOverType(type);
                 };
             }
             case RLE_DICTIONARY, PLAIN_DICTIONARY -> {
@@ -510,13 +516,16 @@ public class PageDecoder {
                 }
                 RleBitPackingHybridDecoder indexDecoder = new RleBitPackingHybridDecoder(data, offset, data.length - offset, bitWidth);
 
-                return dictionary.decodePage(indexDecoder, numValues, definitionLevels, repetitionLevels, maxDefLevel);
+                yield dictionary.decodePage(indexDecoder, numValues, definitionLevels, repetitionLevels, maxDefLevel);
             }
             case RLE -> {
-                // RLE encoding for boolean values uses bit-width of 1
+                // In the value position RLE carries booleans and nothing else; the format also
+                // gives it the level streams and dictionary indices, which do not come through
+                // here. Refusing another type is the format's position, not a decoder this
+                // release has yet to write.
                 if (type != PhysicalType.BOOLEAN) {
-                    throw new UnsupportedOperationException(
-                            "RLE encoding for non-boolean types not yet supported: " + type);
+                    throw new IOException(
+                            "RLE encodes only boolean values in a data page, not " + type);
                 }
 
                 // Read 4-byte length prefix (little-endian)
@@ -526,35 +535,78 @@ public class PageDecoder {
                 RleBitPackingHybridDecoder decoder = new RleBitPackingHybridDecoder(data, offset, rleLength, 1);
                 boolean[] values = new boolean[numValues];
                 decoder.readBooleans(values, definitionLevels, maxDefLevel);
-                return new Page.BooleanPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
+                yield new Page.BooleanPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
             case DELTA_LENGTH_BYTE_ARRAY -> {
+                // The lengths are delta-encoded ahead of the bytes, so the values are byte arrays
+                // whatever the column claims; decoding an integer column's page this way would
+                // build a page of the wrong shape rather than fail.
+                if (type != PhysicalType.BYTE_ARRAY) {
+                    throw undefinedOverType(Encoding.DELTA_LENGTH_BYTE_ARRAY, type,
+                            PhysicalType.BYTE_ARRAY);
+                }
                 int numNonNullValues = countNonNullValues(numValues, definitionLevels);
                 DeltaLengthByteArrayDecoder decoder = new DeltaLengthByteArrayDecoder(data, offset);
                 decoder.initialize(numNonNullValues);
                 byte[][] values = new byte[numValues][];
                 decoder.readByteArrays(values, definitionLevels, maxDefLevel);
-                return new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
+                yield new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
             case DELTA_BYTE_ARRAY -> {
+                if (type != PhysicalType.BYTE_ARRAY && type != PhysicalType.FIXED_LEN_BYTE_ARRAY) {
+                    throw undefinedOverType(Encoding.DELTA_BYTE_ARRAY, type,
+                            PhysicalType.BYTE_ARRAY, PhysicalType.FIXED_LEN_BYTE_ARRAY);
+                }
                 int numNonNullValues = countNonNullValues(numValues, definitionLevels);
                 DeltaByteArrayDecoder decoder = new DeltaByteArrayDecoder(data, offset);
                 decoder.initialize(numNonNullValues);
                 byte[][] values = new byte[numValues][];
                 decoder.readByteArrays(values, definitionLevels, maxDefLevel);
-                return new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
+                yield new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
-            default -> throw new UnsupportedOperationException(
-                    "Encoding not yet supported: " + describeEncoding(encoding, encodingValue));
-        }
+            // BIT_PACKED encodes levels, never a page's values, so refusing it is the format's
+            // position rather than a decoder this release has yet to write.
+            case BIT_PACKED -> throw new IOException(
+                    "BIT_PACKED encodes levels and is not valid for a data page's values");
+            // UNKNOWN stands for every Thrift value this release cannot name, so on its own it
+            // does not say which encoding was met; the raw value does. This is the one refusal
+            // here that is a gap in this release rather than a malformed file, so it is the one
+            // that keeps UnsupportedOperationException.
+            case UNKNOWN -> throw new UnsupportedOperationException(
+                    "Encoding not yet supported: UNKNOWN (Thrift encoding value " + encodingValue + ")");
+        };
     }
 
-    /// Names an encoding for an error message. [Encoding#UNKNOWN] stands for every Thrift
-    /// value this release does not recognize, so on its own it does not say which encoding
-    /// was met; qualifying it with the raw value from the page header does.
-    private static String describeEncoding(Encoding encoding, int encodingValue) {
-        return encoding == Encoding.UNKNOWN
-                ? encoding + " (Thrift encoding value " + encodingValue + ")"
-                : encoding.toString();
+    /// Refusal for a page whose declared encoding is not defined over its column's physical type.
+    ///
+    /// The format names the physical types each encoding may carry, so such a page is a malformed
+    /// file rather than a gap in this release — which is why this is an [IOException] and not the
+    /// [UnsupportedOperationException] an unrecognized encoding raises. Decoding it anyway would
+    /// build a page of the wrong shape rather than fail: wrong in the values, and wrong in the
+    /// [Page] variant handed to the column reader.
+    ///
+    /// @param encoding the encoding the page declares
+    /// @param type the column's physical type
+    /// @param definedOver the physical types the format defines `encoding` over
+    /// @return the exception to throw
+    private static IOException undefinedOverType(Encoding encoding, PhysicalType type,
+            PhysicalType... definedOver) {
+        StringBuilder legalTypes = new StringBuilder();
+        for (PhysicalType candidate : definedOver) {
+            if (!legalTypes.isEmpty()) {
+                legalTypes.append(", ");
+            }
+            legalTypes.append(candidate);
+        }
+        return new IOException(encoding + " is not defined over " + type
+                + "; the format defines it over " + legalTypes + " only");
+    }
+
+    /// [#undefinedOverType] for `BYTE_STREAM_SPLIT`, whose legal types are named both before the
+    /// decoder is constructed and by the value switch that follows it.
+    private static IOException byteStreamSplitUndefinedOverType(PhysicalType type) {
+        return undefinedOverType(Encoding.BYTE_STREAM_SPLIT, type, PhysicalType.INT32,
+                PhysicalType.INT64, PhysicalType.FLOAT, PhysicalType.DOUBLE,
+                PhysicalType.FIXED_LEN_BYTE_ARRAY);
     }
 }

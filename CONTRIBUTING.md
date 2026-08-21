@@ -34,7 +34,7 @@ direction you are adding. Paths are relative to `core/src/main/java/dev/hardwood
 | `metadata/Encoding.java` | Add the constant | The name a chunk's metadata reads back as |
 | `internal/thrift/ThriftEnumLookup.java` | Add it to `ENCODINGS`, at its Thrift index | Maps the value on the wire to that constant; without it the encoding reads back as `UNKNOWN` |
 | `internal/encoding/<Name>Decoder.java` | Implement `ValueDecoder` | Reads a page's values into the reader's primitive arrays |
-| `internal/reader/PageDecoder.java` | Add the case to `decodeTypedValues` | The reader's only dispatch point |
+| `internal/reader/PageDecoder.java` | Add the case to `decodeTypedValues`, refusing the physical types the encoding is not defined over | The reader's only dispatch point; the compiler names the case but cannot name the types, and an undefined pair left unguarded decodes into a page of the wrong shape |
 
 ### Write path
 
@@ -47,9 +47,10 @@ direction you are adding. Paths are relative to `core/src/main/java/dev/hardwood
 | `internal/writer/ColumnChunkBuffer.java` | Map the policy in `valueEncoding` | Names the encoding in the page header and `ColumnMetaData.encodings` |
 | `WriterEncodingPolicyTest`, `CoverageDomain`, `WriterInteropTest` | Restate the policy in each switch, and add it to the interop axis | Sweeps it over every legal type, the coverage domain, and the parquet-java interop axis |
 
-The write path is guarded by exhaustive switches, so the compiler names most of the rows above. The
-read path is not, so cover the decoder yourself — a round trip through the writer where Hardwood can
-write the encoding, and a `parquet-testing` fixture where it can only read it.
+Both paths are guarded by exhaustive switches, so the compiler names most of the rows above; the
+Thrift table is the one row caught by a test rather than by the compiler. What nothing checks is
+whether the decoder is *correct*, so cover that yourself — a round trip through the writer where
+Hardwood can write the encoding, and a `parquet-testing` fixture where it can only read it.
 
 Finally, update `docs/content/` for the public enums, and `ROADMAP.md` and `FORMAT_COVERAGE.md` for
 the capability itself. Nothing in the build checks those.
