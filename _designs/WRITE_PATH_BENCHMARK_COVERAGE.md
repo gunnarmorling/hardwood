@@ -243,8 +243,40 @@ file, 12.20 MB against 25.45 MB, and costs 71 ms over `PLAIN` to produce.
   this fixture's shape. They are 21b's question, where schema width shrinks the values a page
   amortizes its fixed costs over.
 - 203 MB allocated to produce a 25 MB file is eight times the output, and 128 MB of it survives
-  the dictionary being removed. Where the rest goes is unattributed; the `alloc` profile is the
-  next probe rather than a conclusion drawn here.
+  the dictionary being removed. The `alloc` profile attributes both, below.
+
+### Where the allocation goes
+
+Shares of sampled allocation, by the deepest Hardwood frame on the stack. The profile spans a
+whole run rather than one operation, so read the shares rather than multiplying them against
+the per-operation totals.
+
+| Site | `AUTO` | `PLAIN_ON_DISTINCT` | What it is |
+|---|---|---|---|
+| `ColumnChunkBuffer.accept` → `int[]` | 16.3% | 12.9% | the dictionary index array growing |
+| `LongDictionaryEncoder.allocateTable` | 17.2% | — | the hash table, and every resize of it |
+| `LongDictionaryEncoder.add` → `long[]` | 9.5% | — | the dictionary's values growing |
+| `PlainEncoder.encodeLongs` / `encodeDoubles` | 24.1% | 36.9% | one buffer per page's value section |
+| `LongValueEncoder.append` / `DoubleValueEncoder.append` | 9.8% | 15.6% | the value store growing |
+| `RleBitPackingHybridEncoder` (`ensureCapacity`, `toByteArray`) | 8.2% | 11.9% | the index stream's buffer, and a copy of it |
+| `ByteBufferOutputFile.write` | 4.9% | 7.4% | the benchmark's sink, not the writer |
+
+Three things follow.
+
+**The dictionary accounts for its own delta.** `allocateTable`, `add`, and the index array in
+`accept` come to 43% under `AUTO` and to the index array alone under a named policy — where it
+is `payment_type` and `vendor`, which keep their dictionaries and should.
+
+**The largest site that is not the dictionary is the per-page value section.** `PlainEncoder`
+allocates a buffer per page, which `ColumnChunkBuffer.buildBody` then copies into the page body
+it already owns. It is the single biggest allocation site once the dictionary is out of the
+picture, and the bytes are copied twice on their way to the output for no reason the code
+requires: `encode` returns an array because that is the shape of its signature, not because a
+caller needs one.
+
+**Store growth is next, and is a sizing question rather than a copying one.** A chunk's value
+store starts at one page's worth and grows by half again, so a row group's worth of values is
+reached in a handful of copies whose total is on the order of the store itself.
 
 ## Validation
 
