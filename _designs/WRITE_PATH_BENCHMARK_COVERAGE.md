@@ -284,6 +284,16 @@ caller needs one.
 store starts at one page's worth and grows by half again, so a row group's worth of values is
 reached in a handful of copies whose total is on the order of the store itself.
 
+Stage 26a (#992) removed the dictionary rows and #993 the per-page ones, the latter by having
+each section produced into the page body rather than into an array to be copied in. Measured on
+the same box and fixture, `AUTO` allocates 102 MB per operation uncompressed against the 203 MB
+recorded above and 133 MB against 234 MB under `ZSTD` — and takes the same time either way,
+within the error bars. That is the expected shape: `PlainEncoder` was 37% of the *allocation*
+and barely visible on the CPU profile, so removing it buys garbage rather than cycles. What it
+also buys is one fewer copy of every byte written, which is worth more where a page amortizes
+its fixed costs over fewer values — the schema-width axis of 21b — and where allocation rate is
+multiplied across threads, which is stage 23.
+
 ## Validation
 
 These are benchmarks; they are validated by being run and by producing numbers that hold
