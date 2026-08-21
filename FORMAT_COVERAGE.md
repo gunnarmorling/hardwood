@@ -94,14 +94,18 @@ All fields (column_idx, descending, nulls_first) ❌ — struct not read.
 | 10 | index_page_offset | ❌ | explicit skip; index pages superseded by Column Index |
 | 11 | dictionary_page_offset | ✅ | |
 | 12 | statistics | ✅ | row-group filtering |
-| 13 | encoding_stats | ❌ | dictionary/plain page mix not read |
+| 13 | encoding_stats | ✅ | on public record; dictionary row-group pruning (#105) and the CLI's data-page encoding column |
 | 14 | bloom_filter_offset | ✅ | shown in dive; filter body read & decoded (#669); used for `eq`/`in` row-group pruning (#105) |
 | 15 | bloom_filter_length | ✅ | shown in dive; #669 read path; #105 pushdown |
 | 16 | size_statistics | 🟡 | on public record, no functional consumer |
 | 17 | geospatial_statistics | ✅ | row-group filter evaluator (no per-page geospatial stats exist) |
 
 ### PageEncodingStats
-All fields (page_type, encoding, count) ❌ — struct not read.
+| id | field | status | notes |
+|----|-------|--------|-------|
+| 1 | page_type | ✅ | distinguishes a dictionary page from the data pages that index into it |
+| 2 | encoding | ✅ | an encoding this version does not recognize is reported as `Encoding.UNKNOWN` |
+| 3 | count | ✅ | a zero-count entry is ignored |
 
 ---
 
@@ -233,4 +237,4 @@ The ❌ rows cluster into a handful of capabilities, cross-referenced to ROADMAP
 - **Statistics completeness** — distinct_count, nan_count and the exactness flags are parsed but drive no filtering (#483).
 - **Declared sort order** — `sorting_columns`, `is_sorted`; ROADMAP 4.2.
 - **Column orders** — float total-order vs type-defined; #483.
-- **Deprecated / niche** — split-file `file_path` (surfaced, and reading such a chunk fails rather than decoding this file's bytes), index pages, encoding_stats, row-group ordinals: no planned support.
+- **Deprecated / niche** — split-file `file_path` (surfaced, and reading such a chunk fails rather than decoding this file's bytes), index pages, row-group ordinals: no planned support.

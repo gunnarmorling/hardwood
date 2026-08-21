@@ -72,20 +72,19 @@ class ThriftEnumLookup {
             ConvertedType.INTERVAL           // 21
     };
 
-    // Indexed by Thrift value (0-9), with gap at index 1
-    private static final Encoding[] ENCODINGS = new Encoding[10];
-
-    static {
-        ENCODINGS[0] = Encoding.PLAIN;
-        ENCODINGS[2] = Encoding.PLAIN_DICTIONARY;
-        ENCODINGS[3] = Encoding.RLE;
-        ENCODINGS[4] = Encoding.BIT_PACKED;
-        ENCODINGS[5] = Encoding.DELTA_BINARY_PACKED;
-        ENCODINGS[6] = Encoding.DELTA_LENGTH_BYTE_ARRAY;
-        ENCODINGS[7] = Encoding.DELTA_BYTE_ARRAY;
-        ENCODINGS[8] = Encoding.RLE_DICTIONARY;
-        ENCODINGS[9] = Encoding.BYTE_STREAM_SPLIT;
-    }
+    // Indexed by Thrift value (0-9); 1 is a hole the format left behind
+    private static final Encoding[] ENCODINGS = {
+            Encoding.PLAIN,                    // 0
+            null,                              // 1 - GROUP_VAR_INT, withdrawn by the format
+            Encoding.PLAIN_DICTIONARY,         // 2
+            Encoding.RLE,                      // 3
+            Encoding.BIT_PACKED,               // 4
+            Encoding.DELTA_BINARY_PACKED,      // 5
+            Encoding.DELTA_LENGTH_BYTE_ARRAY,  // 6
+            Encoding.DELTA_BYTE_ARRAY,         // 7
+            Encoding.RLE_DICTIONARY,           // 8
+            Encoding.BYTE_STREAM_SPLIT         // 9
+    };
 
     // Indexed by Thrift value (0-7)
     private static final CompressionCodec[] COMPRESSION_CODECS = {

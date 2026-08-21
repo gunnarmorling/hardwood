@@ -22,6 +22,38 @@ Every change should be linked to a GitHub issue. If one doesn't exist for what y
 - If your change adds or modifies a user-facing API (factory method, record, enum, configuration option, CLI option), update the documentation under `docs/content/` in the same PR.
 - Keep the public API surface small. Put anything that doesn't need to be user-facing in an `internal` package.
 
+## Adding an encoding
+
+An encoding is a read-side decoder, a write-side encoder, or both. Work through the table for the
+direction you are adding. Paths are relative to `core/src/main/java/dev/hardwood/`.
+
+### Read path
+
+| File | Change | Why |
+|---|---|---|
+| `metadata/Encoding.java` | Add the constant | The name a chunk's metadata reads back as |
+| `internal/thrift/ThriftEnumLookup.java` | Add it to `ENCODINGS`, at its Thrift index | Maps the value on the wire to that constant; without it the encoding reads back as `UNKNOWN` |
+| `internal/encoding/<Name>Decoder.java` | Implement `ValueDecoder` | Reads a page's values into the reader's primitive arrays |
+| `internal/reader/PageDecoder.java` | Add the case to `decodeTypedValues` | The reader's only dispatch point |
+
+### Write path
+
+| File | Change | Why |
+|---|---|---|
+| `writer/ColumnEncoding.java` | Add the policy | What a caller can name in `WriterConfig` |
+| `internal/writer/EncodingSupport.java` | Add it to `supports`, naming its legal physical types | The pairs the writer accepts, rejected at writer creation rather than at flush |
+| `internal/encoding/<Name>Encoder.java` | Implement the inverse of the decoder | Produces one page's value section |
+| `internal/writer/<Type>ValueEncoder.java` | Add the case to `encode`, in each type that may carry it | Each physical type encodes from its own value store |
+| `internal/writer/ColumnChunkBuffer.java` | Map the policy in `valueEncoding` | Names the encoding in the page header and `ColumnMetaData.encodings` |
+| `WriterEncodingPolicyTest`, `CoverageDomain`, `WriterInteropTest` | Restate the policy in each switch, and add it to the interop axis | Sweeps it over every legal type, the coverage domain, and the parquet-java interop axis |
+
+The write path is guarded by exhaustive switches, so the compiler names most of the rows above. The
+read path is not, so cover the decoder yourself — a round trip through the writer where Hardwood can
+write the encoding, and a `parquet-testing` fixture where it can only read it.
+
+Finally, update `docs/content/` for the public enums, and `ROADMAP.md` and `FORMAT_COVERAGE.md` for
+the capability itself. Nothing in the build checks those.
+
 ## Design docs for larger changes
 
 Larger changes — new features, refactorings that affect the system design — should start with a short Markdown document under `_designs_/` describing the intended end state. Open the design as a PR so it can be reviewed before implementation starts. Mark it complete once the work lands.

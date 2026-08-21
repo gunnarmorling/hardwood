@@ -265,25 +265,29 @@ final class CoverageDomain {
     /// The encodings a column of `type` can have on its data pages, over every policy legal for
     /// it. Every policy but [ColumnEncoding#AUTO] names one outright; `AUTO` reaches `PLAIN`
     /// always and `RLE_DICTIONARY` wherever a dictionary is possible at all.
+    ///
+    /// The mapping is a **switch expression** so that javac checks it for exhaustiveness. A switch
+    /// *statement* over an enum is not enhanced and so is not checked, which would let a policy
+    /// added to [ColumnEncoding] fall through this loop and contribute no cell — the whole domain
+    /// would then be silently short by that encoding, and the verdict would pass with it swept
+    /// nowhere. This is the one place the domain learns which encodings the writer can produce, so
+    /// an unmapped policy has to be a compile error rather than an empty set.
     static Set<Encoding> pageEncodings(PhysicalType type) {
         Set<Encoding> encodings = EnumSet.noneOf(Encoding.class);
         for (ColumnEncoding policy : ColumnEncoding.values()) {
             if (!EncodingSupport.supports(policy, type)) {
                 continue;
             }
-            switch (policy) {
-                case AUTO -> {
-                    encodings.add(Encoding.PLAIN);
-                    if (EncodingSupport.dictionaryCapable(type)) {
-                        encodings.add(Encoding.RLE_DICTIONARY);
-                    }
-                }
-                case PLAIN -> encodings.add(Encoding.PLAIN);
-                case DELTA_BINARY_PACKED -> encodings.add(Encoding.DELTA_BINARY_PACKED);
-                case DELTA_LENGTH_BYTE_ARRAY -> encodings.add(Encoding.DELTA_LENGTH_BYTE_ARRAY);
-                case DELTA_BYTE_ARRAY -> encodings.add(Encoding.DELTA_BYTE_ARRAY);
-                case BYTE_STREAM_SPLIT -> encodings.add(Encoding.BYTE_STREAM_SPLIT);
-            }
+            encodings.addAll(switch (policy) {
+                case AUTO -> EncodingSupport.dictionaryCapable(type)
+                        ? EnumSet.of(Encoding.PLAIN, Encoding.RLE_DICTIONARY)
+                        : EnumSet.of(Encoding.PLAIN);
+                case PLAIN -> EnumSet.of(Encoding.PLAIN);
+                case DELTA_BINARY_PACKED -> EnumSet.of(Encoding.DELTA_BINARY_PACKED);
+                case DELTA_LENGTH_BYTE_ARRAY -> EnumSet.of(Encoding.DELTA_LENGTH_BYTE_ARRAY);
+                case DELTA_BYTE_ARRAY -> EnumSet.of(Encoding.DELTA_BYTE_ARRAY);
+                case BYTE_STREAM_SPLIT -> EnumSet.of(Encoding.BYTE_STREAM_SPLIT);
+            });
         }
         return encodings;
     }
