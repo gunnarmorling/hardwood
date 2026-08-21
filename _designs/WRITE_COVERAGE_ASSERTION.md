@@ -84,10 +84,6 @@ write. This is the same distinction the gate draws when it reads page-level valu
 rather than the column chunk's `encodings` union: a writer that silently stopped producing an
 encoding would still satisfy a registry keyed on intent.
 
-Boundary coverage has no file to read. `LogicalTypeValueRange` governs values on their way
-*into* the writer, so a value it refuses produces no bytes at all; those cells are recorded by
-the test that offers the value, as an `(annotation, carrier, boundary class)` triple.
-
 ### Domain
 
 Hand-listing the domain would reproduce the problem it exists to solve, so every dimension is
@@ -101,11 +97,24 @@ derived:
 | Repetition shapes | `InteropCase.Nullability`, plus the nested shapes `WriterNestedInteropTest` enumerates |
 | Annotation kinds | `LogicalType.class.getPermittedSubclasses()` |
 | Annotation parameters | Declared per parameterized kind (below) |
-| Boundary values | `LogicalTypeValueRange`, per annotation |
 
 The sealed-hierarchy walk is what makes the domain grow on its own: a member added to
 `LogicalType` extends the writer and fails the verdict in the same commit, rather than
-extending one and leaving the other to be noticed.
+extending one and leaving the other to be noticed. That is a property of the code only because
+`WriteCoverageVerdictTest` asserts it — `CoverageDomain.annotations()` enumerates the parameters
+by hand, so nothing but that walk holds the list to the hierarchy it claims to cover. The one
+member excluded from it, `VariantType`, is excluded by asking the writer rather than by saying
+so: the same test probes that the writer still refuses a column carrying it, and holds the
+refusal to the reason it gives. "The writer threw" would not be enough — a group annotation on a
+primitive column is refused whatever the writer supports of it, so `LIST` and `MAP` are refused
+there too and both are fully written. Matching the reason is what makes the probe fail on the day
+the writer builds `VARIANT` groups rather than on no day at all.
+
+The probe that decides what is producible catches only the two exceptions the writer documents
+as refusals — `UnsupportedOperationException` for a capability it does not have, and
+`IllegalArgumentException` for a configuration a schema cannot carry. Anything else propagates,
+because a probe that swallowed an unexpected failure would drop the capability from the required
+set and leave the verdict passing having asserted less.
 
 Two capability tables the domain needs are not reachable from the test module today, and move
 rather than being mirrored — a mirrored table drifts, which is the defect this design exists
@@ -134,16 +143,21 @@ smaller one:
 | physical type × repetition shape | 28 | The level streams and the value stream are written together and read together. |
 | `FIXED_LEN_BYTE_ARRAY` length × page encoding | 16 | `BYTE_STREAM_SPLIT` scatters by byte position and `DELTA_BYTE_ARRAY` shares prefixes; both are length-sensitive, and the flat fixture pins the length at eight. |
 | annotation × carrier × {dictionary, non-dictionary} | 95 | An annotation's comparator governs the chunk's bounds in either storage form, and the dictionary path reaches those bounds through a different accumulator. |
-| annotation × carrier × boundary class | 245 | Below. |
 
-443 required cells, each with a stated reason, against a cross product in the tens of thousands.
+198 required cells, each with a stated reason, against a cross product in the tens of thousands.
 The projections accumulate independently, so the sweep the flat matrix already runs fills the
 first three without being restructured.
 
-The carrier is part of the two annotation cells because it is part of what the annotation means:
-a `DECIMAL(1, 0)` over an `INT32` is bounded by arithmetic on the precision and the same
-annotation over a `BYTE_ARRAY` by the magnitude its bytes spell, so neither can stand in for the
-other.
+The carrier is part of the annotation cell because it is part of what the annotation means: a
+`DECIMAL(1, 0)` over an `INT32` is bounded by arithmetic on the precision and the same annotation
+over a `BYTE_ARRAY` by the magnitude its bytes spell, so neither can stand in for the other.
+
+There is no projection over the value boundaries an annotation declares, and deliberately so.
+Those values are written and read back value by value by `WriterAnnotationCoverageTest`, which is
+a stronger statement than a cell; a cell recording that the case ran would have been the one
+thing here derived from intent rather than from bytes, and would have made the same list satisfy
+both sides of its own question. Values *outside* the range reach no file at all, so they are not
+a shape this assertion can observe — core's `WriterAnnotationRangeTest` owns them.
 
 ### Annotation parameters
 
@@ -162,31 +176,10 @@ for `INT32`, eighteen for `INT64`, `maxFixedPrecision(typeLength)` for a fixed c
 equal to precision is the point at which a bound derived by arithmetic on the precision
 overflows, and no test writes one today.
 
-`VariantType` is waived: the writer rejects it, and the rejection is asserted where
-`LogicalTypeValidator` raises it.
-
-### Boundary classes
-
-Per annotation, five classes, derived from the range the annotation itself declares:
-
-| Class | Required of |
-|---|---|
-| `MIN`, `MAX` | A bounded annotation, at the ends `LogicalTypeValueRange` computes |
-| `INTERIOR` | Every annotation |
-| `BELOW_MIN`, `ABOVE_MAX` | A bounded annotation, asserted **rejected** through both write APIs |
-
-An annotation that bounds nothing — `INT(32)` on an `INT32`, `INT(64)` on an `INT64`, and
-every annotation over a binary or floating-point carrier — takes the physical type's own
-extremes in place of `MIN` and `MAX`, and requires no rejection. Those are the cells where the
-comparator matters most: the unsigned maximum is spelled as a negative, and only an unsigned
-comparison orders it correctly.
-
-`UNKNOWN` is the degenerate case. `LogicalTypeValueRange` reports it as holding no value at
-all, so its required classes are the nulls its columns carry and the rejection of any value.
-
-The rejection classes are required through **both** write APIs. `LogicalTypeValueRange` is
-applied by the columnar batch path and by `RowWriter` alike, so a check present in one and
-missing from the other is exactly the defect the pair exists to catch.
+`VariantType` is absent rather than waived: the writer refuses a column carrying it, so there is
+no cell for a test to produce. `CoverageWaivers` holds no entry for it — what keeps the exclusion
+honest is the hierarchy walk above, which probes that the refusal is still real and still the
+one `VARIANT` gives.
 
 ## Waivers
 
@@ -209,12 +202,18 @@ reader.
 
 The verdict spans test classes, so it cannot be an `@AfterAll`, and Surefire may fork per
 class, so it cannot rely on a static registry surviving to the end of the run.
-`WriteCoverageListener`, a `TestExecutionListener` registered through `META-INF/services`,
-empties `target/write-coverage/` as the run starts and writes what the run recorded as it ends,
-under a name unique to the process so that forks do not overwrite one another. A second Surefire
-execution then runs `WriteCoverageVerdictTest`, which merges those files and asserts the
-projections. That execution sets `hardwood.writeCoverage=verify`, under which the listener
-stands down rather than clearing what it is about to read.
+`WriteCoverageListener`, a `TestExecutionListener` registered through `META-INF/services`, writes
+what the run recorded to `target/write-coverage/` as it ends, under a name unique to the process
+so that forks do not overwrite one another. A second Surefire execution then runs
+`WriteCoverageVerdictTest`, which merges those files and asserts the projections. That execution
+sets `hardwood.writeCoverage=verify`, under which the listener stands down rather than adding its
+own cells to what it is about to judge.
+
+Emptying the directory of a previous run is the build's job. Every fork loads the same listener,
+so one that cleared on start would delete the files its siblings had written — the fork-safety
+the process-unique names exist for. The module's POM binds `maven-clean-plugin` to
+`process-test-classes` against that one directory, which clears it once, before either
+execution.
 
 A failure names the empty cells, grouped under the projection each belongs to, rather than
 reporting a count. Alongside them `target/write-coverage-report.txt` states how much of each
@@ -227,14 +226,16 @@ interactions a one-axis-at-a-time sweep cannot: the optional encodings against e
 parquet-java reads, and the `FIXED_LEN_BYTE_ARRAY` lengths the annotations fix against every
 encoding the type can carry.
 
-The two annotation projections are filled by `WriterAnnotationCoverageTest`, which takes its
+The annotation projection is filled by `WriterAnnotationCoverageTest`, which takes its
 cases from the same `CoverageDomain.annotations()` the verdict requires. An annotation added to
 the writer therefore produces a case there and a requirement here in the same commit, rather
 than one without the other. For each annotation it writes a file in every storage form the
-annotation has — holding the page encoding to the form the case is for, so that a dictionary
-that quietly resolved to `PLAIN` does not pass as having covered both — a file holding the ends
-of the declared range and a point inside it, and, where the annotation bounds anything, a value
-either side of those ends offered to each write API in turn and asserted refused.
+annotation has, holding the page encoding to the form the case is for so that a dictionary that
+quietly resolved to `PLAIN` does not pass as having covered both.
+
+It also writes each annotation at the ends of its declared range and at a point inside, and reads
+every one of those values back through parquet-java. Those assertions are the class's own; no
+projection tracks them, for the reason given above.
 
 ## Non-goals
 

@@ -18,14 +18,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Stream;
 
 import org.apache.parquet.column.Encoding;
 
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.PhysicalType;
 
-import static dev.hardwood.testing.Coverage.BoundaryClass;
 import static dev.hardwood.testing.Coverage.RepetitionShape;
 import static dev.hardwood.testing.Coverage.StorageForm;
 
@@ -38,10 +36,6 @@ import static dev.hardwood.testing.Coverage.StorageForm;
 /// intended to write. A writer that quietly stopped producing an encoding would still satisfy a
 /// registry keyed on intent.
 ///
-/// The exception is [#observeBoundary], which has no file to read: an annotation's declared
-/// range governs values on their way *into* the writer, so a value refused produces no bytes at
-/// all. Those cells are recorded by the test that offers the value.
-///
 /// The run's cells are flushed to a file by [WriteCoverageListener], because the verdict runs in
 /// a second Surefire execution — a different JVM — and because Surefire may fork this one.
 final class CoverageRegistry {
@@ -49,8 +43,8 @@ final class CoverageRegistry {
     private CoverageRegistry() {
     }
 
-    /// The directory the run's cells are flushed to, under the module's build output so that a
-    /// clean build starts from nothing.
+    /// The directory the run's cells are flushed to. The module's POM empties it before the tests
+    /// run, so what it holds afterwards is this run's observations and no earlier run's.
     static final Path OUTPUT_DIRECTORY = Paths.get("target", "write-coverage");
 
     private static final Set<String> CELLS = ConcurrentHashMap.newKeySet();
@@ -103,38 +97,9 @@ final class CoverageRegistry {
         CELLS.add(Coverage.annotationStorage(annotationKey, StorageForm.GROUP.name(), StorageForm.GROUP));
     }
 
-    /// Records that an annotation was exercised at one boundary class.
-    ///
-    /// @param annotationKey the annotation, spelled by [LogicalTypeKey]
-    /// @param carrier the carrier's spelling, from [Coverage#carrier]
-    /// @param boundary where in its range the value sat, or how one outside it was refused
-    static void observeBoundary(String annotationKey, String carrier, BoundaryClass boundary) {
-        CELLS.add(Coverage.annotationBoundary(annotationKey, carrier, boundary));
-    }
-
     /// The cells recorded so far in this JVM.
     static Set<String> cells() {
         return Set.copyOf(CELLS);
-    }
-
-    /// Empties [#OUTPUT_DIRECTORY] of a previous run's observations, so that a cell covered then
-    /// and not now is reported as the gap it has become.
-    ///
-    /// @throws UncheckedIOException if a stale file cannot be removed
-    static void clearOutput() {
-        try {
-            if (!Files.isDirectory(OUTPUT_DIRECTORY)) {
-                return;
-            }
-            try (Stream<Path> stale = Files.list(OUTPUT_DIRECTORY)) {
-                for (Path file : stale.toList()) {
-                    Files.delete(file);
-                }
-            }
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException("Cannot clear stale write-path coverage observations", e);
-        }
     }
 
     /// Writes this JVM's cells to [#OUTPUT_DIRECTORY], one per line, under a name unique to the

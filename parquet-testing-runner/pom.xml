@@ -171,6 +171,34 @@
   <build>
     <plugins>
       <plugin>
+        <!--
+          The write-path coverage observations are emptied here rather than by the test JVM that
+          writes them. Surefire may fork per class, and every fork runs the same listener: a
+          listener that cleared the directory on start would delete the other forks' files, which
+          is exactly what the pid-unique names exist to avoid. The build clears it once, before
+          either surefire execution runs.
+        -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>clear-write-coverage</id>
+            <phase>process-test-classes</phase>
+            <goals>
+              <goal>clean</goal>
+            </goals>
+            <configuration>
+              <excludeDefaultDirectories>true</excludeDefaultDirectories>
+              <filesets>
+                <fileset>
+                  <directory>${project.build.directory}/write-coverage</directory>
+                </fileset>
+              </filesets>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>

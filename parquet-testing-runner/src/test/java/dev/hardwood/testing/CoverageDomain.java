@@ -30,7 +30,6 @@ import dev.hardwood.writer.ColumnEncoding;
 import dev.hardwood.writer.ParquetFileWriter;
 import dev.hardwood.writer.WriterConfig;
 
-import static dev.hardwood.testing.Coverage.BoundaryClass;
 import static dev.hardwood.testing.Coverage.RepetitionShape;
 import static dev.hardwood.testing.Coverage.StorageForm;
 
@@ -38,10 +37,9 @@ import static dev.hardwood.testing.Coverage.StorageForm;
 ///
 /// Every dimension comes from something the writer itself decides: the physical types and codecs
 /// from what it accepts when asked to write one, the encodings from
-/// [EncodingSupport], the annotations from the sealed [LogicalType] hierarchy, and the value
-/// boundaries from the [LogicalTypeValueRange] the writer applies to them. A capability added to
-/// the writer therefore adds a requirement here in the same commit, rather than waiting to be
-/// noticed.
+/// [EncodingSupport], and the annotations from the sealed [LogicalType] hierarchy. A capability
+/// added to the writer therefore adds a requirement here in the same commit, rather than waiting
+/// to be noticed.
 ///
 /// The required cells are pairwise projections of that space rather than its cross product. See
 /// `_designs/WRITE_COVERAGE_ASSERTION.md` for why each projection is admitted.
@@ -128,10 +126,6 @@ final class CoverageDomain {
         for (Annotation annotation : annotations()) {
             for (StorageForm form : storageForms(annotation)) {
                 cells.add(Coverage.annotationStorage(annotation.key(), annotation.carrierKey(), form));
-            }
-            for (BoundaryClass boundary : boundaryClasses(annotation)) {
-                cells.add(Coverage.annotationBoundary(
-                        annotation.key(), annotation.carrierKey(), boundary));
             }
         }
 
@@ -222,6 +216,38 @@ final class CoverageDomain {
         return List.of(new LogicalType.ListType(), new LogicalType.MapType());
     }
 
+    /// One annotation the writer refuses outright, and the part of its refusal that names the
+    /// annotation itself.
+    ///
+    /// The reason is matched rather than merely counted on, because "the writer threw" is a
+    /// weaker claim than it looks: a group annotation on a primitive column is refused whatever
+    /// the writer supports of it, so `LIST` and `MAP` are refused there too and both are fully
+    /// written. A probe that only asked whether something was thrown would therefore stay green
+    /// on the day the writer builds `VARIANT` groups, which is the day this exclusion has to end.
+    ///
+    /// @param logicalType the annotation the writer refuses
+    /// @param reason the fragment of the refusal that names this annotation rather than the shape
+    ///        it was declared in
+    record Refusal(LogicalType logicalType, String reason) {
+    }
+
+    /// The annotations the writer refuses outright, which the domain therefore requires nothing
+    /// of. `VARIANT` is the only one: the writer rejects a column declared with it, so no test
+    /// can produce a cell for it.
+    ///
+    /// This is a claim about the writer rather than a preference, so
+    /// [WriteCoverageVerdictTest#everyAnnotationIsRequiredOrRefusedByTheWriter] holds it to one —
+    /// a release that starts writing `VARIANT` fails there rather than quietly requiring nothing.
+    static List<Refusal> refusedAnnotations() {
+        return List.of(new Refusal(new LogicalType.VariantType(1), "which the writer does not yet build"));
+    }
+
+    /// How the writer refuses a column carrying `logicalType` on `carrier`, or `null` where it
+    /// accepts one.
+    static RuntimeException refusalOf(LogicalType logicalType, PhysicalType carrier, Integer typeLength) {
+        return refusal(carrier, typeLength, logicalType, WriterConfig.defaults());
+    }
+
     /// The range `annotation` declares, as the writer resolves it.
     static LogicalTypeValueRange rangeOf(Annotation annotation) {
         return LogicalTypeValueRange.of(columnOf(annotation));
@@ -234,23 +260,6 @@ final class CoverageDomain {
             return EnumSet.of(StorageForm.NO_DICTIONARY);
         }
         return EnumSet.of(StorageForm.DICTIONARY, StorageForm.NO_DICTIONARY);
-    }
-
-    /// The boundary classes `annotation` must be exercised at.
-    ///
-    /// An annotation that narrows its physical type has the ends of that range to reach; one
-    /// that narrows nothing has the extremes of the order it puts on the type. `UNKNOWN` admits
-    /// no value at all, so what it has to show is the nulls it carries.
-    ///
-    /// Values outside the range are not among these. The writer refuses them before anything is
-    /// encoded, so they reach no file and this assertion — which is over what files contained —
-    /// cannot observe them. `WriterAnnotationRangeTest` in core owns that half, and owns it
-    /// alone.
-    static Set<BoundaryClass> boundaryClasses(Annotation annotation) {
-        if (rangeOf(annotation).holdsNoValue()) {
-            return EnumSet.of(BoundaryClass.NULLS_ONLY);
-        }
-        return EnumSet.of(BoundaryClass.MIN, BoundaryClass.MAX, BoundaryClass.INTERIOR);
     }
 
     /// The encodings a column of `type` can have on its data pages, over every policy legal for
@@ -328,19 +337,35 @@ final class CoverageDomain {
     private static boolean accepts(PhysicalType type, Integer typeLength, LogicalType logicalType,
             WriterConfig config) {
 
+        return refusal(type, typeLength, logicalType, config) == null;
+    }
+
+    /// The exception the writer raises in refusing a one-column file of this shape, or `null`
+    /// where it accepts one. The exception rather than a flag, so a caller can hold a refusal to
+    /// the reason it gives and not merely to its having happened.
+    ///
+    /// Only the two exceptions the writer documents as refusals count as one:
+    /// [UnsupportedOperationException] for a capability it does not have — `INT96`, `LZO`, the
+    /// Hadoop-framed `LZ4` — and [IllegalArgumentException] for a configuration this schema cannot
+    /// carry. Anything else propagates: a probe that swallowed an exception it did not expect
+    /// would drop the capability out of [#required] and leave the verdict passing having asserted
+    /// less, which is the blindness this whole assertion exists to remove, one level up.
+    private static RuntimeException refusal(PhysicalType type, Integer typeLength,
+            LogicalType logicalType, WriterConfig config) {
+
         FileSchema schema;
         try {
             schema = declare(type, typeLength, logicalType);
         }
-        catch (RuntimeException e) {
-            return false;
+        catch (IllegalArgumentException | UnsupportedOperationException e) {
+            return e;
         }
         try {
             ParquetFileWriter.create(new ByteBufferOutputFile(), schema, config).close();
-            return true;
+            return null;
         }
-        catch (RuntimeException e) {
-            return false;
+        catch (IllegalArgumentException | UnsupportedOperationException e) {
+            return e;
         }
         catch (IOException e) {
             throw new UncheckedIOException("Probing what the writer accepts must not fail on I/O", e);

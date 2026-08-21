@@ -24,6 +24,8 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.metadata.LogicalType;
+import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.testing.Coverage.Projection;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -104,6 +106,47 @@ class WriteCoverageVerdictTest {
                 Remove them from CoverageWaivers.
 
                 %s""".formatted(stale.size(), String.join("\n", lines)));
+    }
+
+    /// Every member of the sealed [LogicalType] hierarchy is either required by the domain or
+    /// refused by the writer.
+    ///
+    /// This is the claim the design rests on — that a member added to `LogicalType` extends the
+    /// writer and fails the verdict in the same commit — and without it the claim is not true of
+    /// this module: `CoverageDomain.annotations()` is a hand-written list, and a new member would
+    /// force a spelling in [LogicalTypeKey] and a classification in core's
+    /// `WriterAnnotationRangeTest` while producing no requirement at all here.
+    ///
+    /// The refused side is checked against the writer rather than asserted: a release that starts
+    /// writing `VARIANT` fails here, rather than leaving it excluded by a stale list. The refusal
+    /// is held to the reason it gives, not merely to its having happened — a group annotation on a
+    /// primitive column is refused whatever the writer supports of it, so a probe satisfied by any
+    /// exception would be satisfied by `LIST` and `MAP` too, and would stay green on exactly the
+    /// day this exclusion has to end.
+    @Test
+    void everyAnnotationIsRequiredOrRefusedByTheWriter() {
+        Set<Class<?>> accountedFor = new HashSet<>();
+        for (CoverageDomain.Annotation annotation : CoverageDomain.annotations()) {
+            accountedFor.add(annotation.logicalType().getClass());
+        }
+        for (LogicalType group : CoverageDomain.groupAnnotations()) {
+            accountedFor.add(group.getClass());
+        }
+        for (CoverageDomain.Refusal refused : CoverageDomain.refusedAnnotations()) {
+            RuntimeException refusal = CoverageDomain.refusalOf(
+                    refused.logicalType(), PhysicalType.BYTE_ARRAY, null);
+
+            assertThat(refusal).as("the writer still refuses %s", refused.logicalType()).isNotNull();
+            assertThat(refusal.getMessage())
+                    .as("the refusal of %s names the annotation, not the shape it was declared in",
+                            refused.logicalType())
+                    .contains(refused.reason());
+            accountedFor.add(refused.logicalType().getClass());
+        }
+
+        assertThat(LogicalType.class.getPermittedSubclasses())
+                .as("every LogicalType is required by the domain or refused by the writer")
+                .allSatisfy(member -> assertThat(accountedFor).contains(member));
     }
 
     /// Every cell of every observation belongs to a projection the domain knows, so a cell

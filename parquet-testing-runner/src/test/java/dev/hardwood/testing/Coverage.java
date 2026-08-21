@@ -53,12 +53,7 @@ final class Coverage {
         /// Logical-type annotation against the storage form of the chunk carrying it. An
         /// annotation's comparator governs the chunk's bounds in either form, and the dictionary
         /// path reaches those bounds through a different accumulator.
-        ANNOTATION_STORAGE,
-
-        /// Logical-type annotation against the boundary class of the values written under it.
-        /// The ends of an annotation's declared range are where the statistics comparator is
-        /// fragile, and where a value the annotation cannot hold must be refused.
-        ANNOTATION_BOUNDARY
+        ANNOTATION_STORAGE
     }
 
     /// The repetition shape of a column chunk, as the footer reports it. The three `OPTIONAL`
@@ -98,33 +93,6 @@ final class Coverage {
         GROUP
     }
 
-    /// Where in an annotation's declared range a written value sits.
-    ///
-    /// Only values that reach a file appear here. A value the annotation cannot hold produces no
-    /// bytes at all — the writer refuses it before anything is encoded — so it is not a shape
-    /// this assertion can observe, and the refusal is asserted in core by
-    /// `WriterAnnotationRangeTest` instead.
-    ///
-    /// For an annotation that narrows its physical type, [#MIN] and [#MAX] are the ends
-    /// `LogicalTypeValueRange` computes. For one that narrows nothing they are the extremes of
-    /// the order the annotation puts on that type — which for an unsigned integer is not the
-    /// type's own: every bit pattern is a value, and the largest is the all-ones one the signed
-    /// storage spells `-1`.
-    enum BoundaryClass {
-
-        /// The smallest value the column may hold.
-        MIN,
-
-        /// The largest value the column may hold.
-        MAX,
-
-        /// A value strictly between the two.
-        INTERIOR,
-
-        /// The nulls an `UNKNOWN` column carries, that annotation admitting no value at all.
-        NULLS_ONLY
-    }
-
     /// The cell for one physical type carrying one page encoding.
     static String typeEncoding(PhysicalType type, Encoding encoding) {
         return cell(Projection.TYPE_ENCODING, type.name(), encoding.name());
@@ -148,16 +116,6 @@ final class Coverage {
     /// The cell for one annotation on one carrier, stored one way.
     static String annotationStorage(String annotationKey, String carrier, StorageForm form) {
         return cell(Projection.ANNOTATION_STORAGE, annotationKey, carrier, form.name());
-    }
-
-    /// The cell for one annotation on one carrier, reached at one boundary class.
-    ///
-    /// The carrier is part of the cell because it is part of the range: a `DECIMAL(1, 0)` over an
-    /// `INT32` is bounded by arithmetic on the precision, and the same annotation over a
-    /// `BYTE_ARRAY` by the magnitude its bytes spell. Collapsing the two would let one stand in
-    /// for the other.
-    static String annotationBoundary(String annotationKey, String carrier, BoundaryClass boundary) {
-        return cell(Projection.ANNOTATION_BOUNDARY, annotationKey, carrier, boundary.name());
     }
 
     /// How a carrier is spelled inside an [Projection#ANNOTATION_STORAGE] cell: the physical

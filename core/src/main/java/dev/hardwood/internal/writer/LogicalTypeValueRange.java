@@ -120,16 +120,27 @@ public final class LogicalTypeValueRange {
         return logicalType;
     }
 
-    /// The smallest value an integral column may hold, meaningful only where [#isBounded()] and
-    /// the column's physical type is `INT32` or `INT64`.
+    /// The smallest value an integral column may hold.
+    ///
+    /// @throws IllegalStateException if the annotation narrows nothing, there being no such value
+    ///         to report — the unbounded range's zero would otherwise read as a bound
     public long min() {
+        requireBounded();
         return min;
     }
 
-    /// The largest value an integral column may hold, meaningful only where [#isBounded()] and
-    /// the column's physical type is `INT32` or `INT64`.
+    /// The largest value an integral column may hold.
+    ///
+    /// @throws IllegalStateException if the annotation narrows nothing
     public long max() {
+        requireBounded();
         return max;
+    }
+
+    private void requireBounded() {
+        if (!isBounded()) {
+            throw new IllegalStateException("An unbounded range has no bounds to report; check isBounded() first");
+        }
     }
 
     /// The largest unscaled magnitude a binary `DECIMAL` column may hold, `null` for any other

@@ -27,7 +27,6 @@ import dev.hardwood.OutputFile;
 import dev.hardwood.internal.writer.LogicalTypeValueRange;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
-import dev.hardwood.testing.Coverage.BoundaryClass;
 import dev.hardwood.testing.Coverage.StorageForm;
 import dev.hardwood.testing.CoverageDomain.Annotation;
 import dev.hardwood.writer.ColumnBatch;
@@ -114,34 +113,50 @@ class WriterAnnotationCoverageTest {
     @MethodSource("annotations")
     void boundaryValues(Annotation annotation, @TempDir Path dir) throws IOException {
         Path file = dir.resolve("boundaries.parquet");
-        List<BoundaryClass> written = present(annotation);
+        List<Boundary> written = present(annotation);
         List<Object> values = new ArrayList<>();
-        for (BoundaryClass boundary : written) {
+        for (Boundary boundary : written) {
             values.add(value(annotation, boundary));
         }
 
         write(annotation, file, WriterConfig.defaults(), values, holdsNoValue(annotation));
         assertValues(annotation, file, values);
-
-        for (BoundaryClass boundary : written) {
-            CoverageRegistry.observeBoundary(annotation.key(), annotation.carrierKey(), boundary);
-        }
     }
 
     // ==================== The values ====================
 
+    /// Where in an annotation's range a written value sits.
+    ///
+    /// These name what a case writes rather than a coverage cell: the values reach the file and
+    /// are read back out of it value by value, which is a stronger statement than a cell recording
+    /// that the case ran.
+    private enum Boundary {
+
+        /// The smallest value the column may hold.
+        MIN,
+
+        /// The largest value the column may hold.
+        MAX,
+
+        /// A value strictly between the two.
+        INTERIOR,
+
+        /// The nulls an `UNKNOWN` column carries, that annotation admitting no value at all.
+        NULLS_ONLY
+    }
+
     /// The boundary classes whose values a file actually holds: the ends and the interior, or —
     /// for `UNKNOWN`, which admits no value at all — the nulls it carries instead.
-    private static List<BoundaryClass> present(Annotation annotation) {
+    private static List<Boundary> present(Annotation annotation) {
         if (holdsNoValue(annotation)) {
-            return List.of(BoundaryClass.NULLS_ONLY);
+            return List.of(Boundary.NULLS_ONLY);
         }
-        return List.of(BoundaryClass.MIN, BoundaryClass.INTERIOR, BoundaryClass.MAX);
+        return List.of(Boundary.MIN, Boundary.INTERIOR, Boundary.MAX);
     }
 
     /// The value `annotation` takes at one boundary class, in the representation its carrier's
     /// setter accepts: a boxed `long` for an integral carrier, the bytes for a binary one.
-    private static Object value(Annotation annotation, BoundaryClass boundary) {
+    private static Object value(Annotation annotation, Boundary boundary) {
         return isIntegral(annotation) ? integralValue(annotation, boundary)
                 : binaryValue(annotation, boundary);
     }
@@ -154,7 +169,7 @@ class WriterAnnotationCoverageTest {
     /// value, and the largest is the all-ones one, which the signed storage spells `-1`. Taking
     /// the signed extremes for such a column would write values named for a boundary they do not
     /// sit on, and would leave the pattern the unsigned maximum actually is out of the file.
-    private static long integralValue(Annotation annotation, BoundaryClass boundary) {
+    private static long integralValue(Annotation annotation, Boundary boundary) {
         LogicalTypeValueRange range = CoverageDomain.rangeOf(annotation);
         boolean narrow = annotation.carrier() == PhysicalType.INT32;
         long min;
@@ -186,7 +201,7 @@ class WriterAnnotationCoverageTest {
     /// nothing, and takes the extremes of the unsigned order the format compares those columns in
     /// — for a `BYTE_ARRAY` the empty value and a long run of `0xff`, whose bound is past the
     /// truncation length and so has to be truncated upwards to still bound the column.
-    private static byte[] binaryValue(Annotation annotation, BoundaryClass boundary) {
+    private static byte[] binaryValue(Annotation annotation, Boundary boundary) {
         LogicalTypeValueRange range = CoverageDomain.rangeOf(annotation);
         if (range.isBounded()) {
             BigInteger bound = range.unscaledBound();
@@ -242,7 +257,7 @@ class WriterAnnotationCoverageTest {
 
     private static Object ordinalValue(Annotation annotation, int ordinal) {
         if (isIntegral(annotation)) {
-            return integralValue(annotation, BoundaryClass.INTERIOR) + ordinal;
+            return integralValue(annotation, Boundary.INTERIOR) + ordinal;
         }
         LogicalTypeValueRange range = CoverageDomain.rangeOf(annotation);
         if (range.isBounded()) {

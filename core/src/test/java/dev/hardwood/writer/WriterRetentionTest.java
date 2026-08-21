@@ -90,8 +90,13 @@ class WriterRetentionTest {
                     .hasSize(1);
         }
 
+        // A floor as well as a ceiling. A measurement that collapsed — an explicit collection
+        // disabled, a collector whose used-heap reading works differently, a refactor that moved
+        // the retention off the heap being sampled — would otherwise pass this test while
+        // measuring nothing, and a disarmed tripwire reads exactly like a held one.
         assertThat(retained)
                 .as("bytes retained by an open row group against a %d MiB target", ROW_GROUP_TARGET >> 20)
+                .isGreaterThan(ROW_GROUP_TARGET / 2)
                 .isLessThan(ceiling);
     }
 
