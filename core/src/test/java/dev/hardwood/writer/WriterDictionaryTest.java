@@ -103,9 +103,10 @@ class WriterDictionaryTest {
 
     @Test
     void writesExactDistinctCountWhereverTheChunkKnowsIt() throws Exception {
-        // The count is exact for as long as the chunk holds a dictionary, which is until the
-        // encoding is chosen — so it is written whichever encoding wins, and left out only where
-        // the chunk never built one.
+        // The count is exact for as long as the chunk holds a dictionary, so it is written
+        // whichever encoding wins and left out where the chunk never built one. These columns are
+        // shorter than the first probe, so none of them gives its dictionary up early; a chunk
+        // that does states no count either, which WriterDictionaryProbeTest covers.
         int n = 1_000;
         int[] repeating = new int[n];
         int[] allDistinct = new int[n];

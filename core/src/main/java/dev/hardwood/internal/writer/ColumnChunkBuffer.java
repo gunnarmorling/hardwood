@@ -73,6 +73,13 @@ import dev.hardwood.writer.ColumnEncoding;
 /// page's largest index rather than the dictionary's final size, so a page whose values sit low
 /// in the dictionary pays only for the bits they need.
 ///
+/// That same comparison also runs **while values arrive**, over the prefix the chunk holds, at
+/// 8192 present values and doubling from there. A dictionary losing two probes running is given
+/// up on the spot, so a column whose values are all distinct stops interning after a few
+/// thousand of them rather than hashing a row group's worth into a table flush would reject.
+/// The produced file is unaffected — a chunk abandoned early is one the flush comparison would
+/// have decided against, and carries the same encoding either way.
+///
 /// Under any other policy the encoding is settled before a value arrives: no dictionary is built,
 /// so the chunk pays neither the interning nor the index array and states no `distinct_count`.
 /// Each value's `PLAIN` width is still accumulated, because that total is what bounds the
@@ -135,6 +142,24 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// False once the chunk has thrown away what it was counting distinct values with, after
     /// which it can no longer state its cardinality and writes no `distinct_count`.
     private boolean cardinalityKnown = true;
+
+    /// Present-value count at which this chunk's dictionary is next weighed against `PLAIN`,
+    /// doubling after each probe. Counted in values rather than pages: [#pageValues] follows the
+    /// schema's widest column, so a narrow schema's chunk would never reach a page boundary
+    /// inside a row group and would never be probed.
+    private int nextProbeValues = FIRST_PROBE_VALUES;
+    /// Consecutive probes at which the dictionary was losing. The dictionary is given up on the
+    /// second, which is what keeps a column whose distinct values are front-loaded — all
+    /// distinct through one probe, repeating afterwards — from losing a dictionary that pays.
+    private int losingProbes;
+
+    /// Present values a chunk holds before its dictionary is first weighed against `PLAIN`. Far
+    /// enough in that the dictionary's fixed cost is fairly sampled and the index bit width has
+    /// settled; early enough that a chunk which abandons here never interns the rest.
+    private static final int FIRST_PROBE_VALUES = 8192;
+
+    /// Consecutive losing probes that give the dictionary up.
+    private static final int LOSING_PROBES_TO_ABANDON = 2;
 
     /// This column's resolved encoding policy. [ColumnEncoding#AUTO] leaves the choice to the
     /// size comparison at flush; anything else names the encoding every chunk of this column
@@ -208,6 +233,11 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
             long valueBits = values.valueBits(valueIndex);
             plainValueBits += valueBits;
             bufferedBits += valueBits;
+            // After the running totals take this value, so the probe weighs exactly what the
+            // chunk holds — the same predicate flush applies, on a prefix.
+            if (dictionaryAlive && indexCount == nextProbeValues) {
+                probeDictionary();
+            }
         }
         else {
             values.statNull();
@@ -218,9 +248,31 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         }
     }
 
+    /// Weighs the dictionary against `PLAIN` over the values interned so far and gives it up once
+    /// it has lost [#LOSING_PROBES_TO_ABANDON] probes in a row, so a column whose values are all
+    /// distinct stops interning after a few thousand of them instead of hashing a row group's
+    /// worth into a table the flush comparison then rejects.
+    ///
+    /// Losing twice in a row rather than once is what separates a column that is genuinely
+    /// all-distinct from one whose distinct values are merely front-loaded. The latter looks the
+    /// same at the first probe and has stopped minting new values by the second, where its
+    /// distinct ratio has halved and the comparison has swung back to the dictionary; it keeps
+    /// what it has and is decided at flush, as it is when no probe fires at all.
+    private void probeDictionary() {
+        if (dictionaryWins()) {
+            losingProbes = 0;
+        }
+        else if (++losingProbes == LOSING_PROBES_TO_ABANDON) {
+            giveUpDictionary();
+            return;
+        }
+        nextProbeValues *= 2;
+    }
+
     /// Turns the values interned so far back into stored values and releases the dictionary, so
     /// the chunk carries its values once rather than twice. Called when the dictionary outgrows
-    /// the analysis cap, and at flush when the comparison decides against it.
+    /// the analysis cap, when a probe has found it losing twice running, and at flush when the
+    /// comparison decides against it.
     private void giveUpDictionary() {
         for (int i = 0; i < indexCount; i++) {
             values.storeDictionaryValue(indices[i]);
@@ -257,6 +309,8 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         dictionaryPageUncompressedSize = 0;
         dictionaryAlive = values.dictionaryCapable();
         cardinalityKnown = true;
+        nextProbeValues = FIRST_PROBE_VALUES;
+        losingProbes = 0;
     }
 
     /// A running estimate of this chunk's buffered uncompressed bits — each entry's level bits
@@ -330,9 +384,11 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
                 null);
     }
 
-    /// Whether this chunk is written `RLE_DICTIONARY`, decided from what it actually holds: the
-    /// dictionary body plus an index stream at the bit width its cardinality needs, against the
-    /// values written `PLAIN`. Sizes are compared uncompressed — comparing compressed sizes would
+    /// Whether the dictionary is worth keeping over what this chunk holds: the dictionary body
+    /// plus an index stream at the bit width its cardinality needs, against the values written
+    /// `PLAIN`. At flush this decides the chunk's encoding; against a prefix it is what
+    /// [#probeDictionary] weighs, which is the same question asked earlier and of less data.
+    /// Sizes are compared uncompressed — comparing compressed sizes would
     /// mean trial-compressing both forms, which is not repaid by the rare chunk where compression
     /// reverses the ranking — and the index stream's run headers are left out of the estimate,
     /// being a fraction of a percent of it.

@@ -102,7 +102,7 @@ columns it applies to, leaving every other column on `AUTO`:
 useful number in the stage. A column under a named policy builds no dictionary at all, so
 applying `PLAIN` to exactly the columns the flush-time comparison rejects anyway writes the
 same pages as `AUTO` while skipping the interning that produced them. The gap between the two
-cases is the upper bound on what stage 26 (#979) can buy, measured through public API, on the
+cases is the upper bound on what stage 26a (#992) can buy, measured through public API, on the
 fixture stage 18 was argued on, without touching the analysis cap.
 
 The two files are not byte-identical, and the difference is confined to one field: a chunk
@@ -237,7 +237,7 @@ file, 12.20 MB against 25.45 MB, and costs 71 ms over `PLAIN` to produce.
 
 ### What this settles
 
-- The candidate worth acting on is the discarded interning, and stage 26 (#979) is where it is
+- The candidate worth acting on is the discarded interning, and stage 26a (#992) is where it is
   scoped. The number here is what it is worth, and the profile names the frame.
 - The per-value call chain and the per-page allocations are not refuted, but neither shows at
   this fixture's shape. They are 21b's question, where schema width shrinks the values a page
@@ -308,7 +308,7 @@ still.
   fixture of its own, because the cap is `max(rowGroupTargetBytes / 2, 1 MiB)` and bounds one
   column's dictionary against a row group holding every column: a chunk crosses it only when
   its own dictionary is about half of everything buffered, which no column of a six-column
-  fixture is. It is the evidence stage 26 (#979) needs, it belongs with the change it argues
+  fixture is. It is the evidence stage 26b (#979) needs, it belongs with the change it argues
   for, and building it before anyone proposes moving the cap measures a decision nobody is
   taking.
 - **The byte-array delta encodings.** `DELTA_LENGTH_BYTE_ARRAY` and `DELTA_BYTE_ARRAY` target
