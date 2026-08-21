@@ -304,7 +304,9 @@ if $DO_FORKS; then
 fi
 
 echo
-if [[ ${#UNPROVEN[@]} -gt 0 ]]; then
+# `${arr[*]+x}` rather than `${#arr[@]}`: under `set -u`, bash 3.2 rejects the
+# length of an empty array as an unbound variable. The `+` form never does.
+if [[ -n "${UNPROVEN[*]+x}" ]]; then
   echo "== kept: named a merged PR but failed the containment proof =="
   echo "   (usually commits pushed to the branch after its PR merged — those exist"
   echo "    nowhere else, so review them by hand before removing the ref.)"
