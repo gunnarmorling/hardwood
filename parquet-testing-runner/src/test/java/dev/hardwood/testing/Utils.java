@@ -87,6 +87,16 @@ public class Utils {
             "repeated_primitive_no_list.parquet", // ClassCast: int32 Int32_list is not a group
             "unknown-logical-type.parquet", // Unknown logical type
 
+            // ALP is Encoding value 10 in parquet-format; the Encoding enum generated into
+            // parquet-format-structures 1.17.1 stops at BYTE_STREAM_SPLIT (9). Thrift's Java
+            // binding turns an unrecognized enum value into null, which for the required
+            // PageEncodingStats.encoding field is indistinguishable from an absent field, so
+            // parquet-java rejects the footer with "Required field 'encoding' was not present!".
+            // A parquet-java that knew the constant still could not decode ALP pages, so there
+            // is no reference reader to compare against. Hardwood reads the footer, column index
+            // and page index, and rejects the pages themselves until #581 adds ALP support.
+            "alp_extended.zstd.parquet", // No parquet-java oracle: ALP encoding
+
             // shredded_variant fixtures are skipped outside this list: spec-invalid
             // ones by isInvalidFixture() (the `-INVALID` suffix), error cases by
             // SHREDDED_VARIANT_ERROR_CASES. Both are folded in by isSkipped().

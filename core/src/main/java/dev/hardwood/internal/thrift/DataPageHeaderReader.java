@@ -30,6 +30,7 @@ public class DataPageHeaderReader {
     private static DataPageHeader readInternal(ThriftCompactReader reader) throws IOException {
         int numValues = 0;
         Encoding encoding = null;
+        int encodingValue = -1;
         Encoding definitionLevelEncoding = null;
         Encoding repetitionLevelEncoding = null;
         Statistics statistics = null;
@@ -48,7 +49,8 @@ public class DataPageHeaderReader {
                     break;
                 case 2: // encoding
                     if (reader.acceptField(header, Codes.I32)) {
-                        encoding = ThriftEnumLookup.encoding(reader.readI32());
+                        encodingValue = reader.readI32();
+                        encoding = ThriftEnumLookup.encoding(encodingValue);
                     }
                     break;
                 case 3: // definition_level_encoding
@@ -72,6 +74,11 @@ public class DataPageHeaderReader {
             }
         }
 
-        return new DataPageHeader(numValues, encoding, definitionLevelEncoding, repetitionLevelEncoding, statistics);
+        if (encoding == null) {
+            throw new IOException("DataPageHeader missing required field: encoding");
+        }
+
+        return new DataPageHeader(numValues, encoding, encodingValue,
+                definitionLevelEncoding, repetitionLevelEncoding, statistics);
     }
 }

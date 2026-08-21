@@ -32,6 +32,7 @@ public class DataPageHeaderV2Reader {
         int numNulls = 0;
         int numRows = 0;
         Encoding encoding = null;
+        int encodingValue = -1;
         int definitionLevelsByteLength = 0;
         int repetitionLevelsByteLength = 0;
         boolean isCompressed = true; // Default value per Parquet spec
@@ -61,7 +62,8 @@ public class DataPageHeaderV2Reader {
                     break;
                 case 4: // encoding
                     if (reader.acceptField(header, Codes.I32)) {
-                        encoding = ThriftEnumLookup.encoding(reader.readI32());
+                        encodingValue = reader.readI32();
+                        encoding = ThriftEnumLookup.encoding(encodingValue);
                     }
                     break;
                 case 5: // definition_levels_byte_length
@@ -88,7 +90,11 @@ public class DataPageHeaderV2Reader {
             }
         }
 
-        return new DataPageHeaderV2(numValues, numNulls, numRows, encoding,
+        if (encoding == null) {
+            throw new IOException("DataPageHeaderV2 missing required field: encoding");
+        }
+
+        return new DataPageHeaderV2(numValues, numNulls, numRows, encoding, encodingValue,
                 definitionLevelsByteLength, repetitionLevelsByteLength, isCompressed, statistics);
     }
 }

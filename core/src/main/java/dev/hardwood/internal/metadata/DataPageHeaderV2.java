@@ -15,11 +15,17 @@ import dev.hardwood.metadata.Statistics;
 /// [#statistics] carries the inline per-page statistics from Thrift field 8.
 /// It is `null` when the writer omitted them. When both the `ColumnIndex` and
 /// inline statistics are present, the `ColumnIndex` is authoritative.
+///
+/// [#encodingValue] is the raw Thrift value [#encoding] was mapped from. Every
+/// value this release does not recognize maps to the single
+/// [Encoding#UNKNOWN] constant, so the raw value is the only thing left that
+/// identifies which encoding the page actually uses.
 public record DataPageHeaderV2(
         int numValues,
         int numNulls,
         int numRows,
         Encoding encoding,
+        int encodingValue,
         int definitionLevelsByteLength,
         int repetitionLevelsByteLength,
         boolean isCompressed,

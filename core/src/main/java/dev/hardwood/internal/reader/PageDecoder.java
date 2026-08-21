@@ -311,7 +311,8 @@ public class PageDecoder {
                     column.maxRepetitionLevel(), column.maxDefinitionLevel());
             if (shape instanceof FixedSizeListShape.FixedWidth(int k)) {
                 Page page = decodeTypedValues(
-                        header.encoding(), data, valuesOffset, numValues, null, null, dictionary);
+                        header.encoding(), header.encodingValue(),
+                        data, valuesOffset, numValues, null, null, dictionary);
                 return Page.withFixedListK(page, k);
             }
         }
@@ -325,7 +326,7 @@ public class PageDecoder {
                 : null;
 
         return decodeTypedValues(
-                header.encoding(), data, valuesOffset, numValues,
+                header.encoding(), header.encodingValue(), data, valuesOffset, numValues,
                 definitionLevels, repetitionLevels, dictionary);
     }
 
@@ -365,7 +366,8 @@ public class PageDecoder {
                 byte[] valuesData = readValueRegion(header, pageData, uncompressedPageSize,
                         repLevelLen, defLevelLen, valuesOffset, compressedValuesLen);
                 Page page = decodeTypedValues(
-                        header.encoding(), valuesData, 0, numValues, null, null, dictionary);
+                        header.encoding(), header.encodingValue(),
+                        valuesData, 0, numValues, null, null, dictionary);
                 return Page.withFixedListK(page, k);
             }
         }
@@ -381,7 +383,7 @@ public class PageDecoder {
         byte[] valuesData = readValueRegion(header, pageData, uncompressedPageSize,
                 repLevelLen, defLevelLen, valuesOffset, compressedValuesLen);
         return decodeTypedValues(
-                header.encoding(), valuesData, 0, numValues,
+                header.encoding(), header.encodingValue(), valuesData, 0, numValues,
                 definitionLevels, repetitionLevels, dictionary);
     }
 
@@ -402,7 +404,7 @@ public class PageDecoder {
     }
 
     /// Decode values into Page using primitive arrays where possible.
-    private Page decodeTypedValues(Encoding encoding, byte[] data, int offset,
+    private Page decodeTypedValues(Encoding encoding, int encodingValue, byte[] data, int offset,
                                    int numValues,
                                    int[] definitionLevels, int[] repetitionLevels,
                                    Dictionary dictionary) throws IOException {
@@ -542,7 +544,17 @@ public class PageDecoder {
                 decoder.readByteArrays(values, definitionLevels, maxDefLevel);
                 return new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
-            default -> throw new UnsupportedOperationException("Encoding not yet supported: " + encoding);
+            default -> throw new UnsupportedOperationException(
+                    "Encoding not yet supported: " + describeEncoding(encoding, encodingValue));
         }
+    }
+
+    /// Names an encoding for an error message. [Encoding#UNKNOWN] stands for every Thrift
+    /// value this release does not recognize, so on its own it does not say which encoding
+    /// was met; qualifying it with the raw value from the page header does.
+    private static String describeEncoding(Encoding encoding, int encodingValue) {
+        return encoding == Encoding.UNKNOWN
+                ? encoding + " (Thrift encoding value " + encodingValue + ")"
+                : encoding.toString();
     }
 }
