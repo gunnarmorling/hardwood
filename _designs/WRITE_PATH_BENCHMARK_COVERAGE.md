@@ -1,7 +1,9 @@
 # Write-path benchmark coverage (#9, stage 21)
 
-**Status: Planned.** Tracking issue: #989. Delivery stage 21 (Benchmark) of
-[WRITER_SUPPORT.md](WRITER_SUPPORT.md).
+**Status: 21a complete, 21b outstanding.** Tracking issue: #989. Delivery stage 21 (Benchmark)
+of [WRITER_SUPPORT.md](WRITER_SUPPORT.md). The encoding axis and its baseline are in
+[The recorded baseline](#the-recorded-baseline); the nested and schema-width shapes are not
+built yet.
 
 ## Context
 
@@ -53,10 +55,14 @@ and every axis below is cut to the points that answer a question somebody is ask
 recorded result: two forks, full iteration counts, every configuration. A profiler pass is a
 different question — where the time goes at one point — and re-running the matrix under
 `perfasm` costs hours to answer it. Probes run `-f 1 -wi 2 -i 3` over one or two
-configurations, which is about ten seconds each, on the same fixture and the same row count so
-the profile describes the workload the matrix reports. Only the row count stays fixed: at
-fewer rows the fixture stops filling a row group, and a profile that never reaches a flush is
-a profile of half the writer.
+configurations, on the same fixture and the same row count so the profile describes the
+workload the matrix reports. Only the row count stays fixed: at fewer rows the fixture stops
+filling a row group, and a profile that never reaches a flush is a profile of half the writer.
+
+An iteration must be several operations long, matrix or probe. An operation costs about 150 ms
+on a developer machine and about a second on the N300, so the module's one-second iterations
+measure a single operation there and fold each GC pause wholly into one sample. `-r 5 -w 5` is
+what the recorded numbers are taken with, and what makes their error bars readable.
 
 ## What does not change
 
@@ -108,10 +114,11 @@ footer, and it is the gap stage 29 (#982) closes.
 the classpath, so it is the configuration nearly every produced file actually uses, and it is
 the only one under which `BYTE_STREAM_SPLIT` means anything — the encoding changes no page's
 size by itself and reorders bytes so the codec after it finds structure. `UNCOMPRESSED` is not
-a second codec choice under evaluation but the control: at `ZSTD` the codec owns a large share
-of the time, and every encode-side movement is attenuated by it. `UNCOMPRESSED` is the reading
-where an encode-path change shows at full size, and the ratio between the two is how much of
-the number any such change can reach at all.
+a second codec choice under evaluation but the control: it is the reading where an encode-path
+change shows at full size, and the ratio between the two is how much of the number such a
+change can reach at all. On this fixture that ratio turns out to be favourable — the codec is
+15% of the compressed number, not the large share a strong codec is assumed to take — but that
+is a result the axis produced, not a premise it rests on.
 
 `GZIP`, `SNAPPY` and `LZ4_RAW` stay out. They are points on a speed-against-ratio trade that
 `FlatWriteBenchmark` already sweeps, and none of them asks a question about an encoding that
@@ -183,6 +190,61 @@ real, how large, and in what order — not a change to any of them.
   All of it is amortized over roughly 52 000 entries per page on this fixture, which is why the
   matrix will not show it. **A/B:** `pageTargetBytes`, which moves entries per page directly;
   the schema-width axis of 21b is the same probe from the other side.
+
+## The recorded baseline
+
+N300 (Intel i3-N300, 8 Gracemont E-cores), pinned at 1.50 GHz against a 3.80 GHz part,
+governor `performance`, single core via `taskset -c 0`, Temurin JDK 25, 1 000 000 rows,
+commit `765feb67`. Two forks, three warmup and five measurement iterations, **five seconds
+each**: an operation costs about a second on this box, so the module's one-second iterations
+sample a single operation and fold every GC pause wholly into one of ten measurements — the
+same matrix at `-r 1` reports `AUTO` at 1250 ± 406 ms. The throttle guard reports CLEAN, at an
+effective 1.50 GHz, for every run recorded here.
+
+| Encoding | `UNCOMPRESSED` | `ZSTD` | Bytes/op (unc.) | File (unc.) | File (`ZSTD`) |
+|---|---|---|---|---|---|
+| `AUTO` | 926 ± 51 ms | 1086 ± 7 ms | 203 MB | 25,447,147 | 13,111,232 |
+| `PLAIN_ON_DISTINCT` | 530 ± 66 ms | 696 ± 55 ms | 128 MB | 25,447,111 | 13,111,196 |
+| `DELTA_INTEGERS` | 601 ± 40 ms | 695 ± 58 ms | 133 MB | 12,196,853 | 11,469,418 |
+| `SPLIT_NUMERIC` | 520 ± 51 ms | 569 ± 61 ms | 152 MB | 25,447,110 | 11,335,749 |
+
+Four results, in the order they matter:
+
+**Interning a dictionary that is then discarded is 43% of the write.** `AUTO` against
+`PLAIN_ON_DISTINCT` is 926 ms against 530 ms and 203 MB against 128 MB per operation, for two
+files 36 bytes apart — nine chunks' `distinct_count`, which is the whole difference. Nothing is
+bought with that time.
+
+**The cost is memory, not arithmetic.** The two configurations differ by 14% in instructions
+and 82% in cycles: 2.71 G against 2.32 G instructions, 1.36 G against 0.75 G cycles, IPC 1.99
+against 3.11. LLC loads go from 0.69 M to 5.16 M per operation and LLC store misses from 0.73 M
+to 1.24 M. The `cpu` profile puts `LongDictionaryEncoder.indexOf` at 40% of samples on its own,
+with `insert`, `add`, `resizeTable` and `giveUpDictionary` behind it — about 46% in a dictionary
+path whose result is thrown away. It is a cache-missing probe into a table that grows to a row
+group's cardinality, so a cheaper hash is not the answer; not building the table is.
+
+**The codec is a small share of the time, so encode-side work is nearly all of it.** `ZSTD`
+costs 160 ms over `UNCOMPRESSED` at `AUTO` — 15% of the compressed number, not the large share
+a strong codec is assumed to take. Any encode-path change therefore reaches about 85% of what a
+default-configured write costs.
+
+**`BYTE_STREAM_SPLIT` is free to produce and pays twice.** Over the same three columns as
+`PLAIN_ON_DISTINCT` it is indistinguishable at `UNCOMPRESSED` (520 against 530 ms, 37 bytes
+apart in output) — the encoding genuinely changes no page's size. Under `ZSTD` it is both
+faster, 569 against 696 ms, and smaller, 11.34 MB against 13.11 MB: the reordered stream is
+less work for the codec as well as more compressible. `DELTA_INTEGERS` halves the uncompressed
+file, 12.20 MB against 25.45 MB, and costs 71 ms over `PLAIN` to produce.
+
+### What this settles
+
+- The candidate worth acting on is the discarded interning, and stage 26 (#979) is where it is
+  scoped. The number here is what it is worth, and the profile names the frame.
+- The per-value call chain and the per-page allocations are not refuted, but neither shows at
+  this fixture's shape. They are 21b's question, where schema width shrinks the values a page
+  amortizes its fixed costs over.
+- 203 MB allocated to produce a 25 MB file is eight times the output, and 128 MB of it survives
+  the dictionary being removed. Where the rest goes is unattributed; the `alloc` profile is the
+  next probe rather than a conclusion drawn here.
 
 ## Validation
 

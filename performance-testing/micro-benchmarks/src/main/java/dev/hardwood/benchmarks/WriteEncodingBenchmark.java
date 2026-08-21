@@ -105,12 +105,17 @@ import dev.hardwood.writer.WriterConfig;
 /// pass costs seconds rather than re-running the matrix:
 ///
 /// ```
-/// java -jar .../benchmarks.jar WriteEncodingBenchmark -f 1 -wi 2 -i 3 \
+/// java -jar .../benchmarks.jar WriteEncodingBenchmark -f 1 -wi 2 -i 3 -r 5 -w 5 \
 ///     -p encoding=AUTO -p codec=UNCOMPRESSED -prof perfnorm
 /// ```
 ///
 /// Keep `-Dperf.rows` at its default for a probe. At fewer rows the fixture stops filling a row
 /// group, and a profile that never reaches a flush is a profile of half the writer.
+///
+/// **Give an iteration several operations.** One write costs about 150 ms on a developer
+/// machine and about a second on slower hardware, so the one-second iterations this class
+/// declares can degenerate to a single operation per sample and fold each GC pause wholly into
+/// one of them. `-r 5 -w 5` is what any number worth quoting is measured with.
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Benchmark)
