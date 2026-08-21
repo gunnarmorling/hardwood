@@ -34,6 +34,11 @@ final class RowStructNode extends RowNode implements StructBuilder {
     private final RowNode[] children;
     private final Map<String, Integer> byName;
 
+    /// The field name at each child index, so the by-index setters have the inverse of the
+    /// resolution the by-name ones perform. Built by inverting `byName` rather than reading
+    /// its key order, so the mapping holds whatever `Map` the plan hands over.
+    private final String[] fieldNames;
+
     /// Per-instance nulls of an `OPTIONAL` struct, or `null` when the struct is `REQUIRED`.
     private final NullMaskStage nulls;
 
@@ -47,6 +52,10 @@ final class RowStructNode extends RowNode implements StructBuilder {
         super(path);
         this.children = children;
         this.byName = byName;
+        this.fieldNames = new String[children.length];
+        for (Map.Entry<String, Integer> field : byName.entrySet()) {
+            fieldNames[field.getValue()] = field.getKey();
+        }
         this.nulls = nullable ? new NullMaskStage() : null;
         this.set = new boolean[children.length];
     }
@@ -226,7 +235,142 @@ final class RowStructNode extends RowNode implements StructBuilder {
 
     @Override
     public StructBuilder setStruct(String name, Consumer<StructBuilder> filler) {
-        RowNode child = children[claim(name)];
+        return fillStruct(claim(name), filler);
+    }
+
+    @Override
+    public StructBuilder setList(String name, Consumer<ListBuilder> filler) {
+        return fillList(claim(name), filler);
+    }
+
+    @Override
+    public StructBuilder setMap(String name, Consumer<MapBuilder> filler) {
+        return fillMap(claim(name), filler);
+    }
+
+    // ==================== StructBuilder, by index ====================
+
+    @Override
+    public int getFieldCount() {
+        checkActive();
+        return children.length;
+    }
+
+    @Override
+    public String getFieldName(int fieldIndex) {
+        checkActive();
+        return fieldNames[checkIndex(fieldIndex)];
+    }
+
+    @Override
+    public StructBuilder setInt(int fieldIndex, int value) {
+        leaf(fieldIndex, "setInt").setInt(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setLong(int fieldIndex, long value) {
+        leaf(fieldIndex, "setLong").setLong(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setFloat(int fieldIndex, float value) {
+        leaf(fieldIndex, "setFloat").setFloat(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setDouble(int fieldIndex, double value) {
+        leaf(fieldIndex, "setDouble").setDouble(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setBoolean(int fieldIndex, boolean value) {
+        leaf(fieldIndex, "setBoolean").setBoolean(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setString(int fieldIndex, String value) {
+        leaf(fieldIndex, "setString").setString(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setBinary(int fieldIndex, byte[] value) {
+        leaf(fieldIndex, "setBinary").setBinary(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setDate(int fieldIndex, LocalDate value) {
+        leaf(fieldIndex, "setDate").setDate(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setTime(int fieldIndex, LocalTime value) {
+        leaf(fieldIndex, "setTime").setTime(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setTimestamp(int fieldIndex, Instant value) {
+        leaf(fieldIndex, "setTimestamp").setTimestamp(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setLocalTimestamp(int fieldIndex, LocalDateTime value) {
+        leaf(fieldIndex, "setLocalTimestamp").setLocalTimestamp(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setDecimal(int fieldIndex, BigDecimal value) {
+        leaf(fieldIndex, "setDecimal").setDecimal(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setUuid(int fieldIndex, UUID value) {
+        leaf(fieldIndex, "setUuid").setUuid(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setInterval(int fieldIndex, PqInterval value) {
+        leaf(fieldIndex, "setInterval").setInterval(value);
+        return this;
+    }
+
+    @Override
+    public StructBuilder setNull(int fieldIndex) {
+        children[claim(fieldIndex)].appendNullInstance();
+        return this;
+    }
+
+    @Override
+    public StructBuilder setStruct(int fieldIndex, Consumer<StructBuilder> filler) {
+        return fillStruct(claim(fieldIndex), filler);
+    }
+
+    @Override
+    public StructBuilder setList(int fieldIndex, Consumer<ListBuilder> filler) {
+        return fillList(claim(fieldIndex), filler);
+    }
+
+    @Override
+    public StructBuilder setMap(int fieldIndex, Consumer<MapBuilder> filler) {
+        return fillMap(claim(fieldIndex), filler);
+    }
+
+    // ==================== Nested scopes ====================
+
+    private StructBuilder fillStruct(int childIndex, Consumer<StructBuilder> filler) {
+        RowNode child = children[childIndex];
         if (!(child instanceof RowStructNode struct)) {
             throw wrongVerb(child, "setStruct", "a struct group");
         }
@@ -236,9 +380,8 @@ final class RowStructNode extends RowNode implements StructBuilder {
         return this;
     }
 
-    @Override
-    public StructBuilder setList(String name, Consumer<ListBuilder> filler) {
-        RowNode child = children[claim(name)];
+    private StructBuilder fillList(int childIndex, Consumer<ListBuilder> filler) {
+        RowNode child = children[childIndex];
         if (!(child instanceof RowListNode list)) {
             throw wrongVerb(child, "setList", "a LIST group");
         }
@@ -248,9 +391,8 @@ final class RowStructNode extends RowNode implements StructBuilder {
         return this;
     }
 
-    @Override
-    public StructBuilder setMap(String name, Consumer<MapBuilder> filler) {
-        RowNode child = children[claim(name)];
+    private StructBuilder fillMap(int childIndex, Consumer<MapBuilder> filler) {
+        RowNode child = children[childIndex];
         if (!(child instanceof RowMapNode map)) {
             throw wrongVerb(child, "setMap", "a MAP group");
         }
@@ -263,7 +405,15 @@ final class RowStructNode extends RowNode implements StructBuilder {
     // ==================== Resolution ====================
 
     private RowLeafNode leaf(String fieldName, String setter) {
-        RowNode child = children[claim(fieldName)];
+        return leafAt(claim(fieldName), setter);
+    }
+
+    private RowLeafNode leaf(int fieldIndex, String setter) {
+        return leafAt(claim(fieldIndex), setter);
+    }
+
+    private RowLeafNode leafAt(int childIndex, String setter) {
+        RowNode child = children[childIndex];
         if (!(child instanceof RowLeafNode leafNode)) {
             throw wrongVerb(child, setter, "a leaf field");
         }
@@ -273,16 +423,38 @@ final class RowStructNode extends RowNode implements StructBuilder {
     /// Resolves a field name against this struct and marks it set, rejecting an unknown name,
     /// a second set of the same field, and any use after the scope has ended.
     private int claim(String fieldName) {
-        if (!active) {
-            throw new IllegalStateException("This builder's scope has ended; a builder is only valid "
-                    + "inside the lambda it was passed to");
-        }
+        checkActive();
         Integer index = byName.get(fieldName);
         if (index == null) {
             throw new IllegalArgumentException("No field named '" + fieldName + "' in " + describe()
                     + "; it has " + String.join(", ", byName.keySet()));
         }
-        int childIndex = index;
+        return markSet(index);
+    }
+
+    /// The by-index counterpart of [#claim(String)], rejecting an out-of-range position where
+    /// that one rejects an unknown name.
+    private int claim(int fieldIndex) {
+        checkActive();
+        return markSet(checkIndex(fieldIndex));
+    }
+
+    private int checkIndex(int fieldIndex) {
+        if (fieldIndex < 0 || fieldIndex >= children.length) {
+            throw new IndexOutOfBoundsException("Field index " + fieldIndex + " is out of bounds for "
+                    + describe() + ", which has " + children.length + " fields");
+        }
+        return fieldIndex;
+    }
+
+    private void checkActive() {
+        if (!active) {
+            throw new IllegalStateException("This builder's scope has ended; a builder is only valid "
+                    + "inside the lambda it was passed to");
+        }
+    }
+
+    private int markSet(int childIndex) {
         if (set[childIndex]) {
             throw new IllegalArgumentException("Field " + children[childIndex].path
                     + " is already set in this record");

@@ -21,9 +21,9 @@ import dev.hardwood.row.PqInterval;
 /// Sets the fields of one struct — a record being written, or a struct nested inside one.
 ///
 /// A record is a struct, so [RowWriter#writeRow] hands the same builder a nested
-/// [#setStruct] does. Fields are addressed by the name they carry in the schema; the
-/// synthetic `list` / `element` and `key_value` groups a `LIST` or `MAP` introduces are never
-/// spelled by the caller.
+/// [#setStruct] does. Fields are addressed by the name they carry in the schema, or by their
+/// position in it; the synthetic `list` / `element` and `key_value` groups a `LIST` or `MAP`
+/// introduces are never spelled by the caller.
 ///
 /// ```java
 /// rows.writeRow(row -> row
@@ -31,6 +31,11 @@ import dev.hardwood.row.PqInterval;
 ///         .setString("name", "hardwood")
 ///         .setStruct("address", address -> address.setString("city", "Berlin")));
 /// ```
+///
+/// Every setter has an index-taking mirror, and [#getFieldCount] and [#getFieldName] report
+/// the positions those indices address — the same pair
+/// [dev.hardwood.row.FieldAccessor] exposes on the read side, so a loop that walks a row's
+/// fields by index reads back and writes forward through the same positions.
 ///
 /// A field that is never set is written as null if it is `OPTIONAL`, and fails the record if
 /// it is `REQUIRED`; [#setNull] states the same thing explicitly, and a `null` value handed
@@ -196,4 +201,155 @@ public interface StructBuilder {
     ///         `MAP` group, or the field is already set in this scope
     /// @throws IllegalStateException if this builder's scope has ended
     StructBuilder setMap(String name, Consumer<MapBuilder> filler);
+
+    // ==================== Field positions ====================
+
+    /// The number of fields this struct declares — the record's top-level fields for the
+    /// builder [RowWriter#writeRow] hands over, and a nested struct's own fields for the one
+    /// [#setStruct] does. A `MAP` entry declares two, `key` and `value`.
+    ///
+    /// @return the field count
+    /// @throws IllegalStateException if this builder's scope has ended
+    int getFieldCount();
+
+    /// The name of the field at `fieldIndex`, the inverse of the resolution the by-name
+    /// setters perform.
+    ///
+    /// @param fieldIndex the field index, `0`-based
+    /// @return the field name
+    /// @throws IndexOutOfBoundsException if `fieldIndex` is not in `[0, getFieldCount())`
+    /// @throws IllegalStateException if this builder's scope has ended
+    String getFieldName(int fieldIndex);
+
+    // ==================== Setters by index ====================
+    //
+    // Index-based mirrors of the by-name setters above, addressing a field by its position
+    // in the struct — the position [#getFieldName] reports, and the one the reader's
+    // [dev.hardwood.row.StructAccessor] getters address. They skip the per-call name lookup,
+    // and let code that walks a row's fields uniformly write it back without a name.
+    //
+    // Every rule of the by-name form holds unchanged: same type check, same range check,
+    // same already-set rejection, same scope lifetime. Only the way the field is named
+    // differs, so an out-of-range index takes the place of an unknown name.
+
+    /// Sets an `INT32` field by index. See [#setInt(String, int)].
+    ///
+    /// @param fieldIndex the field index, `0`-based
+    /// @param value the value
+    /// @return this builder, for chaining
+    /// @throws IndexOutOfBoundsException if `fieldIndex` is not in `[0, getFieldCount())`
+    /// @throws IllegalArgumentException if the field is not `INT32`, the field is already set
+    ///         in this scope, or the value is out of range for the field's annotation
+    /// @throws IllegalStateException if this builder's scope has ended
+    StructBuilder setInt(int fieldIndex, int value);
+
+    /// Sets an `INT64` field by index. See [#setLong(String, long)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setLong(int fieldIndex, long value);
+
+    /// Sets a `FLOAT` field by index. See [#setFloat(String, float)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setFloat(int fieldIndex, float value);
+
+    /// Sets a `DOUBLE` field by index. See [#setDouble(String, double)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setDouble(int fieldIndex, double value);
+
+    /// Sets a `BOOLEAN` field by index. See [#setBoolean(String, boolean)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setBoolean(int fieldIndex, boolean value);
+
+    /// Sets a `STRING`-shaped field by index. See [#setString(String, String)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setString(int fieldIndex, String value);
+
+    /// Sets a `BYTE_ARRAY` or `FIXED_LEN_BYTE_ARRAY` field by index. See
+    /// [#setBinary(String, byte[])].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setBinary(int fieldIndex, byte[] value);
+
+    /// Sets a `DATE` field by index. See [#setDate(String, LocalDate)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setDate(int fieldIndex, LocalDate value);
+
+    /// Sets a `TIME` field by index. See [#setTime(String, LocalTime)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setTime(int fieldIndex, LocalTime value);
+
+    /// Sets a UTC-adjusted `TIMESTAMP` field by index. See [#setTimestamp(String, Instant)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setTimestamp(int fieldIndex, Instant value);
+
+    /// Sets a local-wall-clock `TIMESTAMP` field by index. See
+    /// [#setLocalTimestamp(String, LocalDateTime)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setLocalTimestamp(int fieldIndex, LocalDateTime value);
+
+    /// Sets a `DECIMAL` field by index. See [#setDecimal(String, BigDecimal)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setDecimal(int fieldIndex, BigDecimal value);
+
+    /// Sets a `UUID` field by index. See [#setUuid(String, UUID)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setUuid(int fieldIndex, UUID value);
+
+    /// Sets an `INTERVAL` field by index. See [#setInterval(String, PqInterval)].
+    ///
+    /// @see #setInt(int, int)
+    StructBuilder setInterval(int fieldIndex, PqInterval value);
+
+    /// Sets a field null by index. See [#setNull(String)].
+    ///
+    /// @param fieldIndex the field index, `0`-based
+    /// @return this builder, for chaining
+    /// @throws IndexOutOfBoundsException if `fieldIndex` is not in `[0, getFieldCount())`
+    /// @throws IllegalArgumentException if the field is `REQUIRED`, or the field is already
+    ///         set in this scope
+    /// @throws IllegalStateException if this builder's scope has ended
+    StructBuilder setNull(int fieldIndex);
+
+    /// Sets a nested struct field by index. See [#setStruct(String, Consumer)].
+    ///
+    /// @param fieldIndex the field index, `0`-based
+    /// @param filler populates the nested struct
+    /// @return this builder, for chaining
+    /// @throws IndexOutOfBoundsException if `fieldIndex` is not in `[0, getFieldCount())`
+    /// @throws IllegalArgumentException if the field is not a struct group, or the field is
+    ///         already set in this scope
+    /// @throws IllegalStateException if this builder's scope has ended
+    StructBuilder setStruct(int fieldIndex, Consumer<StructBuilder> filler);
+
+    /// Sets a `LIST` field by index. See [#setList(String, Consumer)].
+    ///
+    /// @param fieldIndex the field index, `0`-based
+    /// @param filler appends the list's entries
+    /// @return this builder, for chaining
+    /// @throws IndexOutOfBoundsException if `fieldIndex` is not in `[0, getFieldCount())`
+    /// @throws IllegalArgumentException if the field is not a `LIST` group, or the field is
+    ///         already set in this scope
+    /// @throws IllegalStateException if this builder's scope has ended
+    StructBuilder setList(int fieldIndex, Consumer<ListBuilder> filler);
+
+    /// Sets a `MAP` field by index. See [#setMap(String, Consumer)].
+    ///
+    /// @param fieldIndex the field index, `0`-based
+    /// @param filler appends the map's entries
+    /// @return this builder, for chaining
+    /// @throws IndexOutOfBoundsException if `fieldIndex` is not in `[0, getFieldCount())`
+    /// @throws IllegalArgumentException if the field is not a `MAP` group, or the field is
+    ///         already set in this scope
+    /// @throws IllegalStateException if this builder's scope has ended
+    StructBuilder setMap(int fieldIndex, Consumer<MapBuilder> filler);
 }

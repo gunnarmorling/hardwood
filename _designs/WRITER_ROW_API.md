@@ -82,11 +82,25 @@ the caller never spells the synthetic segments. Nested structs are entered throu
 `setStruct(name, …)` rather than a dotted path, so a name is always resolved against exactly one
 group.
 
-By-index addressing is deliberately absent from this increment. The reader offers it (as the
-position in projected schema order) because a hot read loop pays a name lookup per field per
-row. The write layer resolves each name against a per-node interned-name index built once from
-the schema, so the cost is one hash lookup on a constant string; if that proves to matter, an
-additive `setLong(int fieldIndex, long)` family can be introduced without disturbing anything.
+Every setter also has an index-taking mirror — `setLong(int fieldIndex, long)` alongside
+`setLong(String, long)` — addressing a field by its position within the struct that declares it.
+The position is the field's place in schema declaration order, scoped to one group: a nested
+struct's indices are its own, and a `MAP` entry declares `key` at `0` and `value` at `1`.
+`getFieldCount()` and `getFieldName(int)` report those positions, the same pair the reader's
+`FieldAccessor` exposes.
+
+The two forms address the same field and are interchangeable within one record; only the way a
+field is named differs, so an out-of-range index takes the place of an unknown name and every
+other rule — type check, range check, already-set, scope lifetime — holds unchanged. The scope
+rule covers `getFieldCount` and `getFieldName` too, so a retained builder is not a usable view
+of the schema either.
+
+Two things make the index form worth its surface. A hot write loop over a fixed schema pays no
+name lookup per field per row. More importantly, the index is what makes the write side
+symmetric with the read side: `StructAccessor` addresses a row's fields by position, so code
+that walks a row generically — a copy, a projection, a format bridge — can read at position `i`
+and write at position `i` without a name in the loop. A write layer that only understood names
+would force such code to route every field through a string it does not otherwise need.
 
 ### Maps
 
@@ -138,7 +152,9 @@ phones -> {})`) are distinct, and both are expressible.
 ## Logical-type value conversion
 
 The setters mirror the reader's accessors one for one, so a value read back through
-`FieldAccessor` is written by the setter of the same name:
+`FieldAccessor` is written by the setter of the same name. Each row below also stands for the
+index-taking mirror described under [Field addressing](#field-addressing) — `setInt(int, int)`
+against `getInt(int)`, and so on for every entry:
 
 | Setter | Getter | Accepted physical types |
 | --- | --- | --- |
@@ -310,10 +326,8 @@ they can be added without a breaking change or a boxing penalty:
   with the lambda form.
 - **String-keyed map sugar.** `MapBuilder.putString(String, String)`, `putLong(String, long)`
   and the rest.
-- **By-index setters.** `setLong(int fieldIndex, long)` and the rest, if name resolution proves
-  to be measurable.
 
-One rule keeps all three open: **no `Object`-typed setter anywhere in this API.** There is no
+One rule keeps both open: **no `Object`-typed setter anywhere in this API.** There is no
 `set(String, Object)` mirroring the reader's `getValue`, no `ListBuilder.add(Object)`, and no
 `Collection<?>` overload. Any of them would make the boxing path the one that binds by default —
 `addInt(1)` and `add(1)` are not the same program — and would create overload ambiguity against
@@ -349,6 +363,16 @@ handle a column whose type it learns at runtime; a writer always knows the schem
   out-of-range `INT(8)`, wrong-length `FIXED_LEN_BYTE_ARRAY`, `setTimestamp` on a local column.
 - Rule tests: unset `REQUIRED` field, double set, retained builder used after its lambda
   returned, interleaved `writeBatch` and `rowWriter()` in both orders, `writeRow` after close.
+- **By-index equivalence tests**: the same records written by name and by index must produce
+  byte-identical files — every typed setter, `setNull`, and the struct/list/map verbs including
+  a `MAP` entry's `key`/`value` — plus a record addressed both ways at once, since the two forms
+  are interchangeable. Backed by a copy loop that reads a file's fields by index through
+  `StructAccessor` and writes them forward through the same positions, asserted to reproduce the
+  file it read: the shape by-index addressing exists to serve.
+- By-index rule tests: an index outside the struct's fields (in the record and in a nested
+  struct, whose indices are its own), a field set by name and then by index, a verb that does not
+  fit the field at that index, and a retained builder used through the indexed surface —
+  `getFieldCount` and `getFieldName` included.
 - Batch-boundary tests: a row count that straddles the 1024-row trigger, and large `BYTE_ARRAY`
   values that fire the payload trigger, both asserted to read back intact.
 - The stage 14 interop gate is extended with a row-written file, so parquet-java and PyArrow see
