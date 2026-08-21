@@ -41,9 +41,6 @@ import dev.hardwood.InputFile;
 import dev.hardwood.OutputFile;
 import dev.hardwood.internal.writer.ByteBufferOutputFile;
 import dev.hardwood.metadata.CompressionCodec;
-import dev.hardwood.metadata.LogicalType;
-import dev.hardwood.metadata.PhysicalType;
-import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ParquetFileWriter;
@@ -115,9 +112,6 @@ import dev.hardwood.writer.WriterConfig;
 @Measurement(iterations = 5, time = 1)
 public class FlatWriteBenchmark {
 
-    /// Records written per invocation, `-Dperf.rows`.
-    private static final int DEFAULT_ROWS = 1_000_000;
-
     /// Records per [ParquetFileWriter#writeBatch] call, the arrival unit of a columnar
     /// producer. It is also what [RowWriter] stages before submitting a batch, so both
     /// Hardwood contenders reach the encoder in batches of the same size.
@@ -173,8 +167,8 @@ public class FlatWriteBenchmark {
         String configured = System.getProperty("perf.dir");
         dir = configured == null || configured.isBlank() ? null : Files.createDirectories(Path.of(configured));
 
-        fixture = FlatWriteFixture.generate(configuredRows(), BATCH_ROWS);
-        hardwoodSchema = hardwoodSchema();
+        fixture = FlatWriteFixture.generate(FlatWriteFixture.configuredRows(), BATCH_ROWS);
+        hardwoodSchema = FlatWriteFixture.schema();
         writerConfig = WriterConfig.builder()
                 .pageTargetBytes(PAGE_TARGET_BYTES)
                 .rowGroupTargetBytes(ROW_GROUP_TARGET_BYTES)
@@ -190,23 +184,6 @@ public class FlatWriteBenchmark {
         hadoopConf.setClass("fs.file.impl", RawLocalFileSystem.class, FileSystem.class);
 
         reportProducedFiles();
-    }
-
-    /// The record count from `-Dperf.rows`, rejecting a value this benchmark cannot use rather
-    /// than falling back to the default and reporting a number for a row count nobody asked for.
-    /// The property is shared with [BenchmarkData], which reads it as a `long`.
-    private static int configuredRows() {
-        String configured = System.getProperty("perf.rows");
-        if (configured == null || configured.isBlank()) {
-            return DEFAULT_ROWS;
-        }
-        try {
-            return Math.toIntExact(Long.parseLong(configured.trim()));
-        }
-        catch (NumberFormatException | ArithmeticException e) {
-            throw new IllegalArgumentException(
-                    "perf.rows must be an int this benchmark can hold but was '" + configured + "'", e);
-        }
     }
 
     @Benchmark
@@ -337,20 +314,6 @@ public class FlatWriteBenchmark {
                 }
             }
         }
-    }
-
-    private FileSchema hardwoodSchema() {
-        return FileSchema.builder("flat")
-                .addColumn("id", PhysicalType.INT64, RepetitionType.REQUIRED)
-                .addColumn("pickup_ts", PhysicalType.INT64, RepetitionType.REQUIRED,
-                        new LogicalType.TimestampType(true, LogicalType.TimeUnit.MICROS))
-                .addColumn("passenger_count", PhysicalType.INT32, RepetitionType.OPTIONAL)
-                .addColumn("fare", PhysicalType.DOUBLE, RepetitionType.REQUIRED)
-                .addColumn("payment_type", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
-                        new LogicalType.StringType())
-                .addColumn("vendor", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL,
-                        new LogicalType.StringType())
-                .build();
     }
 
     /// Writes the fixture once through each contender to memory, checks that each produced

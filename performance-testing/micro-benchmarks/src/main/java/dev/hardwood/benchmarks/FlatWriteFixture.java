@@ -11,8 +11,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Random;
 
-/// The source records [FlatWriteBenchmark] encodes, generated from a fixed seed so every run
-/// on every machine writes the same file.
+import dev.hardwood.metadata.LogicalType;
+import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.schema.FileSchema;
+
+/// The source records [FlatWriteBenchmark] and [WriteEncodingBenchmark] encode, generated from
+/// a fixed seed so every run on every machine writes the same file.
 ///
 /// The shape follows the NYC taxi corpus rather than uniform random noise: encode cost is
 /// dominated by dictionary behaviour and compression ratio, both of which are
@@ -45,6 +50,9 @@ final class FlatWriteFixture {
     /// Seed of the fixture's generator. Any value would do; it is fixed so that a number
     /// measured today is comparable with one measured a year from now.
     private static final long SEED = 20_260_819L;
+
+    /// Records generated per invocation unless `-Dperf.rows` says otherwise.
+    private static final int DEFAULT_ROWS = 1_000_000;
 
     private static final String[] PAYMENT_TYPES = { "CREDIT", "CASH", "NO_CHARGE", "DISPUTE" };
     private static final int VENDOR_COUNT = 20;
@@ -82,6 +90,40 @@ final class FlatWriteFixture {
     /// Generates `rows` records, split into batches of at most `batchRows`.
     static FlatWriteFixture generate(int rows, int batchRows) {
         return new FlatWriteFixture(rows, batchRows);
+    }
+
+    /// The record count from `-Dperf.rows`, defaulting to one million (roughly 50 MB of source
+    /// values). A value the fixture cannot hold is rejected rather than falling back to the
+    /// default, so a number is never reported for a row count nobody asked for. The property is
+    /// shared with [BenchmarkData], which reads it as a `long`.
+    static int configuredRows() {
+        String configured = System.getProperty("perf.rows");
+        if (configured == null || configured.isBlank()) {
+            return DEFAULT_ROWS;
+        }
+        try {
+            return Math.toIntExact(Long.parseLong(configured.trim()));
+        }
+        catch (NumberFormatException | ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "perf.rows must be an int this fixture can hold but was '" + configured + "'", e);
+        }
+    }
+
+    /// The schema these records are written under. The columns are flat, so a leaf's dotted
+    /// path is its own name — which is what a per-column encoding policy is keyed by.
+    static FileSchema schema() {
+        return FileSchema.builder("flat")
+                .addColumn("id", PhysicalType.INT64, RepetitionType.REQUIRED)
+                .addColumn("pickup_ts", PhysicalType.INT64, RepetitionType.REQUIRED,
+                        new LogicalType.TimestampType(true, LogicalType.TimeUnit.MICROS))
+                .addColumn("passenger_count", PhysicalType.INT32, RepetitionType.OPTIONAL)
+                .addColumn("fare", PhysicalType.DOUBLE, RepetitionType.REQUIRED)
+                .addColumn("payment_type", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
+                        new LogicalType.StringType())
+                .addColumn("vendor", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL,
+                        new LogicalType.StringType())
+                .build();
     }
 
     private FlatWriteFixture(int rows, int batchRows) {
