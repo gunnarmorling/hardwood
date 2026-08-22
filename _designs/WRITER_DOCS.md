@@ -1,6 +1,6 @@
 # Writer documentation (#9, stage 20)
 
-**Status: Planned.** Tracking issue: #9. Delivery stage 20 (Docs) of
+**Status: Implemented.** Tracking issue: #9. Delivery stage 20 (Docs) of
 [WRITER_SUPPORT.md](WRITER_SUPPORT.md).
 
 ## Context
@@ -23,8 +23,8 @@ here rather than in the release PR.
 | Area | API |
 |---|---|
 | Destination | `dev.hardwood.OutputFile` — `of(Path)`, `create`, `write`, `position`, `discard`, `close`; the file is valid only after `close()` returns |
-| Writer | `ParquetFileWriter.create(out, schema)` / `create(out, schema, config)`, `writeBatch(Consumer<ColumnBatch>)`, `rowWriter()`, `close()`; one file is written through one of the two APIs |
-| Columnar input | `ColumnBatch` — `ints` / `longs` / `floats` / `doubles` / `booleans` / `bytes` / `fixed`, each by column index or name, each with a `Validity` and a `boolean[]` null overload; `struct(path, Validity)`, `list(path, offsets[, Validity])`, `map(path, offsets[, Validity])` |
+| Writer | `ParquetFileWriter.create(out, schema)` / `create(out, schema, config)`, `columnWriter()`, `rowWriter()`, `close()`; one file is written through one of the two APIs |
+| Columnar input | `ColumnWriter.writeBatch(Consumer<ColumnBatch>)`; `ColumnBatch` — `ints` / `longs` / `floats` / `doubles` / `booleans` / `bytes` / `fixed`, each by column index or name, each with a `Validity` and a `boolean[]` null overload; `struct(path, Validity)`, `list(path, offsets[, Validity])`, `map(path, offsets[, Validity])` |
 | Row input | `RowWriter.writeRow(Consumer<StructBuilder>)`; `StructBuilder` typed setters by name and by field index, including the logical-type setters (`setString`, `setDate`, `setTime`, `setTimestamp`, `setLocalTimestamp`, `setDecimal`, `setUuid`, `setInterval`, `setBinary`), `setNull`, and the nesting fillers `setStruct` / `setList` / `setMap`; `ListBuilder`, `MapBuilder`; `getFieldCount()` / `getFieldName(int)` |
 | Schema | `FileSchema.builder(name)` — `addColumn` overloads (type length, logical type), `struct`, `list`, `map`, and `ElementBuilder` for list elements and map values |
 | Configuration | `WriterConfig` — `pageTargetBytes` (1 MiB), `rowGroupTargetBytes` (128 MiB), `codec` (`ZSTD`, `UNCOMPRESSED` when the ZSTD library is absent), `encoding` file-wide and per leaf path (`AUTO`), `statisticsTruncationLength` (64), `createdBy`, `precisionLossPolicy` (`REJECT`) |
@@ -95,8 +95,8 @@ Excluded: rationale for the row/columnar split, memory behaviour, encoding inter
 
 The goal-oriented path for a caller holding columns.
 
-1. The same three-step opener, then `writeBatch(batch -> …)` with typed arrays addressed
-   by name and by index.
+1. The same three-step opener, then `columnWriter()` and `writeBatch(batch -> …)` with typed
+   arrays addressed by name and by index.
 2. Batch rules stated as rules: every column's array has the same length, that length is
    the batch's row count, a ragged batch is rejected, and each column is set once per
    batch by either index or name.
@@ -159,7 +159,8 @@ Explanation, no step-by-step.
   file size known up front, nothing readable before `close()`, and `discard()` as the
   failure counterpart.
 - Why memory is bounded by `rowGroupTargetBytes` rather than by how much is written, and
-  the rule of thumb that retention peaks at roughly three times the target.
+  that peak heap is a small multiple of the target — the build pins it below three times,
+  and it measures well under two.
 - Why the writer, not the caller, cuts row groups and pages, and what the two targets buy.
 - How `AUTO` decides dictionary versus `PLAIN`, and why the decision is per column chunk.
 - Index addressing on the two sides: projected order when reading, declaration order when
@@ -173,9 +174,10 @@ Explanation, no step-by-step.
 | `docs/content/index.md` | Tagline, the "Why Hardwood" bullets, and a write Quick Example beside the read one |
 | `docs/content/how-to/index.md` | Intro sentence, the guide list, and a "Choosing a Write API" table beside the reader one |
 | `docs/content/reference/packages.md` | `dev.hardwood.writer` row; the `dev.hardwood` row mentions `OutputFile` |
-| `docs/content/reference/error-handling.md` | The writer's failure vocabulary: `IllegalArgumentException` (schema, path, range and batch-shape violations), `IllegalStateException` (writing after `close()`, mixing the two APIs, a builder used after its scope), `UnsupportedOperationException` (refused codec, unsupported schema), `IOException` (destination failures) |
+| `docs/content/reference/error-handling.md` | A `Writing` section beside the reading one, carrying the writer's failure vocabulary: `IllegalArgumentException` (schema, path, range and batch-shape violations), `IllegalStateException` (writing after `close()`, mixing the two APIs, a builder used after its scope), `UnsupportedOperationException` (refused codec, unsupported schema), `IOException` (destination failures) |
 | `docs/content/reference/configuration.md` | Cross-link from Reader Options to `reference/writer.md` |
-| `docs/content/reference/schema-element.md` | Its "build a schema for writing" note points at `how-to/metadata.md`; retarget to the writer pages |
+| `docs/content/getting-started.md` | The compression-library section is read-only framed; state which codecs are written, and that the default codec falls back to `UNCOMPRESSED` without `zstd-jni` |
+| `docs/content/reference/schema-element.md` | Its "build a schema for writing" note points at `how-to/metadata.md`; retarget to `how-to/write-row-by-row.md` |
 | `README.md` | "Be complete: Add a Parquet file writer (after 1.0)" describes a shipped writer |
 | `core/src/main/java/dev/hardwood/writer/ParquetFileWriter.java` | Class JavaDoc opens with "This increment writes …"; state the capability without the delivery framing |
 

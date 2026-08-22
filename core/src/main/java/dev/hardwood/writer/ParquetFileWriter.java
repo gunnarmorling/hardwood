@@ -42,7 +42,7 @@ import dev.hardwood.schema.FileSchema;
 /// aligned slice of typed arrays, [#rowWriter()] takes one record at a time, and one file is
 /// written through one of the two, not both.
 ///
-/// This increment writes every primitive physical type — `BOOLEAN`, `INT32`, `INT64`, `FLOAT`,
+/// Every primitive physical type is written — `BOOLEAN`, `INT32`, `INT64`, `FLOAT`,
 /// `DOUBLE`, `BYTE_ARRAY`, and `FIXED_LEN_BYTE_ARRAY` — flat `REQUIRED` / `OPTIONAL`, nested
 /// inside `REQUIRED` / `OPTIONAL` `struct` groups, and inside `LIST`s and `MAP`s (including lists
 /// of lists, lists of structs, and maps of any in-scope value). Data is supplied as

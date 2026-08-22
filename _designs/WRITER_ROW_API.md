@@ -366,7 +366,7 @@ knows it only at runtime and otherwise has to switch on `PhysicalType` to pick a
 - **`INT96`.** Not writable at all.
 - **Shapes the columnar path rejects.** The layer produces `ColumnBatch` inputs, so it inherits
   every limitation of the core: notably a nullable struct enclosing a repeated field, which the
-  shredder cannot level.
+  shredder cannot level (#1026, stage 36 of `WRITER_SUPPORT.md`).
 
 ## Validation
 
