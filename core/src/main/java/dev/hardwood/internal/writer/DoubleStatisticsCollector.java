@@ -19,10 +19,12 @@ final class DoubleStatisticsCollector {
     private double min;
     private double max;
     private long nullCount;
+    private long nanCount;
     private boolean hasValues;
 
     void accept(double value) {
         if (Double.isNaN(value)) {
+            nanCount++;
             return; // NaN never participates in min/max
         }
         if (!hasValues) {
@@ -50,7 +52,7 @@ final class DoubleStatisticsCollector {
             minValue = encode(min == 0.0 ? -0.0 : min);
             maxValue = encode(max == 0.0 ? 0.0 : max);
         }
-        return new Statistics(minValue, maxValue, nullCount, null, false);
+        return new Statistics(minValue, maxValue, nullCount, null, false, true, true, nanCount);
     }
 
     private static byte[] encode(double value) {

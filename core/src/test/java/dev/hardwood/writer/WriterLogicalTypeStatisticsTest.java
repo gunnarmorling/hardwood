@@ -190,6 +190,19 @@ class WriterLogicalTypeStatisticsTest {
         assertThat(Float.floatToRawIntBits(toHalf(statistics.minValue())))
                 .isEqualTo(Float.floatToRawIntBits(-0.0f));
         assertThat(toHalf(statistics.maxValue())).isEqualTo(2.0f);
+        assertThat(statistics.nanCount()).isEqualTo(1L);
+    }
+
+    /// Zero is the only value that proves a `FLOAT16` chunk holds no NaN — absent means "not
+    /// recorded".
+    @Test
+    void float16RecordsZeroNanCountWhenNoNaN() throws Exception {
+        byte[][] values = { half(1.0f), half(-2.0f), half(0.5f) };
+
+        Statistics statistics = writeAndReadStatistics(PhysicalType.FIXED_LEN_BYTE_ARRAY, 2,
+                new LogicalType.Float16Type(), batch -> batch.fixed(0, values));
+
+        assertThat(statistics.nanCount()).isEqualTo(0L);
     }
 
     /// The format requires `column_orders` wherever bounds are written, one entry per leaf

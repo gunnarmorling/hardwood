@@ -231,6 +231,7 @@ class WriterFixedWidthTypeRoundTripTest {
             assertThat(StatisticsDecoder.decodeLong(stats.minValue())).isEqualTo(-3L);
             assertThat(StatisticsDecoder.decodeLong(stats.maxValue())).isEqualTo(50L);
             assertThat(stats.nullCount()).isEqualTo(3L);
+            assertThat(stats.nanCount()).isNull();
         }
     }
 
@@ -249,6 +250,7 @@ class WriterFixedWidthTypeRoundTripTest {
             assertThat(StatisticsDecoder.decodeDouble(stats.minValue())).isEqualTo(-2.5);
             assertThat(StatisticsDecoder.decodeDouble(stats.maxValue())).isEqualTo(3.5);
             assertThat(stats.nullCount()).isEqualTo(0L);
+            assertThat(stats.nanCount()).isEqualTo(2L);
         }
     }
 
@@ -266,6 +268,42 @@ class WriterFixedWidthTypeRoundTripTest {
             Statistics stats = columnMeta(reader, 0).statistics();
             assertThat(stats.minValue()).isNull();
             assertThat(stats.maxValue()).isNull();
+            assertThat(stats.nanCount()).isEqualTo(3L);
+        }
+    }
+
+    @Test
+    void doubleStatisticsRecordZeroNanCountWhenNoNaN() throws Exception {
+        // Zero is the only value that proves a chunk holds no NaN — absent means "not recorded".
+        double[] values = { 1.5, -2.5, 3.5 };
+        FileSchema schema = oneColumn("v", PhysicalType.DOUBLE, RepetitionType.REQUIRED);
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.doubles(0, values));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics stats = columnMeta(reader, 0).statistics();
+            assertThat(stats.nanCount()).isEqualTo(0L);
+        }
+    }
+
+    @Test
+    void doubleStatisticsCountNaNSeparatelyFromNulls() throws Exception {
+        double[] values = { 1.0, Double.NaN, 0.0, Double.NaN, 2.0, 0.0 };
+        boolean[] nulls = { false, false, true, false, false, true };
+
+        FileSchema schema = oneColumn("v", PhysicalType.DOUBLE, RepetitionType.OPTIONAL);
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.doubles(0, values, nulls));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics stats = columnMeta(reader, 0).statistics();
+            assertThat(stats.nullCount()).isEqualTo(2L);
+            assertThat(stats.nanCount()).isEqualTo(2L);
         }
     }
 
@@ -305,6 +343,7 @@ class WriterFixedWidthTypeRoundTripTest {
             assertThat(StatisticsDecoder.decodeFloat(stats.minValue())).isEqualTo(-2.5f);
             assertThat(StatisticsDecoder.decodeFloat(stats.maxValue())).isEqualTo(3.5f);
             assertThat(stats.nullCount()).isEqualTo(0L);
+            assertThat(stats.nanCount()).isEqualTo(2L);
         }
     }
 
@@ -322,6 +361,23 @@ class WriterFixedWidthTypeRoundTripTest {
             Statistics stats = columnMeta(reader, 0).statistics();
             assertThat(stats.minValue()).isNull();
             assertThat(stats.maxValue()).isNull();
+            assertThat(stats.nanCount()).isEqualTo(3L);
+        }
+    }
+
+    @Test
+    void floatStatisticsRecordZeroNanCountWhenNoNaN() throws Exception {
+        float[] values = { 1.5f, -2.5f, 3.5f };
+        FileSchema schema = oneColumn("v", PhysicalType.FLOAT, RepetitionType.REQUIRED);
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.floats(0, values));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics stats = columnMeta(reader, 0).statistics();
+            assertThat(stats.nanCount()).isEqualTo(0L);
         }
     }
 

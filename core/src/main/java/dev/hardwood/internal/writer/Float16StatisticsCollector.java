@@ -23,12 +23,14 @@ final class Float16StatisticsCollector implements BinaryStatistics {
     private float min;
     private float max;
     private long nullCount;
+    private long nanCount;
     private boolean hasValues;
 
     @Override
     public void accept(byte[] value) {
         float half = decode(value);
         if (Float.isNaN(half)) {
+            nanCount++;
             return; // NaN never participates in min/max
         }
         if (!hasValues) {
@@ -58,7 +60,7 @@ final class Float16StatisticsCollector implements BinaryStatistics {
             minValue = encode(min == 0.0f ? -0.0f : min);
             maxValue = encode(max == 0.0f ? 0.0f : max);
         }
-        return new Statistics(minValue, maxValue, nullCount, null, false);
+        return new Statistics(minValue, maxValue, nullCount, null, false, true, true, nanCount);
     }
 
     private static float decode(byte[] value) {

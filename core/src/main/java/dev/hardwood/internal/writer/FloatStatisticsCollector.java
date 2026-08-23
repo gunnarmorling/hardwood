@@ -24,10 +24,12 @@ final class FloatStatisticsCollector {
     private float min;
     private float max;
     private long nullCount;
+    private long nanCount;
     private boolean hasValues;
 
     void accept(float value) {
         if (Float.isNaN(value)) {
+            nanCount++;
             return; // NaN never participates in min/max
         }
         if (!hasValues) {
@@ -55,7 +57,7 @@ final class FloatStatisticsCollector {
             minValue = encode(min == 0.0f ? -0.0f : min);
             maxValue = encode(max == 0.0f ? 0.0f : max);
         }
-        return new Statistics(minValue, maxValue, nullCount, null, false);
+        return new Statistics(minValue, maxValue, nullCount, null, false, true, true, nanCount);
     }
 
     private static byte[] encode(float value) {

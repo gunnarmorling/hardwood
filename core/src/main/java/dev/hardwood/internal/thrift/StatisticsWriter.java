@@ -22,6 +22,10 @@ import dev.hardwood.metadata.Statistics;
 /// `BYTE_ARRAY` bound are exact (`true`), while a truncated `BYTE_ARRAY` bound is inexact
 /// (`false`) and only brackets the true extreme. A reader may use `min_value == max_value` to
 /// prove a whole chunk equals a single value only when both bounds are flagged exact.
+///
+/// The NaN count (field 9) is written whenever the [Statistics] carries one, which for this
+/// writer means every `FLOAT`, `DOUBLE` and `FLOAT16` column chunk — the format requires it
+/// there, even when it is zero. Every other type leaves it unset.
 public class StatisticsWriter {
 
     public static void write(ThriftCompactWriter writer, Statistics statistics) {
@@ -67,6 +71,14 @@ public class StatisticsWriter {
                 writer.writeFieldBegin(8, statistics.isMinValueExact()
                         ? ThriftCompactConstants.FieldType.BOOLEAN_TRUE
                         : ThriftCompactConstants.FieldType.BOOLEAN_FALSE);
+            }
+
+            // 9: nan_count — mandatory under TYPE_ORDER for FLOAT, DOUBLE and FLOAT16, even when
+            // zero; a recorded zero is the only thing that proves a chunk holds no NaN. Absent for
+            // every other type.
+            if (statistics.nanCount() != null) {
+                writer.writeFieldBegin(9, ThriftCompactConstants.FieldType.I64);
+                writer.writeI64(statistics.nanCount());
             }
 
             writer.writeFieldStop();
