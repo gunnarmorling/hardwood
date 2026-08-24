@@ -12,8 +12,9 @@ import java.nio.ByteOrder;
 
 import dev.hardwood.metadata.Statistics;
 
-/// Accumulates a `DOUBLE` column chunk's `min` / `max` / `null_count` in IEEE-754 order, with
-/// the same `NaN`-exclusion and signed-zero normalization as [FloatStatisticsCollector].
+/// Accumulates a `DOUBLE` column chunk's `min` / `max` / `null_count` / `nan_count` in IEEE-754
+/// order, with the same `NaN`-exclusion, `NaN`-counting and signed-zero normalization as
+/// [FloatStatisticsCollector].
 final class DoubleStatisticsCollector {
 
     private double min;

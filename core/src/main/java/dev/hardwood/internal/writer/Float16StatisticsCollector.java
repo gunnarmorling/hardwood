@@ -9,13 +9,14 @@ package dev.hardwood.internal.writer;
 
 import dev.hardwood.metadata.Statistics;
 
-/// Accumulates a `FLOAT16` column chunk's `min` / `max` / `null_count`.
+/// Accumulates a `FLOAT16` column chunk's `min` / `max` / `null_count` / `nan_count`.
 ///
 /// A `FLOAT16` is two little-endian bytes of an IEEE half-precision value in a
 /// `FIXED_LEN_BYTE_ARRAY`, and its type-defined order compares the *represented* value, not the
 /// bytes. The floating-point rules of [FloatStatisticsCollector] therefore apply rather than the
-/// binary ones: `NaN` never extends the bounds, and a zero bound is sign-normalized so a
-/// reader's `[min, max]` test is correct for either signed zero.
+/// binary ones: `NaN` never extends the bounds but is counted for every chunk, zero included, and
+/// a zero bound is sign-normalized so a reader's `[min, max]` test is correct for either signed
+/// zero.
 final class Float16StatisticsCollector implements BinaryStatistics {
 
     private static final int BYTES = 2;

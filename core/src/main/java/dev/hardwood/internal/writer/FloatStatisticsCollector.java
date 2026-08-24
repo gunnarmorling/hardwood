@@ -12,13 +12,19 @@ import java.nio.ByteOrder;
 
 import dev.hardwood.metadata.Statistics;
 
-/// Accumulates a `FLOAT` column chunk's `min` / `max` / `null_count` in IEEE-754 order.
+/// Accumulates a `FLOAT` column chunk's `min` / `max` / `null_count` / `nan_count` in IEEE-754
+/// order.
 ///
 /// Two ordering rules the format mandates for floating point: `NaN` values never extend the
-/// bounds (a chunk of only `NaN` carries a null count but no bounds), and a zero bound is
-/// sign-normalized so a reader's `[min, max]` test is correct for either signed zero — the
-/// `min` of a zero is written as `-0.0`, the `max` of a zero as `+0.0`. `-0.0` sorts below
+/// bounds (a chunk of only `NaN` carries a null count and a NaN count but no bounds), and a zero
+/// bound is sign-normalized so a reader's `[min, max]` test is correct for either signed zero —
+/// the `min` of a zero is written as `-0.0`, the `max` of a zero as `+0.0`. `-0.0` sorts below
 /// `+0.0` via [Float#compare] while the bounds are accumulated.
+///
+/// The NaN count is recorded for every chunk, zero included: the format requires it of a
+/// floating-point column under the type-defined order, and a recorded `0` is the only thing that
+/// proves a chunk holds no `NaN` — a count left absent tells a reader nothing, since the bounds
+/// say nothing about `NaN` either way.
 final class FloatStatisticsCollector {
 
     private float min;

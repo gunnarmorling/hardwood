@@ -321,6 +321,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Statistics collection during writing (`StatisticsCollector`, INT32 min/max/null_count)
 - [ ] Binary min/max truncation for efficiency
 - [x] Statistics serialization (`StatisticsWriter`, preferred `min_value`/`max_value` fields)
+- [x] `nan_count` serialization (`StatisticsWriter` field 9; written for every `FLOAT`, `DOUBLE` and `FLOAT16` chunk, zero included)
 
 ### 9.2 Page Index (Column Index & Offset Index)
 - [x] Implement `ColumnIndex` structure

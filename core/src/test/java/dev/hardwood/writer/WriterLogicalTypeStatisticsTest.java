@@ -205,6 +205,47 @@ class WriterLogicalTypeStatisticsTest {
         assertThat(statistics.nanCount()).isEqualTo(0L);
     }
 
+    /// A chunk of nothing but `NaN` has no value the bounds can be computed from, so it writes
+    /// none — the NaN count is then all a reader learns about it.
+    @Test
+    void allNaNFloat16ColumnHasNoBounds() throws Exception {
+        byte[][] values = { half(Float.NaN), half(Float.NaN), half(Float.NaN) };
+
+        Statistics statistics = writeAndReadStatistics(PhysicalType.FIXED_LEN_BYTE_ARRAY, 2,
+                new LogicalType.Float16Type(), batch -> batch.fixed(0, values));
+
+        assertThat(statistics.minValue()).isNull();
+        assertThat(statistics.maxValue()).isNull();
+        assertThat(statistics.nanCount()).isEqualTo(3L);
+    }
+
+    /// `null_count` and `nan_count` describe disjoint slots: an absent value is not a `NaN`, and a
+    /// present `NaN` is not a null.
+    @Test
+    void float16CountsNaNSeparatelyFromNulls() throws Exception {
+        // The two null slots carry a value the bounds would show if a null were ever counted.
+        byte[][] values = { half(1.0f), half(Float.NaN), half(-99.0f), half(Float.NaN),
+                half(2.0f), half(-99.0f) };
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("v", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.OPTIONAL, 2,
+                        new LogicalType.Float16Type())
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.fixed(0, values,
+                    Validity.ofNulls(new boolean[] { false, false, true, false, false, true })));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics statistics = columnMeta(reader, 0).statistics();
+            assertThat(statistics.nullCount()).isEqualTo(2L);
+            assertThat(statistics.nanCount()).isEqualTo(2L);
+            assertThat(toHalf(statistics.minValue())).isEqualTo(1.0f);
+            assertThat(toHalf(statistics.maxValue())).isEqualTo(2.0f);
+        }
+    }
+
     /// The format requires `column_orders` wherever bounds are written, one entry per leaf
     /// column, without which their meaning is undefined.
     @Test

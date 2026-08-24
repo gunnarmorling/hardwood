@@ -122,7 +122,7 @@ All fields (column_idx, descending, nulls_first) ❌ — struct not read.
 | 6 | min_value | ✅ | preferred |
 | 7 | is_max_value_exact | 🟡 | on public record and round-tripped by the writer; no filtering consumer (#483) |
 | 8 | is_min_value_exact | 🟡 | #483 |
-| 9 | nan_count | 🟡 | on public record; the FP always-matches gap it unblocks is #795 |
+| 9 | nan_count | 🟡 | on public record and written for every `FLOAT`/`DOUBLE`/`FLOAT16` chunk, zero included; no filtering consumer (#898), and the FP always-matches gap it unblocks is #795 |
 
 ### SizeStatistics
 | id | field | status | notes |

@@ -382,6 +382,27 @@ class WriterFixedWidthTypeRoundTripTest {
     }
 
     @Test
+    void floatStatisticsCountNaNSeparatelyFromNulls() throws Exception {
+        // The two null slots carry a value the bounds would show if a null were ever counted.
+        float[] values = { 1.0f, Float.NaN, -99.0f, Float.NaN, 2.0f, -99.0f };
+        boolean[] nulls = { false, false, true, false, false, true };
+
+        FileSchema schema = oneColumn("v", PhysicalType.FLOAT, RepetitionType.OPTIONAL);
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.writeBatch(batch -> batch.floats(0, values, nulls));
+        }
+
+        try (ParquetFileReader reader = openReader(out)) {
+            Statistics stats = columnMeta(reader, 0).statistics();
+            assertThat(stats.nullCount()).isEqualTo(2L);
+            assertThat(stats.nanCount()).isEqualTo(2L);
+            assertThat(StatisticsDecoder.decodeFloat(stats.minValue())).isEqualTo(1.0f);
+            assertThat(StatisticsDecoder.decodeFloat(stats.maxValue())).isEqualTo(2.0f);
+        }
+    }
+
+    @Test
     void floatStatisticsNormalizeSignedZero() throws Exception {
         // Only zeros present: min bound written as -0.0f, max as +0.0f.
         float[] values = { 0.0f, 0.0f };

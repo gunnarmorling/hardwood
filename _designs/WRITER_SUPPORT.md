@@ -304,6 +304,13 @@ binary min/max truncation rule, keeping statistics bounded while remaining valid
 pruning; a truncated bound is flagged **inexact** (`is_*_value_exact = false`), since it is
 then only a bound and not the actual extreme.
 
+A `FLOAT`, `DOUBLE` or `FLOAT16` chunk additionally carries `nan_count`, always — a chunk
+with no `NaN` records a zero rather than leaving the field out. The format requires the field
+of a floating-point column under the type-defined order, and the recorded zero is what a
+reader needs: `NaN` sits outside the ordering the bounds are computed in, so an absent count
+leaves a reader no choice but to assume `NaN` may be present and give up `gt` / `gtEq` /
+`notEq` pruning. No other physical type writes the field.
+
 These are **column-chunk** statistics, feeding row-group pruning. Per-page statistics — the
 `DataPageHeader` inline statistics and the OffsetIndex / ColumnIndex structures that enable
 page-level skipping — arrive with page index writing (increment 24), and Bloom filters with
