@@ -7,22 +7,11 @@
  */
 package dev.hardwood.cli.command;
 
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.List;
-
-import org.aesh.command.Command;
-import org.aesh.command.CommandDefinition;
-import org.aesh.command.CommandResult;
-import org.aesh.command.invocation.CommandInvocation;
-import org.aesh.command.option.Mixin;
-import org.aesh.command.option.Option;
-
 import dev.hardwood.InputFile;
 import dev.hardwood.cli.internal.JsonStrings;
 import dev.hardwood.cli.internal.table.RowTable;
+import dev.hardwood.metadata.LogicalType;
+import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqStruct;
@@ -30,6 +19,18 @@ import dev.hardwood.row.PqVariant;
 import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.schema.SchemaNode;
+import org.aesh.command.Command;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.CommandResult;
+import org.aesh.command.invocation.CommandInvocation;
+import org.aesh.command.option.Mixin;
+import org.aesh.command.option.Option;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
 
 @CommandDefinition(name = "convert", description = "Convert Parquet file to CSV or JSON.", generateHelp = true)
 public class ConvertCommand implements Command<CommandInvocation> {
@@ -54,6 +55,9 @@ public class ConvertCommand implements Command<CommandInvocation> {
     @Option(shortName = 'n', name = "rows", defaultValue = RowLimits.ALL, description = "Number of rows to convert. Positive values convert the first N rows (head), negative values convert the last N rows (tail), 'ALL' converts every row.")
     String n;
 
+    @Option(name = "null-string", description = "CSV value for SQL NULL fields (default: empty); ignored for JSON output.")
+    String nullString;
+
     @Override
     public CommandResult execute(CommandInvocation ci) {
         InputFile inputFile = fileMixin.toInputFile();
@@ -68,9 +72,10 @@ public class ConvertCommand implements Command<CommandInvocation> {
             List<SchemaNode> fields = projectedFields(fileSchema, projection);
 
             PrintWriter out = openOutput();
+            String effectiveNullString = nullString == null ? "" : nullString;
             try (RowReader rowReader = RowLimits.buildRowReader(reader, projection, rowLimit)) {
                 switch (format) {
-                    case CSV -> writeCsv(out, fields, rowReader);
+                    case CSV -> writeCsv(out, fields, rowReader, effectiveNullString);
                     case JSON -> writeJson(out, fields, rowReader);
                 }
             }
@@ -124,7 +129,8 @@ public class ConvertCommand implements Command<CommandInvocation> {
 
     // ==================== CSV ====================
 
-    private static void writeCsv(PrintWriter out, List<SchemaNode> fields, RowReader rowReader) {
+    private static void writeCsv(PrintWriter out, List<SchemaNode> fields, RowReader rowReader,
+                                 String nullString) {
         List<String> flatHeaders = new ArrayList<>();
         for (SchemaNode field : fields) {
             flattenHeaders(field, field.name(), flatHeaders);
@@ -135,7 +141,7 @@ public class ConvertCommand implements Command<CommandInvocation> {
             rowReader.next();
             List<String> flatValues = new ArrayList<>();
             for (int i = 0; i < fields.size(); i++) {
-                flattenValues(rowReader.getValue(i), fields.get(i), flatValues);
+                flattenValues(rowReader.getValue(i), fields.get(i), flatValues, nullString);
             }
             out.println(csvRow(flatValues.toArray(new String[0])));
         }
@@ -151,32 +157,38 @@ public class ConvertCommand implements Command<CommandInvocation> {
         }
     }
 
-    private static void flattenValues(Object value, SchemaNode schema, List<String> values) {
+    // package visibility for tests
+    static void flattenValues(Object value, SchemaNode schema, List<String> values,
+                              String nullString) {
         if (schema instanceof SchemaNode.GroupNode group && !group.isList() && !group.isMap() && !group.isVariant()) {
             if (value == null) {
-                // null struct — emit null for each leaf
                 for (SchemaNode child : group.children()) {
-                    flattenNulls(child, values);
+                    flattenNulls(child, values, nullString);
                 }
             } else if (value instanceof PqStruct struct) {
                 for (int i = 0; i < struct.getFieldCount(); i++) {
                     String name = struct.getFieldName(i);
                     SchemaNode childSchema = findChildSchema(group, name);
-                    flattenValues(struct.getValue(name), childSchema, values);
+                    flattenValues(struct.getValue(name), childSchema, values, nullString);
                 }
+            } else {
+                throw new IllegalStateException("Field '" + group.name() + "' is a struct in the schema, but the"
+                        + " reader returned a " + value.getClass().getName());
             }
+        } else if (value == null) {
+            values.add(nullString);
         } else {
             values.add(RowTable.renderValue(value, schema));
         }
     }
 
-    private static void flattenNulls(SchemaNode schema, List<String> values) {
+    private static void flattenNulls(SchemaNode schema, List<String> values, String nullString) {
         if (schema instanceof SchemaNode.GroupNode group && !group.isList() && !group.isMap() && !group.isVariant()) {
             for (SchemaNode child : group.children()) {
-                flattenNulls(child, values);
+                flattenNulls(child, values, nullString);
             }
         } else {
-            values.add("null");
+            values.add(nullString);
         }
     }
 
@@ -207,10 +219,12 @@ public class ConvertCommand implements Command<CommandInvocation> {
                     out.print(",");
                 SchemaNode fieldSchema = fields.get(i);
                 out.print("\"" + JsonStrings.escape(headers[i]) + "\":");
-                if (fieldSchema instanceof SchemaNode.GroupNode group && group.isVariant()) {
+                if (rowReader.isNull(i)) {
+                    out.print("null");
+                } else if (fieldSchema instanceof SchemaNode.GroupNode group && group.isVariant()) {
                     PqVariant variant = rowReader.getVariant(fieldSchema.name());
                     out.print(RowTable.renderVariant(variant));
-                } else {
+                } else if (!writeIfJsonScalar(out, rowReader, i, fieldSchema)) {
                     String val = RowTable.renderField(rowReader, i, fieldSchema);
                     out.print("\"" + JsonStrings.escape(val) + "\"");
                 }
@@ -218,6 +232,67 @@ public class ConvertCommand implements Command<CommandInvocation> {
             out.print("}");
         }
         out.println("\n]");
+    }
+
+    private static boolean writeIfJsonScalar(PrintWriter out, RowReader rowReader, int fieldIndex,
+                                             SchemaNode fieldSchema) {
+        if (fieldSchema instanceof SchemaNode.PrimitiveNode primitive
+                && primitive.repetitionType() != RepetitionType.REPEATED) {
+            LogicalType logicalType = primitive.logicalType();
+            return (logicalType == null || logicalType instanceof LogicalType.IntType) &&
+                    switch (primitive.type()) {
+                        case BOOLEAN -> {
+                            out.print(rowReader.getBoolean(fieldIndex));
+                            yield true;
+                        }
+                        case INT32 -> writeJsonInt32(out, logicalType, rowReader.getInt(fieldIndex));
+                        case INT64 -> writeJsonInt64(out, logicalType, rowReader.getLong(fieldIndex));
+                        case FLOAT -> writeJsonFloat(out, rowReader.getFloat(fieldIndex));
+                        case DOUBLE -> writeJsonDouble(out, rowReader.getDouble(fieldIndex));
+                        case INT96, BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> false;
+                    };
+        }
+
+        return false;
+    }
+
+    private static boolean writeJsonInt32(PrintWriter out, LogicalType logicalType, int n) {
+        if (logicalType instanceof LogicalType.IntType intType && !intType.isSigned()) {
+            out.print(Integer.toUnsignedLong(n));
+        } else {
+            out.print(n);
+        }
+        return true;
+    }
+
+    private static boolean writeJsonInt64(PrintWriter out, LogicalType logicalType, long n) {
+        if (logicalType instanceof LogicalType.IntType intType && !intType.isSigned()) {
+            out.print(Long.toUnsignedString(n));
+        } else {
+            out.print(n);
+        } return true;
+    }
+
+    private static boolean writeJsonFloat(PrintWriter out, float f) {
+        if (Float.isFinite(f)) {
+            out.print(f);
+        } else {
+            writeJsonString(out, Float.toString(f));
+        }
+        return true;
+    }
+
+    private static boolean writeJsonDouble(PrintWriter out, double d) {
+        if (Double.isFinite(d)) {
+            out.print(d);
+        } else {
+            writeJsonString(out, Double.toString(d));
+        }
+        return true;
+    }
+
+    private static void writeJsonString(PrintWriter out, String value) {
+        out.print("\"" + JsonStrings.escape(value) + "\"");
     }
 
     // ==================== Formatting Helpers ====================

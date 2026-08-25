@@ -2605,6 +2605,38 @@ print("\nGenerated nullable_primitives_test.parquet:")
 print("  - Data: 4 rows, rows 2 and 4 have all nullable columns as null")
 print("  - Types: int32, int64, float32, float64, bool")
 
+# Convert export fidelity fixture: scalar JSON types, non-finite floats, and
+# a string column that distinguishes the literal text "null" from SQL NULL.
+convert_fidelity_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('flag', pa.bool_(), True),
+    ('small', pa.int32(), True),
+    ('large', pa.int64(), True),
+    ('single', pa.float32(), True),
+    ('double', pa.float64(), True),
+    ('text', pa.string(), True),
+])
+
+convert_fidelity_table = pa.table({
+    'id': [1, 2, 3, 4],
+    'flag': [True, False, None, True],
+    'small': [10, None, 2_147_483_647, -1],
+    'large': [100, -3, None, -5],
+    'single': [1.5, float('nan'), float('inf'), float('-inf')],
+    'double': [2.5, float('inf'), float('nan'), -2.5],
+    'text': ['null', None, 'literal', None],
+}, schema=convert_fidelity_schema)
+
+pq.write_table(
+    convert_fidelity_table,
+    'core/src/test/resources/convert_fidelity_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0',
+)
+print("\nGenerated convert_fidelity_test.parquet:")
+print("  - Scalar types, non-finite floats, literal 'null', and SQL NULL")
+
 # Unsigned int test file
 unsigned_int_schema = pa.schema([
     ('id', pa.uint32(), False),

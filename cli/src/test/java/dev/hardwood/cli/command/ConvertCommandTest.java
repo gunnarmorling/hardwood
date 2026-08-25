@@ -10,11 +10,18 @@ package dev.hardwood.cli.command;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.schema.SchemaNode;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ConvertCommandTest implements ConvertCommandContract {
 
@@ -48,6 +55,96 @@ class ConvertCommandTest implements ConvertCommandContract {
     public String nonexistentFile() {
         return "nonexistent.parquet";
     }
+
+    @Override
+    public String fidelityFile() {
+        return getClass().getResource("/convert_fidelity_test.parquet").getPath();
+    }
+
+    @Test
+    void jsonRendersUnsignedIntegersAsNumbers() {
+        Cli.Result result = Cli.launch("convert", "-f", getClass().getResource("/unsigned_int_test.parquet").getPath(),
+                "--format", "json");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("{\"id\":1,\"uint32_val\":0,\"uint64_val\":0}")
+                .contains("{\"id\":3,\"uint32_val\":4294967295,\"uint64_val\":18446744073709551615}");
+    }
+
+    @Test
+    void jsonKeepsRepeatedPrimitiveAsString() {
+        Cli.Result result = Cli.launch("convert", "-f",
+                getClass().getResource("/unannotated_repeated_primitive_test.parquet").getPath(),
+                "--format", "json");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).contains("\"foo\":\"[42, 7]\"");
+    }
+    @Test
+    void jsonKeepsAnnotatedLogicalTypesAsStrings() {
+        Cli.Result result = Cli.launch("convert", "-f", getClass().getResource("/logical_types_test.parquet").getPath(),
+                "--format", "json");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("\"name\":\"Alice\"")
+                .contains("\"birth_date\":\"1990-01-15\"")
+                .contains("\"created_at_millis\":\"")
+                .contains("\"wake_time_micros\":\"")
+                .contains("\"balance\":\"1234.56\"")
+                .contains("\"account_id\":\"12345678-1234-5678-1234-567812345678\"")
+                .contains("\"profile_json\":\"");
+    }
+
+    @Test
+    void jsonRendersIntAnnotatedColumnsAsNumbers() {
+        Cli.Result result = Cli.launch("convert", "-f", getClass().getResource("/logical_types_test.parquet").getPath(),
+                "--format", "json");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("\"tiny_int\":10")
+                .contains("\"small_int\":1000")
+                .contains("\"big_int\":10000000000")
+                .contains("\"tiny_uint\":255")
+                .contains("\"big_uint\":9223372036854775807");
+    }
+
+    @Test
+    void jsonKeepsInt96IntervalAndFloat16AsStrings() {
+        Cli.Result int96 = Cli.launch("convert", "-f",
+                getClass().getResource("/int96_timestamp_test.parquet").getPath(), "--format", "json");
+        Cli.Result interval = Cli.launch("convert", "-f",
+                getClass().getResource("/interval_logical_type_test.parquet").getPath(), "--format", "json");
+        Cli.Result float16 = Cli.launch("convert", "-f",
+                getClass().getResource("/float16_logical_type_test.parquet").getPath(), "--format", "json");
+
+        assertThat(int96.exitCode()).isZero();
+        assertThat(int96.output()).contains("\"ts\":\"");
+        assertThat(interval.exitCode()).isZero();
+        assertThat(interval.output()).contains("\"duration\":\"").contains("\"duration\":null");
+        assertThat(float16.exitCode()).isZero();
+        assertThat(float16.output()).contains("\"half\":\"").contains("\"half\":null");
+    }
+    @Test
+    void csvFlattenRejectsStructFieldThatIsNotAStruct() {
+        SchemaNode.PrimitiveNode child = new SchemaNode.PrimitiveNode("id", PhysicalType.INT32,
+                RepetitionType.OPTIONAL, null, 0, 2, 0);
+        SchemaNode.GroupNode account = new SchemaNode.GroupNode("account", RepetitionType.OPTIONAL, null, null,
+                List.of(child), 1, 0);
+        List<String> values = new ArrayList<>();
+
+        assertThatThrownBy(() -> ConvertCommand.flattenValues("not a struct", account, values, ""))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Field 'account' is a struct in the schema")
+                .hasMessageContaining("java.lang.String");
+        assertThat(values).isEmpty();
+    }
+
+
+
+
 
     private String nestedBinaryFile() {
         return getClass().getResource("/nested_binary_test.parquet").getPath();
@@ -152,10 +249,10 @@ class ConvertCommandTest implements ConvertCommandContract {
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo("""
                 [
-                  {"id":"1","var":true},
-                  {"id":"2","var":false},
-                  {"id":"3","var":42},
-                  {"id":"4","var":"hi"}
+                  {"id":1,"var":true},
+                  {"id":2,"var":false},
+                  {"id":3,"var":42},
+                  {"id":4,"var":"hi"}
                 ]""");
     }
 
@@ -166,10 +263,10 @@ class ConvertCommandTest implements ConvertCommandContract {
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo("""
                 [
-                  {"id":"1","var":42},
-                  {"id":"2","var":true},
-                  {"id":"3","var":null},
-                  {"id":"4","var":1000000000000}
+                  {"id":1,"var":42},
+                  {"id":2,"var":true},
+                  {"id":3,"var":null},
+                  {"id":4,"var":1000000000000}
                 ]""");
     }
 
@@ -180,9 +277,9 @@ class ConvertCommandTest implements ConvertCommandContract {
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo("""
                 [
-                  {"id":"1","name":"age","value":42},
-                  {"id":"1","name":"email","value":"ada@example.com"},
-                  {"id":"1","name":"preferences","value":{"opt_in": true, "theme": "dark"}}
+                  {"id":1,"name":"age","value":42},
+                  {"id":1,"name":"email","value":"ada@example.com"},
+                  {"id":1,"name":"preferences","value":{"opt_in": true, "theme": "dark"}}
                 ]""");
     }
 }

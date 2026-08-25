@@ -24,6 +24,8 @@ interface ConvertCommandContract {
 
     String nonexistentFile();
 
+    String fidelityFile();
+
     @Test
     default void csvOutput() {
         Cli.Result result = Cli.launch("convert", "-f", plainFile(), "--format", "csv");
@@ -43,10 +45,86 @@ interface ConvertCommandContract {
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo("""
                 [
-                  {"id":"1","value":"100"},
-                  {"id":"2","value":"200"},
-                  {"id":"3","value":"300"}
+                  {"id":1,"value":100},
+                  {"id":2,"value":200},
+                  {"id":3,"value":300}
                 ]""");
+    }
+
+    @Test
+    default void jsonPreservesScalarTypesAndNulls() {
+        Cli.Result result = Cli.launch("convert", "-f", fidelityFile(), "--format", "json");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                [
+                  {"id":1,"flag":true,"small":10,"large":100,"single":1.5,"double":2.5,"text":"null"},
+                  {"id":2,"flag":false,"small":null,"large":-3,"single":"NaN","double":"Infinity","text":null},
+                  {"id":3,"flag":null,"small":2147483647,"large":null,"single":"Infinity","double":"NaN","text":"literal"},
+                  {"id":4,"flag":true,"small":-1,"large":-5,"single":"-Infinity","double":-2.5,"text":null}
+                ]""");
+    }
+
+    @Test
+    default void csvUsesConfiguredNullStringAndQuotesIt() {
+        Cli.Result result = Cli.launch("convert", "-f", fidelityFile(), "--format", "csv",
+                "--null-string", "NULL,VALUE");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                id,flag,small,large,single,double,text
+                1,true,10,100,1.5,2.5,null
+                2,false,"NULL,VALUE",-3,NaN,Infinity,"NULL,VALUE"
+                3,"NULL,VALUE",2147483647,"NULL,VALUE",Infinity,NaN,literal
+                4,true,-1,-5,-Infinity,-2.5,"NULL,VALUE\"""");
+    }
+
+    @Test
+    default void csvUsesEmptyFieldForNullByDefault() {
+        Cli.Result result = Cli.launch("convert", "-f", fidelityFile(), "--format", "csv");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                id,flag,small,large,single,double,text
+                1,true,10,100,1.5,2.5,null
+                2,false,,-3,NaN,Infinity,
+                3,,2147483647,,Infinity,NaN,literal
+                4,true,-1,-5,-Infinity,-2.5,""");
+    }
+    @Test
+    default void csvNullStringAppliesToFlattenedStructLeaves() {
+        Cli.Result result = Cli.launch("convert", "-f", deepNestedFile(), "--format", "csv",
+                "--null-string", "\\N");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                customer_id,name,account.id,account.organization.name,account.organization.address.street,account.organization.address.city,account.organization.address.zip
+                1,Alice,ACC-001,Acme Corp,123 Main St,New York,10001
+                2,Bob,ACC-002,TechStart,\\N,\\N,\\N
+                3,Charlie,ACC-003,\\N,\\N,\\N,\\N
+                4,Diana,\\N,\\N,\\N,\\N,\\N""");
+    }
+
+
+
+    @Test
+    default void nullStringIsIgnoredForJson() {
+        Cli.Result result = Cli.launch("convert", "-f", fidelityFile(), "--format", "json",
+                "--null-string", "NULL");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).doesNotContain("NULL").contains("\"text\":null");
+    }
+
+    @Test
+    default void jsonUsesBareNullForNullNestedFields() {
+        Cli.Result structResult = Cli.launch("convert", "-f", deepNestedFile(), "--format", "json");
+        Cli.Result listResult = Cli.launch("convert", "-f", listFile(), "--format", "json");
+
+        assertThat(structResult.exitCode()).isZero();
+        assertThat(structResult.output()).contains("\"account\":null");
+        assertThat(listResult.exitCode()).isZero();
+        assertThat(listResult.output()).contains("\"tags\":null").contains("\"scores\":null");
     }
 
     @Test
@@ -82,9 +160,9 @@ interface ConvertCommandContract {
         assertThat(result.output()).isEqualTo("""
                 name,account.id,account.organization.name,account.organization.address.street,account.organization.address.city,account.organization.address.zip
                 Alice,ACC-001,Acme Corp,123 Main St,New York,10001
-                Bob,ACC-002,TechStart,null,null,null
-                Charlie,ACC-003,null,null,null,null
-                Diana,null,null,null,null,null""");
+                Bob,ACC-002,TechStart,,,
+                Charlie,ACC-003,,,,
+                Diana,,,,,""");
     }
 
     @Test
@@ -96,8 +174,8 @@ interface ConvertCommandContract {
                 id,tags,scores
                 1,"[a, b, c]","[10, 20, 30]"
                 2,[],[100]
-                3,null,"[1, 2]"
-                4,[single],null""");
+                3,,"[1, 2]"
+                4,[single],""");
     }
 
     @Test
@@ -157,7 +235,7 @@ interface ConvertCommandContract {
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo("""
                 [
-                  {"id":"1","value":"100"}
+                  {"id":1,"value":100}
                 ]""");
     }
 

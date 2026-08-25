@@ -30,7 +30,7 @@ run the CLI via Docker without installing it locally — see the [Docker section
 | `hardwood info` | Display high-level file information, including key-value metadata |
 | `hardwood schema` | Print the file schema, including logical-type annotations such as `VARIANT(1)` on Variant groups |
 | `hardwood print` | Print rows as an ASCII table (head, tail, or all); Variant columns are decoded to JSON-like text |
-| `hardwood convert` | Convert a Parquet file to CSV or JSON (head, tail, or all); Variant columns are emitted as a JSON string in CSV and as a native JSON subtree in JSON |
+| `hardwood convert` | Convert a Parquet file to CSV or JSON (head, tail, or all); scalar numbers and booleans keep their JSON types, SQL NULL is JSON `null`, and Variant columns are emitted as a JSON string in CSV and as a native JSON subtree in JSON |
 | `hardwood footer` | Print decoded footer length, offset, and file structure |
 | `hardwood inspect pages` | List data and dictionary pages per column chunk; includes per-page min/max when the file has a page index |
 | `hardwood inspect dictionary` | Print dictionary entries for a column |
@@ -87,7 +87,31 @@ hardwood convert -n 100 --format json -f data.parquet
 
 # Convert last 50 rows to CSV
 hardwood convert -n -50 --format csv -f data.parquet
+
+# Convert to CSV with an explicit SQL NULL value
+hardwood convert --format csv --null-string '\N' -f data.parquet
 ```
+
+## Convert output
+
+`hardwood convert --format json` emits unquoted JSON values for non-repeated
+`BOOLEAN`, `INT32`, `INT64`, `FLOAT`, and `DOUBLE` fields without a logical
+annotation, or with an `INT` annotation. Unsigned integer values remain valid
+JSON numbers. Date, time, timestamp, decimal, UUID, interval, `FLOAT16`,
+`INT96`, byte-array, and nested values remain JSON strings.
+
+Finite floating-point values are JSON numbers. `NaN`, `Infinity`, and
+`-Infinity` are JSON strings because JSON has no non-finite number values.
+
+SQL NULL is bare JSON `null`. In CSV, SQL NULL is an empty field by default.
+With the default empty null string, an empty string value and SQL NULL are
+indistinguishable in CSV. Use `--null-string VALUE` to keep them distinct.
+An explicit null string is quoted when CSV requires quoting. A Variant NULL is a
+value, not SQL NULL. It remains `null` in CSV and bare `null` in JSON.
+The option has no effect with JSON output.
+
+The option applies to whole fields and flattened struct leaves. A NULL inside
+a rendered list, map, or struct cell remains the text `null` in that cell.
 
 ## Schema output formats
 

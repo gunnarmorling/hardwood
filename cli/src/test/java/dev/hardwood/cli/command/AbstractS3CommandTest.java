@@ -34,11 +34,14 @@ abstract class AbstractS3CommandTest {
     protected static final String S3_PAGE_INDEX_FILE = "s3://test-bucket/column_index_pushdown.parquet";
     protected static final String S3_MULTI_ROW_GROUP_INT_FILE = "s3://test-bucket/filter_pushdown_int.parquet";
     protected static final String S3_KV_METADATA_FILE = "s3://test-bucket/cli_info_kv_metadata_test.parquet";
+    protected static final String S3_FIDELITY_FILE = "s3://test-bucket/convert_fidelity_test.parquet";
 
     private static final Path TEST_RESOURCES = Path.of("").toAbsolutePath()
             .resolve("../core/src/test/resources").normalize();
 
     static final GenericContainer<?> s3 = S3ProxyContainers.filesystemBacked()
+            .withCopyFileToContainer(fixture("convert_fidelity_test.parquet"),
+                    S3ProxyContainers.objectPath("convert_fidelity_test.parquet"))
             .withCopyFileToContainer(fixture("plain_uncompressed.parquet"),
                     S3ProxyContainers.objectPath("plain_uncompressed.parquet"))
             .withCopyFileToContainer(fixture("dictionary_uncompressed.parquet"),
