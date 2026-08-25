@@ -138,7 +138,7 @@ class RowWriterEquivalenceTest {
                     nulls[i] = ids[i] % 7 == 0;
                     names[i] = nulls[i] ? bytes("junk") : bytes("n" + ids[i]);
                 }
-                writer.writeBatch(batch -> batch.ints(0, ids).bytes(1, names, nulls));
+                writer.columnWriter().writeBatch(batch -> batch.ints(0, ids).bytes(1, names, nulls));
             }
         }
 
@@ -180,7 +180,7 @@ class RowWriterEquivalenceTest {
     private static byte[] writeColumnar(FileSchema schema, ColumnarWrite filler) throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(filler::accept);
+            writer.columnWriter().writeBatch(filler::accept);
         }
         return out.toByteArray();
     }

@@ -249,7 +249,7 @@ class WriterLogicalTypeInteropTest {
     private Path write(Path dir, FileSchema schema, Consumer<ColumnBatch> filler) throws IOException {
         Path file = dir.resolve("annotated.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(filler);
+            writer.columnWriter().writeBatch(filler);
         }
         return file;
     }

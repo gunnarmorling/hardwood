@@ -118,7 +118,7 @@ class WriterLogicalTypeStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.bytes(0, new byte[][] { hex("01"), hex("02"), hex("03") },
+            writer.columnWriter().writeBatch(batch -> batch.bytes(0, new byte[][] { hex("01"), hex("02"), hex("03") },
                     Validity.ofNulls(new boolean[] { false, true, false })));
         }
 
@@ -233,7 +233,7 @@ class WriterLogicalTypeStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.fixed(0, values,
+            writer.columnWriter().writeBatch(batch -> batch.fixed(0, values,
                     Validity.ofNulls(new boolean[] { false, false, true, false, false, true })));
         }
 
@@ -259,7 +259,7 @@ class WriterLogicalTypeStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints(0, new int[] { 1 })
                     .struct("s", Validity.ofNulls(new boolean[] { false }))
                     .bytes("s.b", new byte[][] { "x".getBytes(StandardCharsets.UTF_8) },
@@ -295,7 +295,7 @@ class WriterLogicalTypeStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, builder.build(), config)) {
-            writer.writeBatch(filler::fill);
+            writer.columnWriter().writeBatch(filler::fill);
         }
 
         try (ParquetFileReader reader = openReader(out)) {

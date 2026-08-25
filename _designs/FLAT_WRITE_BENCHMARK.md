@@ -56,7 +56,7 @@ it inside a benchmark would buy nothing and slow the run.
 
 | Contender | API |
 |-----------|-----|
-| `HARDWOOD_COLUMNAR` | `ParquetFileWriter.writeBatch`, 1024-row batches |
+| `HARDWOOD_COLUMNAR` | `ParquetFileWriter.columnWriter()` → `ColumnWriter.writeBatch`, 1024-row batches |
 | `HARDWOOD_ROW` | `ParquetFileWriter.rowWriter()` → `RowWriter.writeRow` |
 | `PARQUET_JAVA_GROUP` | `ExampleParquetWriter` over `SimpleGroup` |
 

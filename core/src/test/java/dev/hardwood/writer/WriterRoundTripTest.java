@@ -46,7 +46,7 @@ class WriterRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, twoColumns())) {
-            writer.writeBatch(batch -> batch.ints(0, a).ints(1, b));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, a).ints(1, b));
         }
 
         ByteBuffer bytes = ByteBuffer.wrap(out.toByteArray());
@@ -69,7 +69,7 @@ class WriterRoundTripTest {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, twoColumns())) {
             // Names may be given in any order; they resolve to the schema's columns.
-            writer.writeBatch(batch -> batch.ints("b", b).ints("a", a));
+            writer.columnWriter().writeBatch(batch -> batch.ints("b", b).ints("a", a));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -84,7 +84,7 @@ class WriterRoundTripTest {
 
         Path file = dir.resolve("out.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, ids));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, ids));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(file))) {
@@ -97,9 +97,9 @@ class WriterRoundTripTest {
     void multipleBatchesAccumulateIntoOneRowGroup() throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 1, 2 }));
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 3, 4 }));
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 5 }));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1, 2 }));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 3, 4 }));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 5 }));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -114,7 +114,7 @@ class WriterRoundTripTest {
     void emptyBatchProducesEmptyFile() throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, new int[0]));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[0]));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -131,7 +131,7 @@ class WriterRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -147,7 +147,7 @@ class WriterRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())));
@@ -165,7 +165,7 @@ class WriterRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -189,7 +189,7 @@ class WriterRoundTripTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(256).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -224,7 +224,7 @@ class WriterRoundTripTest {
                         original[pos + i] = validity.isNull(i) ? null : values[i];
                     }
                     // Hand the reader's Validity straight to the writer, no re-derivation.
-                    writer.writeBatch(batch -> batch.ints(0, values, validity));
+                    writer.columnWriter().writeBatch(batch -> batch.ints(0, values, validity));
                     pos += count;
                 }
             }
@@ -248,7 +248,7 @@ class WriterRoundTripTest {
         WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -266,7 +266,7 @@ class WriterRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -280,7 +280,7 @@ class WriterRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, Validity.NO_NULLS));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, Validity.NO_NULLS));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())));

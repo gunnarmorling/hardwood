@@ -298,7 +298,7 @@ class WriterAnnotationCoverageTest {
 
         try (ParquetFileWriter writer = ParquetFileWriter.create(
                 OutputFile.of(file), CoverageDomain.schemaOf(annotation), config)) {
-            writer.writeBatch(batch -> set(batch, annotation, values, allNull));
+            writer.columnWriter().writeBatch(batch -> set(batch, annotation, values, allNull));
         }
     }
 

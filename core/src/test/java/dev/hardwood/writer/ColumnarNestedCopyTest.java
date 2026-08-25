@@ -94,7 +94,7 @@ class ColumnarNestedCopyTest {
 
             while (readers.nextBatch()) {
                 batches++;
-                writer.writeBatch(batch -> {
+                writer.columnWriter().writeBatch(batch -> {
                     Set<String> alreadySet = new HashSet<>();
                     for (int c = 0; c < schema.getColumnCount(); c++) {
                         ColumnReader col = readers.getColumnReader(c);

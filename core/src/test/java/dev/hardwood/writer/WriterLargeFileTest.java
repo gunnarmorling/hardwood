@@ -134,6 +134,7 @@ class WriterLargeFileTest {
     }
 
     private static void writeRows(ParquetFileWriter writer, long rows) throws IOException {
+        ColumnWriter columns = writer.columnWriter();
         long[] values = new long[BATCH];
         for (long row = 0; row < rows; row += BATCH) {
             int count = (int) Math.min(BATCH, rows - row);
@@ -141,7 +142,7 @@ class WriterLargeFileTest {
                 values[i] = valueAt(row + i);
             }
             long[] slice = count == BATCH ? values : Arrays.copyOf(values, count);
-            writer.writeBatch(batch -> batch.longs(COLUMN, slice));
+            columns.writeBatch(batch -> batch.longs(COLUMN, slice));
         }
     }
 

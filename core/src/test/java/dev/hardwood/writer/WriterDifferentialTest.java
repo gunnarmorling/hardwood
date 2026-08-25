@@ -65,7 +65,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("written.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).ints(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).ints(1, v));
         }
 
         List<Integer> actual = new ArrayList<>();
@@ -106,7 +106,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("multipage.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, v));
         }
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
@@ -138,7 +138,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("nullable.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).ints(1, v, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).ints(1, v, nulls));
         }
 
         List<Integer> actual = new ArrayList<>();
@@ -176,7 +176,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("allnull.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).ints(1, new int[n], nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).ints(1, new int[n], nulls));
         }
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
@@ -210,7 +210,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("struct.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints("r", r)
                     .struct("address", addressNulls)
                     .ints("address.street", street)
@@ -253,7 +253,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("listofints.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints("r", r)
                     .list("phones", offsets, listNulls)
                     .ints("phones.list.element", elements, elementNulls));
@@ -301,7 +301,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("dict.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).ints(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).ints(1, v));
         }
 
         List<Integer> actual = new ArrayList<>();
@@ -337,7 +337,7 @@ class WriterDifferentialTest {
         WriterConfig config = WriterConfig.defaults();
         Path file = dir.resolve("fallback.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, v));
         }
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
@@ -374,7 +374,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("dictlist.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints("r", r)
                     .list("v", offsets, listNulls)
                     .ints("v.list.element", elements, elementNulls));
@@ -421,7 +421,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("mapofints.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints("r", r)
                     .map("props", offsets, mapNulls)
                     .ints("props.key_value.key", keys)
@@ -463,7 +463,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("mapwithstringkey.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints("r", new int[] { 0 })
                     .map("props", new int[] { 0, 2 }, Validity.ofNulls(new boolean[] { false }))
                     .bytes("props.key_value.key", keys)
@@ -520,7 +520,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("encoded.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, r).longs(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).longs(1, v));
         }
 
         List<Long> actual = new ArrayList<>();
@@ -566,7 +566,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("split.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, r).doubles(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).doubles(1, v));
         }
 
         List<Double> actual = new ArrayList<>();
@@ -611,7 +611,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("encoded.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, r).bytes(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).bytes(1, v));
         }
 
         List<String> actual = new ArrayList<>();
@@ -654,7 +654,7 @@ class WriterDifferentialTest {
         WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).codec(codec).build();
         Path file = dir.resolve("compressed.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, r).ints(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).ints(1, v));
         }
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
@@ -691,7 +691,7 @@ class WriterDifferentialTest {
         WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
         Path file = dir.resolve("multirowgroup.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, v));
         }
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
@@ -719,7 +719,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("meta.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, v));
         }
 
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
@@ -759,7 +759,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("nestedstats.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("phones", offsets, listNulls)
                     .ints("phones.list.element", elements, elementNulls));
         }
@@ -795,7 +795,7 @@ class WriterDifferentialTest {
         WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
         Path file = dir.resolve("stats.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(0, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, v));
         }
 
         List<Integer> actual = new ArrayList<>();
@@ -830,7 +830,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("longs.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).longs(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).longs(1, v));
         }
 
         List<Long> actual = new ArrayList<>();
@@ -864,7 +864,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("doubles.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).doubles(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).doubles(1, v));
         }
 
         List<Double> actual = new ArrayList<>();
@@ -904,7 +904,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("floats.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).floats(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).floats(1, v));
         }
 
         List<Float> actual = new ArrayList<>();
@@ -944,7 +944,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("booleans.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).booleans(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).booleans(1, v));
         }
 
         List<Boolean> actual = new ArrayList<>();
@@ -980,7 +980,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("byte_arrays.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).bytes(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).bytes(1, v));
         }
 
         List<String> actual = new ArrayList<>();
@@ -1013,7 +1013,7 @@ class WriterDifferentialTest {
                 .build();
         Path file = dir.resolve("fixed.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch.ints(0, r).fixed(1, v));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, r).fixed(1, v));
         }
 
         List<String> actual = new ArrayList<>();
@@ -1061,7 +1061,7 @@ class WriterDifferentialTest {
 
         Path file = dir.resolve("logical.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints(0, r)
                     .bytes(1, names)
                     .ints(2, days)

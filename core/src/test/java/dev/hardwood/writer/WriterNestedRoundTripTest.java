@@ -57,7 +57,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .struct("address", addressNulls)
                     .ints("address.street", street)
                     .ints("address.zip", zip, zipNulls));
@@ -99,7 +99,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.struct("a", aNulls).ints("a.b", b, bNulls));
+            writer.columnWriter().writeBatch(batch -> batch.struct("a", aNulls).ints("a.b", b, bNulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -131,7 +131,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.ints("g.x", x, xNulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints("g.x", x, xNulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -155,7 +155,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("phones", offsets, listNulls)
                     .ints("phones.list.element", elements, elementNulls));
         }
@@ -184,7 +184,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("m", outerOffsets, outerNulls)
                     .list("m.list.element", innerOffsets, innerNulls)
                     .ints("m.list.element.list.element", elements));
@@ -248,7 +248,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("people", offsets)
                     .ints("people.list.element.x", x)
                     .ints("people.list.element.y", y, yNulls));
@@ -284,7 +284,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.list("v", offsets).ints("v.list.element", elements));
+            writer.columnWriter().writeBatch(batch -> batch.list("v", offsets).ints("v.list.element", elements));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -308,7 +308,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("people", offsets)
                     .struct("people.list.element", structNulls)
                     .ints("people.list.element.x", x));
@@ -352,7 +352,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .map("props", offsets, mapNulls)
                     .ints("props.key_value.key", keys)
                     .ints("props.key_value.value", values, valueNulls));
@@ -389,7 +389,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .map("props", offsets)
                     .ints("props.key_value.key", keys)
                     .ints("props.key_value.value", values));
@@ -425,7 +425,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .map("props", mapOffsets, mapNulls)
                     .ints("props.key_value.key", keys)
                     .list("props.key_value.value", listOffsets)
@@ -490,7 +490,7 @@ class WriterNestedRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .map("props", offsets, mapNulls)
                     .ints("props.key_value.key", keys)
                     .struct("props.key_value.value", structNulls)

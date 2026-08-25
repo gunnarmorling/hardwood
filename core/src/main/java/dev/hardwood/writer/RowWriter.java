@@ -14,8 +14,8 @@ import dev.hardwood.Experimental;
 import dev.hardwood.internal.writer.RowPlan;
 import dev.hardwood.schema.FileSchema;
 
-/// Writes a Parquet file record by record, over the same columnar core [ParquetFileWriter]
-/// exposes through [ParquetFileWriter#writeBatch].
+/// Writes a Parquet file record by record, over the same columnar core [ColumnWriter]
+/// exposes through [ColumnWriter#writeBatch].
 ///
 /// This is the write-side mirror of the reader's `rowReader()`: the ergonomic API for a
 /// caller that holds records rather than columns. Fields are addressed by the name they carry
@@ -38,7 +38,7 @@ import dev.hardwood.schema.FileSchema;
 ///
 /// Records are staged into a batch and submitted through the columnar path, so paging, row
 /// group cadence, dictionary encoding, compression and statistics are exactly those of a file
-/// written through [ParquetFileWriter#writeBatch]. A batch is submitted once it holds enough
+/// written through [ColumnWriter#writeBatch]. A batch is submitted once it holds enough
 /// records, or once its variable-width payload reaches the configured row-group size, so
 /// staging never exceeds one row group regardless of how large the values are.
 ///

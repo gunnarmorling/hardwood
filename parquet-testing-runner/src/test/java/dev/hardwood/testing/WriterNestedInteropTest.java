@@ -585,7 +585,7 @@ class WriterNestedInteropTest {
             throws IOException {
         Path file = dir.resolve("nested.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(filler);
+            writer.columnWriter().writeBatch(filler);
         }
         return file;
     }

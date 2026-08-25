@@ -82,7 +82,7 @@ class WideListBatchBoundTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("v", offsets)
                     .ints(LEAF, elements));
         }

@@ -58,7 +58,7 @@ class WriterLayoutTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
         byte[] bytes = out.toByteArray();
 
@@ -86,7 +86,7 @@ class WriterLayoutTest {
         WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -118,8 +118,8 @@ class WriterLayoutTest {
                 .build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, first));
-            writer.writeBatch(batch -> batch.ints(0, second));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, first));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, second));
         }
 
         byte[] file = out.toByteArray();
@@ -160,7 +160,7 @@ class WriterLayoutTest {
     void writesCorrectPageCrc() throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3, 4, 5 }));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3, 4, 5 }));
         }
         byte[] bytes = out.toByteArray();
 
@@ -196,7 +196,7 @@ class WriterLayoutTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(25).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch.booleans(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.booleans(0, values));
         }
 
         byte[] file = out.toByteArray();
@@ -228,7 +228,7 @@ class WriterLayoutTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(64).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch.list("v", offsets).ints("v.list.element", elements));
+            writer.columnWriter().writeBatch(batch -> batch.list("v", offsets).ints("v.list.element", elements));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -281,7 +281,7 @@ class WriterLayoutTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(64).rowGroupTargetBytes(256).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("v", toIntArray(offsets), Validity.ofNulls(toBooleanArray(listNulls)))
                     .ints("v.list.element", toIntArray(elements), toBooleanArray(elementNulls)));
         }

@@ -205,14 +205,14 @@ class RowWriterRulesTest {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema())) {
             writer.rowWriter().writeRow(row -> row.setInt("id", 1));
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch.ints(0, new int[] { 1 })))
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1 })))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("rowWriter()");
         }
 
         ByteBufferOutputFile other = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(other, schema())) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .ints(0, new int[] { 1 })
                     .bytes(1, new byte[][] { { 1 } })
                     .list("tags", new int[] { 0, 0 })
@@ -220,7 +220,7 @@ class RowWriterRulesTest {
                     .bytes("address.city", new byte[][] { { 1 } }));
             assertThatThrownBy(writer::rowWriter)
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("writeBatch");
+                    .hasMessageContaining("columnWriter()");
         }
     }
 
@@ -230,6 +230,20 @@ class RowWriterRulesTest {
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema())) {
             assertThat(writer.rowWriter()).isSameAs(writer.rowWriter());
             writer.rowWriter().writeRow(row -> row.setInt("id", 1));
+        }
+    }
+
+    @Test
+    void theSameColumnWriterIsReturnedEveryTime() throws Exception {
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema())) {
+            assertThat(writer.columnWriter()).isSameAs(writer.columnWriter());
+            writer.columnWriter().writeBatch(batch -> batch
+                    .ints(0, new int[] { 1 })
+                    .bytes(1, new byte[][] { { 1 } })
+                    .list("tags", new int[] { 0, 0 })
+                    .bytes("tags.list.element", new byte[0][])
+                    .bytes("address.city", new byte[][] { { 1 } }));
         }
     }
 
@@ -307,7 +321,7 @@ class RowWriterRulesTest {
                     .hasMessageContaining("nullable struct enclosing a repeated field");
         }
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .list("outer.inner", new int[] { 0, 1 })
                     .ints("outer.inner.list.element", new int[] { 1 })))
                     .isInstanceOf(UnsupportedOperationException.class)

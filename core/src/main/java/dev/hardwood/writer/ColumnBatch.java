@@ -30,7 +30,7 @@ import dev.hardwood.schema.SchemaNode;
 /// One aligned slice of a file's columns. Every column in a batch must have the same
 /// number of values, which is the batch's row count.
 ///
-/// A batch is not constructed directly: [ParquetFileWriter#writeBatch] creates it, bound
+/// A batch is not constructed directly: [ColumnWriter#writeBatch] creates it, bound
 /// to the schema, hands it to a filler that populates the columns, then submits it — so
 /// there is no separate build or submit step to forget. Columns are addressed by index or
 /// by name, and the schema binding lets every identifier be validated as it is added — an
@@ -44,7 +44,7 @@ import dev.hardwood.schema.SchemaNode;
 /// [Validity] marks null are never encoded, and so are never checked.
 ///
 /// ```java
-/// writer.writeBatch(b -> b
+/// columns.writeBatch(b -> b
 ///         .ints(0, idColumn)
 ///         .ints("value", valueColumn));
 /// ```
@@ -59,7 +59,7 @@ import dev.hardwood.schema.SchemaNode;
 /// the writer.
 ///
 /// ```java
-/// writer.writeBatch(b -> b
+/// columns.writeBatch(b -> b
 ///         .ints(0, idColumn)
 ///         .ints("value", valueColumn, valueNulls));       // boolean[] nulls, true = null
 /// ```

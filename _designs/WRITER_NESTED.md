@@ -316,7 +316,7 @@ the serializer writes it — so neither is complete without the other.
 **Struct with a nullable leaf** — `address: {street, zip?}`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .ints("id", ids)
         .struct("address", addrPresent)              // omit ⇒ all structs present
         .ints("address.street", streets)
@@ -326,7 +326,7 @@ writer.writeBatch(b -> b
 **List of nullable int** — `phones: [int?]`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .list("phones", phoneOffsets, phonesPresent)     // list-null validity + offsets
         .ints("phones.list.element", phoneValues, elemNulls));
 ```
@@ -334,7 +334,7 @@ writer.writeBatch(b -> b
 **Map of int to int** — `props: {int: int?}`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .map("props", entryOffsets, propsPresent)
         .ints("props.key_value.key", keys)
         .ints("props.key_value.value", values, valueNulls));
@@ -343,7 +343,7 @@ writer.writeBatch(b -> b
 **List of struct** — `people: [{name, age?}]`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .list("people", offsets, peoplePresent)
         .struct("people.list.element", elemPresent)      // omit if the element is REQUIRED
         .ints("people.list.element.name", names)

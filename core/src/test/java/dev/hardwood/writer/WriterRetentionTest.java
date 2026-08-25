@@ -73,12 +73,13 @@ class WriterRetentionTest {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         long retained;
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            ColumnWriter columns = writer.columnWriter();
             long baseline = usedHeap();
             for (int b = 0; b < batches; b++) {
                 for (int i = 0; i < VALUES_PER_BATCH; i++) {
                     values[i] = (b * VALUES_PER_BATCH + i) % DISTINCT;
                 }
-                writer.writeBatch(batch -> batch.ints("v", values));
+                columns.writeBatch(batch -> batch.ints("v", values));
             }
             retained = usedHeap() - baseline;
         }

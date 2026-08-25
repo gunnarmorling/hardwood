@@ -12,8 +12,8 @@
 /// size-bounded pages and row groups. Build the target schema with
 /// [dev.hardwood.schema.FileSchema#builder] and pick the API that fits the caller:
 ///
-/// - [ParquetFileWriter#writeBatch] takes an aligned slice of typed arrays through
-///   [ColumnBatch], for a caller that already holds columns.
+/// - [ParquetFileWriter#columnWriter()] returns a [ColumnWriter], which takes an aligned slice
+///   of typed arrays through [ColumnBatch], for a caller that already holds columns.
 /// - [ParquetFileWriter#rowWriter()] returns a [RowWriter], which takes one record at a
 ///   time through [StructBuilder], [ListBuilder] and [MapBuilder], for a caller that holds
 ///   records. It stages records into batches and submits them through the same core.

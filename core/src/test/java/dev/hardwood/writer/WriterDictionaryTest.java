@@ -59,7 +59,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -86,7 +86,7 @@ class WriterDictionaryTest {
         WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4L << 20).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -148,7 +148,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -171,7 +171,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         byte[] file = out.toByteArray();
@@ -194,7 +194,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         byte[] file = out.toByteArray();
@@ -218,7 +218,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -235,7 +235,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -258,7 +258,7 @@ class WriterDictionaryTest {
         WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -284,7 +284,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("v", offsets, listNulls)
                     .ints("v.list.element", elements, elementNulls));
         }
@@ -310,7 +310,7 @@ class WriterDictionaryTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(64).rowGroupTargetBytes(512).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -343,7 +343,7 @@ class WriterDictionaryTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(64).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -371,7 +371,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .struct("s", structNulls)
                     .ints("s.v", v, vNulls));
         }
@@ -400,7 +400,7 @@ class WriterDictionaryTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .map("props", offsets, mapNulls)
                     .ints("props.key_value.key", keys)
                     .ints("props.key_value.value", values, valueNulls));
@@ -422,7 +422,7 @@ class WriterDictionaryTest {
     private static Long booleanDistinctCount(FileSchema schema, boolean[] values) throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.booleans(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.booleans(0, values));
         }
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
             return columnMeta(reader, 0).statistics().distinctCount();
@@ -433,7 +433,7 @@ class WriterDictionaryTest {
     private static Long distinctCountOf(int[] values, WriterConfig config) throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
             assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();

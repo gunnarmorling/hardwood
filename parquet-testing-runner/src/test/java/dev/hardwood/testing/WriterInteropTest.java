@@ -264,7 +264,7 @@ class WriterInteropTest {
                 .build();
         WriterConfig config = WriterConfig.builder().encoding(testCase.policy()).build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.fixed(COLUMN, values));
+            writer.columnWriter().writeBatch(batch -> batch.fixed(COLUMN, values));
         }
 
         List<Group> rows = ParquetJavaReader.readGroups(file);
@@ -350,7 +350,7 @@ class WriterInteropTest {
         // whose largest index is 0 ahead of pages that need the full width.
         WriterConfig config = WriterConfig.builder().pageTargetBytes(2048).build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
-            writer.writeBatch(batch -> batch.ints(COLUMN, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(COLUMN, values));
         }
 
         assertThat(ParquetJavaReader.readDistinctCounts(file))
@@ -406,7 +406,7 @@ class WriterInteropTest {
 
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, testCase.config())) {
             if (writePath == WritePath.BATCH) {
-                writer.writeBatch(batch -> testCase.type().set(batch, COLUMN, testCase));
+                writer.columnWriter().writeBatch(batch -> testCase.type().set(batch, COLUMN, testCase));
                 return;
             }
             RowWriter rows = writer.rowWriter();

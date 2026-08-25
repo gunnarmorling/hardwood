@@ -57,7 +57,7 @@ class WriterCompressionTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -79,7 +79,7 @@ class WriterCompressionTest {
         WriterConfig config = WriterConfig.builder().encoding(ColumnEncoding.PLAIN).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
         byte[] bytes = out.toByteArray();
 
@@ -111,7 +111,7 @@ class WriterCompressionTest {
         WriterConfig config = WriterConfig.builder().codec(CompressionCodec.UNCOMPRESSED).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -151,7 +151,7 @@ class WriterCompressionTest {
         WriterConfig config = WriterConfig.builder().pageTargetBytes(256).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -178,7 +178,7 @@ class WriterCompressionTest {
         WriterConfig config = WriterConfig.builder().codec(codec).pageTargetBytes(1024).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {

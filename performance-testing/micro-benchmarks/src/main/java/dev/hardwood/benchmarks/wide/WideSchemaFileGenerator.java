@@ -21,6 +21,7 @@ import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ColumnEncoding;
+import dev.hardwood.writer.ColumnWriter;
 import dev.hardwood.writer.ParquetFileWriter;
 import dev.hardwood.writer.WriterConfig;
 
@@ -86,9 +87,10 @@ public final class WideSchemaFileGenerator {
                 .build();
 
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(path), schema, config)) {
+            ColumnWriter columnWriter = writer.columnWriter();
             for (int group = 0; group < ROW_GROUPS; group++) {
                 int groupIndex = group;
-                writer.writeBatch(batch -> {
+                columnWriter.writeBatch(batch -> {
                     for (int c = 0; c < columns; c++) {
                         batch.doubles(c, values(groupIndex, c));
                     }

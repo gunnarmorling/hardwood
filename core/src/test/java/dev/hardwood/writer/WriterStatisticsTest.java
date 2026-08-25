@@ -43,7 +43,7 @@ class WriterStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -65,7 +65,7 @@ class WriterStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -84,7 +84,7 @@ class WriterStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn())) {
-            writer.writeBatch(batch -> batch.ints(0, values, nulls));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -109,7 +109,7 @@ class WriterStatisticsTest {
         WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
-            writer.writeBatch(batch -> batch.ints(0, values));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
@@ -140,7 +140,7 @@ class WriterStatisticsTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("phones", offsets, listNulls)
                     .ints("phones.list.element", elements, elementNulls));
         }

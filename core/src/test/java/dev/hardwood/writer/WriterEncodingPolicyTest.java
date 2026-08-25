@@ -182,7 +182,7 @@ class WriterEncodingPolicyTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> fill(batch.list("v", offsets), type, "v.list.element", leaves, null));
+            writer.columnWriter().writeBatch(batch -> fill(batch.list("v", offsets), type, "v.list.element", leaves, null));
         }
         byte[] file = out.toByteArray();
 
@@ -394,7 +394,7 @@ class WriterEncodingPolicyTest {
         }
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .list("readings", offsets)
                     .longs("readings.list.element", values));
         }
@@ -559,7 +559,7 @@ class WriterEncodingPolicyTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> fill(batch, type, rows, nulls));
+            writer.columnWriter().writeBatch(batch -> fill(batch, type, rows, nulls));
         }
         return out.toByteArray();
     }
@@ -739,7 +739,7 @@ class WriterEncodingPolicyTest {
                 .build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch.longs("v", values));
+            writer.columnWriter().writeBatch(batch -> batch.longs("v", values));
         }
         return out.toByteArray();
     }
@@ -749,7 +749,7 @@ class WriterEncodingPolicyTest {
         WriterConfig config = WriterConfig.builder().encoding(encoding).codec(codec).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch.doubles("v", values));
+            writer.columnWriter().writeBatch(batch -> batch.doubles("v", values));
         }
         return out.toByteArray();
     }
@@ -761,7 +761,7 @@ class WriterEncodingPolicyTest {
         }
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
-            writer.writeBatch(batch -> batch.ints("a", values).ints("b", values));
+            writer.columnWriter().writeBatch(batch -> batch.ints("a", values).ints("b", values));
         }
         return out.toByteArray();
     }

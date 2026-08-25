@@ -38,7 +38,9 @@ import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
-/// Writes a Parquet file through a columnar batch API.
+/// Writes a Parquet file through a columnar or a row-oriented API: [#columnWriter()] takes an
+/// aligned slice of typed arrays, [#rowWriter()] takes one record at a time, and one file is
+/// written through one of the two, not both.
 ///
 /// This increment writes every primitive physical type — `BOOLEAN`, `INT32`, `INT64`, `FLOAT`,
 /// `DOUBLE`, `BYTE_ARRAY`, and `FIXED_LEN_BYTE_ARRAY` — flat `REQUIRED` / `OPTIONAL`, nested
@@ -105,6 +107,7 @@ public final class ParquetFileWriter implements Closeable {
     private enum Mode { UNSET, BATCH, ROW }
 
     private Mode mode = Mode.UNSET;
+    private ColumnWriter columnWriter;
     private RowWriter rowWriter;
 
     private ParquetFileWriter(OutputFile out, FileSchema schema, WriterConfig config, Compressor compressor,
@@ -214,38 +217,35 @@ public final class ParquetFileWriter implements Closeable {
         return encodings;
     }
 
-    /// Writes one aligned batch of column values, flushing row groups as the buffered
-    /// data crosses the row-group target. A batch that would overflow the current row
-    /// group is split at the boundary.
+    /// Returns the column-oriented view over this file: a batch-shaped API for callers that
+    /// hold columns rather than records. It takes an aligned slice of typed arrays through
+    /// [ColumnBatch], shreds it, and pages it into the file.
     ///
-    /// The writer creates the batch — bound to the schema — passes it to `filler` to be
-    /// populated (columns addressed by index or name), then submits it. There is no
-    /// separate build or submit step to forget.
+    /// The file writer keeps ownership: the returned view is not closeable, and the row group
+    /// it has buffered is written by [#close()]. The same instance is returned on every call.
     ///
-    /// @param filler populates the batch's columns; must cover every column exactly once
-    /// @throws IOException if the write fails
-    /// @throws IllegalArgumentException if the batch does not cover every column, or its
-    ///         per-layer inputs do not agree on a record count
-    /// @throws UnsupportedOperationException if the schema has a shape the writer cannot
-    ///         produce
+    /// @return the column-oriented view over this file
     /// @throws IllegalStateException if the writer is closed, or [#rowWriter()] has already
     ///         been used on this file
-    public void writeBatch(Consumer<ColumnBatch> filler) throws IOException {
+    public ColumnWriter columnWriter() {
         ensureOpen();
         latch(Mode.BATCH);
-        writeStagedBatch(filler);
+        if (columnWriter == null) {
+            columnWriter = new ColumnWriter(this);
+        }
+        return columnWriter;
     }
 
     /// Returns the row-oriented view over this file: a record-shaped API for callers that
     /// hold records rather than columns. It stages records into batches and submits them
-    /// through [#writeBatch], so the file it produces is the one the columnar API produces
-    /// for the same data.
+    /// through [ColumnWriter#writeBatch], so the file it produces is the one the columnar API
+    /// produces for the same data.
     ///
     /// The file writer keeps ownership: the returned view is not closeable, and its pending
     /// records are written by [#close()]. The same instance is returned on every call.
     ///
     /// @return the row-oriented view over this file
-    /// @throws IllegalStateException if the writer is closed, or [#writeBatch] has already
+    /// @throws IllegalStateException if the writer is closed, or [#columnWriter()] has already
     ///         been used on this file
     /// @throws UnsupportedOperationException if the schema has a shape the writer cannot
     ///         produce record by record
@@ -266,13 +266,13 @@ public final class ParquetFileWriter implements Closeable {
         }
         else if (mode != wanted) {
             throw new IllegalStateException("This file is already being written through "
-                    + (mode == Mode.BATCH ? "writeBatch(...)" : "rowWriter()")
+                    + (mode == Mode.BATCH ? "columnWriter()" : "rowWriter()")
                     + "; a file is written through one of the two, not both");
         }
     }
 
-    /// Writes one batch without latching the write mode, so the row-oriented layer can submit
-    /// the batches it stages.
+    /// Writes one batch without latching the write mode, so both views can submit through it:
+    /// [ColumnWriter] the batch its caller filled, [RowWriter] the batches it stages.
     void writeStagedBatch(Consumer<ColumnBatch> filler) throws IOException {
         ColumnBatch batch = new ColumnBatch(schema, ranges);
         filler.accept(batch);

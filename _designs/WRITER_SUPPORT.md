@@ -80,7 +80,7 @@ row-group-size targets are user-visible, as `WriterConfig` knobs.
 ### Ingestion cadence
 
 Data arrives as **`ColumnBatch` objects** — an aligned slice carrying one typed array
-per column. `ParquetFileWriter.writeBatch` takes a filler: it creates the batch bound to
+per column. `ColumnWriter.writeBatch` takes a filler: it creates the batch bound to
 the schema, passes it to the filler to be populated, then submits it, so there is no
 separate build or submit step to forget. Because the batch is schema-bound, its columns
 can be addressed by index or name and every identifier is validated as values are added:

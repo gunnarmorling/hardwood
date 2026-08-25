@@ -270,7 +270,7 @@ class WriterReaderSymmetryTest {
     private static ByteBufferOutputFile write(FileSchema schema, Consumer<ColumnBatch> filler) throws Exception {
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(filler);
+            writer.columnWriter().writeBatch(filler);
         }
         return out;
     }

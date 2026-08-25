@@ -5,7 +5,7 @@
 
 ## Context
 
-Stages 1–15 produce a complete columnar write path: `ParquetFileWriter.writeBatch` takes an
+Stages 1–15 produce a complete columnar write path: `ColumnWriter.writeBatch` takes an
 aligned slice of typed arrays, shreds it, pages it, encodes it, and cuts row groups on a size
 target. That API is the right one for a caller that already holds columns — a query engine, an
 Arrow buffer, a bulk converter. It is the wrong one for a caller that holds records.
@@ -22,7 +22,8 @@ This layer closes that gap. It mirrors the read side, where `ParquetFileReader` 
 
 ## Shape
 
-`ParquetFileWriter` gains `rowWriter()`, returning a `RowWriter` view over the same file. The
+`ParquetFileWriter` gains `rowWriter()`, returning a `RowWriter` view over the same file, beside
+the `columnWriter()` view returning the `ColumnWriter` that carries `writeBatch`. The
 file writer keeps ownership of the lifecycle: `close()` writes the footer, and the row writer is
 not itself closeable.
 
@@ -313,10 +314,10 @@ interleave two independent staging states into one row group, with a submission 
 depends on when the row writer happens to flush.
 
 `ParquetFileWriter` carries a mode latch, initially unset. `rowWriter()` latches row mode and
-`writeBatch` latches batch mode; either method throws `IllegalStateException` if the other mode
-is already latched, naming both APIs in the message. `rowWriter()` latches on the call rather
-than on the first `writeRow`, so obtaining the view is the declaration of intent, and it returns
-the same instance on every call so two row writers cannot stage against one file.
+`columnWriter()` latches batch mode; either method throws `IllegalStateException` if the other
+mode is already latched, naming both APIs in the message. Each latches on the call rather than
+on the first `writeRow` or `writeBatch`, so obtaining the view is the declaration of intent, and
+each returns the same instance on every call so two views cannot stage against one file.
 
 `RowWriter` is not `Closeable`. The file writer is the resource; a second closeable over the
 same file invites a double-close that either discards a valid file or writes a second footer.

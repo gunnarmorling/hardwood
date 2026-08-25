@@ -99,7 +99,7 @@ class WriterLogicalTypeRoundTripTest {
         Validity present = Validity.ofNulls(new boolean[] { false, false });
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch
+            writer.columnWriter().writeBatch(batch -> batch
                     .struct("person", present)
                     .bytes("person.name", new byte[][] { bytes("ada"), bytes("alan") }, present)
                     .ints("person.born", new int[] { 1, 2 })
@@ -126,7 +126,7 @@ class WriterLogicalTypeRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 5, -3, 9 }));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 5, -3, 9 }));
         }
 
         try (ParquetFileReader reader = openReader(out)) {
@@ -170,7 +170,7 @@ class WriterLogicalTypeRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 0, 0, 0 },
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 0, 0, 0 },
                     Validity.ofNulls(new boolean[] { true, true, true })));
         }
 
@@ -193,7 +193,7 @@ class WriterLogicalTypeRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
-            writer.writeBatch(batch -> batch.ints(0, new int[] { 1234, -99, 5000 }));
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1234, -99, 5000 }));
         }
 
         try (ParquetFileReader reader = openReader(out)) {
@@ -217,7 +217,7 @@ class WriterLogicalTypeRoundTripTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, builder.build())) {
-            writer.writeBatch(batch -> writeValue(batch, annotated));
+            writer.columnWriter().writeBatch(batch -> writeValue(batch, annotated));
         }
         return out;
     }

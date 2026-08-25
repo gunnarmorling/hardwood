@@ -43,6 +43,7 @@ import dev.hardwood.internal.writer.ByteBufferOutputFile;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.writer.ColumnWriter;
 import dev.hardwood.writer.ParquetFileWriter;
 import dev.hardwood.writer.RowWriter;
 import dev.hardwood.writer.WriterConfig;
@@ -225,15 +226,16 @@ public class FlatWriteBenchmark {
     /// Hands each batch's column arrays to the writer as they are.
     private void writeColumnar(OutputFile out) throws IOException {
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, hardwoodSchema, writerConfig)) {
+            ColumnWriter columns = writer.columnWriter();
             for (int b = 0; b < fixture.batchCount(); b++) {
-                int batch = b;
-                writer.writeBatch(columns -> columns
-                        .longs("id", fixture.id[batch])
-                        .longs("pickup_ts", fixture.pickupMicros[batch])
-                        .ints("passenger_count", fixture.passengerCount[batch], fixture.passengerCountNulls[batch])
-                        .doubles("fare", fixture.fare[batch])
-                        .bytes("payment_type", fixture.paymentTypeBytes[batch])
-                        .bytes("vendor", fixture.vendorBytes[batch], fixture.vendorNulls[batch]));
+                int index = b;
+                columns.writeBatch(batch -> batch
+                        .longs("id", fixture.id[index])
+                        .longs("pickup_ts", fixture.pickupMicros[index])
+                        .ints("passenger_count", fixture.passengerCount[index], fixture.passengerCountNulls[index])
+                        .doubles("fare", fixture.fare[index])
+                        .bytes("payment_type", fixture.paymentTypeBytes[index])
+                        .bytes("vendor", fixture.vendorBytes[index], fixture.vendorNulls[index]));
             }
         }
     }

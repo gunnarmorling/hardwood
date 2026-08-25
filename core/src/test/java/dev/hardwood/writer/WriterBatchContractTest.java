@@ -39,7 +39,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsDuplicateColumnInBatch() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
-            assertThatThrownBy(() -> writer.writeBatch(
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(
                     batch -> batch.ints(0, new int[] { 1, 2, 3 }).ints(0, new int[] { 4, 5, 6 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -50,7 +50,7 @@ class WriterBatchContractTest {
         // The schema binding lets the batch see that "id" is column 0, so the collision
         // is caught eagerly rather than at write time.
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
-            assertThatThrownBy(() -> writer.writeBatch(
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(
                     batch -> batch.ints(0, new int[] { 1, 2, 3 }).ints("id", new int[] { 4, 5, 6 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -59,7 +59,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsUnknownColumnName() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch.ints("nope", new int[] { 1 })))
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints("nope", new int[] { 1 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -67,7 +67,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsRaggedBatch() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), twoColumns())) {
-            assertThatThrownBy(() -> writer.writeBatch(
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(
                     batch -> batch.ints(0, new int[] { 1, 2, 3 }).ints(1, new int[] { 1, 2 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -76,7 +76,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsBatchNotCoveringAllColumns() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), twoColumns())) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 })))
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -95,7 +95,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsNullMaskOnRequiredColumn() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
-            assertThatThrownBy(() -> writer.writeBatch(
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(
                     batch -> batch.ints(0, new int[] { 1, 2 }, new boolean[] { false, true })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -104,7 +104,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsValidityOnRequiredColumn() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
-            assertThatThrownBy(() -> writer.writeBatch(
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(
                     batch -> batch.ints(0, new int[] { 1, 2 }, Validity.NO_NULLS)))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -113,7 +113,7 @@ class WriterBatchContractTest {
     @Test
     void rejectsNullMaskLengthMismatch() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneOptionalColumn())) {
-            assertThatThrownBy(() -> writer.writeBatch(
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(
                     batch -> batch.ints(0, new int[] { 1, 2, 3 }, new boolean[] { false, true })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
@@ -125,7 +125,7 @@ class WriterBatchContractTest {
         // fail loudly rather than silently drop the values.
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
             ColumnBatch[] escaped = new ColumnBatch[1];
-            writer.writeBatch(batch -> {
+            writer.columnWriter().writeBatch(batch -> {
                 escaped[0] = batch;
                 batch.ints(0, new int[] { 1, 2, 3 });
             });
@@ -136,9 +136,13 @@ class WriterBatchContractTest {
     @Test
     void rejectsUseAfterClose() throws Exception {
         ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn());
-        writer.writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 }));
+        ColumnWriter columns = writer.columnWriter();
+        columns.writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 }));
         writer.close();
-        assertThatThrownBy(() -> writer.writeBatch(batch -> batch.ints(0, new int[] { 4 })))
+        assertThatThrownBy(() -> writer.columnWriter())
+                .isInstanceOf(IllegalStateException.class);
+        // A view obtained before close is rejected too, rather than writing into a finished file.
+        assertThatThrownBy(() -> columns.writeBatch(batch -> batch.ints(0, new int[] { 4 })))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -150,7 +154,7 @@ class WriterBatchContractTest {
         // footer are on disk, so close() must discard rather than publish a broken file.
         FailOnSecondMagic out = new FailOnSecondMagic(OutputFile.of(file));
         ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn());
-        writer.writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 }));
+        writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 }));
 
         assertThatThrownBy(writer::close).isInstanceOf(IOException.class);
         assertThat(Files.exists(file)).isFalse();
@@ -164,7 +168,7 @@ class WriterBatchContractTest {
                         v -> v.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch.list("props", new int[] { 0, 1 })))
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.list("props", new int[] { 0, 1 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -178,7 +182,7 @@ class WriterBatchContractTest {
                         el -> el.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL))
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch.map("items", new int[] { 0, 1 })))
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.map("items", new int[] { 0, 1 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -191,7 +195,7 @@ class WriterBatchContractTest {
                         v -> v.primitive(PhysicalType.INT32, RepetitionType.REQUIRED))
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .map("props", new int[] { 0, 1, 2 }, Validity.ofNulls(new boolean[] { true, false }))
                     .ints("props.key_value.key", new int[] { 99, 5 })
                     .ints("props.key_value.value", new int[] { 1, 2 })))
@@ -212,7 +216,7 @@ class WriterBatchContractTest {
                 .build();
 
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .list("s.phones", new int[] { 0, 1 })
                     .ints("s.phones.list.element", new int[] { 1 })))
                     .isInstanceOf(UnsupportedOperationException.class)
@@ -226,7 +230,7 @@ class WriterBatchContractTest {
                 .list("v", RepetitionType.REQUIRED, el -> el.primitive(PhysicalType.INT32, RepetitionType.REQUIRED))
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .list("v", new int[] { 0, 2, 1 })
                     .ints("v.list.element", new int[] { 7 })))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -240,7 +244,7 @@ class WriterBatchContractTest {
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
             // offsets claim 2 elements, but only 3 are supplied.
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .list("v", new int[] { 0, 2 })
                     .ints("v.list.element", new int[] { 1, 2, 3 })))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -256,7 +260,7 @@ class WriterBatchContractTest {
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
             // record 0 is null yet its offsets span one element (99); record 1 is [5].
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .list("v", new int[] { 0, 1, 2 }, Validity.ofNulls(new boolean[] { true, false }))
                     .ints("v.list.element", new int[] { 99, 5 })))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -271,7 +275,7 @@ class WriterBatchContractTest {
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
             // r has 3 records but v's offsets describe only 2.
-            assertThatThrownBy(() -> writer.writeBatch(batch -> batch
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
                     .ints("r", new int[] { 0, 1, 2 })
                     .list("v", new int[] { 0, 1, 2 })
                     .ints("v.list.element", new int[] { 5, 6 })))
