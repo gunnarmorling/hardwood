@@ -65,6 +65,20 @@ class WriterBatchContractTest {
     }
 
     @Test
+    void rejectsOutOfRangeColumnIndex() throws Exception {
+        // A leaf-column index out of range is an index error, reported the way StructBuilder's
+        // field index and the reader's positional accessors report one, so a caller holding both
+        // APIs catches one exception type rather than two.
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn())) {
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints(1, new int[] { 1 })))
+                    .isInstanceOf(IndexOutOfBoundsException.class)
+                    .hasMessageContaining("[0, 1)");
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints(-1, new int[] { 1 })))
+                    .isInstanceOf(IndexOutOfBoundsException.class);
+        }
+    }
+
+    @Test
     void rejectsRaggedBatch() throws Exception {
         try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), twoColumns())) {
             assertThatThrownBy(() -> writer.columnWriter().writeBatch(

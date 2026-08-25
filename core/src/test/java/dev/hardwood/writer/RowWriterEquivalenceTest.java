@@ -21,7 +21,7 @@ import dev.hardwood.schema.FileSchema;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// The row-oriented layer is an adapter over the columnar core, not a second write path: the
-/// same logical data written through [ParquetFileWriter#writeBatch] and through [RowWriter]
+/// same logical data written through [ColumnWriter#writeBatch] and through [RowWriter]
 /// must produce byte-identical files.
 ///
 /// This is the strongest available assertion that the layer makes no paging, dictionary,

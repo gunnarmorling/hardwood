@@ -183,9 +183,13 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   `ParquetFileWriter.rowWriter()` (see `_designs/WRITER_ROW_API.md`)
 - [x] Implement `WriterConfig` (row-group and page targets, per-column encoding policy,
   codec, statistics truncation, precision-loss policy, `created_by`)
-- [ ] Implement `RowGroupWriter`
-- [ ] Implement `ColumnWriter`
-- [ ] Implement `PageWriter`
+- [x] Implement `ColumnWriter` — the columnar entry point, obtained from
+  `ParquetFileWriter.columnWriter()`, taking one aligned batch of typed arrays through
+  `ColumnBatch`
+- [x] Row-group and page assembly (`internal.writer.RowGroupBuffer`, `ColumnChunkBuffer`), the
+  internal counterparts of the `RowGroupWriter` / `PageWriter` this inventory first sketched
+- [x] User documentation for the writer public API (`docs/content/`, see
+  [`_designs/WRITER_DOCS.md`](_designs/WRITER_DOCS.md))
 
 ### 6.2 Write Flow
 - [x] Record buffering

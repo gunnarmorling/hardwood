@@ -127,7 +127,7 @@ import dev.hardwood.writer.WriterConfig;
 @Measurement(iterations = 5, time = 1)
 public class WriteEncodingBenchmark {
 
-    /// Records per [ParquetFileWriter#writeBatch] call, as in [FlatWriteBenchmark], so a number
+    /// Records per [ColumnWriter#writeBatch] call, as in [FlatWriteBenchmark], so a number
     /// here is read against one there.
     private static final int BATCH_ROWS = 1024;
 

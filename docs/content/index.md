@@ -24,8 +24,8 @@ Hardwood gives applications fast and efficient support for reading and writing P
 It is built to be:
 
 * **Light-weight**: Zero transitive dependencies beyond optional compression libraries (Snappy, ZSTD, LZ4, Brotli)
-* **Fast**: Hardwood aims to be the [fastest Parquet reader](https://www.morling.dev/blog/hardwood-1-0-fast-lightweight-apache-parquet-reader-for-the-jvm/#_performance) and writer for the JVM
-* **Complete**: Read and write support for flat and nested schemas, every primitive and logical type, and the encodings and codecs in current use, with new format additions tracked as they land
+* **Fast**: Hardwood aims to be the fastest Parquet reader and writer for the JVM — the [1.0 read benchmarks](https://www.morling.dev/blog/hardwood-1-0-fast-lightweight-apache-parquet-reader-for-the-jvm/#_performance) are published
+* **Complete**: Read and write support for flat and nested schemas, every logical type, every primitive type in current use, and the encodings and codecs in current use, with new format additions tracked as they land
 * **Scalable**: Hardwood is multi-threaded at the core, pages are decoded in parallel, with cross-file prefetching for multi-file reads
 * **Embeddable**: The Hardwood library can be used in GraalVM native binaries; WASM support coming soon ([preview](/experiments/dive-web/))
 * **Agent-friendly**: Hardwood's CLI comes with a skill which lets your agents inspect and analyse Parquet files

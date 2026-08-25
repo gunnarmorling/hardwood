@@ -53,8 +53,8 @@ The file is produced front to back and the footer is written last, so **it becom
 A batch is an atomic, aligned slice, and every rule below is checked as the values arrive:
 
 - **Every leaf column of the schema must be set**, exactly once, by either index or name. A batch missing a column, or setting one twice, is rejected.
-- **Every array must have the same length**, which is the batch's row count. A ragged batch is rejected.
-- **The setter must fit the column's physical type.** `ints` on a `DOUBLE` column is rejected, as is an unknown column name or an out-of-range index.
+- **Every flat column's array must have the same length**, which is the batch's row count. A ragged batch is rejected. A leaf under a `LIST` or `MAP` is exempt: its array holds the concatenated entries of every row, and its length is what the offsets account for (see [Nested Columns](#nested-columns)).
+- **The setter must fit the column's physical type.** `ints` on a `DOUBLE` column is rejected, as is an unknown column name. A leaf-column index outside `[0, leaf column count)` raises `IndexOutOfBoundsException`.
 - **Arrays are referenced, not copied.** Do not mutate an array until the batch has been written.
 
 Columns can be addressed by name or by zero-based leaf-column index, which is the column's position in the schema as declared:
@@ -107,7 +107,7 @@ for (int i = 0; i < names.length; i++) {
 }
 ```
 
-Every present value of a `FIXED_LEN_BYTE_ARRAY` column must be exactly the length the column declares.
+Every present value of a `FIXED_LEN_BYTE_ARRAY` column must be exactly the length the column declares. The bytes themselves are written as given: the writer does not check that a `STRING` column's values are valid UTF-8, or that a `JSON`, `BSON`, `VARIANT`, `GEOMETRY` or `GEOGRAPHY` column's payloads are well formed.
 
 ## Nested Columns
 

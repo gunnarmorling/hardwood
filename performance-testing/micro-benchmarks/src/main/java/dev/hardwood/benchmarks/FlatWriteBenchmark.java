@@ -53,7 +53,7 @@ import dev.hardwood.writer.WriterConfig;
 ///
 /// | Contender | API |
 /// |-----------|-----|
-/// | `hardwoodColumnar` | [ParquetFileWriter#writeBatch], 1024-row batches |
+/// | `hardwoodColumnar` | [ColumnWriter#writeBatch], 1024-row batches |
 /// | `hardwoodRow` | [ParquetFileWriter#rowWriter()] → [RowWriter#writeRow] |
 /// | `parquetJavaGroup` | parquet-java's [ExampleParquetWriter] over `SimpleGroup` |
 ///
@@ -113,7 +113,7 @@ import dev.hardwood.writer.WriterConfig;
 @Measurement(iterations = 5, time = 1)
 public class FlatWriteBenchmark {
 
-    /// Records per [ParquetFileWriter#writeBatch] call, the arrival unit of a columnar
+    /// Records per [ColumnWriter#writeBatch] call, the arrival unit of a columnar
     /// producer. It is also what [RowWriter] stages before submitting a batch, so both
     /// Hardwood contenders reach the encoder in batches of the same size.
     private static final int BATCH_ROWS = 1024;

@@ -11,8 +11,8 @@ Hardwood gives applications fast and efficient support for reading and writing P
 It is built to be:
 
 * **Light-weight**: Zero transitive dependencies beyond optional compression libraries (Snappy, ZSTD, LZ4, Brotli)
-* **Fast**: Hardwood aims to be the [fastest](PERFORMANCE.md) Parquet reader and writer for the JVM
-* **Complete**: Read and write support for flat and nested schemas, every primitive and logical type, and the encodings and codecs in current use, with new format additions tracked as they land
+* **Fast**: Hardwood aims to be the fastest Parquet reader and writer for the JVM — see the [read benchmarks](PERFORMANCE.md)
+* **Complete**: Read and write support for flat and nested schemas, every logical type, every primitive type in current use, and the encodings and codecs in current use, with new format additions tracked as they land
 * **Scalable**: Hardwood is multi-threaded at the core, pages are decoded in parallel, with cross-file prefetching for multi-file reads
 * **Embeddable**: The Hardwood library can be used in GraalVM native binaries; WASM support coming soon ([preview](https://hardwood.dev/experiments/dive-web/))
 * **Agent-friendly**: Hardwood's CLI comes with a skill which lets your agents inspect and analyse Parquet files
@@ -58,7 +58,7 @@ try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(path));
 }
 ```
 
-And here's how you [write a file](https://hardwood.dev/latest/how-to/write-row-by-row/):
+And here's how you [write a file](https://hardwood.dev/dev/how-to/write-row-by-row/):
 
 ```java
 import dev.hardwood.OutputFile;
@@ -83,7 +83,7 @@ See the [Getting Started](https://hardwood.dev/latest/getting-started/) guide fo
 
 - **Local files** (memory-mapped via `InputFile.of(Path)`) may be arbitrarily large; each individual column chunk must be at most 2 GB of compressed data.
 - **In-memory** (`InputFile.of(ByteBuffer)`) and **object-store** sources are limited to 2 GB per file. Split larger datasets across multiple files and read them with `Hardwood.openAll(...)` or `ParquetFileReader.openAll(...)`.
-- **Writing** is under active development as of Hardwood 1.1. It targets local files via `OutputFile.of(Path)`; output to object storage is coming soon.
+- **Writing** is under active development as of Hardwood 1.1, and is documented in the [development docs](https://hardwood.dev/dev/) until 1.1 is released. It targets local files via `OutputFile.of(Path)`; output to object storage is coming soon.
 
 ---
 

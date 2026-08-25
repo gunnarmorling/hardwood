@@ -86,7 +86,7 @@ Bindings are available for all popular logger implementations, for instance for 
 
 ### Compression Libraries
 
-Hardwood supports reading Parquet files compressed with GZIP (built into Java), Snappy, ZSTD, LZ4, and Brotli, and writes all of them except the deprecated Hadoop-framed LZ4. The compression libraries are optional dependencies—add only the ones you need. Snappy and ZSTD are the codecs most commonly seen in the wild; LZ4 and Brotli are rarer.
+Hardwood reads Parquet files compressed with GZIP (built into Java), Snappy, ZSTD, LZ4 in both of its framings, and Brotli. It writes all of those except the Hadoop-framed `LZ4`, which the Parquet format deprecated in favour of `LZ4_RAW`; files already written with it are still read. The compression libraries are optional dependencies—add only the ones you need. Snappy and ZSTD are the codecs most commonly seen in the wild; LZ4 and Brotli are rarer.
 
 Writing compresses with ZSTD where `zstd-jni` is on the classpath, and writes uncompressed pages where it is not, so add that dependency to get compressed output under the default configuration.
 
@@ -94,7 +94,7 @@ Writing compresses with ZSTD where `zstd-jni` is on the classpath, and writes un
 |-------|----------|-------------|
 | Snappy | `org.xerial.snappy` | `snappy-java` |
 | ZSTD | `com.github.luben` | `zstd-jni` |
-| LZ4 | `at.yawk.lz4` | `lz4-java` |
+| LZ4 (`LZ4_RAW` and Hadoop-framed `LZ4`) | `at.yawk.lz4` | `lz4-java` |
 | Brotli | `com.aayushatharva.brotli4j` | `brotli4j` |
 
 When using the BOM, declare without a version — for example, to add Snappy:

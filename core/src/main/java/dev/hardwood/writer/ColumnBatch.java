@@ -275,9 +275,10 @@ public final class ColumnBatch {
     /// @param columnIndex zero-based leaf-column index
     /// @param values the column's values for this batch
     /// @return this batch, for chaining
-    /// @throws IllegalArgumentException if the index is out of range, the column is not
-    ///         `INT32`, the column is already set, a value falls outside the range the column's
-    ///         annotation declares, or the length does not match the other columns in this batch
+    /// @throws IndexOutOfBoundsException if `columnIndex` is not in `[0, leaf column count)`
+    /// @throws IllegalArgumentException if the column is not `INT32`, the column is already set,
+    ///         a value falls outside the range the column's annotation declares, or the length
+    ///         does not match the other columns in this batch
     public ColumnBatch ints(int columnIndex, int[] values) {
         int idx = checkedIndex(columnIndex);
         requireValues(idx, values == null);
@@ -301,9 +302,10 @@ public final class ColumnBatch {
     /// @param values the column's values for this batch
     /// @param nulls the column's nulls; `nulls.isNull(i)` marks row `i` null
     /// @return this batch, for chaining
-    /// @throws IllegalArgumentException if the index is out of range, the column is not
-    ///         `OPTIONAL INT32`, the column is already set, or a value at a present row falls
-    ///         outside the range the column's annotation declares
+    /// @throws IndexOutOfBoundsException if `columnIndex` is not in `[0, leaf column count)`
+    /// @throws IllegalArgumentException if the column is not `OPTIONAL INT32`, the column is
+    ///         already set, or a value at a present row falls outside the range the column's
+    ///         annotation declares
     @Experimental
     public ColumnBatch ints(int columnIndex, int[] values, Validity nulls) {
         int idx = checkedIndex(columnIndex);
@@ -329,8 +331,9 @@ public final class ColumnBatch {
     /// @param values the column's values for this batch
     /// @param nulls the per-row null mask; `nulls[i] == true` marks row `i` null
     /// @return this batch, for chaining
-    /// @throws IllegalArgumentException if the index is out of range, the column is not
-    ///         `OPTIONAL INT32`, the column is already set, or the lengths do not agree
+    /// @throws IndexOutOfBoundsException if `columnIndex` is not in `[0, leaf column count)`
+    /// @throws IllegalArgumentException if the column is not `OPTIONAL INT32`, the column is
+    ///         already set, or the lengths do not agree
     @Experimental
     public ColumnBatch ints(int columnIndex, int[] values, boolean[] nulls) {
         int idx = checkedIndex(columnIndex);
@@ -771,9 +774,13 @@ public final class ColumnBatch {
                 + " at row " + row + ", out of range for a " + range.annotation() + " column");
     }
 
+    /// Bounds-checks a leaf-column index, which is an index error rather than a bad argument:
+    /// [StructBuilder]'s field index and the reader's positional accessors both report one as
+    /// [IndexOutOfBoundsException], so addressing a column out of range reports the same way
+    /// whichever API the caller is holding.
     private int checkedIndex(int columnIndex) {
         if (columnIndex < 0 || columnIndex >= sources.length) {
-            throw new IllegalArgumentException(
+            throw new IndexOutOfBoundsException(
                     "Column index " + columnIndex + " is out of range [0, " + sources.length + ")");
         }
         return columnIndex;

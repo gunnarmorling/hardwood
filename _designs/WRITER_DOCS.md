@@ -120,6 +120,11 @@ Excluded: the same exclusions as above.
 
 Look-up facts, no narration.
 
+- **Schema** — the `FileSchema.builder` methods that declare a file's columns, including the
+  `typeLength` overloads a `UUID`, `INTERVAL`, `FLOAT16` or fixed-width `DECIMAL` column needs,
+  and the `StructBuilder` / `ElementBuilder` forms nesting uses. `reference/schema-element.md`
+  points writers here, so the length it documents for `SchemaElement` has a counterpart on the
+  builder they are told to use.
 - **Writer options** — a `WriterConfig` table (option, default, description), matching the
   shape of the Reader Options table in `reference/configuration.md`.
 - **Encodings** — `ColumnEncoding` values, what `AUTO` does (the writer weighs a dictionary
@@ -143,12 +148,19 @@ Look-up facts, no narration.
 - **Typed setters** — the write-side mirror of `reference/accessors.md`: logical type →
   `StructBuilder` setter → physical representation, and the `ColumnBatch` array type for
   the same column.
-- **Value ranges** — what an annotation narrows (`INT(8)`, unsigned widths, `DECIMAL(p, s)`
-  digit count, `FIXED_LEN_BYTE_ARRAY` length) and that both APIs reject out-of-range
-  values; `PrecisionLossPolicy` and what `TRUNCATE` permits.
-- **Statistics written** — per column chunk `min`/`max`/`null_count`, `BYTE_ARRAY` bounds
-  truncated at `statisticsTruncationLength` and flagged inexact, and `distinct_count`
-  where the chunk's encoding decision still knew it.
+- **Value ranges** — which annotations narrow their physical type (`INT(n)` below the physical
+  width, `TIME`, `DECIMAL(p, s)`, `UNKNOWN`) and that both APIs reject an out-of-range value,
+  stated so that the annotations narrowing nothing — `DATE` and `TIMESTAMP` among them — are not
+  read as carrying a check they do not. Separately the `FIXED_LEN_BYTE_ARRAY` length check, which
+  is not an annotation, and the fact that an annotation over binary *content* — `STRING`,
+  `JSON`, `BSON`, `VARIANT`, `GEOMETRY`, `GEOGRAPHY` — is not inspected at all, so a caller
+  handing raw bytes to the columnar API knows the encoding is theirs to get right.
+  `PrecisionLossPolicy` and what `TRUNCATE` permits, marked as the row-oriented layer's
+  conversion check.
+- **Statistics written** — `null_count` per column chunk; `min`/`max` under the column's
+  `ColumnOrder`, omitted where that order is undefined; `BYTE_ARRAY` bounds truncated at
+  `statisticsTruncationLength` and flagged inexact; `nan_count` on the float types; and
+  `distinct_count` where the chunk interned its values to the end.
 - **`created_by`** — the default string's shape and that readers parse it.
 
 ### `concepts/write-model.md` — "The Write Model"
@@ -180,6 +192,8 @@ Explanation, no step-by-step.
 | `docs/content/reference/schema-element.md` | Its "build a schema for writing" note points at `how-to/metadata.md`; retarget to `how-to/write-row-by-row.md` |
 | `README.md` | "Be complete: Add a Parquet file writer (after 1.0)" describes a shipped writer |
 | `core/src/main/java/dev/hardwood/writer/ParquetFileWriter.java` | Class JavaDoc opens with "This increment writes …"; state the capability without the delivery framing |
+| `core/src/main/java/dev/hardwood/writer/ColumnBatch.java` | A leaf-column index out of range reports `IllegalArgumentException` where `StructBuilder`'s field index and the reader's positional accessors report `IndexOutOfBoundsException`; align it, so the reference page states one rule for both APIs rather than documenting the split |
+| `ROADMAP.md` | 6.1 carries unticked `RowGroupWriter` / `ColumnWriter` / `PageWriter` boxes from the original sketch; state what shipped under those names |
 
 ## Constraints
 

@@ -37,7 +37,7 @@ A column chunk's metadata — its compressed and uncompressed sizes, its page of
 
 `rowGroupTargetBytes` is the knob that bounds that buffer, and it is the writer's only memory bound. A file of any size is a sequence of row groups, each buffered, flushed and forgotten, so peak memory tracks the target however much is written in total.
 
-The target counts the values buffered, and the writer holds a little more than that while a chunk is open — the value store, an index per value, and a dictionary's own table while it is deciding how to encode the chunk. Peak heap therefore runs to a small multiple of the target: the build pins it below three times, and it measures well under two. Budget accordingly when raising the target on a wide schema.
+The target counts the values buffered, and the writer holds a little more than that while a chunk is open — the value store, an index per value, and a dictionary's own table while it is deciding how to encode the chunk. Peak heap therefore runs to a small multiple of the target, and stays below three times it. Budget accordingly when raising the target on a wide schema.
 
 ## Why the writer chooses the boundaries
 
@@ -54,7 +54,7 @@ Under the default `AUTO` policy, the writer does not guess a column's encoding f
 
 Two consequences are worth knowing. A chunk is encoded one way throughout — no chunk mixes a dictionary with `PLAIN` overflow pages, and no dictionary page is written for a chunk that ends up `PLAIN`. And naming an encoding explicitly opts out of the comparison entirely: that column builds no dictionary in any row group of the file.
 
-The deciding has a budget. A chunk whose dictionary grows past the writer's analysis budget stops interning, which is what keeps a high-cardinality column from hashing a whole row group's values into a table that is then thrown away — at the cost of that chunk no longer being able to state its `distinct_count`.
+The deciding has a budget. A chunk stops interning once its dictionary outgrows the writer's analysis budget, and once repeated size probes find the dictionary losing to `PLAIN` — either way, what it protects against is a high-cardinality column hashing a whole row group's values into a table that is then thrown away. Such a chunk is written `PLAIN`, and is the only one under `AUTO` that cannot state its `distinct_count`.
 
 ## Index addressing on the two sides
 

@@ -11,7 +11,35 @@
 -->
 # Writer Reference
 
-Facts about the write path: the configuration options, the encodings and codecs it produces, the setters each column type accepts, and what it rejects. For task-oriented instructions see [Write Row by Row](../how-to/write-row-by-row.md) and [Write Column by Column](../how-to/write-column-by-column.md).
+Facts about the write path: how a schema is declared, the configuration options, the encodings and codecs the writer produces, the setters each column type accepts, and what it rejects. For task-oriented instructions see [Write Row by Row](../how-to/write-row-by-row.md) and [Write Column by Column](../how-to/write-column-by-column.md).
+
+## Schema
+
+A file's schema is declared with `FileSchema.builder(String)` and built once; the same `FileSchema` is passed to `ParquetFileWriter.create`. Every method appends one field in declaration order, which is also the order the leaf-column indices follow.
+
+| Method | Declares |
+|---|---|
+| `addColumn(name, type, repetition)` | a primitive column |
+| `addColumn(name, type, repetition, logicalType)` | a primitive column carrying an annotation |
+| `addColumn(name, type, repetition, typeLength)` | a `FIXED_LEN_BYTE_ARRAY` column of the given byte length |
+| `addColumn(name, type, repetition, typeLength, logicalType)` | both of the above |
+| `struct(name, repetition, filler)` | a `struct` group whose fields `filler` declares |
+| `list(name, repetition, element)` | a `LIST` group whose element `element` declares |
+| `map(name, repetition, keyType[, keyTypeLength][, keyLogicalType], value)` | a `MAP` group with a `REQUIRED` key of `keyType` and a value `value` declares |
+| `build()` | the `FileSchema` |
+
+`repetition` is `REQUIRED` or `OPTIONAL`; `REPEATED` is rejected, repetition being what `list` and `map` express. `typeLength` is required and positive for `FIXED_LEN_BYTE_ARRAY` and rejected for every other type — so a `UUID`, `INTERVAL`, `FLOAT16` or fixed-width `DECIMAL` column is declared through a `typeLength` overload:
+
+```java
+FileSchema schema = FileSchema.builder("event")
+        .addColumn("id", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.REQUIRED, 16,
+                new LogicalType.UuidType())
+        .addColumn("amount", PhysicalType.FIXED_LEN_BYTE_ARRAY, RepetitionType.OPTIONAL, 8,
+                new LogicalType.DecimalType(2, 18))   // DecimalType takes (scale, precision)
+        .build();
+```
+
+Inside a `struct` filler the same methods appear on `FileSchema.StructBuilder`; a list element and a map value are declared on `FileSchema.ElementBuilder`, whose `primitive(type, repetition[, typeLength][, logicalType])`, `struct`, `list` and `map` carry no name, the surrounding layout supplying it.
 
 ## Writer Options
 
@@ -36,7 +64,7 @@ WriterConfig config = WriterConfig.builder()
 | `createdBy(String)` | `hardwood version <version> (build <hash>)` | The footer's `created_by` identifier. |
 | `precisionLossPolicy(PrecisionLossPolicy)` | `REJECT` | What the row-oriented layer does with a value carrying more precision than its column can hold. |
 
-Each corresponding getter (`pageTargetBytes()`, `codec()`, …) reads the configured value back. Every setter rejects `null`, and the numeric bounds above are checked when the option is set.
+Each option has a getter that reads the configured value back — `pageTargetBytes()`, `rowGroupTargetBytes()`, `codec()`, `statisticsTruncationLength()`, `createdBy()`, `precisionLossPolicy()`, and, for the two encoding setters, `defaultEncoding()` and `columnEncodings()`. Every setter rejects `null`, and the numeric bounds above are checked when the option is set.
 
 ## Encodings
 
@@ -98,10 +126,15 @@ The columnar API takes physical values and converts nothing: a `STRING` column i
 
 ## Logical Types and Row Setters
 
-The row-oriented layer converts logical-type values to the column's physical representation, taking the same Java types the reader returns.
+The row-oriented layer takes physical values through the setter named for the type, and converts logical-type values to the column's physical representation, taking the same Java types the reader returns. The physical setters apply whatever the column's annotation is: an `INT32` column annotated `DATE` accepts `setDate` and `setInt` alike, the one taking a `LocalDate` and the other the epoch day it converts to.
 
 | Column | `StructBuilder` setter | Java type |
 |---|---|---|
+| `BOOLEAN` | `setBoolean` | `boolean` |
+| `INT32` | `setInt` | `int` |
+| `INT64` | `setLong` | `long` |
+| `FLOAT` | `setFloat` | `float` |
+| `DOUBLE` | `setDouble` | `double` |
 | `BYTE_ARRAY` annotated `STRING`, `ENUM`, `JSON`, or unannotated | `setString` | `String` (written as UTF-8) |
 | `BYTE_ARRAY` or `FIXED_LEN_BYTE_ARRAY` | `setBinary` | `byte[]` |
 | `INT32` annotated `DATE` | `setDate` | `LocalDate` |
@@ -120,19 +153,21 @@ Timestamp columns split by `isAdjustedToUTC`, mirroring the reader's split betwe
 
 ## Value Ranges
 
-An annotation narrows what its physical type may hold, and both write APIs reject a value outside that range, naming the offending row or field:
+Some annotations narrow what their physical type may hold. Where one does, both write APIs reject a stored value outside that range, naming the offending row or field:
 
 | Annotation | Accepted values |
 |---|---|
 | `INT(n)` signed, `n` < physical width | `[-2^(n-1), 2^(n-1))` |
 | `INT(n)` unsigned, `n` < physical width | `[0, 2^n)` |
-| `INT(32)` / `INT(64)` and their unsigned forms | every value of the physical type |
+| `TIME(unit, _)` | `[0, one day in unit)` — the annotation defines the value as elapsed time after midnight |
 | `DECIMAL(p, s)` | an unscaled value of at most `p` digits |
-| `DATE`, `TIME`, `TIMESTAMP` | the range the type's unit spans |
-| `FIXED_LEN_BYTE_ARRAY` | a value of exactly the declared length |
-| `UNKNOWN` | no value; every row must be null |
+| `UNKNOWN` | no value at all; every row must be null, so the column is set through a setter taking a null mask |
 
-The value at a null row is not checked. An annotation that narrows nothing skips the per-value scan entirely.
+Every other annotation narrows nothing, and its column is not scanned per value. `DATE` and `TIMESTAMP` are the ones worth naming: every `INT32` is a day offset the reader materializes, and every `INT64` is a timestamp in any of the three units, so there is no value for the columnar API to reject. `INT(32)`, `INT(64)` and their unsigned forms likewise admit every value of their physical type — a large unsigned value is spelled as a negative, which is also how the reader returns it.
+
+Two checks are not annotations and always apply: a `FIXED_LEN_BYTE_ARRAY` value must be exactly the length the column declares, and a present value of a binary column must not be `null`. The value at a row a `Validity` marks null is never encoded, so it is never checked.
+
+An annotation over binary *content* is not a range, and the writer does not inspect it. A value passed to `bytes(...)` or `fixed(...)` is written as given, whether the column is annotated `STRING`, `ENUM`, `JSON`, `BSON`, `VARIANT`, `GEOMETRY` or `GEOGRAPHY` — encoding a `STRING` column's values as UTF-8, and producing well-formed payloads under the others, is the caller's to do. Bytes that are not valid UTF-8 are written and read back as replacement characters rather than rejected. `StructBuilder.setString` takes a `String` and encodes it, so the row-oriented layer cannot produce that.
 
 `PrecisionLossPolicy` governs **precision** only, and only on the row-oriented layer — the columnar API converts nothing, so nothing there can lose precision:
 
@@ -141,16 +176,18 @@ The value at a null row is not checked. An annotation that narrows nothing skips
 | `REJECT` (default) | Reject a value carrying digits the column's unit or scale cannot hold, naming the field. A value that is exact at the column's unit or scale is written normally. |
 | `TRUNCATE` | Drop the digits that do not fit: a `TIME` / `TIMESTAMP` value is floored to the column's unit, a `DECIMAL` rescaled with `RoundingMode.DOWN`. |
 
-A value the column cannot represent at all — a date beyond the `INT32` day range, an unscaled decimal wider than the declared precision — is rejected under either policy.
+A value the column cannot represent at all — a `LocalDate` beyond the `INT32` day range, an unscaled decimal wider than the declared precision — is rejected under either policy. This is a conversion check on the row-oriented layer, where a Java type wider than the column is what makes it reachable; the columnar API is handed the stored value directly.
 
 ## Statistics Written
 
-Each column chunk carries `min` / `max` / `null_count`, computed under the column's `ColumnOrder` during encoding, and written to the preferred `min_value` / `max_value` fields.
+Every column chunk carries `null_count`. `min` / `max` are computed under the column's `ColumnOrder` during encoding and written to the preferred `min_value` / `max_value` fields; the deprecated `min` / `max` fields are not written.
 
-- `BYTE_ARRAY` bounds longer than `statisticsTruncationLength` are truncated and flagged inexact (`is_min_value_exact` / `is_max_value_exact` = `false`). Fixed-width types write those flags as `true`.
-- `distinct_count` is written where the chunk still knows its cardinality — a chunk whose encoding `AUTO` chose from a dictionary, and any `BOOLEAN` chunk, which knows it without one. It is absent for a chunk whose dictionary outgrew the writer's analysis budget, and for one written under a named encoding.
+- **Bounds are omitted where their order is undefined.** A column annotated `INTERVAL`, `UNKNOWN`, `VARIANT`, `GEOMETRY`, `GEOGRAPHY`, `LIST` or `MAP` writes its null count alone, parquet-format leaving those orderings unspecified — a bound in an order the reader cannot know would prune away live rows. An all-null chunk has no bounds to write either.
+- **Truncation.** `BYTE_ARRAY` bounds longer than `statisticsTruncationLength` are truncated and flagged inexact (`is_min_value_exact` / `is_max_value_exact` = `false`). Fixed-width types write those flags as `true`.
+- **`nan_count`** is written for every `FLOAT`, `DOUBLE` and `FLOAT16` chunk, including when it is zero — a recorded zero is what lets a reader prove a chunk holds no NaN. No other type writes the field.
+- **`distinct_count`** is written where the chunk still knows its cardinality exactly: any chunk under `AUTO` that interned its values to the end, whichever encoding the flush-time comparison then chose, and any `BOOLEAN` chunk, which knows its cardinality without a dictionary. It is absent for a chunk written under a named encoding, and for one that stopped interning part-way — which happens when the dictionary outgrows the writer's analysis budget, and when repeated size probes find it losing to `PLAIN`.
 
-Page-level index structures (OffsetIndex, ColumnIndex) and Bloom filters are not yet written.
+Page-level index structures (OffsetIndex, ColumnIndex), Bloom filters, and the `GeospatialStatistics` of a `GEOMETRY` or `GEOGRAPHY` column are not yet written. [Bounding-box pushdown](../how-to/geospatial.md) prunes row groups from that last field, so it prunes nothing in a file Hardwood produced.
 
 ## `created_by`
 
@@ -167,8 +204,8 @@ hardwood version <version> (build <commit>)
 | Exception | When |
 |---|---|
 | `UnsupportedOperationException` | A schema column of an unsupported physical type (`INT96`); a refused codec (`LZ4`, `LZO`) or one whose library is missing; an `OPTIONAL` struct group directly enclosing a repeated field |
-| `IllegalArgumentException` | An unknown column name or path; a setter that does not fit the column's type; a column set twice in one batch or record; a batch that leaves a column unset, or whose arrays disagree in length; a null mask on a `REQUIRED` column; a `boolean[]` mask whose length does not match the values; list offsets that do not start at `0`, are not non-decreasing, or disagree with the element count; a value outside the range its annotation declares; a `REQUIRED` field left unset by a record |
-| `IndexOutOfBoundsException` | A field index outside `[0, getFieldCount())` |
+| `IllegalArgumentException` | An unknown column name or path; a setter that does not fit the column's type; a `null` value array, or a `null` value at a present row of a binary column; a column set twice in one batch or record; a batch that leaves a column unset, or whose arrays disagree in length; a null mask on a `REQUIRED` column; a `boolean[]` mask whose length does not match the values; list offsets that do not start at `0`, are not non-decreasing, or disagree with the element count; a value outside the range its annotation declares; a `REQUIRED` field left unset by a record |
+| `IndexOutOfBoundsException` | A leaf-column index outside `[0, leaf column count)` on a `ColumnBatch` setter, or a field index outside `[0, getFieldCount())` on a `StructBuilder` setter |
 | `IllegalStateException` | Writing after `close()`; using both write APIs on one file; using a `ColumnBatch` after it has been submitted, or a nested builder after its filler has returned |
 | `IOException` | The destination cannot be created, written, or finalized |
 
