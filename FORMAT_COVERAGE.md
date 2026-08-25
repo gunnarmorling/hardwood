@@ -12,14 +12,16 @@ phases 2 and 8) or the value-conversion layer (phase 7.4).
 
 ## Legend
 
-- ✅ **processed** — parsed and used by the reader/decoder/filter pipeline, or surfaced on the public API.
+- ✅ **processed** — parsed and used by the reader/decoder/filter pipeline, or surfaced to a user through the CLI / dive.
 - 🟡 **read-only** — parsed but with no functional consumer.
 - ❌ **skipped** — not read (the reader's `default` branch, or an explicit skip case).
 
 The 🟡-vs-✅ distinction is a maintained judgment (whether a parsed value is
-*meaningfully* consumed cannot be derived automatically — e.g. `bloom_filter_offset`
-is read and displayed yet feeds no filtering). The read-vs-skipped axis matches the
-`switch`-on-field-id in each `internal.thrift` reader.
+*meaningfully* consumed cannot be derived automatically — e.g. `SizeStatistics` and
+`ColumnMetaData.key_value_metadata` are decoded onto the public metadata records, and
+nothing reads them back). Sitting on a public record is not on its own enough for ✅.
+The read-vs-skipped axis matches the `switch`-on-field-id in each `internal.thrift`
+reader.
 
 ---
 
@@ -89,7 +91,7 @@ All fields (column_idx, descending, nulls_first) ❌ — struct not read.
 | 5 | num_values | ✅ | |
 | 6 | total_uncompressed_size | ✅ | |
 | 7 | total_compressed_size | ✅ | fetch planning |
-| 8 | key_value_metadata | ✅ | |
+| 8 | key_value_metadata | 🟡 | on public record, no functional consumer; not written |
 | 9 | data_page_offset | ✅ | |
 | 10 | index_page_offset | ❌ | explicit skip; index pages superseded by Column Index |
 | 11 | dictionary_page_offset | ✅ | |
