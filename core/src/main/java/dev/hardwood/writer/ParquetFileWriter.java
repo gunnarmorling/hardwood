@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import java.util.function.Consumer;
 
 import dev.hardwood.Experimental;
 import dev.hardwood.OutputFile;
+import dev.hardwood.internal.BuildInfo;
 import dev.hardwood.internal.compression.Compressor;
 import dev.hardwood.internal.compression.CompressorFactory;
 import dev.hardwood.internal.encoding.LevelEncoder;
@@ -61,6 +63,16 @@ public final class ParquetFileWriter implements Closeable {
     private static final byte[] MAGIC = "PAR1".getBytes(StandardCharsets.UTF_8);
     private static final int FORMAT_VERSION = 1;
 
+    /// Default `created_by` identifier written into the file footer, in the
+    /// `<app> version <version> (build <hash>)` convention Parquet readers parse — for
+    /// example `hardwood version 1.1.0 (build a093aab)`. The hash carries a `-dirty` suffix
+    /// when the working tree was not clean at build time, and a build that cannot identify
+    /// itself reports `unknown` in place of the version or the hash.
+    ///
+    /// A reader that cannot parse this field cannot tell which writer produced the file, and
+    /// applies its writer-specific correctness workarounds to it by default.
+    public static final String DEFAULT_CREATED_BY = defaultCreatedBy();
+
     /// Nominal `BYTE_ARRAY` value length assumed when estimating the flush-check stride. Only the
     /// append granularity depends on it; the row group flushes on actual buffered bytes.
     private static final int ASSUMED_BYTE_ARRAY_LENGTH = 16;
@@ -91,6 +103,11 @@ public final class ParquetFileWriter implements Closeable {
     /// The range each column's annotation declares, resolved once and handed to every batch.
     private final LogicalTypeValueRange[] ranges;
     private final List<RowGroup> rowGroups = new ArrayList<>();
+
+    /// The footer's two file-scope fields, held until [#close()] serializes them. Insertion
+    /// ordered so the entries reach the file in the order they were given.
+    private final Map<String, String> keyValueMetadata = new LinkedHashMap<>();
+    private String createdBy = DEFAULT_CREATED_BY;
 
     // Running actual buffered-bit average, learned across the whole write so the append stride
     // between flush checks lands near the row-group boundary regardless of value width.
@@ -215,6 +232,70 @@ public final class ParquetFileWriter implements Closeable {
             encodings[c] = encoding;
         }
         return encodings;
+    }
+
+    /// Stamps one application-defined key-value pair onto the file footer, replacing any value
+    /// already held for that key.
+    ///
+    /// The footer's `key_value_metadata` is where the ecosystem records what a schema alone
+    /// does not carry — `ARROW:schema`, `pandas`, Spark's
+    /// `org.apache.spark.sql.parquet.row.metadata`, and the table-format stamps. Parquet itself
+    /// does not interpret these entries, and nothing here validates them beyond requiring a key.
+    ///
+    /// Callable until [#close()], so a value the caller knows only once the data is written — a
+    /// row count, a digest over what was produced — can still be stated.
+    ///
+    /// @param key the entry's key
+    /// @param value the entry's value, or `null` to write a key carrying no value, which the
+    ///        format allows and which is how a key read from such a file is written back
+    /// @throws IllegalArgumentException if `key` is `null`
+    /// @throws IllegalStateException if the writer is closed
+    public void keyValueMetadata(String key, String value) {
+        ensureOpen();
+        if (key == null) {
+            throw new IllegalArgumentException("Metadata key must not be null");
+        }
+        keyValueMetadata.put(key, value);
+    }
+
+    /// Stamps every entry of `metadata` onto the file footer, replacing any value already held
+    /// for a key it names and leaving the rest in place.
+    ///
+    /// Passing the map a reader returns from `FileMetaData.keyValueMetadata()` reproduces that
+    /// file's application metadata, entries carrying no value included.
+    ///
+    /// @param metadata the entries to add
+    /// @throws IllegalArgumentException if `metadata` is `null` or holds a `null` key
+    /// @throws IllegalStateException if the writer is closed
+    /// @see #keyValueMetadata(String, String)
+    public void keyValueMetadata(Map<String, String> metadata) {
+        ensureOpen();
+        if (metadata == null) {
+            throw new IllegalArgumentException("Metadata must not be null");
+        }
+        for (Map.Entry<String, String> entry : metadata.entrySet()) {
+            if (entry.getKey() == null) {
+                throw new IllegalArgumentException("Metadata key must not be null");
+            }
+        }
+        keyValueMetadata.putAll(metadata);
+    }
+
+    /// Replaces the footer's `created_by` identifier, which defaults to [#DEFAULT_CREATED_BY].
+    ///
+    /// Readers that key compatibility workarounds off this field expect the
+    /// `<app> version <version> (build <hash>)` shape; a bare application name is rejected by
+    /// some of them.
+    ///
+    /// @param createdBy the identifier to write
+    /// @throws IllegalArgumentException if `createdBy` is `null`
+    /// @throws IllegalStateException if the writer is closed
+    public void createdBy(String createdBy) {
+        ensureOpen();
+        if (createdBy == null) {
+            throw new IllegalArgumentException("createdBy must not be null");
+        }
+        this.createdBy = createdBy;
     }
 
     /// Returns the column-oriented view over this file: a batch-shaped API for callers that
@@ -369,8 +450,8 @@ public final class ParquetFileWriter implements Closeable {
                 schema.toSchemaElements(),
                 numRows,
                 List.copyOf(rowGroups),
-                Map.of(),
-                config.createdBy(),
+                Collections.unmodifiableMap(new LinkedHashMap<>(keyValueMetadata)),
+                createdBy,
                 columnOrders());
 
         ThriftCompactWriter footer = new ThriftCompactWriter();
@@ -380,6 +461,11 @@ public final class ParquetFileWriter implements Closeable {
         out.write(ByteBuffer.wrap(footerBytes));
         out.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(footerBytes.length).flip());
         out.write(ByteBuffer.wrap(MAGIC));
+    }
+
+    /// Assembles this build's `created_by` identifier from [BuildInfo].
+    private static String defaultCreatedBy() {
+        return "hardwood version " + BuildInfo.version() + " (build " + BuildInfo.revisionWithDirtyMark() + ")";
     }
 
     /// Rows per data page whose encoded body fits the page target. A page costs each column's

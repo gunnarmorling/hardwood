@@ -156,6 +156,7 @@ in the same commit that introduces them. Concretely:
 | 17 (flat write benchmark) | None — it measures throughput over the shapes the gate already covers |
 | 18 (row-group-global dictionary selection) | The encoding axis loses the mid-chunk `PLAIN` fallback and gains the whole-chunk choice |
 | 19 (codecs, delta / BSS encoders) | The codec axis gains the remaining codecs; the encoding axis gains the delta and byte-stream-split forms, one case per encoding and legal physical type |
+| 20a (footer key-value metadata) | `WriterFooterMetadataInteropTest` — parquet-java reads back the entries the writer stamped, a key carrying no value as a `null`, a file given no entries as carrying no field at all, and a caller-supplied `created_by` through `VersionParser`. The consumers of this field are never Hardwood, so a malformed `list<KeyValue>` its own reader accepted would pass both directions of a round trip |
 | 22 (S3 `OutputFile`) | None — the backend does not change the bytes |
 | 23 (parallel encoding) | None — the output is byte-identical by construction, which its own tests assert |
 | 24 (page index) | The footer assertions gain the OffsetIndex and ColumnIndex, read through parquet-java |
@@ -169,7 +170,7 @@ it.
 
 ## Placement
 
-`parquet-testing-runner`, alongside the read-direction comparison it inverts. Three test
+`parquet-testing-runner`, alongside the read-direction comparison it inverts. Five test
 classes, split by what they parameterize over rather than by size:
 
 - `WriterInteropTest` — the swept flat matrix, plus the footer, statistics and encoding
@@ -182,6 +183,12 @@ classes, split by what they parameterize over rather than by size:
   `LogicalType` with the parquet-java `LogicalTypeAnnotation` it must read back as, plus
   the two sort orders that differ from their physical type's own (unsigned integers and
   binary `DECIMAL`).
+- `RowWriterLogicalTypeInteropTest` — the same annotation table driven through the
+  row-oriented entry point, its expectations taken from Avro's conversions rather than
+  from the inverse Hardwood decodes with, so it is an external oracle for
+  `PhysicalValueConverter`.
+- `WriterFooterMetadataInteropTest` — the footer's `key_value_metadata` and a
+  caller-supplied `created_by`, read back through parquet-java.
 
 A shared `ParquetJavaReader` helper wraps the Group reader, the footer reader, the page
 walk and the `created_by` check, so the parquet-java surface the gate depends on sits in

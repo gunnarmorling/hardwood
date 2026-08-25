@@ -27,7 +27,8 @@ here rather than in the release PR.
 | Columnar input | `ColumnWriter.writeBatch(Consumer<ColumnBatch>)`; `ColumnBatch` — `ints` / `longs` / `floats` / `doubles` / `booleans` / `bytes` / `fixed`, each by column index or name, each with a `Validity` and a `boolean[]` null overload; `struct(path, Validity)`, `list(path, offsets[, Validity])`, `map(path, offsets[, Validity])` |
 | Row input | `RowWriter.writeRow(Consumer<StructBuilder>)`; `StructBuilder` typed setters by name and by field index, including the logical-type setters (`setString`, `setDate`, `setTime`, `setTimestamp`, `setLocalTimestamp`, `setDecimal`, `setUuid`, `setInterval`, `setBinary`), `setNull`, and the nesting fillers `setStruct` / `setList` / `setMap`; `ListBuilder`, `MapBuilder`; `getFieldCount()` / `getFieldName(int)` |
 | Schema | `FileSchema.builder(name)` — `addColumn` overloads (type length, logical type), `struct`, `list`, `map`, and `ElementBuilder` for list elements and map values |
-| Configuration | `WriterConfig` — `pageTargetBytes` (1 MiB), `rowGroupTargetBytes` (128 MiB), `codec` (`ZSTD`, `UNCOMPRESSED` when the ZSTD library is absent), `encoding` file-wide and per leaf path (`AUTO`), `statisticsTruncationLength` (64), `createdBy`, `precisionLossPolicy` (`REJECT`) |
+| Configuration | `WriterConfig` — `pageTargetBytes` (1 MiB), `rowGroupTargetBytes` (128 MiB), `codec` (`ZSTD`, `UNCOMPRESSED` when the ZSTD library is absent), `encoding` file-wide and per leaf path (`AUTO`), `statisticsTruncationLength` (64), `precisionLossPolicy` (`REJECT`) |
+| File metadata | `ParquetFileWriter.keyValueMetadata(String, String)`, `keyValueMetadata(Map<String, String>)`, `createdBy(String)`, and the `ParquetFileWriter.DEFAULT_CREATED_BY` constant; the footer's two file-scope fields, settable until `close()` |
 | Enums | `ColumnEncoding`, `PrecisionLossPolicy`, the produced and refused `CompressionCodec` values, `Validity` |
 
 Out of scope, because the feature is: the S3 `OutputFile` backend (stage 22), page-index
@@ -161,7 +162,10 @@ Look-up facts, no narration.
   `ColumnOrder`, omitted where that order is undefined; `BYTE_ARRAY` bounds truncated at
   `statisticsTruncationLength` and flagged inexact; `nan_count` on the float types; and
   `distinct_count` where the chunk interned its values to the end.
-- **`created_by`** — the default string's shape and that readers parse it.
+- **File metadata** — the two footer fields set on the writer rather than in `WriterConfig`.
+  Key-value metadata: entries reach the file in the order they were added, a `null` value
+  writes a key carrying no value and an empty map no field at all, and entries can be added
+  until `close()`. `created_by`: the default string's shape and that readers parse it.
 
 ### `concepts/write-model.md` — "The Write Model"
 

@@ -23,7 +23,7 @@ they have different natures and lifetimes.
 |--------|--------|----------|----------|
 | `HardwoodContext` | Stateful, `AutoCloseable`, expensive to build, meant to be shared | Spans many reads; owns a thread pool | executor, libdeflate pool, decompressor factory |
 | `ReaderConfig` | Immutable value, cheap, no lifecycle | Per read | fixed-size-list fast path toggle |
-| `WriterConfig` | Immutable value, cheap, no lifecycle | Per write | page/row-group targets, `created_by` |
+| `WriterConfig` | Immutable value, cheap, no lifecycle | Per write | page/row-group targets, codec, encoding policy |
 
 The rule: **runtime resources on the context, per-operation behaviour on the
 config value.** Sizing the executor (`HardwoodContext.create(int threads)`) is a

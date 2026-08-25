@@ -180,6 +180,23 @@ WriterConfig config = WriterConfig.builder()
 
 Every option, its default and what it rejects: [Writer Reference](../reference/writer.md).
 
+## Stamping Metadata on the File
+
+Set the footer's key-value metadata and its `created_by` identifier on the writer, at any point until `close()`:
+
+```java
+try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+    writer.keyValueMetadata("ARROW:schema", encodedArrowSchema);
+    writer.createdBy("myapp version 2.1.0 (build deadbeef)");
+
+    // ...
+
+    writer.keyValueMetadata("row.count", String.valueOf(rowCount));
+}
+```
+
+Key-value metadata is application-defined and opaque to Parquet: it is where `ARROW:schema`, the pandas descriptor and the table-format stamps live. Passing the map `FileMetaData.keyValueMetadata()` returns reproduces another file's entries exactly. See [File Metadata](../reference/writer.md#file-metadata).
+
 ## One API per File
 
 A file is written through one API or the other: calling both `columnWriter()` and [`rowWriter()`](write-row-by-row.md) on the same `ParquetFileWriter` is rejected, on the call that obtains the second view. The row-oriented layer stages records into batches and submits them through this same core, so it produces the same layout — see [Choosing a Writer](index.md#choosing-a-writer).

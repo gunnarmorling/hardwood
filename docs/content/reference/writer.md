@@ -61,10 +61,11 @@ WriterConfig config = WriterConfig.builder()
 | `encoding(ColumnEncoding)` | `AUTO` | Encoding policy for every column without an override of its own. |
 | `encoding(String, ColumnEncoding)` | — | Encoding policy for one leaf column, overriding the file-wide default. |
 | `statisticsTruncationLength(int)` | `64` | Longest `BYTE_ARRAY` `min` / `max` statistics bound. A longer bound is truncated and flagged inexact. Must be positive. |
-| `createdBy(String)` | `hardwood version <version> (build <hash>)` | The footer's `created_by` identifier. |
 | `precisionLossPolicy(PrecisionLossPolicy)` | `REJECT` | What the row-oriented layer does with a value carrying more precision than its column can hold. |
 
-Each option has a getter that reads the configured value back — `pageTargetBytes()`, `rowGroupTargetBytes()`, `codec()`, `statisticsTruncationLength()`, `createdBy()`, `precisionLossPolicy()`, and, for the two encoding setters, `defaultEncoding()` and `columnEncodings()`. Every setter rejects `null`, and the numeric bounds above are checked when the option is set.
+Each option has a getter that reads the configured value back — `pageTargetBytes()`, `rowGroupTargetBytes()`, `codec()`, `statisticsTruncationLength()`, `precisionLossPolicy()`, and, for the two encoding setters, `defaultEncoding()` and `columnEncodings()`. Every setter rejects `null`, and the numeric bounds above are checked when the option is set.
+
+The footer's key-value metadata and its `created_by` identifier are set on the `ParquetFileWriter` itself; see [File Metadata](#file-metadata).
 
 ## Encodings
 
@@ -189,7 +190,35 @@ Every column chunk carries `null_count`. `min` / `max` are computed under the co
 
 Page-level index structures (OffsetIndex, ColumnIndex), Bloom filters, and the `GeospatialStatistics` of a `GEOMETRY` or `GEOGRAPHY` column are not yet written. [Bounding-box pushdown](../how-to/geospatial.md) prunes row groups from that last field, so it prunes nothing in a file Hardwood produced.
 
-## `created_by`
+## File Metadata
+
+Two footer fields are set on the `ParquetFileWriter` itself, at any point until `close()` writes the footer: the file's key-value metadata and its `created_by` identifier.
+
+| Method | Description |
+|--------|-------------|
+| `keyValueMetadata(String key, String value)` | Adds one key-value entry, replacing any value already held for that key. |
+| `keyValueMetadata(Map<String, String> metadata)` | Adds every entry of the map, leaving entries it does not name in place. |
+| `createdBy(String createdBy)` | Replaces the `created_by` identifier. |
+
+```java
+try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+    writer.keyValueMetadata("ARROW:schema", encodedArrowSchema);
+    writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
+    writer.keyValueMetadata("row.count", String.valueOf(values.length));
+}
+```
+
+### Key-value metadata
+
+`key_value_metadata` is application-defined: Parquet does not interpret it, and the writer validates nothing beyond requiring a key. It is where `ARROW:schema`, the pandas descriptor, `org.apache.spark.sql.parquet.row.metadata` and the table-format stamps live.
+
+Entries reach the file in the order they were added. A `null` value writes a key carrying no value, which the format allows and which is what a reader reports as a `null` — so the map `FileMetaData.keyValueMetadata()` returns can be passed straight to `keyValueMetadata(Map)` to reproduce another file's metadata exactly. A file given no entries carries no `key_value_metadata` field at all.
+
+Because the methods are callable until `close()`, a value the caller knows only once the data is written — a row count, a digest over what was produced — can still be stamped on the file.
+
+Reading the field back is covered in [Read File Metadata](../how-to/metadata.md).
+
+### `created_by`
 
 The default identifier follows the convention Parquet readers parse, naming the library, its version and the build it came from:
 
@@ -197,16 +226,16 @@ The default identifier follows the convention Parquet readers parse, naming the 
 hardwood version <version> (build <commit>)
 ```
 
-`createdBy(String)` replaces it. Readers that key compatibility workarounds off this field expect the `<app> version <version> (build <hash>)` shape; a bare application name is rejected by some of them.
+`ParquetFileWriter.DEFAULT_CREATED_BY` holds it. `createdBy(String)` replaces it; readers that key compatibility workarounds off this field expect the `<app> version <version> (build <hash>)` shape, and a bare application name is rejected by some of them.
 
 ## What the Writer Rejects
 
 | Exception | When |
 |---|---|
 | `UnsupportedOperationException` | A schema column of an unsupported physical type (`INT96`); a refused codec (`LZ4`, `LZO`) or one whose library is missing; an `OPTIONAL` struct group directly enclosing a repeated field |
-| `IllegalArgumentException` | An unknown column name or path; a setter that does not fit the column's type; a `null` value array, or a `null` value at a present row of a binary column; a column set twice in one batch or record; a batch that leaves a column unset, or whose arrays disagree in length; a null mask on a `REQUIRED` column; a `boolean[]` mask whose length does not match the values; list offsets that do not start at `0`, are not non-decreasing, or disagree with the element count; a value outside the range its annotation declares; a `REQUIRED` field left unset by a record |
+| `IllegalArgumentException` | A `null` metadata key, metadata map or `created_by`; an unknown column name or path; a setter that does not fit the column's type; a `null` value array, or a `null` value at a present row of a binary column; a column set twice in one batch or record; a batch that leaves a column unset, or whose arrays disagree in length; a null mask on a `REQUIRED` column; a `boolean[]` mask whose length does not match the values; list offsets that do not start at `0`, are not non-decreasing, or disagree with the element count; a value outside the range its annotation declares; a `REQUIRED` field left unset by a record |
 | `IndexOutOfBoundsException` | A leaf-column index outside `[0, leaf column count)` on a `ColumnBatch` setter, or a field index outside `[0, getFieldCount())` on a `StructBuilder` setter |
-| `IllegalStateException` | Writing after `close()`; using both write APIs on one file; using a `ColumnBatch` after it has been submitted, or a nested builder after its filler has returned |
+| `IllegalStateException` | Writing, or setting key-value metadata or `created_by`, after `close()`; using both write APIs on one file; using a `ColumnBatch` after it has been submitted, or a nested builder after its filler has returned |
 | `IOException` | The destination cannot be created, written, or finalized |
 
 An `OPTIONAL` struct group that encloses a repeated field is the one nested shape the writer cannot produce, although Hardwood reads files containing it; it is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
