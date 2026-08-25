@@ -164,7 +164,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Schema elements
   - [x] Num rows
   - [x] Row groups
-  - [x] Key-value metadata
+  - [x] Key-value metadata (decoded onto `FileMetaData.keyValueMetadata`; written at #1029)
   - [x] Created by string
   - [x] Column orders (decoded onto `FileMetaData.columnOrders`; #595)
 - [x] FileMetaData serialization
@@ -201,6 +201,8 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Page compression (UNCOMPRESSED, GZIP, SNAPPY, ZSTD, LZ4_RAW, BROTLI; `LZ4`'s deprecated
   Hadoop framing and `LZO` are refused at writer creation)
 - [x] Footer writing
+- [ ] Footer key-value metadata, and `created_by` alongside it, set on `ParquetFileWriter`
+  rather than `WriterConfig` (#1029)
 - [x] File finalization
 
 ### 6.3 Record Shredding (Dremel Algorithm)
