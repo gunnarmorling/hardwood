@@ -10,7 +10,6 @@ package dev.hardwood.writer;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import dev.hardwood.internal.BuildInfo;
 import dev.hardwood.internal.compression.CodecLibraries;
 import dev.hardwood.metadata.CompressionCodec;
 
@@ -27,6 +26,10 @@ import dev.hardwood.metadata.CompressionCodec;
 /// how the resulting page bodies are compressed is the [CompressionCodec]. Both are configured
 /// here rather than on the schema.
 ///
+/// Every setting here governs a row group and the pages within it, so a file's footer-scope
+/// fields — its `created_by` identifier and its key-value metadata — are set on
+/// [ParquetFileWriter] instead.
+///
 /// Obtain the defaults with [#defaults] or override individual knobs through [#builder].
 public final class WriterConfig {
 
@@ -35,16 +38,6 @@ public final class WriterConfig {
 
     /// Default row-group target: 128 MiB of uncompressed data per row group.
     public static final long DEFAULT_ROW_GROUP_TARGET_BYTES = 128L << 20;
-
-    /// Default `created_by` identifier written into the file footer, in the
-    /// `<app> version <version> (build <hash>)` convention Parquet readers parse — for
-    /// example `hardwood version 1.1.0 (build a093aab)`. The hash carries a `-dirty` suffix
-    /// when the working tree was not clean at build time, and a build that cannot identify
-    /// itself reports `unknown` in place of the version or the hash.
-    ///
-    /// A reader that cannot parse this field cannot tell which writer produced the file, and
-    /// applies its writer-specific correctness workarounds to it by default.
-    public static final String DEFAULT_CREATED_BY = defaultCreatedBy();
 
     /// Default statistics truncation length: `BYTE_ARRAY` `min` / `max` bounds longer than
     /// 64 bytes are truncated and flagged inexact.
@@ -66,7 +59,6 @@ public final class WriterConfig {
 
     private final int pageTargetBytes;
     private final long rowGroupTargetBytes;
-    private final String createdBy;
     private final ColumnEncoding defaultEncoding;
     private final Map<String, ColumnEncoding> columnEncodings;
     private final int statisticsTruncationLength;
@@ -76,7 +68,6 @@ public final class WriterConfig {
     private WriterConfig(Builder builder) {
         this.pageTargetBytes = builder.pageTargetBytes;
         this.rowGroupTargetBytes = builder.rowGroupTargetBytes;
-        this.createdBy = builder.createdBy;
         this.defaultEncoding = builder.defaultEncoding;
         this.columnEncodings = Map.copyOf(builder.columnEncodings);
         this.statisticsTruncationLength = builder.statisticsTruncationLength;
@@ -102,11 +93,6 @@ public final class WriterConfig {
     /// Uncompressed byte threshold at which a row group is flushed.
     public long rowGroupTargetBytes() {
         return rowGroupTargetBytes;
-    }
-
-    /// The `created_by` identifier written into the file footer.
-    public String createdBy() {
-        return createdBy;
     }
 
     /// The encoding policy for columns with no override of their own.
@@ -146,11 +132,6 @@ public final class WriterConfig {
         return precisionLossPolicy;
     }
 
-    /// Assembles this build's `created_by` identifier from [BuildInfo].
-    private static String defaultCreatedBy() {
-        return "hardwood version " + BuildInfo.version() + " (build " + BuildInfo.revisionWithDirtyMark() + ")";
-    }
-
     /// `ZSTD` when its library is loadable, otherwise `UNCOMPRESSED`. The class is only probed
     /// for presence, not initialized, so picking the default never triggers the native load.
     private static CompressionCodec defaultCodec() {
@@ -164,7 +145,6 @@ public final class WriterConfig {
 
         private int pageTargetBytes = DEFAULT_PAGE_TARGET_BYTES;
         private long rowGroupTargetBytes = DEFAULT_ROW_GROUP_TARGET_BYTES;
-        private String createdBy = DEFAULT_CREATED_BY;
         private ColumnEncoding defaultEncoding = DEFAULT_ENCODING;
         private final Map<String, ColumnEncoding> columnEncodings = new LinkedHashMap<>();
         private int statisticsTruncationLength = DEFAULT_STATISTICS_TRUNCATION_LENGTH;
@@ -191,15 +171,6 @@ public final class WriterConfig {
                         "rowGroupTargetBytes must be positive but was " + rowGroupTargetBytes);
             }
             this.rowGroupTargetBytes = rowGroupTargetBytes;
-            return this;
-        }
-
-        /// Sets the `created_by` footer identifier; must be non-null.
-        public Builder createdBy(String createdBy) {
-            if (createdBy == null) {
-                throw new IllegalArgumentException("createdBy must not be null");
-            }
-            this.createdBy = createdBy;
             return this;
         }
 

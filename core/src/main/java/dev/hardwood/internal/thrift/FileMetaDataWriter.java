@@ -41,6 +41,14 @@ public class FileMetaDataWriter {
             RowGroupWriter.write(writer, rowGroup);
         }
 
+        // 5: key_value_metadata (optional list<KeyValue>), the application metadata the
+        // caller stamped on the file. Omitted entirely when empty, so a file that was given
+        // none is byte-identical to one written before the field existed.
+        if (!metaData.keyValueMetadata().isEmpty()) {
+            writer.writeFieldBegin(5, ThriftCompactConstants.FieldType.LIST);
+            KeyValueMetadataWriter.write(writer, metaData.keyValueMetadata());
+        }
+
         // 6: created_by (optional)
         if (metaData.createdBy() != null) {
             writer.writeFieldBegin(6, ThriftCompactConstants.FieldType.BINARY);

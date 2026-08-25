@@ -52,7 +52,7 @@ class WriterRoundTripTest {
         ByteBuffer bytes = ByteBuffer.wrap(out.toByteArray());
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(bytes))) {
             assertThat(reader.getFileMetaData().numRows()).isEqualTo(5);
-            assertThat(reader.getFileMetaData().createdBy()).isEqualTo(WriterConfig.DEFAULT_CREATED_BY);
+            assertThat(reader.getFileMetaData().createdBy()).isEqualTo(ParquetFileWriter.DEFAULT_CREATED_BY);
             assertThat(reader.getFileSchema().getColumnCount()).isEqualTo(2);
             assertThat(reader.getFileSchema().isFlatSchema()).isTrue();
 

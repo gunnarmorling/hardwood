@@ -89,6 +89,8 @@ try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
 }
 ```
 
+The map `keyValueMetadata()` returns can be handed to `ParquetFileWriter.keyValueMetadata(Map)` to stamp the same entries on a file being written; see [File Metadata](../reference/writer.md#file-metadata).
+
 ## Metadata for multiple files
 
 For a multi-file reader, use `getFileCount()` and `getFileMetaData(int)` to inspect each
