@@ -207,7 +207,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     @Override
     public void close() {
         done = true;
-        exchange.finish();  // signals BatchExchange's timeout loops to exit
+        exchange.abort();  // frees readyQueue capacity so a parked publish() returns at once
         LockSupport.unpark(retrieverThread);
         LockSupport.unpark(drainThread);
 
