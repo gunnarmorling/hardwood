@@ -85,6 +85,39 @@ This applies to every commit, including fixups.
 
 Focus the body on **why** the change is being made, with at most a high-level overview of **what**. The diff already shows the what; don't restate it as a bullet list. Keep it concise — a short paragraph is usually enough.
 
+## Local git configuration
+
+Two repository-local settings are worth applying once per clone. Both live in `.git/config`, which
+is not version-controlled, so a fresh clone starts without them.
+
+**`core.commentChar`** — required. `#` is git's comment character, and every Hardwood commit subject
+starts with `#<issue>`. Any git operation that runs a message through editor cleanup
+(`git rebase --continue` after a conflict, `git commit --amend` without `-m`, `reword` and `squash`
+steps in `git rebase -i`) deletes lines beginning with `#` — which is your entire subject line. With
+a body, the body's first paragraph is silently promoted to the subject; without one the message
+becomes empty, git refuses the commit, and `git rebase --continue` loops without advancing.
+
+```shell
+git config core.commentChar ';'
+```
+
+**`core.checkStat` / `core.trustctime`** — only if you edit the working tree from two places at once,
+typically a dev container or VM with the repo bind-mounted from the host. The same files then report
+different `st_uid`/`st_gid`, `st_dev`, `st_ino` and sub-second timestamps on each side, and git's
+index caches all of those. The cache can only be valid for one side at a time, so whichever side ran
+git last invalidates it for the other. The symptom is a working tree that reports every file as
+modified with no content change behind any of them — most visibly as a `Local uncommitted changes,
+not checked in to index` node in `gitk` and `git gui`, which read the index without refreshing it.
+
+```shell
+git config core.checkStat minimal
+git config core.trustctime false
+```
+
+This drops the fields that differ across the mount and compares whole-second `mtime` plus file size,
+which agree. The trade-off is documented: a modification made within the same second that leaves the
+file the same size can go undetected. Skip both settings if you work from the host only.
+
 ## Opening a pull request
 
 The [PR template](.github/PULL_REQUEST_TEMPLATE.md) covers the basics: build passes, commit message format, test coverage, and documentation updates. Please run through it before requesting review.

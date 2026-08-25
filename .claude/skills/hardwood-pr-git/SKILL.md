@@ -1,6 +1,6 @@
 ---
 name: hardwood-pr-git
-description: Rebase, rewrite, squash, reword and push Hardwood PR history — including contributor PRs whose author and committer identity must survive the rewrite. Use whenever the user asks to "rebase", "rebase onto main", "fix the commit message", "prefix with the issue key", "squash the commits", "force push (with lease)", "push to the PR", "amend", "bring the PR into the workspace", or "retain the original author/committership". Covers the `#`-comment-char trap that silently eats Hardwood commit subjects, fetching PRs from forks, choosing the right push target, and verifying a rewrite changed nothing but the message.
+description: Rebase, rewrite, squash, reword and push Hardwood PR history — including contributor PRs whose author and committer identity must survive the rewrite. Use whenever the user asks to "rebase", "rebase onto main", "fix the commit message", "prefix with the issue key", "squash the commits", "force push (with lease)", "push to the PR", "amend", "bring the PR into the workspace", or "retain the original author/committership". Covers the `#`-comment-char trap that silently eats Hardwood commit subjects, the bind-mount stat cache that makes the whole tree look dirty when nothing changed, fetching PRs from forks, choosing the right push target, and verifying a rewrite changed nothing but the message.
 ---
 
 # Hardwood PR git surgery
@@ -32,6 +32,12 @@ terminates is not a stuck rebase — it is git refusing to write an empty commit
 git config core.commentChar ';'
 ```
 
+This is one of two clone-local settings this repo needs; the other is in
+[The phantom dirty tree](#the-phantom-dirty-tree--the-bind-mount-not-another-writer). Both live in
+`.git/config`, which is **not** version-controlled — a fresh clone starts without them. Both are
+documented for contributors under *Local git configuration* in
+[CONTRIBUTING.md](../../../CONTRIBUTING.md); keep the two in sync.
+
 **Also pass it explicitly** on every rewrite command, so the recipes still work in a fresh clone or a
 CI checkout where the config has not been set:
 
@@ -60,6 +66,63 @@ exactly the rebases that were already painful.
 **Verify after every rewrite** (see §7); a stripped subject is invisible in `git log --oneline -1`
 if you only look at the top commit.
 
+## The phantom dirty tree — the bind mount, not another writer
+
+Where the checkout is edited from two places at once — typically a dev container or VM with the
+repository bind-mounted from the host, with an editor or git GUI still open on the host side — the
+same files stat differently from each side:
+
+| `stat` field | inside the container | on the host |
+|---|---|---|
+| `st_uid` / `st_gid` | remapped by the mount, often `0` / `0` | the host user's real uid / gid |
+| `st_dev`, `st_ino` | the mount's values | the host filesystem's values |
+| sub-second `mtime` / `ctime` | translated | native |
+
+Confirm the shape before assuming it applies: `findmnt -T .` names the mount, and
+`git ls-files --debug -- <file>` prints the uid/gid/dev/ino the index has cached for it.
+
+Git's index caches those fields per file, and the default `core.checkStat` compares **all** of them,
+so the stat cache can only be valid for one side at a time. Whichever side ran git last rewrote it
+in its own terms and invalidated it for the other.
+
+**Symptom.** gitk / git gui's history view shows a `Local uncommitted changes, not checked in to
+index` node listing *every file in the repo*, with no content change behind any of them. That view
+runs `git diff-index` **without** refreshing, so it reports the stale stat cache verbatim. git gui's
+**Rescan** runs `update-index --refresh`, which opens each file, finds the content identical, and
+rewrites the cache with host values — clearing the node, and dirtying it again for the container.
+
+**The fix, applied once per clone** (`.git/config` is shared by both sides, so setting it anywhere
+fixes both):
+
+```bash
+git config core.checkStat minimal     # drop uid, gid, ino, dev, sub-second times from the comparison
+git config core.trustctime false      # drop ctime, which any host-side metadata touch bumps
+```
+
+`minimal` leaves whole-second `mtime` + size, which agree across the mount. The documented
+trade-off: a modification made within the same second that leaves the file the same size can be
+missed.
+
+**What this is *not* the cause of.** A stat-only mismatch does **not** break a rebase. The sequencer
+refreshes the index before each step, finds the content identical, and proceeds — verified by
+rewriting the stat cache with host values from an `exec` step *between two picks*, which the rebase
+then completed without complaint. So it is not behind `Your local changes … would be overwritten by
+merge`, and not behind `cannot rebase: You have unstaged changes` either. Both of those mean the
+tree is *genuinely* dirty; keep looking for the writer.
+
+The one real link is second-order: a permanently red git gui invites a **Rescan**, and that Rescan
+takes `.git/index.lock`. Lock contention is what stops a rebase — see the table in §1.
+
+**Triage — is the dirt real?**
+
+```bash
+git diff --stat                       # refreshes: empty here means no content changed
+git --no-optional-locks diff-index --name-status HEAD   # does not refresh: what gitk sees
+```
+
+Files in the second and not the first are phantom. Clear them with `git update-index --really-refresh`
+— never with `git checkout --` or a stash, which risk destroying someone's real edit.
+
 ## Working rules
 
 - **Run history surgery without an interactive terminal.** `rebase -i` does not need one — it needs
@@ -74,7 +137,9 @@ if you only look at the top commit.
   second agent session will write to tracked files while a rebase is replaying. This is the second
   cause of "the rebase aborted": a file goes dirty *mid-rebase* and git reports `Your local changes
   to the following files would be overwritten by merge / Aborting / Could not execute the todo
-  command … It has been rescheduled`. See the preflight in §1.
+  command … It has been rescheduled`. See the preflight in §1. Before treating a dirty tree as
+  another writer, confirm the dirt is real — on this bind mount most of it is not; see
+  [The phantom dirty tree](#the-phantom-dirty-tree--the-bind-mount-not-another-writer).
 - **Know what rerere does to a conflict.** Where `rerere.enabled` is on and `rerere.autoUpdate` is
   not, a recorded resolution is replayed into the working tree but **not** staged. Signature:
   `git rebase --continue` says `You must edit all merge conflicts and then mark them as resolved
@@ -96,6 +161,10 @@ git rev-parse HEAD > /tmp/old-tip                       # the escape hatch, and 
 git status --porcelain                                  # must be empty except '??' you own
 git fetch origin main
 ```
+
+If `git status --porcelain` lists a large number of modified files, check whether any of it is real
+before reacting — `git diff --stat` empty against a long `status` means the stat cache went stale,
+not that anyone wrote anything. Refresh it (`git update-index --really-refresh`) and re-check.
 
 If the tree is dirty with changes that are not yours, they belong to whoever else has the repo open.
 Do **not** stash them and hope — a stashed file can come back dirty mid-rebase, because the process
@@ -124,7 +193,7 @@ leaving `UU` entries in the tree while the rebase prints `Successfully rebased`.
 
 Read the actual output. Never write `for i in $(seq 1 12); do git rebase --continue >/dev/null; done` —
 that loop was invented to paper over the empty-message reschedule (§0) and it hides the one line
-that says what is wrong. Three distinct stops, three distinct answers:
+that says what is wrong. Each stop has one correct answer, and they are not interchangeable:
 
 | Output | Meaning | Do |
 |---|---|---|
@@ -132,6 +201,8 @@ that says what is wrong. Three distinct stops, three distinct answers:
 | `CONFLICT` / `could not apply` | a real conflict | resolve, `git add`, `git -c core.commentChar=';' rebase --continue` |
 | `You must edit all merge conflicts…` with no `<<<<<<<` in the file | rerere resolved it, unstaged | review the diff, `git add`, continue |
 | `Your local changes … would be overwritten by merge` + `It has been rescheduled` | someone else wrote to the tree | `git rebase --abort`, move to a private worktree, restart |
+| `Unable to create '…/.git/index.lock': File exists` + `Another git process seems to be running` | a concurrent git holds the index — a git gui **Rescan** on the host does exactly this | wait for it to finish, `git rebase --abort`, restart; do not delete the lock unless you have confirmed no git is running |
+| `cannot rebase: You have unstaged changes` / `Your index contains uncommitted changes` | genuinely dirty tree — a stat-only mismatch does *not* produce this, rebase refreshes past that | `git diff --stat` to see whose changes they are, then commit, stash, or use a worktree |
 
 Each `--continue` should advance the `Rebasing (n/N)` counter. If N does not move, stop and read —
 looping harder will not fix it.
