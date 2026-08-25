@@ -187,6 +187,11 @@ docker run --rm -p 8000:8000 -v "$(pwd):/repo" hardwood-docs
 docker run --rm -v "$(pwd):/repo" hardwood-docs build -f docs/mkdocs.yml
 ```
 
+The serve command polls the mounted repository, so edits to `docs/content`,
+`docs/overrides`, `docs/hooks`, and `docs/mkdocs.yml` rebuild the site and
+refresh the open browser tab. Changes to `docs/requirements.txt` require a
+rebuild of the image.
+
 ### Running Claude Code
 
 A Docker Compose set-up is provided for running [Claude Code](https://claude.ai/claude-code) with all build dependencies (Java 25, Maven, `gh`) pre-installed.

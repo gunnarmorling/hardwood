@@ -86,6 +86,12 @@ hooks:
   - hooks/git_commit.py
   - hooks/page_variables.py
 
+# `mkdocs serve` watches `docs_dir` and this file out of the box; the theme
+# overrides and the hooks have to be listed explicitly to trigger a rebuild.
+watch:
+  - overrides
+  - hooks
+
 plugins:
   - search
 
