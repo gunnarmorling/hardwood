@@ -286,21 +286,21 @@ class WriterSchemaShapeTest {
         }
     }
 
-    /// Refused because the writer validates a leaf's nulls against its own repetition without
-    /// consulting the ancestor masks that decide whether a slot is encoded at all (#1026).
-    /// The rejection itself is not new; settling it at `create` is.
+    /// A nullable struct directly enclosing a `LIST` or `MAP` is producible (#1026): the leaf's
+    /// nulls are validated against the ancestor masks that decide whether a slot is encoded at
+    /// all, not against the leaf's own repetition in isolation. Kept here, alongside the shapes
+    /// this class refuses, as a regression guard for the rule this class states.
     @Test
-    void rejectsNullableStructEnclosingARepeatedField() {
+    void acceptsANullableStructEnclosingARepeatedField() throws Exception {
         FileSchema schema = FileSchema.builder("schema")
                 .struct("outer", RepetitionType.OPTIONAL, outer -> outer
                         .list("inner", RepetitionType.REQUIRED,
                                 element -> element.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
                 .build();
 
-        assertThatThrownBy(() -> ParquetFileWriter.create(new ByteBufferOutputFile(), schema))
-                .isInstanceOf(UnsupportedOperationException.class)
-                .hasMessageContaining("nullable struct enclosing a repeated field")
-                .hasMessageContaining("outer.inner");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            assertThat(writer).isNotNull();
+        }
     }
 
     /// A repeated field resets the ancestry: a nullable struct *below* a list is the shape

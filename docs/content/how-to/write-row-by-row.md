@@ -145,8 +145,6 @@ rows.writeRow(row -> row
                 .addList(inner -> inner.addInt(3))));
 ```
 
-One nested shape cannot be written yet: an `OPTIONAL` struct group directly enclosing a repeated field — what Arrow-based writers produce for a nullable struct holding a list. `ParquetFileWriter.create` rejects such a schema, naming the group. Hardwood reads such files; writing them is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
-
 Two shapes the columnar API writes are out of reach here: the legacy two-level lists, `LIST { repeated element }` and `LIST { repeated group element { … } }`. The builders reach a list's values through an element node below the entry, and in both of those the entry is the element. `rowWriter()` rejects them, naming the group; [Column by Column](write-column-by-column.md) writes them.
 
 A builder is valid only inside the filler it was handed to. Retaining one and using it after its scope has ended is rejected rather than writing into a later record.

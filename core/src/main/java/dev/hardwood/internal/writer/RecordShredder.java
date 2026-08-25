@@ -289,13 +289,11 @@ public final class RecordShredder {
 
     /// The record count implied by one column, walking its layers from leaf to root while
     /// validating the offset chain: each `REPEATED` layer replaces the running count with its
-    /// parent count (`offsets.length - 1`), each `STRUCT` layer preserves it. A `STRUCT`
-    /// layer enclosing a repeated field would break this invariant and is rejected, since its
-    /// offset scope would not be the record scope.
+    /// parent count (`offsets.length - 1`); a `STRUCT` layer never remaps its scope, nullable
+    /// or not, so it always preserves the count unchanged.
     private int impliedRecordCount(int columnIndex) {
         Layer[] path = layers[columnIndex];
         int count = sources[columnIndex].size();
-        boolean seenRepeated = false;
         for (int k = path.length - 1; k >= 0; k--) {
             Layer layer = path[k];
             if (layer.kind() == Layer.Kind.REPEATED) {
@@ -303,15 +301,6 @@ public final class RecordShredder {
                 validateOffsets(offsets, count, layer.key());
                 validateNullListsEmpty(offsets, layer.key());
                 count = offsets.length - 1;
-                seenRepeated = true;
-            }
-            else if (seenRepeated && layer.nullable()) {
-                // UnsupportedOperationException, not IllegalArgumentException: the batch is
-                // well formed and the schema is the problem, which is how the writer reports an
-                // unsupported shape everywhere else — `create` for INT96, `rowWriter` for this
-                // very shape. One defect must not have two types depending on which API sees it.
-                throw new UnsupportedOperationException("A nullable struct enclosing a repeated field ("
-                        + layer.key() + ") is not yet supported by the writer");
             }
         }
         return count;

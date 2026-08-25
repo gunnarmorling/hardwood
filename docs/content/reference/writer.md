@@ -240,7 +240,7 @@ hardwood version <version> (build <commit>)
 
 ### Schema Shapes
 
-Repetition is writable wherever a `LIST` or `MAP` annotation accounts for it. An annotated group is `REQUIRED` or `OPTIONAL` and holds exactly one `REPEATED` entry, which for a `MAP` is a group of `key` and `value`. That admits the canonical three-level `LIST` and two-level `MAP` layouts `FileSchema.builder` declares, and the legacy two-level lists a schema read from an existing file may carry: `LIST { repeated element }`, whose entry is the element, and `LIST { repeated group element { … } }`, whose entry is an element struct.
+Repetition is writable wherever a `LIST` or `MAP` annotation accounts for it. An annotated group is `REQUIRED` or `OPTIONAL` and holds exactly one `REPEATED` entry, which for a `MAP` is a group of `key` and `value`. That admits the canonical three-level `LIST` and two-level `MAP` layouts `FileSchema.builder` declares, and the legacy two-level lists a schema read from an existing file may carry: `LIST { repeated element }`, whose entry is the element, and `LIST { repeated group element { … } }`, whose entry is an element struct. A nullable struct enclosing a `LIST` or `MAP` is writable too.
 
 Every other arrangement of repetition is rejected when the writer is created, since nothing in the schema says where its entries begin and end:
 
@@ -248,8 +248,6 @@ Every other arrangement of repetition is rejected when the writer is created, si
 - a `LIST` or `MAP` group that is itself `REPEATED`;
 - a `LIST` or `MAP` group holding anything other than its single `REPEATED` entry;
 - a `MAP` whose entry is a leaf rather than a group.
-
-An `OPTIONAL` struct group enclosing a repeated field is rejected as well, although Hardwood reads files containing it; it is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
 
 The row API reaches a list's values through an element node below the entry, which the legacy two-level lists do not have, so `rowWriter()` refuses those two shapes and `columnWriter()` writes them. `rowWriter()` also requires sibling field names to be unique, which the `ColumnBatch` indices and dotted paths do not.
 

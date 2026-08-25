@@ -321,6 +321,53 @@ class WriterNestedInteropTest {
         assertThat(count(entries.getGroup("key_value", 1), "value")).as("second value is null").isZero();
     }
 
+    // ==================== A nullable struct enclosing a repeated field (#1026) ====================
+
+    @Test
+    void optionalStructEnclosingOptionalList(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .list("phones", RepetitionType.OPTIONAL,
+                                el -> el.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        // Row 0: s null; row 1: s present, phones null; row 2: phones empty; row 3: phones = [null];
+        // row 4: phones = [42].
+        List<Group> rows = writeAndRead(dir, schema, batch -> batch
+                .struct("s", Validity.ofNulls(new boolean[] { true, false, false, false, false }))
+                .list("s.phones", new int[] { 0, 0, 0, 0, 1, 2 },
+                        Validity.ofNulls(new boolean[] { true, true, false, false, false }))
+                .ints("s.phones.list.element", new int[] { 0, 42 }, new boolean[] { true, false }));
+
+        assertThat(count(rows.get(0), "s")).as("row 0 has no s").isZero();
+        assertThat(count(rows.get(1).getGroup("s", 0), "phones")).as("row 1's phones is absent").isZero();
+        assertThat(readIntList(rows.get(2).getGroup("s", 0), "phones")).as("row 2's phones is empty").isEmpty();
+        assertThat(readIntList(rows.get(3).getGroup("s", 0), "phones")).containsExactly((Integer) null);
+        assertThat(readIntList(rows.get(4).getGroup("s", 0), "phones")).containsExactly(42);
+    }
+
+    @Test
+    void optionalStructEnclosingOptionalMap(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("nested")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .map("props", RepetitionType.OPTIONAL, PhysicalType.INT32,
+                                value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        // Row 0: s null; row 1: s present, props null; row 2: props empty; row 3: props = {1:30}.
+        List<Group> rows = writeAndRead(dir, schema, batch -> batch
+                .struct("s", Validity.ofNulls(new boolean[] { true, false, false, false }))
+                .map("s.props", new int[] { 0, 0, 0, 0, 1 },
+                        Validity.ofNulls(new boolean[] { true, true, false, false }))
+                .ints("s.props.key_value.key", new int[] { 1 })
+                .ints("s.props.key_value.value", new int[] { 30 }));
+
+        assertThat(count(rows.get(0), "s")).as("row 0 has no s").isZero();
+        assertThat(count(rows.get(1).getGroup("s", 0), "props")).as("row 1's props is absent").isZero();
+        assertThat(intMap(rows.get(2).getGroup("s", 0), "props")).as("row 2's props is empty").isEmpty();
+        assertThat(intMap(rows.get(3).getGroup("s", 0), "props")).isEqualTo(Map.of(1, 30));
+    }
+
     // ==================== Boundaries ====================
 
     @Test

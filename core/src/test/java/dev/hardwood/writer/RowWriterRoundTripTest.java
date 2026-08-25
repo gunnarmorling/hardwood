@@ -269,6 +269,121 @@ class RowWriterRoundTripTest {
         }
     }
 
+    /// A nullable struct directly enclosing a list is a fifth state beyond a flat list's four:
+    /// the struct itself can be absent, on top of the list being null, empty, or holding a
+    /// null entry.
+    @Test
+    void writesAnOptionalStructEnclosingAnOptionalList() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .list("phones", RepetitionType.OPTIONAL,
+                                element -> element.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            RowWriter rows = writer.rowWriter();
+            rows.writeRow(row -> row.setInt("id", 1));
+            rows.writeRow(row -> row.setInt("id", 2).setStruct("s", s -> { }));
+            rows.writeRow(row -> row.setInt("id", 3).setStruct("s", s -> s.setList("phones", phones -> { })));
+            rows.writeRow(row -> row.setInt("id", 4)
+                    .setStruct("s", s -> s.setList("phones", phones -> phones.addNull())));
+            rows.writeRow(row -> row.setInt("id", 5)
+                    .setStruct("s", s -> s.setList("phones", phones -> phones.addInt(42))));
+        }
+
+        try (ParquetFileReader reader = open(out); RowReader rows = reader.rowReader()) {
+            rows.next();
+            assertThat(rows.isNull("s")).isTrue();
+            rows.next();
+            assertThat(rows.getStruct("s").isNull("phones")).isTrue();
+            rows.next();
+            assertThat(rows.getStruct("s").getList("phones").size()).isZero();
+            rows.next();
+            PqList phones = rows.getStruct("s").getList("phones");
+            assertThat(phones.size()).isEqualTo(1);
+            assertThat(phones.isNull(0)).isTrue();
+            rows.next();
+            assertThat(rows.getStruct("s").getList("phones").ints().toArray()).containsExactly(42);
+        }
+    }
+
+    /// The same fifth state a struct enclosing a list adds applies to a struct enclosing a map.
+    @Test
+    void writesAnOptionalStructEnclosingAnOptionalMap() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("id", PhysicalType.INT32, RepetitionType.REQUIRED)
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .map("props", RepetitionType.OPTIONAL, PhysicalType.INT32,
+                                value -> value.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            RowWriter rows = writer.rowWriter();
+            rows.writeRow(row -> row.setInt("id", 1));
+            rows.writeRow(row -> row.setInt("id", 2).setStruct("s", s -> { }));
+            rows.writeRow(row -> row.setInt("id", 3).setStruct("s", s -> s.setMap("props", props -> { })));
+            rows.writeRow(row -> row.setInt("id", 4).setStruct("s", s -> s.setMap("props", props -> props
+                    .addEntry(entry -> entry.setInt("key", 1).setNull("value")))));
+            rows.writeRow(row -> row.setInt("id", 5).setStruct("s", s -> s.setMap("props", props -> props
+                    .addEntry(entry -> entry.setInt("key", 2).setInt("value", 99)))));
+        }
+
+        try (ParquetFileReader reader = open(out); RowReader rows = reader.rowReader()) {
+            rows.next();
+            assertThat(rows.isNull("s")).isTrue();
+            rows.next();
+            assertThat(rows.getStruct("s").isNull("props")).isTrue();
+            rows.next();
+            assertThat(rows.getStruct("s").getMap("props").size()).isZero();
+            rows.next();
+            PqMap props = rows.getStruct("s").getMap("props");
+            assertThat(props.size()).isEqualTo(1);
+            assertThat(props.getEntries().get(0).getIntKey()).isEqualTo(1);
+            assertThat(props.getEntries().get(0).isValueNull()).isTrue();
+            rows.next();
+            props = rows.getStruct("s").getMap("props");
+            assertThat(props.getEntries().get(0).getIntKey()).isEqualTo(2);
+            assertThat(props.getEntries().get(0).getIntValue()).isEqualTo(99);
+        }
+    }
+
+    /// The same struct-enclosing-a-list shape as an element of an outer list, rather than the
+    /// record root — the `chapters.list.element.sections` shape of `nested_list_struct_test.parquet`.
+    @Test
+    void writesAnOptionalStructEnclosingAnOptionalListNestedInsideAList() throws Exception {
+        FileSchema schema = FileSchema.builder("schema")
+                .list("chapters", RepetitionType.OPTIONAL, chapter -> chapter.struct(RepetitionType.OPTIONAL,
+                        element -> element.list("sections", RepetitionType.OPTIONAL,
+                                section -> section.primitive(PhysicalType.INT32, RepetitionType.REQUIRED))))
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            RowWriter rows = writer.rowWriter();
+            // Book 0: chapters = [{sections: [10, 20]}, null (chapter itself absent)].
+            rows.writeRow(row -> row.setList("chapters", chapters -> chapters
+                    .addStruct(chapter -> chapter.setList("sections", sections -> sections.addInt(10).addInt(20)))
+                    .addNull()));
+            rows.writeRow(row -> row.setList("chapters", chapters -> { })); // book 1: chapters = []
+            rows.writeRow(row -> { }); // book 2: chapters absent
+        }
+
+        try (ParquetFileReader reader = open(out); RowReader rows = reader.rowReader()) {
+            rows.next();
+            PqList chapters = rows.getList("chapters");
+            assertThat(chapters.size()).isEqualTo(2);
+            assertThat(chapters.structs().get(0).getList("sections").ints().toArray()).containsExactly(10, 20);
+            assertThat(chapters.isNull(1)).isTrue();
+            rows.next();
+            assertThat(rows.getList("chapters").size()).isZero();
+            rows.next();
+            assertThat(rows.isNull("chapters")).isTrue();
+        }
+    }
+
     @Test
     void writesListsOfStructsAndListsOfLists() throws Exception {
         FileSchema schema = FileSchema.builder("schema")

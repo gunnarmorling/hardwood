@@ -325,12 +325,11 @@ same file invites a double-close that either discards a valid file or writes a s
 columnar path uses.
 
 Whether a schema can be produced at all is settled by `ParquetFileWriter.create` before either
-view exists, so a nullable struct enclosing a repeated field or a repeated field outside a
-`LIST` or `MAP` group never reaches this layer.
+view exists, so a repeated field outside a `LIST` or `MAP` group never reaches this layer.
 
 The plan is built when `rowWriter()` is called, and rejects there — naming the offending path —
 the shapes this layer alone cannot *address*: two sibling fields sharing a name, which leaves
-the by-name setters ambiguous, and the legacy 2-level lists, whose entry is the element itself
+the by-name setters ambiguous, and the legacy two-level lists, whose entry is the element itself
 where the builders reach a list's values through an element node below the entry. The columnar
 API addresses by index and dotted path and writes those shapes.
 
@@ -371,8 +370,8 @@ knows it only at runtime and otherwise has to switch on `PhysicalType` to pick a
   writer rather than on this layer, planned as stage 35 of `_designs/WRITER_SUPPORT.md`.
 - **`INT96`.** Not writable at all.
 - **Shapes the columnar path rejects.** The layer produces `ColumnBatch` inputs, so it inherits
-  every limitation of the core: notably a nullable struct enclosing a repeated field, which the
-  shredder cannot level (#1026, stage 36 of `WRITER_SUPPORT.md`).
+  every limitation of the core: a `REPEATED` leaf, a legacy two-level list, which the shredder
+  cannot level.
 
 ## Validation
 

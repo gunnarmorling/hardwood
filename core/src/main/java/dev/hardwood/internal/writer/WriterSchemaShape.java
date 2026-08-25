@@ -19,7 +19,7 @@ import dev.hardwood.schema.SchemaNode;
 /// the public API once this has run; [RowPlan]'s remaining guards are reached, and are about
 /// addressing rather than producing — see below.
 ///
-/// Three rules live here, and all of them are about repetition.
+/// Two rules live here, and both are about repetition.
 ///
 /// **A `REPEATED` field is producible only as the entry of a `LIST` or `MAP` group.** The
 /// shredder derives a repetition layer from the annotated group, and [ColumnBatch] addresses
@@ -39,9 +39,10 @@ import dev.hardwood.schema.SchemaNode;
 /// schema disagree — a second repetition with no layer behind it, or a layer over a field
 /// that repeats not at all.
 ///
-/// **A repeated field must not sit below a nullable struct.** [ColumnBatch] validates a leaf's
-/// nulls against the leaf's own repetition without consulting the ancestor masks that decide
-/// whether a slot is encoded at all, so the two disagree about which slots exist.
+/// A nullable struct enclosing a `LIST` or `MAP` is producible: [RecordShredder]'s leaf-to-root
+/// walk and [RowStructNode] / [RowRepeatedNode]'s scope machinery both already carry an absent
+/// ancestor's state through to the repeated field beneath it without remapping, so a `STRUCT`
+/// layer preserves the record count whether or not it sits above a `REPEATED` one.
 ///
 /// Rules about *addressing* a shape rather than producing it belong to [RowPlan] alone, since
 /// the columnar API addresses by index and dotted path and is unharmed by them: two sibling
@@ -57,28 +58,22 @@ public final class WriterSchemaShape {
     /// @param schema the schema to write
     /// @throws UnsupportedOperationException if the schema has a shape the writer cannot produce
     public static void validate(FileSchema schema) {
-        walk(schema.getRootNode(), "", false, false);
+        walk(schema.getRootNode(), "", false);
     }
 
     /// Walks one group's fields.
     ///
-    /// `nullableAncestor` is whether an enclosing struct is `OPTIONAL`; a repeated field
-    /// re-bases the record scope, so it clears the flag for the fields below it.
     /// `parentIsAnnotatedGroup` is whether this group is the `LIST` or `MAP` whose entry the
     /// fields being walked are, which is the one place repetition is legal.
-    private static void walk(SchemaNode.GroupNode group, String path, boolean nullableAncestor,
-                             boolean parentIsAnnotatedGroup) {
+    private static void walk(SchemaNode.GroupNode group, String path, boolean parentIsAnnotatedGroup) {
         for (SchemaNode child : group.children()) {
             String childPath = childPath(path, child.name());
             switch (child) {
                 case SchemaNode.PrimitiveNode leaf -> requireWritableLeaf(leaf, childPath, parentIsAnnotatedGroup);
                 case SchemaNode.GroupNode nested -> {
-                    requireWritableGroup(nested, childPath, nullableAncestor, parentIsAnnotatedGroup);
+                    requireWritableGroup(nested, childPath, parentIsAnnotatedGroup);
                     boolean annotated = nested.isList() || nested.isMap();
-                    boolean repeated = annotated || nested.repetitionType() == RepetitionType.REPEATED;
-                    walk(nested, childPath,
-                            !repeated && (nullableAncestor || nested.repetitionType() == RepetitionType.OPTIONAL),
-                            annotated);
+                    walk(nested, childPath, annotated);
                 }
             }
         }
@@ -103,18 +98,13 @@ public final class WriterSchemaShape {
     ///
     /// @param group the group
     /// @param path the group's dotted path
-    /// @param nullableAncestor whether an enclosing struct is `OPTIONAL`
     /// @param parentIsAnnotatedGroup whether the group's parent is a `LIST` or `MAP` group, which
     ///        makes this group that annotation's entry scaffolding
     /// @throws UnsupportedOperationException if the group is `REPEATED` outside a `LIST` or `MAP`,
-    ///         is a `LIST` or `MAP` below a nullable struct, or is a `LIST` or `MAP` whose own
-    ///         repetition or entry the annotation cannot account for
-    public static void requireWritableGroup(SchemaNode.GroupNode group, String path, boolean nullableAncestor,
+    ///         or is a `LIST` or `MAP` whose own repetition or entry the annotation cannot account for
+    public static void requireWritableGroup(SchemaNode.GroupNode group, String path,
                                             boolean parentIsAnnotatedGroup) {
         if (group.isList() || group.isMap()) {
-            if (nullableAncestor) {
-                throw nullableStructEnclosingRepeated(path);
-            }
             requireWritableAnnotation(group, path);
             return;
         }
@@ -148,16 +138,6 @@ public final class WriterSchemaShape {
             throw new UnsupportedOperationException("Group " + path + " is annotated MAP but its entry "
                     + entry.name() + " is a leaf where the layout requires a repeated group of key and value");
         }
-    }
-
-    /// The rejection of a repeated field below a nullable struct, raised from wherever the pair
-    /// is first seen so that one defect carries one wording.
-    ///
-    /// @param path the repeated field's dotted path
-    /// @return the exception to throw
-    public static UnsupportedOperationException nullableStructEnclosingRepeated(String path) {
-        return new UnsupportedOperationException(
-                "A nullable struct enclosing a repeated field (" + path + ") is not yet supported by the writer");
     }
 
     /// Appends a field name to its parent's dotted path.

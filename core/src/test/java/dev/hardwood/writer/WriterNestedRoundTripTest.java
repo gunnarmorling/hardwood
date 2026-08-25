@@ -468,6 +468,195 @@ class WriterNestedRoundTripTest {
     }
 
     @Test
+    void writesAndReadsBackOptionalStructEnclosingOptionalList() throws Exception {
+        // optional group s { optional group phones (LIST) { repeated group list { optional int32 element } } }
+        // record 0: s null; 1: s present, phones null; 2: phones empty; 3: phones = [null]; 4: phones = [42].
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .list("phones", RepetitionType.OPTIONAL,
+                                el -> el.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        Validity sNulls = Validity.ofNulls(new boolean[] { true, false, false, false, false });
+        int[] offsets = { 0, 0, 0, 0, 1, 2 };
+        Validity phonesNulls = Validity.ofNulls(new boolean[] { true, true, false, false, false });
+        int[] elements = { 0, 42 };
+        boolean[] elementNulls = { true, false };
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.columnWriter().writeBatch(batch -> batch
+                    .struct("s", sNulls)
+                    .list("s.phones", offsets, phonesNulls)
+                    .ints("s.phones.list.element", elements, elementNulls));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())));
+                ColumnReader column = reader.columnReader(
+                        reader.getFileSchema().getColumn("s.phones.list.element").columnIndex())) {
+            assertThat(reader.getFileSchema().getColumn("s.phones.list.element").maxDefinitionLevel()).isEqualTo(4);
+            assertThat(column.nextBatch()).isTrue();
+            assertThat(column.getLayerCount()).isEqualTo(2);
+            assertThat(column.getLayerKind(0)).isEqualTo(LayerKind.STRUCT);
+            assertThat(column.getLayerKind(1)).isEqualTo(LayerKind.REPEATED);
+
+            Validity structV = column.getLayerValidity(0);
+            Validity listV = column.getLayerValidity(1);
+            int[] listOffsets = column.getLayerOffsets(1);
+            Validity leafV = column.getLeafValidity();
+            int[] values = column.getInts();
+
+            List<List<Integer>> actual = new ArrayList<>();
+            for (int r = 0; r < column.getRecordCount(); r++) {
+                if (structV.isNull(r) || listV.isNull(r)) {
+                    actual.add(null);
+                    continue;
+                }
+                List<Integer> list = new ArrayList<>();
+                for (int e = listOffsets[r]; e < listOffsets[r + 1]; e++) {
+                    list.add(leafV.isNull(e) ? null : values[e]);
+                }
+                actual.add(list);
+            }
+            assertThat(actual).containsExactly(
+                    null, null, List.of(), Arrays.asList((Integer) null), List.of(42));
+        }
+    }
+
+    @Test
+    void writesAndReadsBackOptionalStructEnclosingOptionalListNestedInsideAList() throws Exception {
+        // optional group chapters (LIST) { repeated group list { optional group element {
+        //   optional group sections (LIST) { repeated group list { required int32 element } } } } }
+        // — the same nullable-struct-enclosing-a-list shape as above, but as a list element
+        // rather than the record root, so the leaf-to-root walk crosses two REPEATED layers.
+        // book 0: chapters = [{sections: [10, 20]}, null]; book 1: chapters = []; book 2: chapters = null.
+        FileSchema schema = FileSchema.builder("schema")
+                .list("chapters", RepetitionType.OPTIONAL, chapter -> chapter.struct(RepetitionType.OPTIONAL,
+                        element -> element.list("sections", RepetitionType.OPTIONAL,
+                                section -> section.primitive(PhysicalType.INT32, RepetitionType.REQUIRED))))
+                .build();
+
+        int[] chapterOffsets = { 0, 2, 2, 2 };
+        Validity chaptersNulls = Validity.ofNulls(new boolean[] { false, false, true });
+        Validity elementNulls = Validity.ofNulls(new boolean[] { false, true });
+        int[] sectionOffsets = { 0, 2, 2 };
+        Validity sectionsNulls = Validity.ofNulls(new boolean[] { false, true });
+        int[] elements = { 10, 20 };
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.columnWriter().writeBatch(batch -> batch
+                    .list("chapters", chapterOffsets, chaptersNulls)
+                    .struct("chapters.list.element", elementNulls)
+                    .list("chapters.list.element.sections", sectionOffsets, sectionsNulls)
+                    .ints("chapters.list.element.sections.list.element", elements));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())));
+                ColumnReader column = reader.columnReader(reader.getFileSchema()
+                        .getColumn("chapters.list.element.sections.list.element").columnIndex())) {
+            assertThat(column.nextBatch()).isTrue();
+            assertThat(column.getLayerCount()).isEqualTo(3);
+            assertThat(column.getLayerKind(0)).isEqualTo(LayerKind.REPEATED);
+            assertThat(column.getLayerKind(1)).isEqualTo(LayerKind.STRUCT);
+            assertThat(column.getLayerKind(2)).isEqualTo(LayerKind.REPEATED);
+
+            int[] chapterOffs = column.getLayerOffsets(0);
+            Validity chaptersV = column.getLayerValidity(0);
+            Validity elementV = column.getLayerValidity(1);
+            int[] sectionOffs = column.getLayerOffsets(2);
+            int[] values = column.getInts();
+
+            List<List<List<Integer>>> actual = new ArrayList<>();
+            for (int r = 0; r < column.getRecordCount(); r++) {
+                if (chaptersV.isNull(r)) {
+                    actual.add(null);
+                    continue;
+                }
+                List<List<Integer>> chapters = new ArrayList<>();
+                for (int c = chapterOffs[r]; c < chapterOffs[r + 1]; c++) {
+                    if (elementV.isNull(c)) {
+                        chapters.add(null);
+                        continue;
+                    }
+                    List<Integer> sections = new ArrayList<>();
+                    for (int e = sectionOffs[c]; e < sectionOffs[c + 1]; e++) {
+                        sections.add(values[e]);
+                    }
+                    chapters.add(sections);
+                }
+                actual.add(chapters);
+            }
+            assertThat(actual).containsExactly(
+                    Arrays.asList(List.of(10, 20), null), List.of(), null);
+        }
+    }
+
+    @Test
+    void writesAndReadsBackOptionalStructEnclosingOptionalMap() throws Exception {
+        // optional group s { optional map props (MAP) { repeated group key_value { required int32 key;
+        //   optional int32 value } } }
+        // record 0: s null; 1: s present, props null; 2: props empty; 3: props = {1:null}; 4: props = {2:99}.
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .map("props", RepetitionType.OPTIONAL, PhysicalType.INT32,
+                                v -> v.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
+                .build();
+
+        Validity sNulls = Validity.ofNulls(new boolean[] { true, false, false, false, false });
+        int[] offsets = { 0, 0, 0, 0, 1, 2 };
+        Validity propsNulls = Validity.ofNulls(new boolean[] { true, true, false, false, false });
+        int[] keys = { 1, 2 };
+        int[] values = { 0, 99 };
+        boolean[] valueNulls = { true, false };
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.columnWriter().writeBatch(batch -> batch
+                    .struct("s", sNulls)
+                    .map("s.props", offsets, propsNulls)
+                    .ints("s.props.key_value.key", keys)
+                    .ints("s.props.key_value.value", values, valueNulls));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())));
+                ColumnReader keyCol = reader.columnReader(
+                        reader.getFileSchema().getColumn("s.props.key_value.key").columnIndex());
+                ColumnReader valCol = reader.columnReader(
+                        reader.getFileSchema().getColumn("s.props.key_value.value").columnIndex())) {
+            assertThat(reader.getFileSchema().getColumn("s.props.key_value.value").maxDefinitionLevel()).isEqualTo(4);
+            assertThat(keyCol.nextBatch()).isTrue();
+            assertThat(valCol.nextBatch()).isTrue();
+            assertThat(valCol.getLayerCount()).isEqualTo(2);
+            assertThat(valCol.getLayerKind(0)).isEqualTo(LayerKind.STRUCT);
+            assertThat(valCol.getLayerKind(1)).isEqualTo(LayerKind.REPEATED);
+
+            Validity structV = valCol.getLayerValidity(0);
+            Validity mapV = valCol.getLayerValidity(1);
+            int[] mapOffsets = valCol.getLayerOffsets(1);
+            Validity valueLeafV = valCol.getLeafValidity();
+            int[] ks = keyCol.getInts();
+            int[] vs = valCol.getInts();
+
+            List<Map<Integer, Integer>> actual = new ArrayList<>();
+            for (int r = 0; r < valCol.getRecordCount(); r++) {
+                if (structV.isNull(r) || mapV.isNull(r)) {
+                    actual.add(null);
+                    continue;
+                }
+                Map<Integer, Integer> map = new LinkedHashMap<>();
+                for (int e = mapOffsets[r]; e < mapOffsets[r + 1]; e++) {
+                    map.put(ks[e], valueLeafV.isNull(e) ? null : vs[e]);
+                }
+                actual.add(map);
+            }
+            Map<Integer, Integer> rec3 = new LinkedHashMap<>();
+            rec3.put(1, null);
+            assertThat(actual).containsExactly(null, null, Map.of(), rec3, Map.of(2, 99));
+        }
+    }
+
+    @Test
     void writesAndReadsBackMapOfIntToStruct() throws Exception {
         // optional map<int32, optional struct { required int32 a, optional int32 b }> — a STRUCT
         // value layer nested inside the MAP's REPEATED layer. A null struct value is distinct

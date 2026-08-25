@@ -88,7 +88,7 @@ public final class RowPlan {
     /// @throws UnsupportedOperationException if the schema has a shape the writer cannot
     ///         produce
     public static RowPlan build(FileSchema schema, PrecisionLossPolicy precisionLossPolicy) {
-        RowStructNode root = buildStruct(schema.getRootNode(), "", schema, false, false, precisionLossPolicy);
+        RowStructNode root = buildStruct(schema.getRootNode(), "", schema, false, precisionLossPolicy);
         Nodes nodes = new Nodes();
         root.collect(nodes);
         return new RowPlan(root, nodes);
@@ -195,17 +195,14 @@ public final class RowPlan {
     // ==================== Plan construction ====================
 
     /// Builds a struct node — the record's root, a nested struct, or a map's key/value entry.
-    /// `nullableAncestor` tracks whether any enclosing struct is `OPTIONAL`, which the write
-    /// path cannot combine with a repeated field below it.
     private static RowStructNode buildStruct(SchemaNode.GroupNode group, String path, FileSchema schema,
-                                             boolean nullable, boolean nullableAncestor,
-                                             PrecisionLossPolicy policy) {
+                                             boolean nullable, PrecisionLossPolicy policy) {
         List<SchemaNode> children = group.children();
         RowNode[] nodes = new RowNode[children.size()];
         String[] fieldNames = new String[children.size()];
         for (int i = 0; i < children.size(); i++) {
             SchemaNode child = children.get(i);
-            nodes[i] = buildNode(child, childPath(path, child.name()), schema, nullable || nullableAncestor, policy);
+            nodes[i] = buildNode(child, childPath(path, child.name()), schema, policy);
             fieldNames[i] = child.name();
         }
         // The node builds its own name-to-index map from these, and rejects a duplicate name
@@ -213,7 +210,7 @@ public final class RowPlan {
         return new RowStructNode(path, nodes, fieldNames, nullable);
     }
 
-    private static RowNode buildNode(SchemaNode node, String path, FileSchema schema, boolean nullableAncestor,
+    private static RowNode buildNode(SchemaNode node, String path, FileSchema schema,
                                      PrecisionLossPolicy policy) {
         return switch (node) {
             case SchemaNode.PrimitiveNode leaf -> {
@@ -226,36 +223,36 @@ public final class RowPlan {
                 WriterSchemaShape.requireWritableLeaf(leaf, path, false);
                 yield new RowLeafNode(path, schema.getColumn(leaf.columnIndex()), policy);
             }
-            case SchemaNode.GroupNode group -> buildGroup(group, path, schema, nullableAncestor, policy);
+            case SchemaNode.GroupNode group -> buildGroup(group, path, schema, policy);
         };
     }
 
     private static RowNode buildGroup(SchemaNode.GroupNode group, String path, FileSchema schema,
-                                      boolean nullableAncestor, PrecisionLossPolicy policy) {
+                                      PrecisionLossPolicy policy) {
         boolean optional = group.repetitionType() == RepetitionType.OPTIONAL;
         // Producibility — a group's own repetition, and an annotated group's entry — is settled
         // by ParquetFileWriter.create before this plan is built. Asking the same helper again
         // keeps a plan built on an unvalidated schema from addressing a shape the shredder
         // cannot honour, and keeps one defect to one wording. A LIST's or MAP's own scaffolding
         // never reaches here: the branch below navigates through it.
-        WriterSchemaShape.requireWritableGroup(group, path, nullableAncestor, false);
+        WriterSchemaShape.requireWritableGroup(group, path, false);
         if (group.isList() || group.isMap()) {
             SchemaNode.GroupNode repeated = repeatedChild(group, path);
             if (group.isMap()) {
                 // A map's entries are a repeated struct of `key` and `value`, populated
                 // through the same builder a nested struct uses.
                 RowStructNode entry = buildStruct(repeated, childPath(path, repeated.name()),
-                        schema, false, false, policy);
+                        schema, false, policy);
                 return new RowMapNode(path, optional, entry);
             }
             String repeatedPath = childPath(path, repeated.name());
             SchemaNode element = listElement(repeated, repeatedPath);
             String elementPath = childPath(repeatedPath, element.name());
-            return new RowListNode(path, optional, buildNode(element, elementPath, schema, false, policy));
+            return new RowListNode(path, optional, buildNode(element, elementPath, schema, policy));
         }
         // Any other group — a plain struct, or one carrying an annotation the write path does
         // not interpret, such as VARIANT — is written field by field like a struct.
-        return buildStruct(group, path, schema, optional, nullableAncestor, policy);
+        return buildStruct(group, path, schema, optional, policy);
     }
 
     /// Returns the annotated group's repeated entry group. That the entry exists and is
