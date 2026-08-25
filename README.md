@@ -4,15 +4,22 @@
 
 # Hardwood
 
-_A parser for the Apache Parquet file format, optimized for minimal dependencies and great performance.
+_A reader and writer for the Apache Parquet file format, optimized for minimal dependencies and great performance.
 Available as a Java library and a [command-line tool](https://hardwood.dev/latest/reference/cli/)._
 
-Goals of the project are:
+Hardwood gives applications fast and efficient support for reading and writing Parquet, without pulling in Hadoop, Avro, or the wider [parquet-java](https://github.com/apache/parquet-java) dependency tree.
+It is built to be:
 
-* Be light-weight: Implement the Parquet file format avoiding any 3rd party dependencies other than for compression algorithms (e.g. Snappy)
-* Be correct: Support all Parquet files which are supported by the canonical [parquet-java](https://github.com/apache/parquet-java) library
-* Be fast: Be as fast as or faster than parquet-java
-* Be complete: Read and write Parquet files; the writer covers flat and nested schemas through a columnar and a row-oriented API
+* **Light-weight**: Zero transitive dependencies beyond optional compression libraries (Snappy, ZSTD, LZ4, Brotli)
+* **Fast**: Hardwood aims to be the [fastest](PERFORMANCE.md) Parquet reader and writer for the JVM
+* **Complete**: Read and write support for flat and nested schemas, every primitive and logical type, and the encodings and codecs in current use, with new format additions tracked as they land
+* **Scalable**: Hardwood is multi-threaded at the core, pages are decoded in parallel, with cross-file prefetching for multi-file reads
+* **Embeddable**: The Hardwood library can be used in GraalVM native binaries; WASM support coming soon ([preview](https://hardwood.dev/experiments/dive-web/))
+* **Agent-friendly**: Hardwood's CLI comes with a skill which lets your agents inspect and analyse Parquet files
+* **Compatible**: Supports all Parquet files which the canonical `parquet-java` library supports, and a [drop-in shim module](https://hardwood.dev/latest/how-to/compat/) eases migration from it, with documented divergences where Hardwood applies stricter semantics (e.g. SQL three-valued `notEq`)
+
+Besides the core library, Hardwood provides a ready-to-use CLI for inspecting and analysing Parquet files,
+including an interactive TUI for exploring a file's schema, row groups, pages, and data.
 
 Latest version: 1.0.0.Final, 2026-06-25
 
@@ -29,6 +36,8 @@ Full documentation is available at **[hardwood.dev](https://hardwood.dev/)**.
     <version>1.0.0.Final</version>
 </dependency>
 ```
+
+Here's how you read a file with the [row-based API](https://hardwood.dev/latest/how-to/row-reader/):
 
 ```java
 import dev.hardwood.InputFile;
@@ -49,12 +58,32 @@ try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(path));
 }
 ```
 
+And here's how you [write a file](https://hardwood.dev/latest/how-to/write-row-by-row/):
+
+```java
+import dev.hardwood.OutputFile;
+import dev.hardwood.writer.ParquetFileWriter;
+import dev.hardwood.writer.RowWriter;
+
+try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(path), schema)) {
+    RowWriter rows = writer.rowWriter();
+
+    for (Person person : people) {
+        rows.writeRow(row -> row
+                .setLong("id", person.id())
+                .setString("name", person.name())
+                .setDate("birth_date", person.birthDate()));
+    }
+}
+```
+
 See the [Getting Started](https://hardwood.dev/latest/getting-started/) guide for detailed setup instructions.
 
 ## Limitations
 
 - **Local files** (memory-mapped via `InputFile.of(Path)`) may be arbitrarily large; each individual column chunk must be at most 2 GB of compressed data.
 - **In-memory** (`InputFile.of(ByteBuffer)`) and **object-store** sources are limited to 2 GB per file. Split larger datasets across multiple files and read them with `Hardwood.openAll(...)` or `ParquetFileReader.openAll(...)`.
+- **Writing** is under active development as of Hardwood 1.1. It targets local files via `OutputFile.of(Path)`; output to object storage is coming soon.
 
 ---
 

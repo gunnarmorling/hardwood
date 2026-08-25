@@ -11,8 +11,8 @@
 -->
 # Hardwood
 
-_A lightweight Java reader and writer for the [Apache Parquet](https://parquet.apache.org/) file format.
-Available as a Java library and a [command-line tool](reference/cli.md)._
+_A modern lightweight Java reader and writer for the [Apache Parquet](https://parquet.apache.org/) file format.
+Available as a Java library and a command-line tool._
 
 !!! success "Hardwood 1.0 is out!"
 
@@ -20,16 +20,23 @@ Available as a Java library and a [command-line tool](reference/cli.md)._
 
 ## Why Hardwood
 
-Hardwood gives applications Parquet read and write support without pulling in Hadoop, Avro, or the wider [parquet-java](https://github.com/apache/parquet-java) dependency tree:
+Hardwood gives applications fast and efficient support for reading and writing Parquet, without pulling in Hadoop, Avro, or the wider [parquet-java](https://github.com/apache/parquet-java) dependency tree.
+It is built to be:
 
-* **Light-weight** — zero transitive dependencies beyond optional compression libraries (Snappy, ZSTD, LZ4, Brotli).
-* **Fast** — matches or exceeds `parquet-java`'s read throughput; competitive in native-image builds and short-lived JVMs.
-* **Complete** — reads and writes: flat and nested schemas, every primitive type, dictionary and delta encodings, and the codecs the format defines.
-* **Concurrent** — multi-threaded at the core: pages decode in parallel on a shared thread pool, with cross-file prefetching for multi-file reads.
-* **Compatible** — reads every file that `parquet-java` reads, with documented divergences where Hardwood applies stricter semantics (e.g. SQL three-valued `notEq`).
-* **Embeddable** — usable from native CLIs, S3-only pipelines (without `hadoop-aws`), and Avro / Spark consumers via thin shim modules, including a [drop-in `parquet-java` replacement](how-to/compat.md).
+* **Light-weight**: Zero transitive dependencies beyond optional compression libraries (Snappy, ZSTD, LZ4, Brotli)
+* **Fast**: Hardwood aims to be the [fastest Parquet reader](https://www.morling.dev/blog/hardwood-1-0-fast-lightweight-apache-parquet-reader-for-the-jvm/#_performance) and writer for the JVM
+* **Complete**: Read and write support for flat and nested schemas, every primitive and logical type, and the encodings and codecs in current use, with new format additions tracked as they land
+* **Scalable**: Hardwood is multi-threaded at the core, pages are decoded in parallel, with cross-file prefetching for multi-file reads
+* **Embeddable**: The Hardwood library can be used in GraalVM native binaries; WASM support coming soon ([preview](/experiments/dive-web/))
+* **Agent-friendly**: Hardwood's CLI comes with a skill which lets your agents inspect and analyse Parquet files
+* **Compatible**: A [drop-in shim module](how-to/compat.md) facilitates migration from `parquet-java`, with documented divergences where Hardwood applies stricter semantics (e.g. SQL three-valued `notEq`)
+
+Besides the core library, Hardwood provides a ready-to-use CLI for inspecting and analysing Parquet files,
+including an interactive TUI for exploring a file's schema, row groups, pages, and data.
 
 ## Quick Example
+
+Here's how you read a file with the [row-based API](how-to/row-reader.md):
 
 ```java
 import dev.hardwood.InputFile;
@@ -50,7 +57,7 @@ try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(path));
 }
 ```
 
-Writing mirrors it, record by record or column by column:
+And here's how you [write a file](how-to/write-row-by-row.md):
 
 ```java
 import dev.hardwood.OutputFile;
@@ -69,16 +76,19 @@ try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(path), sc
 }
 ```
 
-Ready? [Install Hardwood](getting-started.md), then read [your first file end-to-end](tutorial/first-read.md).
+Ready? [Set up Hardwood in your project](getting-started.md), then read [your first file end-to-end](tutorial/first-read.md).
+Alternatively, [install the Hardwood CLI](reference/cli.md) for working with Parquet files on the command line.
 
 Prefer to learn by running code? The [hardwood-examples](https://github.com/hardwood-hq/hardwood-examples) repository collects small, self-contained examples — one per concept — that you can clone and run with a single command.
 
 ## Status and Limitations
 
-Hardwood 1.0 is released and ready for production use.
+Hardwood 1.0 with read support is released and ready for production use.
+Support for writing Parquet files is under active development as of Hardwood 1.1.
 
 The Hardwood library supports reading arbitrarily large Parquet files, provided individual column chunks are not larger than 2 GB (see [Parquet file layout](concepts/parquet-layout.md)).
 The interactive `dive` TUI currently caps S3 files at 2 GB.
+Writing targets local files through `OutputFile.of(Path)`; output to object storage is coming soon.
 
 ## Roadmap
 
