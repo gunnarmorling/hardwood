@@ -37,11 +37,10 @@ class IndexValueFormatterTest {
     }
 
     @Test
-    void truncatesLongString() {
+    void rendersLongStringInFull() {
         String longValue = "abcdefghijklmnopqrstuvwxyz";
         assertThat(IndexValueFormatter.format(longValue.getBytes(StandardCharsets.UTF_8), stringColumn()))
-                .hasSize(20)
-                .endsWith("...");
+                .isEqualTo(longValue);
     }
 
     @Test
@@ -55,7 +54,7 @@ class IndexValueFormatterTest {
     void rendersAllControlBytesAsHex() {
         byte[] allNull = new byte[19];
         String result = IndexValueFormatter.format(allNull, stringColumn());
-        assertThat(result).startsWith("0x").hasSize(20);
+        assertThat(result).isEqualTo("0x" + "00".repeat(19));
     }
 
     @Test
@@ -125,7 +124,7 @@ class IndexValueFormatterTest {
         bb.putInt(1);
         bb.putInt(15);
         bb.putInt(3_600_000);
-        assertThat(IndexValueFormatter.format(bytes, col, false, false))
+        assertThat(IndexValueFormatter.format(bytes, col, false))
                 .isEqualTo("0x" + HexFormat.of().formatHex(bytes));
     }
 
@@ -136,16 +135,27 @@ class IndexValueFormatterTest {
     void unannotatedBinaryBoundsDoNotRenderAsText() {
         ColumnSchema col = bareByteArrayColumn();
 
-        assertThat(IndexValueFormatter.format(WKB_POINT, col, true, false))
+        assertThat(IndexValueFormatter.format(WKB_POINT, col, true))
                 .isEqualTo("0x010100000000000000005366c0f71622f0fa1955c0");
     }
 
     /// A capped cell shows a marked prefix of the hex, the same treatment a
     /// long string gets — enough to tell two bounds apart.
     @Test
-    void unannotatedBinaryBoundsAreCappedLikeAnyLongValue() {
-        assertThat(IndexValueFormatter.format(WKB_POINT, bareByteArrayColumn()))
-                .isEqualTo("0x010100000000000...");
+    void unannotatedBinaryBoundsHonourAnExplicitBudget() {
+        assertThat(IndexValueFormatter.format(WKB_POINT, bareByteArrayColumn(), true, 20))
+                .isEqualTo("0x01010000000000000000");
+    }
+
+    @Test
+    void distinctLongStringsRenderDistinctly() {
+        String first = "the-quick-brown-fox-jumps-over-the-lazy-dog-0";
+        String second = "the-quick-brown-fox-jumps-over-the-lazy-dog-1";
+
+        assertThat(IndexValueFormatter.format(first.getBytes(StandardCharsets.UTF_8), stringColumn()))
+                .isEqualTo(first);
+        assertThat(IndexValueFormatter.format(second.getBytes(StandardCharsets.UTF_8), stringColumn()))
+                .isEqualTo(second);
     }
 
     /// A column annotated as text stays text: the placeholder keeps a stray

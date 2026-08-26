@@ -310,8 +310,8 @@ Trailing Magic: PAR1
 | `schema`                               | `-f FILE`, `-F NATIVE\|AVRO\|PROTO`                                                                                                   |
 | `print`                                | `-f FILE`, `-n N\|ALL`, `-c a,b`, `-w MAX_WIDTH`, `-s SAMPLE`, `--no-truncate`, `--transpose`, `-i` (row index), `-d` (row delimiter) |
 | `convert`                              | `-f FILE`, `-F csv\|json`, `-o OUT`, `-c a,b`, `-n N\|ALL`, `--null-string VALUE`                                            |
-| `inspect pages`                        | `-f FILE`, `-c COLUMN`, `--no-stats`                                                                                                  |
-| `inspect dictionary`                   | `-f FILE`, `-c COLUMN` (required), `--limit N` (`0` = unlimited)                                                                      |
+| `inspect pages`                        | `-f FILE`, `-c COLUMN`, `--no-stats`, `-w MAX_WIDTH`, `--no-truncate`                                                                                                  |
+| `inspect dictionary`                   | `-f FILE`, `-c COLUMN` (required), `--limit N` (`0` = unlimited), `-w MAX_WIDTH`, `--no-truncate`                                                                      |
 | `inspect columns`                      | `-f FILE`, `-c\|--column PATH`, `--row-group N` (requires `--column`)                                                                  |
 | `inspect rowgroups`                    | `-f FILE`                                                                                                                             |
 | `dive`                                 | `-f FILE` (interactive TTY only)                                                                                                      |

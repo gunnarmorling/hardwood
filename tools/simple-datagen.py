@@ -1630,6 +1630,49 @@ print("  - Compression: UNCOMPRESSED")
 print(f"  - Data: {num_rows} rows with small page size (4096) and page index enabled")
 
 # ============================================================================
+# CLI Long Value Test File
+# ============================================================================
+
+cli_long_value_schema = pa.schema([
+    ('s', pa.string(), False),
+])
+cli_long_value_values = [
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-0',
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-1',
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-2',
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-3',
+]
+cli_long_value_table = pa.table({'s': cli_long_value_values}, schema=cli_long_value_schema)
+
+pq.write_table(
+    cli_long_value_table,
+    'core/src/test/resources/cli_long_value_test.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+    write_statistics=True,
+    write_page_index=True,
+)
+
+print("\nGenerated cli_long_value_test.parquet:")
+print("  - Dictionary-encoded STRING column s")
+print("  - Four distinct 45-byte values with statistics and page index")
+cli_unicode_value_table = pa.table(
+    {'s': ['aaaaaaaaaaaaaaaaaa😀b', 'aaaaaaaaaaaaaaaaaa😀c']},
+    schema=cli_long_value_schema,
+)
+pq.write_table(
+    cli_unicode_value_table,
+    'core/src/test/resources/cli_unicode_value_test.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+    write_statistics=True,
+    write_page_index=True,
+)
+print("  - Two distinct values with an emoji at the truncation boundary")
+
+# ============================================================================
 # CRC Checksum Test Files
 # ============================================================================
 

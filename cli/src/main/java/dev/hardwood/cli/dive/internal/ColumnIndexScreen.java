@@ -8,6 +8,7 @@
 package dev.hardwood.cli.dive.internal;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -42,6 +43,31 @@ import dev.tamboui.widgets.table.TableState;
 /// `/` enters inline search: the filter matches against each page's formatted
 /// min or max value (case-insensitive substring).
 public final class ColumnIndexScreen {
+
+    /// The fixed-width columns, in display order. Header label and cell width
+    /// travel together so they cannot drift, and the widths feed [#statBudget]
+    /// rather than being restated there as literals.
+    private enum Col {
+        NUM("  #", 7),
+        NULL_PAGE("Null page", 10),
+        NULLS("Nulls", 10);
+
+        private final String label;
+        private final int width;
+
+        Col(String label, int width) {
+            this.label = label;
+            this.width = width;
+        }
+    }
+
+    /// Cached so rendering a frame does not clone the constant pool array.
+    private static final Col[] COLUMNS = Col.values();
+    /// Min and Max. They fill the width the fixed columns leave, so they are
+    /// not part of [Col].
+    private static final String[] STAT_LABELS = {"Min", "Max"};
+    private static final int COLUMN_SPACING = 2;
+    private static final int TABLE_BORDER_WIDTH = 2;
 
     private ColumnIndexScreen() {
     }
@@ -107,7 +133,7 @@ public final class ColumnIndexScreen {
         // the keybar hint read.
         if (event.isConfirm() && !filtered.isEmpty()) {
             int idx = filtered.get(Math.min(state.selection(), filtered.size() - 1));
-            if (isExpandable(ci, idx, col, state.logicalTypes())) {
+            if (isExpandable(ci, idx, col, state.logicalTypes(), statBudget(Keys.viewportWidth()))) {
                 stack.replaceTop(withModal(state, true));
                 return true;
             }
@@ -144,6 +170,9 @@ public final class ColumnIndexScreen {
     public static void render(Buffer buffer, Rect area, ParquetModel model, ScreenState.ColumnIndexView state) {
         // Boundary-order line + search bar + block borders + header = 5 chrome rows.
         Keys.observeViewport(area.height() - 5);
+        // The Enter gate and the keybar hint compute the same budget as the
+        // cells, and they run outside the render pass.
+        Keys.observeViewportWidth(area.width());
         ColumnIndex ci = model.columnIndex(state.rowGroupIndex(), state.columnIndex());
         if (ci == null) {
             renderEmpty(buffer, area, "No column index for this chunk.");
@@ -175,9 +204,10 @@ public final class ColumnIndexScreen {
         // Enter opens the full min/max only for pages whose bounds the row
         // had to truncate, so the marker column carries a fact here rather
         // than repeating the cursor.
+        int statBudget = statBudget(area.width());
         boolean mixed = false;
         for (int i = window.start(); i < window.end() && !mixed; i++) {
-            mixed = !isExpandable(ci, filtered.get(i), col, state.logicalTypes());
+            mixed = !isExpandable(ci, filtered.get(i), col, state.logicalTypes(), statBudget);
         }
         List<Row> rows = new ArrayList<>(window.size());
         for (int i = window.start(); i < window.end(); i++) {
@@ -186,14 +216,14 @@ public final class ColumnIndexScreen {
                     ? Fmt.fmt("%,d", ci.nullCounts()[idx])
                     : "—";
             rows.add(Row.from(
-                    CursorPane.marker(isExpandable(ci, idx, col, state.logicalTypes()),
+                    CursorPane.marker(isExpandable(ci, idx, col, state.logicalTypes(), statBudget),
                             i == state.selection(), mixed) + idx,
                     ci.nullPages()[idx] ? "yes" : "no",
                     nulls,
-                    formatStat(ci.minValues().get(idx), col, state.logicalTypes()),
-                    formatStat(ci.maxValues().get(idx), col, state.logicalTypes())));
+                    formatStat(ci.minValues().get(idx), col, state.logicalTypes(), statBudget),
+                    formatStat(ci.maxValues().get(idx), col, state.logicalTypes(), statBudget)));
         }
-        Row header = Row.from("  #", "Null page", "Nulls", "Min", "Max").style(Theme.accent().bold());
+        Row header = header();
         String typeMode = state.logicalTypes() ? "" : " · physical";
         Block block = Block.builder()
                 .title(" Column index "
@@ -208,12 +238,8 @@ public final class ColumnIndexScreen {
         Table table = Table.builder()
                 .header(header)
                 .rows(rows)
-                .widths(new Constraint.Length(7),
-                        new Constraint.Length(10),
-                        new Constraint.Length(10),
-                        new Constraint.Fill(1),
-                        new Constraint.Fill(1))
-                .columnSpacing(2)
+                .widths(widths())
+                .columnSpacing(COLUMN_SPACING)
                 .block(block)
                 .highlightSymbol("")
                 .highlightStyle(Theme.selection())
@@ -273,8 +299,8 @@ public final class ColumnIndexScreen {
 
     private static void appendBound(List<Line> lines, String label, byte[] bytes, ColumnSchema col,
                                     boolean logical, int width) {
-        // Modal has space — bypass the per-string 20-char cap.
-        String value = bytes == null ? "—" : IndexValueFormatter.format(bytes, col, logical, false);
+        // Modal has space — render whole value
+        String value = bytes == null ? "—" : IndexValueFormatter.format(bytes, col, logical);
         // The label occupies the first five cells; continuation lines are
         // indented to match so a wrapped value reads as one field.
         List<String> wrapped = Strings.hardWrap(value, Math.max(1, width - 5));
@@ -300,7 +326,7 @@ public final class ColumnIndexScreen {
         boolean canExpand = false;
         if (count > 0) {
             canExpand = isExpandable(ci, filtered.get(Math.min(state.selection(), count - 1)),
-                    col, state.logicalTypes());
+                    col, state.logicalTypes(), statBudget(Keys.viewportWidth()));
         }
         return new Keys.Hints()
                 .add(true, CursorPane.hints(count))
@@ -371,17 +397,44 @@ public final class ColumnIndexScreen {
                 s.filter(), s.searching(), s.logicalTypes(), modal, s.scrollTop());
     }
 
-    /// tamboui's Table clips silently at column width. Cap the formatted
-    /// value ourselves so an `…` suffix is visible when truncation
-    /// happened — users then know the modal will reveal more on Enter.
-    private static final int CELL_MAX = 24;
+    private static Row header() {
+        String[] labels = new String[COLUMNS.length + STAT_LABELS.length];
+        // The header is two label sources laid end to end: the fixed columns
+        // first, then Min / Max. The index alone tells which one to read from.
+        Arrays.setAll(labels, i -> i < COLUMNS.length
+                ? COLUMNS[i].label
+                : STAT_LABELS[i - COLUMNS.length]);
+        return Row.from(labels).style(Theme.accent().bold());
+    }
+
+    private static Constraint[] widths() {
+        Constraint[] widths = new Constraint[COLUMNS.length + STAT_LABELS.length];
+        // Same two sources as [#header]: fixed widths first, then Min / Max,
+        // which take equal shares of what is left.
+        Arrays.setAll(widths, i -> i < COLUMNS.length
+                ? new Constraint.Length(COLUMNS[i].width)
+                : new Constraint.Fill(1));
+        return widths;
+    }
+
+    /// Min and Max share the width the fixed columns leave. tamboui's Table
+    /// clips silently at the column edge, so a cap wider than the cell takes
+    /// the `…` with it and the value reads as complete. This screen has no
+    /// highlight symbol, so the table gives the columns everything except its
+    /// border and one gap between each pair.
+    private static int statBudget(int viewportWidth) {
+        int fixedColumns = Arrays.stream(COLUMNS).mapToInt(column -> column.width).sum();
+        int gaps = (COLUMNS.length + STAT_LABELS.length - 1) * COLUMN_SPACING;
+        return Math.max(1, (viewportWidth - fixedColumns - gaps - TABLE_BORDER_WIDTH) / STAT_LABELS.length);
+    }
 
     /// Whether `Enter` would do anything on this page: the modal only earns
     /// its place when one of the bounds shows less in the cell than it would
     /// in the modal.
-    private static boolean isExpandable(ColumnIndex ci, int page, ColumnSchema col, boolean logical) {
-        return isAbbreviated(ci.minValues().get(page), col, logical)
-                || isAbbreviated(ci.maxValues().get(page), col, logical);
+    private static boolean isExpandable(ColumnIndex ci, int page, ColumnSchema col, boolean logical,
+                                        int budget) {
+        return isAbbreviated(ci.minValues().get(page), col, logical, budget)
+                || isAbbreviated(ci.maxValues().get(page), col, logical, budget);
     }
 
     /// Whether the cell rendering withholds anything the modal would reveal.
@@ -392,27 +445,24 @@ public final class ColumnIndexScreen {
     /// just to compare two strings. A value the cell has to cut renders longer
     /// than the cell either way, so the bounded comparison gives the same
     /// answer.
-    private static boolean isAbbreviated(byte[] bytes, ColumnSchema col, boolean logical) {
+    private static boolean isAbbreviated(byte[] bytes, ColumnSchema col, boolean logical, int budget) {
         if (bytes == null) {
             return false;
         }
-        return !formatStat(bytes, col, logical)
-                .equals(IndexValueFormatter.format(bytes, col, logical, false, CELL_MAX));
+        return !formatStat(bytes, col, logical, budget)
+                .equals(IndexValueFormatter.format(bytes, col, logical, budget));
     }
 
-    private static String formatStat(byte[] bytes, ColumnSchema col, boolean logical) {
+    private static String formatStat(byte[] bytes, ColumnSchema col, boolean logical, int budget) {
         if (bytes == null) {
             return "—";
         }
-        String full = IndexValueFormatter.format(bytes, col, logical);
-        if (full.length() <= CELL_MAX) {
-            return full;
-        }
-        return full.substring(0, CELL_MAX - 1) + "…";
+        String full = IndexValueFormatter.format(bytes, col, logical, budget);
+        return Strings.truncateRight(full, budget);
     }
 
     private static String formatStatFull(byte[] bytes, ColumnSchema col, boolean logical) {
-        return bytes == null ? "—" : IndexValueFormatter.format(bytes, col, logical, false);
+        return bytes == null ? "—" : IndexValueFormatter.format(bytes, col, logical);
     }
 
     private static void renderEmpty(Buffer buffer, Rect area, String message) {

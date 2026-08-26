@@ -23,19 +23,20 @@ import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.schema.ColumnSchema;
 
 /// Formats raw page-index min/max bytes into a displayable string, taking the
-/// column's physical and logical type into account. Values are truncated to
-/// keep table rows readable; binary values go through [BinaryValues], which
-/// renders them the same way the value and dictionary formatters do.
+/// column's physical and logical type into account. The rendering is the whole
+/// value: a caller with a cell to fill applies its own budget and marks what it
+/// cut, because only the caller knows its layout. Binary values go through
+/// [BinaryValues], which renders them the same way the value and dictionary
+/// formatters do.
 public final class IndexValueFormatter {
 
-    private static final int MAX_STRING_LEN = 20;
     private static final char NON_PRINTABLE_PLACEHOLDER = '\u00B7';
 
     private IndexValueFormatter() {
     }
 
     public static String format(byte[] bytes, ColumnSchema col) {
-        return format(bytes, col, true, true);
+        return format(bytes, col, true, BinaryValues.NO_LIMIT);
     }
 
     /// Logical-type-aware variant. When `useLogicalType=false`, dispatch is on
@@ -43,28 +44,17 @@ public final class IndexValueFormatter {
     /// then render as raw int / long / hex form, useful for confirming the
     /// underlying storage in the dive UI.
     public static String format(byte[] bytes, ColumnSchema col, boolean useLogicalType) {
-        return format(bytes, col, useLogicalType, true);
+        return format(bytes, col, useLogicalType, BinaryValues.NO_LIMIT);
     }
 
-    /// Untruncated variant. When `truncate=false`, the per-string and per-binary
-    /// length cap (`MAX_STRING_LEN`) is bypassed — useful for facts panes /
-    /// modals where the full value is wanted regardless of length. Callers who
-    /// render into a tight cell should keep the default `truncate=true`.
+    /// Variant stating a budget for the binary rendering, for a caller that
+    /// displays `maxChars` characters. The hex of a large payload is built only
+    /// as far as that budget, so rendering into a cell costs a cell rather than
+    /// the whole payload. The result is still the value, not a cut of it: it
+    /// runs just past the budget when the payload is longer, so the caller sees
+    /// that there is more and marks what it cuts.
     public static String format(byte[] bytes, ColumnSchema col,
-                                 boolean useLogicalType, boolean truncate) {
-        return format(bytes, col, useLogicalType, truncate,
-                truncate ? MAX_STRING_LEN : BinaryValues.NO_LIMIT);
-    }
-
-    /// Variant stating the binary budget independently of `truncate`, for a
-    /// caller that wants an untruncated rendering but only up to a width it
-    /// cares about. A gate asking "would the cell have to cut this?" compares
-    /// against `format(bytes, col, logical, false, cellWidth)` rather than
-    /// against the whole value, so the answer costs a cell rather than the
-    /// payload — the two agree, because a rendering longer than the cell is all
-    /// the gate needs to see.
-    public static String format(byte[] bytes, ColumnSchema col,
-                                 boolean useLogicalType, boolean truncate, int maxChars) {
+                                boolean useLogicalType, int maxChars) {
         if (bytes == null) {
             return "-";
         }
@@ -111,7 +101,7 @@ public final class IndexValueFormatter {
             case FLOAT -> Float.toString(StatisticsDecoder.decodeFloat(bytes));
             case DOUBLE -> Double.toString(StatisticsDecoder.decodeDouble(bytes));
             case INT96 -> HexFormat.of().formatHex(bytes);
-            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> formatBinary(bytes, lt, truncate, maxChars);
+            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> formatBinary(bytes, lt, maxChars);
         };
     }
 
@@ -154,9 +144,9 @@ public final class IndexValueFormatter {
         return Boolean.toString(value);
     }
 
-    /// Formats an already-decoded byte-array dictionary entry. `null` renders
+    /// Formats an already-decoded `byte[]` dictionary entry. `null` renders
     /// as `-`; otherwise delegates to the standard `format` pipeline (UUID,
-    /// decimal, hex, truncated UTF-8 string, etc.).
+    /// decimal, hex, UTF-8 string, etc.).
     public static String formatDecoded(byte[] value, ColumnSchema col) {
         return format(value, col);
     }
@@ -188,9 +178,9 @@ public final class IndexValueFormatter {
     /// exactly — a UUID, an interval, a half float — or does not describe at
     /// all, and an undescribed payload goes to [BinaryValues], which decides
     /// text vs. binary from the bytes themselves.
-    private static String formatBinary(byte[] bytes, LogicalType lt, boolean truncate, int maxChars) {
+    private static String formatBinary(byte[] bytes, LogicalType lt, int maxChars) {
         if (isStringLogical(lt)) {
-            return formatString(bytes, truncate);
+            return formatString(bytes);
         }
         if (lt instanceof LogicalType.UuidType && bytes.length == 16) {
             ByteBuffer bb = ByteBuffer.wrap(bytes);
@@ -203,15 +193,14 @@ public final class IndexValueFormatter {
             return Float.toString(
                     LogicalTypeConverter.convertToFloat16(bytes, PhysicalType.FIXED_LEN_BYTE_ARRAY));
         }
-        String rendered = BinaryValues.render(bytes, maxChars);
-        return truncate ? truncate(rendered) : rendered;
+        return BinaryValues.render(bytes, maxChars);
     }
 
     /// Renders the value of a column annotated as text. Control characters are
     /// replaced with a placeholder rather than emitted raw, since a stray
     /// newline or carriage return in a statistic would break the table it is
     /// rendered into.
-    private static String formatString(byte[] bytes, boolean truncate) {
+    private static String formatString(byte[] bytes) {
         String utf8 = new String(bytes, StandardCharsets.UTF_8);
         int printable = 0;
         for (int i = 0; i < utf8.length(); i++) {
@@ -219,20 +208,18 @@ public final class IndexValueFormatter {
                 printable++;
             }
         }
-        if (utf8.length() > 0 && printable == 0) {
-            String hex = "0x" + HexFormat.of().formatHex(bytes);
-            return truncate ? truncate(hex) : hex;
+        if (!utf8.isEmpty() && printable == 0) {
+            return "0x" + HexFormat.of().formatHex(bytes);
         }
         if (printable == utf8.length()) {
-            return truncate ? truncate(utf8) : utf8;
+            return utf8;
         }
         StringBuilder sb = new StringBuilder(utf8.length());
         for (int i = 0; i < utf8.length(); i++) {
             char c = utf8.charAt(i);
             sb.append(Character.isISOControl(c) ? NON_PRINTABLE_PLACEHOLDER : c);
         }
-        String result = sb.toString();
-        return truncate ? truncate(result) : result;
+        return sb.toString();
     }
 
     private static boolean isStringLogical(LogicalType lt) {
@@ -247,12 +234,5 @@ public final class IndexValueFormatter {
     /// blank cell an absent statistic leaves behind.
     private static boolean isByteBacked(PhysicalType pt) {
         return pt == PhysicalType.BYTE_ARRAY || pt == PhysicalType.FIXED_LEN_BYTE_ARRAY;
-    }
-
-    private static String truncate(String s) {
-        if (s.length() <= MAX_STRING_LEN) {
-            return s;
-        }
-        return s.substring(0, MAX_STRING_LEN - 3) + "...";
     }
 }

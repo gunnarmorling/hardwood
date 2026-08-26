@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.cli.dive.internal.ColumnChunkDetailScreen;
@@ -175,23 +176,112 @@ class DiveRenderTest {
     }
 
     @Test
-    void pagesMinMaxCellEndsInEllipsisWhenValueTruncated() {
-        // The fixture has an `id` column with INT64 values 0..9999. After
-        // toggling logical types off the formatter renders the raw long;
-        // pages with large values exceed the cell width. Find a page
-        // where the cell ends with the truncation marker.
-        ScreenState.Pages state = new ScreenState.Pages(0, 0, 0, false, true);
-        RenderHarness.RenderedFrame frame = RenderHarness.render(AREA, state, model);
-        // Even without truncation we should see the Pages title with a
-        // range — locks the table-render path runs without throwing.
-        assertThat(frame.firstLineContaining("Pages")).isNotNull();
+    void longValueFixtureMarksPagesStatistics() throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_long_value_test.parquet").getPath());
+        try (ParquetModel longValueModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            RenderHarness.RenderedFrame frame = RenderHarness.render(
+                    new Rect(0, 0, 120, 40), new ScreenState.Pages(0, 0, 1, false, true), longValueModel);
 
-        // Force a long-value column by switching to a string column. The
-        // fixture's other column (`value`) is INT64 which won't truncate,
-        // so we just verify the formatter path produces visible output;
-        // a stronger assertion would need a fixture with a long-string
-        // column index — left to the @MethodSource matrix below.
-        assertThat(frame.contains("0")).isTrue();
+            assertThat(frame.contains("…")).isTrue();
+        }
+    }
+
+    @Test
+    void longValueFixtureMarksColumnIndexStatisticsAndModalShowsFullValue() throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_long_value_test.parquet").getPath());
+        try (ParquetModel longValueModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            ScreenState.ColumnIndexView cell = new ScreenState.ColumnIndexView(
+                    0, 0, 0, "", false, true, false);
+            RenderHarness.RenderedFrame cellFrame = RenderHarness.render(
+                    new Rect(0, 0, 120, 40), cell, longValueModel);
+            assertThat(cellFrame.contains("…")).isTrue();
+
+            ScreenState.ColumnIndexView modal = new ScreenState.ColumnIndexView(
+                    0, 0, 0, "", false, true, true);
+            RenderHarness.RenderedFrame modalFrame = RenderHarness.render(AREA, modal, longValueModel);
+            assertThat(modalFrame.contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")).isTrue();
+        }
+    }
+
+    @Test
+    void longValueFixtureMarksColumnAcrossRowGroupsStatistics() throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_long_value_test.parquet").getPath());
+        try (ParquetModel longValueModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            RenderHarness.RenderedFrame frame = RenderHarness.render(
+                    new Rect(0, 0, 120, 40),
+                    new ScreenState.ColumnAcrossRowGroups(0, 0, true, 0), longValueModel);
+
+            assertThat(frame.contains("…")).isTrue();
+        }
+    }
+
+    /// The stat budget must not exceed the cell the renderer actually gets, or
+    /// the table clips the trailing `…` and the value is cut with no marker at
+    /// all. These widths put the 45-character fixture value one and two
+    /// characters past the budget, which is where an over-wide budget shows.
+    @ParameterizedTest
+    @ValueSource(ints = {173, 175})
+    void columnAcrossRowGroupsKeepsItsMarkerAtTheCellBoundary(int width) throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_long_value_test.parquet").getPath());
+        try (ParquetModel longValueModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            RenderHarness.RenderedFrame frame = RenderHarness.render(
+                    new Rect(0, 0, width, 40),
+                    new ScreenState.ColumnAcrossRowGroups(0, 0, true, 0), longValueModel);
+
+            assertThat(frame.text())
+                    .contains("…")
+                    .doesNotContain("the-quick-brown-fox-jumps-over-the-lazy-dog ");
+        }
+    }
+
+    /// `PagesScreen` moved Min/Max from a fixed `Length(20)` to `Fill(1)`, so its
+    /// budget has to track the cell the renderer is given. Its budget is
+    /// `(width - 108) / 2`, so these widths put the 45-character fixture value one
+    /// and two characters past it — where an over-wide budget shows.
+    @ParameterizedTest
+    @ValueSource(ints = {194, 196})
+    void pagesKeepsItsMarkerAtTheCellBoundary(int width) throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_long_value_test.parquet").getPath());
+        try (ParquetModel longValueModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            RenderHarness.RenderedFrame frame = RenderHarness.render(
+                    new Rect(0, 0, width, 40),
+                    new ScreenState.Pages(0, 0, 1, false, true), longValueModel);
+
+            assertThat(frame.text())
+                    .contains("…")
+                    .doesNotContain("the-quick-brown-fox-jumps-over-the-lazy-dog ");
+        }
+    }
+
+    /// Column index sizes its Min/Max cells with `Fill(1)` too, so a cap that does
+    /// not track the width loses the marker on a narrow terminal — 80 columns being
+    /// the one that matters.
+    @ParameterizedTest
+    @ValueSource(ints = {70, 78, 80, 84})
+    void columnIndexKeepsItsMarkerAtNarrowWidths(int width) throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_long_value_test.parquet").getPath());
+        try (ParquetModel longValueModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            RenderHarness.RenderedFrame frame = RenderHarness.render(
+                    new Rect(0, 0, width, 30),
+                    new ScreenState.ColumnIndexView(0, 0, 0, "", false, true, false), longValueModel);
+
+            assertThat(frame.text()).contains("…");
+        }
+    }
+
+    @Test
+    void unicodeValueTruncationDoesNotSplitSurrogatePairs() throws Exception {
+        Path path = Path.of(getClass().getResource("/cli_unicode_value_test.parquet").getPath());
+        try (ParquetModel unicodeModel = ParquetModel.open(InputFile.of(path), path.toString())) {
+            Rect area = new Rect(0, 0, 120, 40);
+            RenderHarness.RenderedFrame pages = RenderHarness.render(
+                    area, new ScreenState.Pages(0, 0, 1, false, true), unicodeModel);
+            RenderHarness.RenderedFrame across = RenderHarness.render(
+                    area, new ScreenState.ColumnAcrossRowGroups(0, 0, true, 0), unicodeModel);
+
+            assertThat(pages.text()).contains("…").doesNotContain("?");
+            assertThat(across.text()).contains("…").doesNotContain("?");
+        }
     }
 
     @Test

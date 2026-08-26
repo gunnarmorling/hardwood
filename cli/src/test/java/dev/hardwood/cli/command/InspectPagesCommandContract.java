@@ -22,6 +22,8 @@ interface InspectPagesCommandContract {
 
     String nestedFile();
 
+    String longValueFile();
+
     String nonexistentFile();
 
     @Test
@@ -47,6 +49,39 @@ interface InspectPagesCommandContract {
                 +====+=======+======+==========+===========+============+========+=====+=====+=======+
                 |    | Total |      |          |           |       24 B |      3 |     |     |     0 |
                 +----+-------+------+----------+-----------+------------+--------+-----+-----+-------+""");
+    }
+
+    @Test
+    default void preservesLongPageBounds() {
+        Cli.Result result = Cli.launch("inspect", "pages", "-f", longValueFile(), "--column", "s");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-3")
+                .doesNotContain("the-quick-brown-f...");
+    }
+
+    @Test
+    default void capsPageBoundsAtTheColumnWidth() {
+        Cli.Result result = Cli.launch("inspect", "pages", "-f", longValueFile(), "--column", "s",
+                "-w", "20");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox…")
+                .doesNotContain("the-quick-brown-fox-jumps-over-the-lazy-dog-0");
+    }
+
+    @Test
+    default void noTruncateLiftsTheColumnWidthCapOnPageBounds() {
+        Cli.Result result = Cli.launch("inspect", "pages", "-f", longValueFile(), "--column", "s",
+                "-w", "20", "--no-truncate");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")
+                .doesNotContain("…");
     }
 
     @Test

@@ -20,6 +20,11 @@ class InspectDictionaryS3CommandTest extends AbstractS3CommandTest implements In
     }
 
     @Override
+    public String longValueFile() {
+        return S3_LONG_VALUE_FILE;
+    }
+
+    @Override
     public String nonexistentFile() {
         return S3_NONEXISTENT_FILE;
     }

@@ -20,8 +20,10 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.BinaryValues;
 import dev.hardwood.cli.internal.IndexValueFormatter;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
@@ -51,6 +53,12 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
     @Option(shortName = 'c', name = "column", description = "Restrict output to a single column.")
     String column;
 
+    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width of a column.")
+    int maxWidth;
+
+    @Option(shortName = 't', name = "truncate", hasValue = false, negatable = true, defaultValue = "true", description = "Should values wider than the column cap be truncated.")
+    Boolean truncate;
+
     @Option(name = "no-stats", hasValue = false, description = "Omit page-index derived columns (First Row, Min, Max, Nulls) even when available.")
     boolean noStats;
 
@@ -58,6 +66,12 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
     public CommandResult execute(CommandInvocation ci) {
         InputFile inputFile = fileMixin.toInputFile();
         if (inputFile == null) {
+            return CommandResult.FAILURE;
+        }
+        // A column has to be at least one cell wide to render anything at all,
+        // so a smaller value has no faithful rendering rather than an ugly one.
+        if (maxWidth < 1) {
+            System.err.println("--max-width must be greater than or equal to 1");
             return CommandResult.FAILURE;
         }
 
@@ -191,7 +205,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                 String rgCell = (j == 0) ? String.valueOf(rd.rgIdx()) : "";
 
                 if (anyIndex) {
-                    IndexCells idx = indexCellsFor(p, dataPageCounter, rd, col);
+                    IndexCells idx = indexCellsFor(p, dataPageCounter, rd, col, cellBudget());
                     rows.add(new String[]{
                             rgCell,
                             p.label(),
@@ -288,7 +302,22 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
         return false;
     }
 
-    private static IndexCells indexCellsFor(PageInfo p, int dataPageCounter, RowGroupData rd, ColumnSchema col) {
+    /// No cell can be wider than the column cap, so hexing a binary payload
+    /// beyond it is waste. An untruncated table shows the value whole, and has
+    /// no cap.
+    private int cellBudget() {
+        return truncate ? maxWidth : BinaryValues.NO_LIMIT;
+    }
+
+    /// Bounds a rendered bound to the column cap and marks the cut, so a value
+    /// the table had to shorten does not read as complete.
+    private static String statCell(byte[] bytes, ColumnSchema col, int budget) {
+        String rendered = IndexValueFormatter.format(bytes, col, true, budget);
+        return budget == BinaryValues.NO_LIMIT ? rendered : Strings.truncateRight(rendered, budget);
+    }
+
+    private static IndexCells indexCellsFor(PageInfo p, int dataPageCounter, RowGroupData rd, ColumnSchema col,
+                                            int budget) {
         if (p.isDictionary()) {
             return IndexCells.DASHES;
         }
@@ -298,13 +327,13 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                 && dataPageCounter < oi.pageLocations().size()
                 && dataPageCounter < ci.minValues().size();
         if (hasColumnIndex) {
-            return fromColumnIndex(p, dataPageCounter, ci, oi, col);
+            return fromColumnIndex(p, dataPageCounter, ci, oi, col, budget);
         }
-        return fromInlineStats(p, col);
+        return fromInlineStats(p, col, budget);
     }
 
     private static IndexCells fromColumnIndex(PageInfo p, int dataPageCounter,
-            ColumnIndex ci, OffsetIndex oi, ColumnSchema col) {
+            ColumnIndex ci, OffsetIndex oi, ColumnSchema col, int budget) {
         String firstRow = String.valueOf(oi.pageLocations().get(dataPageCounter).firstRowIndex());
         String min;
         String max;
@@ -313,8 +342,8 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             max = "(null page)";
         }
         else {
-            min = IndexValueFormatter.format(ci.minValues().get(dataPageCounter), col);
-            max = IndexValueFormatter.format(ci.maxValues().get(dataPageCounter), col);
+            min = statCell(ci.minValues().get(dataPageCounter), col, budget);
+            max = statCell(ci.maxValues().get(dataPageCounter), col, budget);
         }
         long nullCount = -1;
         String nulls = "-";
@@ -325,7 +354,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
         return new IndexCells(firstRow, min, max, nulls, nullCount);
     }
 
-    private static IndexCells fromInlineStats(PageInfo p, ColumnSchema col) {
+    private static IndexCells fromInlineStats(PageInfo p, ColumnSchema col, int budget) {
         Statistics stats = p.inlineStats();
         String firstRow = p.firstRowIndex() != null ? String.valueOf(p.firstRowIndex()) : "-";
         if (stats == null) {
@@ -338,8 +367,8 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             max = "(deprecated)";
         }
         else {
-            min = stats.minValue() != null ? IndexValueFormatter.format(stats.minValue(), col) : "-";
-            max = stats.maxValue() != null ? IndexValueFormatter.format(stats.maxValue(), col) : "-";
+            min = stats.minValue() != null ? statCell(stats.minValue(), col, budget) : "-";
+            max = stats.maxValue() != null ? statCell(stats.maxValue(), col, budget) : "-";
         }
         long nullCount = stats.nullCount() != null ? stats.nullCount() : -1;
         String nulls = nullCount >= 0 ? String.valueOf(nullCount) : "-";

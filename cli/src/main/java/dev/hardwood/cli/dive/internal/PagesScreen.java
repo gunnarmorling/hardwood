@@ -8,6 +8,7 @@
 package dev.hardwood.cli.dive.internal;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import dev.hardwood.cli.dive.NavigationStack;
@@ -45,6 +46,38 @@ import dev.tamboui.widgets.table.TableState;
 /// the full thrift page header; Esc in the modal closes it, Esc on the list
 /// pops back to Column chunk detail.
 public final class PagesScreen {
+
+    /// The fixed-width columns, in display order. Header label and cell width
+    /// travel together so they cannot drift, and the widths feed [#statBudget]
+    /// rather than being restated there as a literal.
+    private enum Col {
+        NUM("#", 4),
+        TYPE("Type", 16),
+        FIRST_ROW("First row", 12),
+        VALUES("Values", 10),
+        /// Fits `DELTA_LENGTH_BYTE_ARRAY`, the longest encoding name.
+        ENCODING("Encoding", 23),
+        COMP("Comp", 10),
+        UNCOMP("Uncomp", 10),
+        NULLS("Nulls", 10);
+
+        private final String label;
+        private final int width;
+
+        Col(String label, int width) {
+            this.label = label;
+            this.width = width;
+        }
+    }
+
+    /// Cached so rendering a frame does not clone the constant pool array.
+    private static final Col[] COLUMNS = Col.values();
+    /// Min and Max, appended when the chunk carries statistics. They fill the
+    /// width the fixed columns leave, so they are not part of [Col].
+    private static final String[] STAT_LABELS = {"Min", "Max"};
+    private static final int STAT_COLUMN_COUNT = STAT_LABELS.length;
+    private static final int TABLE_BORDER_WIDTH = 2;
+    private static final int HIGHLIGHT_SYMBOL_WIDTH = 2;
 
     private PagesScreen() {
     }
@@ -134,6 +167,7 @@ public final class PagesScreen {
             }
         }
         List<Row> rows = new ArrayList<>(window.size());
+        int statBudget = statBudget(area.width());
         for (int i = window.start(); i < window.end(); i++) {
             PageHeader h = headers.get(i);
             String firstRow = "—";
@@ -153,8 +187,8 @@ public final class PagesScreen {
                     firstRow = Fmt.fmt("%,d", loc.firstRowIndex());
                 }
                 if (columnIndex != null && dataPageIdx < columnIndex.getPageCount()) {
-                    min = formatStat(columnIndex.minValues().get(dataPageIdx), col, state.logicalTypes());
-                    max = formatStat(columnIndex.maxValues().get(dataPageIdx), col, state.logicalTypes());
+                    min = formatStat(columnIndex.minValues().get(dataPageIdx), col, state.logicalTypes(), statBudget);
+                    max = formatStat(columnIndex.maxValues().get(dataPageIdx), col, state.logicalTypes(), statBudget);
                     if (columnIndex.nullCounts() != null
                             && dataPageIdx < columnIndex.nullCounts().length) {
                         nulls = Fmt.fmt("%,d", columnIndex.nullCounts()[dataPageIdx]);
@@ -163,8 +197,8 @@ public final class PagesScreen {
                 else {
                     Statistics inline = inlineStats(h);
                     if (inline != null) {
-                        min = formatStat(inline.minValue(), col, state.logicalTypes());
-                        max = formatStat(inline.maxValue(), col, state.logicalTypes());
+                        min = formatStat(inline.minValue(), col, state.logicalTypes(), statBudget);
+                        max = formatStat(inline.maxValue(), col, state.logicalTypes(), statBudget);
                         if (inline.nullCount() != null) {
                             nulls = Fmt.fmt("%,d", inline.nullCount());
                         }
@@ -197,11 +231,7 @@ public final class PagesScreen {
                         nulls));
             }
         }
-        Row header = hasAnyStats
-                ? Row.from("#", "Type", "First row", "Values", "Encoding", "Comp", "Uncomp", "Nulls", "Min", "Max")
-                        .style(Theme.accent().bold())
-                : Row.from("#", "Type", "First row", "Values", "Encoding", "Comp", "Uncomp", "Nulls")
-                        .style(Theme.accent().bold());
+        Row header = header(hasAnyStats);
         String titleSuffix = hasAnyStats ? "" : " (no column index)";
         String typeMode = state.logicalTypes() ? "" : " · physical";
         Block block = Block.builder()
@@ -211,28 +241,10 @@ public final class PagesScreen {
                 .borders(Borders.ALL)
                 .borderType(BorderType.ROUNDED)
                 .build();
-        List<Constraint> widths = new ArrayList<>();
-        widths.add(new Constraint.Length(4));   // #
-        widths.add(new Constraint.Length(16));  // Type
-        widths.add(new Constraint.Length(12));  // First row
-        widths.add(new Constraint.Length(10));  // Values
-        widths.add(new Constraint.Length(23));  // Encoding (fits DELTA_LENGTH_BYTE_ARRAY = 23)
-        widths.add(new Constraint.Length(10));  // Comp
-        widths.add(new Constraint.Length(10));  // Uncomp
-        widths.add(new Constraint.Length(10));  // Nulls
-        if (hasAnyStats) {
-            // Fixed Length(20) so the cell width is known at format time
-            // and our `…` truncation indicator (added by formatStat when
-            // the value exceeds TABLE_STAT_MAX) is always visible. With
-            // Fill(1) the cell could end up narrower than our cap, in
-            // which case tamboui clipped past the `…` and hid it.
-            widths.add(new Constraint.Length(20)); // Min
-            widths.add(new Constraint.Length(20)); // Max
-        }
         Table table = Table.builder()
                 .header(header)
                 .rows(rows)
-                .widths(widths)
+                .widths(widths(hasAnyStats))
                 .columnSpacing(1)
                 .block(block)
                 .highlightSymbol("▶ ")
@@ -297,30 +309,54 @@ public final class PagesScreen {
         return "—";
     }
 
-    /// Used by the table cells, where two Min/Max columns share whatever's
-    /// left after the fixed-width columns. tamboui's Table clips silently,
-    /// so cap the formatted string ourselves and append `…` to make
-    /// truncation visible. The page-header modal calls the un-capped
-    /// `IndexValueFormatter.format` directly.
-    private static final int TABLE_STAT_MAX = 20;
+    private static Row header(boolean hasAnyStats) {
+        int count = hasAnyStats ? COLUMNS.length + STAT_COLUMN_COUNT : COLUMNS.length;
+        String[] labels = new String[count];
+        // The header is two label sources laid end to end: the fixed columns
+        // first, then Min / Max. `count` decides whether the second source is
+        // there at all, so the index alone tells which one to read from.
+        Arrays.setAll(labels, i -> i < COLUMNS.length
+                ? COLUMNS[i].label
+                : STAT_LABELS[i - COLUMNS.length]);
+        return Row.from(labels).style(Theme.accent().bold());
+    }
 
-    private static String formatStat(byte[] bytes, ColumnSchema col, boolean logical) {
-        if (bytes == null) {
-            return "—";
-        }
-        String full = IndexValueFormatter.format(bytes, col, logical);
-        if (full.length() <= TABLE_STAT_MAX) {
-            return full;
-        }
-        return full.substring(0, TABLE_STAT_MAX - 1) + "…";
+    /// Min and Max share the width left after the fixed columns. The renderer
+    /// computes the matching display budget in [#statBudget].
+    private static Constraint[] widths(boolean hasAnyStats) {
+        int count = hasAnyStats ? COLUMNS.length + STAT_COLUMN_COUNT : COLUMNS.length;
+        Constraint[] widths = new Constraint[count];
+        // Same two sources as [#header], in the same order.
+        Arrays.setAll(widths, i -> i < COLUMNS.length
+                ? new Constraint.Length(COLUMNS[i].width)
+                : new Constraint.Fill(1));
+        return widths;
+    }
+
+    /// Used by the table cells, where two Min/Max columns share whatever's
+    /// left after the fixed-width columns. Compute that width before rendering
+    /// and mark the cut with `…`. The table gives the columns everything except
+    /// its border, the selection marker, and one gap between each pair.
+    private static int statBudget(int viewportWidth) {
+        int fixedColumns = Arrays.stream(COLUMNS).mapToInt(column -> column.width).sum();
+        int gaps = COLUMNS.length + STAT_COLUMN_COUNT - 1;
+        return Math.max(1, (viewportWidth - fixedColumns - gaps
+                - TABLE_BORDER_WIDTH - HIGHLIGHT_SYMBOL_WIDTH) / STAT_COLUMN_COUNT);
+    }
+
+    private static String formatStat(byte[] bytes, ColumnSchema col, boolean logical, int budget) {
+        return bytes == null ?
+                "—" :
+                Strings.truncateRight(
+                        IndexValueFormatter.format(bytes, col, logical, budget),
+                        budget);
     }
 
     private static String formatStatFull(byte[] bytes, ColumnSchema col, boolean logical) {
-        if (bytes == null) {
-            return "—";
-        }
-        // Modal has space — bypass the per-string 20-char cap.
-        return IndexValueFormatter.format(bytes, col, logical, false);
+        // Modal has space — no budget constraint, so the whole value is rendered.
+        return bytes == null ?
+                "—" :
+                IndexValueFormatter.format(bytes, col, logical);
     }
 
     private static void renderHeaderModal(Buffer buffer, Rect screenArea, PageHeader header,

@@ -187,10 +187,10 @@ prints as `0x`-prefixed lowercase hex. The same rule applies to values,
 dictionary entries and min/max statistics alike, and to a byte-backed logical
 type whose payload length rules out its own decoder.
 
-The hex is complete. Where it does not fit, it is capped and marked the same way
-a long string is — with `…` in `dive` and `...` in the `inspect` tables — so
-`convert` and `print --no-truncate` carry the whole value while a narrow cell
-shows a marked prefix.
+Each table column holds 50 cells, and a value wider than that is cut with a
+trailing `…`. `print`, `inspect dictionary` and `inspect pages` take `-w N` for
+a different cap and `--no-truncate` for none at all; `dive` sizes its cells from
+the terminal instead. `convert` carries the whole value.
 
 ```shell
 # A GeoParquet 1.x geometry column: unannotated BYTE_ARRAY holding WKB
@@ -198,8 +198,12 @@ hardwood print -n 1 -c geometry -f places.parquet
 # | 0x010100000000000000005366c0f71622f0fa1955c0 |
 
 hardwood inspect pages -c geometry -f places.parquet
+# | Min                                          | Max                                          |
+# | 0x010100000000000000005366c0f71622f0fa1955c0 | 0x0101000000ffffb00000005366c0f71622f0fa1955 |
+
+hardwood inspect pages -c geometry -w 20 -f places.parquet
 # | Min                  | Max                  |
-# | 0x010100000000000... | 0x0101000000ffffb... |
+# | 0x0101000000000000… | 0x0101000000ffffb0… |
 ```
 
 ## Interactive exploration (`dive`)

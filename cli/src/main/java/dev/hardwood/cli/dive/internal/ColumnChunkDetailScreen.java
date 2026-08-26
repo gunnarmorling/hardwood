@@ -627,8 +627,8 @@ public final class ColumnChunkDetailScreen {
             return "—";
         }
         // Facts pane has plenty of horizontal room — render the full value
-        // without IndexValueFormatter's per-string 20-char cap.
-        return IndexValueFormatter.format(bytes, col, useLogicalType, false);
+        // rather than passing a budget.
+        return IndexValueFormatter.format(bytes, col, useLogicalType);
     }
 
     private static String padRight(String s, int width) {

@@ -18,6 +18,8 @@ interface InspectDictionaryCommandContract {
 
     String dictFile();
 
+    String longValueFile();
+
     String nonexistentFile();
 
     @Test
@@ -34,6 +36,50 @@ interface InspectDictionaryCommandContract {
                 |    |     1 |      1 |     B |
                 |    |     2 |      1 |     C |
                 +----+-------+--------+-------+""");
+    }
+
+    @Test
+    default void preservesLongDictionaryValues() {
+        Cli.Result result = Cli.launch("inspect", "dictionary", "-f", longValueFile(), "--column", "s");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-1")
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-2")
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-3")
+                .doesNotContain("the-quick-brown-f...");
+    }
+
+    @Test
+    default void capsDictionaryValuesAtTheColumnWidth() {
+        Cli.Result result = Cli.launch("inspect", "dictionary", "-f", longValueFile(), "--column", "s",
+                "-w", "20");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox…")
+                .doesNotContain("the-quick-brown-fox-jumps-over-the-lazy-dog-0");
+    }
+
+    @Test
+    default void noTruncateLiftsTheColumnWidthCap() {
+        Cli.Result result = Cli.launch("inspect", "dictionary", "-f", longValueFile(), "--column", "s",
+                "-w", "20", "--no-truncate");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")
+                .doesNotContain("…");
+    }
+
+    @Test
+    default void rejectsAColumnWidthBelowOneCell() {
+        Cli.Result result = Cli.launch("inspect", "dictionary", "-f", longValueFile(), "--column", "s",
+                "-w", "0");
+
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.errorOutput()).contains("--max-width must be greater than or equal to 1");
     }
 
     @Test

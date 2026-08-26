@@ -20,8 +20,10 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.BinaryValues;
 import dev.hardwood.cli.internal.IndexValueFormatter;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.internal.reader.Dictionary;
 import dev.hardwood.internal.reader.DictionaryParser;
@@ -46,6 +48,12 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
     @Option(name = "limit", defaultValue = "50", description = "Maximum dictionary entries per row group to print (0 = unlimited).")
     int limit;
 
+    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width of a column.")
+    int maxWidth;
+
+    @Option(shortName = 't', name = "truncate", hasValue = false, negatable = true, defaultValue = "true", description = "Should values wider than the column cap be truncated.")
+    Boolean truncate;
+
     @Override
     public CommandResult execute(CommandInvocation ci) {
         if (fileMixin.toInputFile() == null) {
@@ -53,6 +61,12 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
         }
         if (limit < 0) {
             System.err.println("--limit must be greater than or equal to 0");
+            return CommandResult.FAILURE;
+        }
+        // A column has to be at least one cell wide to render anything at all,
+        // so a smaller value has no faithful rendering rather than an ugly one.
+        if (maxWidth < 1) {
+            System.err.println("--max-width must be greater than or equal to 1");
             return CommandResult.FAILURE;
         }
 
@@ -139,7 +153,7 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
                     messages.add("Row Group " + rgIdx + " - dictionary has " + dictionary.size()
                             + " entries (showing first " + displayed + ")");
                 }
-                addDictionaryRows(rows, rgIdx, dictionary, columnSchema, displayed, includeLength);
+                addDictionaryRows(rows, rgIdx, dictionary, columnSchema, displayed, includeLength, cellBudget());
             }
         }
 
@@ -155,43 +169,60 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
         }
     }
 
+    /// No cell can be wider than the column cap, so hexing a binary payload
+    /// beyond it is waste. An untruncated table shows the value whole, and has
+    /// no cap.
+    private int cellBudget() {
+        return truncate ? maxWidth : BinaryValues.NO_LIMIT;
+    }
+
+    /// Bounds a rendered entry to the column cap and marks the cut, so a value
+    /// the table had to shorten does not read as complete.
+    private static String cell(String value, int budget) {
+        return budget == BinaryValues.NO_LIMIT ? value : Strings.truncateRight(value, budget);
+    }
+
     private static void addDictionaryRows(List<String[]> rows, int rgIdx, Dictionary dictionary,
-                                          ColumnSchema columnSchema, int displayed, boolean includeLength) {
+                                          ColumnSchema columnSchema, int displayed, boolean includeLength,
+                                          int budget) {
         switch (dictionary) {
             case Dictionary.IntDictionary d -> {
                 int[] vs = d.values();
                 for (int i = 0; i < displayed; i++) {
-                    addRow(rows, rgIdx, i, IndexValueFormatter.formatDecoded(vs[i], columnSchema));
+                    addRow(rows, rgIdx, i, cell(IndexValueFormatter.formatDecoded(vs[i], columnSchema), budget));
                 }
             }
             case Dictionary.LongDictionary d -> {
                 long[] vs = d.values();
                 for (int i = 0; i < displayed; i++) {
-                    addRow(rows, rgIdx, i, IndexValueFormatter.formatDecoded(vs[i], columnSchema));
+                    addRow(rows, rgIdx, i, cell(IndexValueFormatter.formatDecoded(vs[i], columnSchema), budget));
                 }
             }
             case Dictionary.FloatDictionary d -> {
                 float[] vs = d.values();
                 for (int i = 0; i < displayed; i++) {
-                    addRow(rows, rgIdx, i, IndexValueFormatter.formatDecoded(vs[i]));
+                    addRow(rows, rgIdx, i, cell(IndexValueFormatter.formatDecoded(vs[i]), budget));
                 }
             }
             case Dictionary.DoubleDictionary d -> {
                 double[] vs = d.values();
                 for (int i = 0; i < displayed; i++) {
-                    addRow(rows, rgIdx, i, IndexValueFormatter.formatDecoded(vs[i]));
+                    addRow(rows, rgIdx, i, cell(IndexValueFormatter.formatDecoded(vs[i]), budget));
                 }
             }
             case Dictionary.ByteArrayDictionary d -> addByteArrayRows(
-                    rows, rgIdx, d.values(), columnSchema, displayed, includeLength);
+                    rows, rgIdx, d.values(), columnSchema, displayed, includeLength, budget);
         }
     }
 
     private static void addByteArrayRows(List<String[]> rows, int rgIdx, byte[][] values,
-                                         ColumnSchema columnSchema, int displayed, boolean includeLength) {
+                                         ColumnSchema columnSchema, int displayed, boolean includeLength,
+                                         int budget) {
         for (int i = 0; i < displayed; i++) {
             byte[] value = values[i];
-            String formatted = IndexValueFormatter.formatDecoded(value, columnSchema);
+            // The budget bounds the hex build too, so a large payload costs a
+            // cell rather than twice its own size to render into one.
+            String formatted = cell(IndexValueFormatter.format(value, columnSchema, true, budget), budget);
             if (includeLength) {
                 rows.add(new String[]{
                         rgCell(i, rgIdx),

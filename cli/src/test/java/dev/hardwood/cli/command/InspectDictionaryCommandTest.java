@@ -24,6 +24,11 @@ class InspectDictionaryCommandTest implements InspectDictionaryCommandContract {
     }
 
     @Override
+    public String longValueFile() {
+        return getClass().getResource("/cli_long_value_test.parquet").getPath();
+    }
+
+    @Override
     public String nonexistentFile() {
         return "nonexistent.parquet";
     }
