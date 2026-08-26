@@ -164,30 +164,6 @@ public class BatchExchange<B> {
         finished = true;
     }
 
-    /// Like [#finish()], but also releases a drain thread that is already parked in
-    /// one of this exchange's timed waits, instead of leaving it to notice `finished`
-    /// when its 10 ms window expires. For the teardown path only, where no consumer
-    /// remains and the batches still in flight are not going to be read.
-    ///
-    /// Both blocking points have to be cleared, and which one the drain is sitting in
-    /// depends on the mode. In recycling mode it parks in [#takeBatch()] waiting for a
-    /// holder on `freeQueue`, so the leftovers are returned to the pool rather than
-    /// dropped — that frees `readyQueue` capacity *and* makes `freeQueue` non-empty. In
-    /// detaching mode there is no pool and the drain parks in [#publish(Object)], so
-    /// freeing `readyQueue` capacity is enough.
-    public void abort() {
-        finished = true;
-        if (freeQueue != null) {
-            B leftover;
-            while ((leftover = readyQueue.poll()) != null) {
-                freeQueue.offer(leftover);
-            }
-        }
-        else {
-            readyQueue.clear();
-        }
-    }
-
     public boolean isFinished() {
         return finished;
     }
@@ -207,10 +183,6 @@ public class BatchExchange<B> {
     /// empty the method falls through to a timed poll loop. The `finished` flag
     /// is only checked **after** a timed poll returns null, guaranteeing that any
     /// batch published before `finish()` is visible.
-    ///
-    /// That guarantee is scoped to [#finish()]. [#abort()] deliberately drops
-    /// batches that have already been published, so it must only be used on the
-    /// teardown path, where no consumer remains to observe the truncation.
     public B poll() throws InterruptedException {
         B batch = readyQueue.poll();
         if (batch != null) {

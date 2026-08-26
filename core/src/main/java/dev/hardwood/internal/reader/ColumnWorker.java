@@ -207,9 +207,27 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     @Override
     public void close() {
         done = true;
-        exchange.abort();  // frees readyQueue capacity so a parked publish() returns at once
+        exchange.finish();  // signals BatchExchange's timeout loops to exit
         LockSupport.unpark(retrieverThread);
         LockSupport.unpark(drainThread);
+        // `finish()` only sets a flag, and a drain blocked inside the exchange is waiting on a
+        // queue rather than on that flag: it re-reads it when its 10 ms timed queue operation
+        // expires, which close() then inherits through the join below — once per column, since
+        // ColumnReaders closes them one at a time. The interrupt releases it at once. Unparking
+        // is not enough on its own: ArrayBlockingQueue's timed operations go through
+        // AQS.ConditionObject.awaitNanos, which treats a bare unpark as spurious and re-parks
+        // for the remainder of the window. The unpark above is still needed for the drain's
+        // other wait, the LockSupport.park() in runDrain that waits on a decode task.
+        //
+        // Only the drain is interrupted, and only because it does no I/O: every InputFile
+        // access happens on the retriever (via PageSource.next) or on a decode task. That
+        // matters — FileChannel is an InterruptibleChannel, so interrupting a thread inside a
+        // channel operation, or one that enters a channel operation with its interrupt flag
+        // already set, closes the channel for every reader sharing it (see MappedInputFile's
+        // note on its larger-than-2 GB path). Anything that gives the drain thread its own
+        // InputFile access — for instance fetching on demand instead of parking when the
+        // reorder buffer is empty — must drop this interrupt first.
+        drainThread.interrupt();
 
         try {
             retrieverThread.join();

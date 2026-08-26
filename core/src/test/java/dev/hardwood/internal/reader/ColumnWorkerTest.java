@@ -24,6 +24,7 @@ import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Tests for the v2 pipeline: [FlatColumnWorker] + [BatchExchange].
@@ -394,6 +395,59 @@ class ColumnWorkerTest {
         }
     }
 
+    /// [ColumnWorker#close()] interrupts the drain thread to release it from the exchange's
+    /// timed waits, which is what keeps teardown from costing a poll interval per column.
+    /// That interrupt is the worker's own, so it has to be absorbed as a stop: a reader torn
+    /// down with data still outstanding must not report a spurious `InterruptedException`
+    /// through `checkError()`, which every consumer calls once `poll()` reports the pipeline
+    /// drained. Leaking it there would turn an ordinary early close into a read failure.
+    ///
+    /// One batch is taken and deliberately not recycled, so the drain fills the two-deep
+    /// ready queue, finds the pool empty, and blocks inside the exchange. That is the state
+    /// the interrupt exists to break, and the only one in which it is actually delivered —
+    /// closing a drain that is between waits proves nothing.
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    void closeDoesNotSurfaceTheTeardownInterruptAsAnError() throws Exception {
+        try (HardwoodContextImpl context = HardwoodContextImpl.create();
+             ParquetFileReader reader = ParquetFileReader.open(InputFile.of(TEST_FILE))) {
+
+            FileSchema schema = reader.getFileSchema();
+            RowGroupIterator iterator = createIterator(TEST_FILE, schema, context);
+            ColumnSchema column = schema.getColumn(0);
+            // Small enough that the file is many batches wide, so the drain still has work
+            // outstanding when close() lands.
+            int batchCapacity = 8;
+
+            BatchExchange<BatchExchange.Batch> exchange = BatchExchange.recycling(
+                    column.name(), () -> {
+                        BatchExchange.Batch b = new BatchExchange.Batch();
+                        b.values = BatchExchange.allocateArray(column, batchCapacity);
+                        return b;
+                    });
+            FlatColumnWorker worker = new FlatColumnWorker(
+                    new PageSource(iterator, 0), exchange, column, batchCapacity,
+                    context.decompressorFactory(), context.executor(), 0, null);
+            worker.start();
+
+            assertThat(exchange.poll()).as("pipeline should produce a batch").isNotNull();
+            awaitDrainBlockedInExchange(worker);
+
+            worker.close();
+
+            assertThat(worker.drainThread.isAlive())
+                    .as("drain thread must have exited")
+                    .isFalse();
+            assertThat(worker.retrieverThread.isAlive())
+                    .as("retriever thread must have exited")
+                    .isFalse();
+            assertThatCode(exchange::checkError)
+                    .as("the teardown interrupt is the worker's own and must not reach the "
+                            + "consumer as a pipeline error")
+                    .doesNotThrowAnyException();
+        }
+    }
+
     /// Regression test for #300. When the exchange is stopped during the
     /// publish/take handshake, `publishCurrentBatch` must set `done = true`
     /// before returning — otherwise the outer `assemblePage` loop continues
@@ -496,6 +550,22 @@ class ColumnWorkerTest {
                 ProjectedSchema.create(schema, dev.hardwood.schema.ColumnProjection.all()), null);
         reader.close();
         return iterator;
+    }
+
+    /// Spins until the drain thread is sitting in one of the exchange's timed queue
+    /// operations, which shows as `TIMED_WAITING` — the `LockSupport.park()` it uses to wait
+    /// on a decode task is a plain `WAITING`, so the two states are distinguishable.
+    private static void awaitDrainBlockedInExchange(ColumnWorker<?> worker)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Thread drain = worker.drainThread;
+            if (drain != null && drain.getState() == Thread.State.TIMED_WAITING) {
+                return;
+            }
+            Thread.sleep(5);
+        }
+        throw new AssertionError("drain thread never blocked inside the exchange");
     }
 
     private static long consumeAllBatches(BatchExchange<BatchExchange.Batch> exchange)
