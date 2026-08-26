@@ -154,7 +154,9 @@ Layers compose to any depth: `list("m.list.element", innerOffsets)` describes th
 Offsets are validated: they must start at `0`, be non-decreasing, and end at exactly the number of entries the element column holds.
 
 !!! note "One nested shape is not writable yet"
-    An `OPTIONAL` struct group directly enclosing a repeated field — what Arrow-based writers produce for a nullable struct holding a list — is rejected by both write APIs with an `UnsupportedOperationException` naming the group. Hardwood reads such files; writing them is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
+    An `OPTIONAL` struct group directly enclosing a repeated field — what Arrow-based writers produce for a nullable struct holding a list — is rejected by `ParquetFileWriter.create` with an `UnsupportedOperationException` naming the group. Hardwood reads such files; writing them is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
+
+The `list` and `map` verbs address the entry offsets of a `LIST` or `MAP` group, and a repeated field the annotation does not account for has no offsets to address — so `create` rejects one, listed under [Schema Shapes](../reference/writer.md#schema-shapes). A schema read back from an existing file may carry a legacy two-level list, `LIST { repeated element }` or `LIST { repeated group element { … } }`; both are writable here, addressed through the annotated group's path exactly as the three-level layout is.
 
 ## Batch Size
 

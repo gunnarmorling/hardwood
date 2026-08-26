@@ -324,9 +324,15 @@ same file invites a double-close that either discards a valid file or writes a s
 `writeRow` after the file writer is closed throws, through the same `ensureOpen` check the
 columnar path uses.
 
-The plan is built when `rowWriter()` is called, so a schema shape the write path cannot produce
-— a nullable struct enclosing a repeated field, a legacy two-level list — is rejected there,
-naming the offending path, rather than when the first batch reaches the shredder.
+Whether a schema can be produced at all is settled by `ParquetFileWriter.create` before either
+view exists, so a nullable struct enclosing a repeated field or a repeated field outside a
+`LIST` or `MAP` group never reaches this layer.
+
+The plan is built when `rowWriter()` is called, and rejects there — naming the offending path —
+the shapes this layer alone cannot *address*: two sibling fields sharing a name, which leaves
+the by-name setters ambiguous, and the legacy 2-level lists, whose entry is the element itself
+where the builders reach a list's values through an element node below the entry. The columnar
+API addresses by index and dotted path and writes those shapes.
 
 ## Reserved surface
 

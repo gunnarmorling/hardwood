@@ -33,6 +33,7 @@ import dev.hardwood.internal.writer.ColumnSource;
 import dev.hardwood.internal.writer.LogicalTypeValueRange;
 import dev.hardwood.internal.writer.RecordShredder;
 import dev.hardwood.internal.writer.RowGroupBuffer;
+import dev.hardwood.internal.writer.WriterSchemaShape;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.PhysicalType;
@@ -155,7 +156,7 @@ public final class ParquetFileWriter implements Closeable {
     /// @return an open writer
     /// @throws IOException if the destination cannot be opened
     /// @throws UnsupportedOperationException if the schema has a column of an unsupported
-    ///         physical type
+    ///         physical type, or a shape the writer cannot produce
     public static ParquetFileWriter create(OutputFile out, FileSchema schema) throws IOException {
         return create(out, schema, WriterConfig.defaults());
     }
@@ -168,11 +169,16 @@ public final class ParquetFileWriter implements Closeable {
     /// @return an open writer
     /// @throws IOException if the destination cannot be opened
     /// @throws UnsupportedOperationException if the schema has a column of an unsupported
-    ///         physical type, or the configured codec cannot be written
+    ///         physical type, a shape the writer cannot produce, or the configured codec cannot
+    ///         be written
     /// @throws IllegalArgumentException if an encoding policy names a column the schema does not
     ///         have, or one its physical type cannot carry
     public static ParquetFileWriter create(OutputFile out, FileSchema schema, WriterConfig config)
             throws IOException {
+        // Everything this schema and configuration decide is settled before the output is
+        // touched, so a file the writer cannot honour is never begun: the columns' physical
+        // types, the schema's shape, the encoding policies against the schema's columns, then
+        // the codec and its library.
         for (int c = 0; c < schema.getColumnCount(); c++) {
             ColumnSchema column = schema.getColumn(c);
             if (!isSupportedType(column.type())) {
@@ -181,14 +187,27 @@ public final class ParquetFileWriter implements Closeable {
                                 + column.name() + " is " + column.type());
             }
         }
-        // Everything the configuration says about this schema is settled before the output is
-        // touched, so a file the writer cannot honour is never begun: the encoding policies
-        // against the schema's columns, then the codec and its library.
+        // Settled here rather than by whichever view meets it first, so one unproducible shape
+        // is one rejection, at one moment, with one wording.
+        WriterSchemaShape.validate(schema);
         ColumnEncoding[] encodings = resolveEncodings(schema, config);
         Compressor compressor = new CompressorFactory().getCompressor(config.codec());
         out.create();
-        out.write(ByteBuffer.wrap(MAGIC));
-        return new ParquetFileWriter(out, schema, config, compressor, encodings);
+        try {
+            out.write(ByteBuffer.wrap(MAGIC));
+            return new ParquetFileWriter(out, schema, config, compressor, encodings);
+        }
+        catch (IOException | RuntimeException e) {
+            // The destination is open and holds no valid file. Discard it rather than leaving
+            // the temporary artefact a local OutputFile streams into orphaned at the target.
+            try {
+                out.discard();
+            }
+            catch (IOException suppressed) {
+                e.addSuppressed(suppressed);
+            }
+            throw e;
+        }
     }
 
     /// Resolves each leaf column's encoding policy, rejecting a configuration this schema cannot

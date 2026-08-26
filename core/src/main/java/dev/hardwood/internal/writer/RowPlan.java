@@ -217,11 +217,13 @@ public final class RowPlan {
                                      PrecisionLossPolicy policy) {
         return switch (node) {
             case SchemaNode.PrimitiveNode leaf -> {
-                if (leaf.repetitionType() == RepetitionType.REPEATED) {
-                    throw new UnsupportedOperationException("Field " + path
-                            + " is a REPEATED leaf (a legacy two-level list); the writer produces "
-                            + "three-level LIST groups only");
-                }
+                // A REPEATED leaf reaching a struct's field or a three-level list's element is
+                // unproducible and ParquetFileWriter.create has already refused it; the guard
+                // repeats it so a plan built on an unvalidated schema fails the same way rather
+                // than addressing a shape the shredder cannot honour. The one REPEATED leaf that
+                // is producible — a legacy two-level list's entry — is refused by
+                // repeatedChild(...) before reaching here.
+                WriterSchemaShape.requireWritableLeaf(leaf, path, false);
                 yield new RowLeafNode(path, schema.getColumn(leaf.columnIndex()), policy);
             }
             case SchemaNode.GroupNode group -> buildGroup(group, path, schema, nullableAncestor, policy);
@@ -231,11 +233,13 @@ public final class RowPlan {
     private static RowNode buildGroup(SchemaNode.GroupNode group, String path, FileSchema schema,
                                       boolean nullableAncestor, PrecisionLossPolicy policy) {
         boolean optional = group.repetitionType() == RepetitionType.OPTIONAL;
+        // Producibility — a group's own repetition, and an annotated group's entry — is settled
+        // by ParquetFileWriter.create before this plan is built. Asking the same helper again
+        // keeps a plan built on an unvalidated schema from addressing a shape the shredder
+        // cannot honour, and keeps one defect to one wording. A LIST's or MAP's own scaffolding
+        // never reaches here: the branch below navigates through it.
+        WriterSchemaShape.requireWritableGroup(group, path, nullableAncestor, false);
         if (group.isList() || group.isMap()) {
-            if (nullableAncestor) {
-                throw new UnsupportedOperationException("A nullable struct enclosing a repeated field ("
-                        + path + ") is not yet supported by the writer");
-            }
             SchemaNode.GroupNode repeated = repeatedChild(group, path);
             if (group.isMap()) {
                 // A map's entries are a repeated struct of `key` and `value`, populated
@@ -244,25 +248,27 @@ public final class RowPlan {
                         schema, false, false, policy);
                 return new RowMapNode(path, optional, entry);
             }
-            SchemaNode element = onlyChild(repeated, path);
-            String elementPath = childPath(childPath(path, repeated.name()), element.name());
+            String repeatedPath = childPath(path, repeated.name());
+            SchemaNode element = listElement(repeated, repeatedPath);
+            String elementPath = childPath(repeatedPath, element.name());
             return new RowListNode(path, optional, buildNode(element, elementPath, schema, false, policy));
-        }
-        if (group.repetitionType() == RepetitionType.REPEATED) {
-            throw new UnsupportedOperationException("Group " + path
-                    + " is REPEATED but carries no LIST or MAP annotation; the writer cannot produce it");
         }
         // Any other group — a plain struct, or one carrying an annotation the write path does
         // not interpret, such as VARIANT — is written field by field like a struct.
         return buildStruct(group, path, schema, optional, nullableAncestor, policy);
     }
 
+    /// Returns the annotated group's repeated entry group. That the entry exists and is
+    /// `REPEATED` is settled before the plan is built; what is left is the row layer's own
+    /// limit — the builders navigate a list through an element node below the entry, which a
+    /// legacy two-level list, whose entry *is* the element, does not have.
     private static SchemaNode.GroupNode repeatedChild(SchemaNode.GroupNode group, String path) {
         SchemaNode child = onlyChild(group, path);
-        if (!(child instanceof SchemaNode.GroupNode repeated)
-                || repeated.repetitionType() != RepetitionType.REPEATED) {
-            throw new UnsupportedOperationException("Group " + path
-                    + " is annotated LIST or MAP but does not hold a single repeated group");
+        if (!(child instanceof SchemaNode.GroupNode repeated)) {
+            throw new UnsupportedOperationException("Group " + path + " is annotated LIST or MAP and its entry "
+                    + child.name() + " is a leaf (a legacy two-level list); the row API reaches a list's values"
+                    + " through an element node below the entry, so it writes three-level LIST groups only."
+                    + " The columnar API writes this schema");
         }
         return repeated;
     }
@@ -276,7 +282,23 @@ public final class RowPlan {
         return group.children().get(0);
     }
 
+    /// Returns the element node below a three-level list's repeated entry. An entry holding
+    /// several fields is the list's element itself — the legacy two-level list of structs, which
+    /// the columnar API writes and the row builders, which reach a list's values through a
+    /// single element node below the entry, cannot.
+    private static SchemaNode listElement(SchemaNode.GroupNode repeated, String path) {
+        if (repeated.children().size() != 1) {
+            throw new UnsupportedOperationException("Group " + path + " holds " + repeated.children().size()
+                    + " fields and is therefore the list's element itself (a legacy two-level list of structs);"
+                    + " the row API reaches a list's values through a single element node below the entry, so it"
+                    + " writes three-level LIST groups only. The columnar API writes this schema");
+        }
+        return repeated.children().get(0);
+    }
+
+    /// Spells a field's path the way [WriterSchemaShape] does, so a path naming a field in a
+    /// rejection reads the same whichever of the two raised it.
     private static String childPath(String path, String name) {
-        return path.isEmpty() ? name : path + "." + name;
+        return WriterSchemaShape.childPath(path, name);
     }
 }

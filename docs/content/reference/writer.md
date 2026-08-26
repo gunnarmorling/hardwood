@@ -232,12 +232,25 @@ hardwood version <version> (build <commit>)
 
 | Exception | When |
 |---|---|
-| `UnsupportedOperationException` | A schema column of an unsupported physical type (`INT96`); a refused codec (`LZ4`, `LZO`) or one whose library is missing; an `OPTIONAL` struct group directly enclosing a repeated field |
+| `UnsupportedOperationException` | A schema column of an unsupported physical type (`INT96`); a refused codec (`LZ4`, `LZO`) or one whose library is missing; a [schema shape](#schema-shapes) the writer cannot produce |
 | `IllegalArgumentException` | A `null` metadata key, metadata map or `created_by`; an unknown column name or path; a setter that does not fit the column's type; a `null` value array, or a `null` value at a present row of a binary column; a column set twice in one batch or record; a batch that leaves a column unset, or whose arrays disagree in length; a null mask on a `REQUIRED` column; a `boolean[]` mask whose length does not match the values; list offsets that do not start at `0`, are not non-decreasing, or disagree with the element count; a value outside the range its annotation declares; a `REQUIRED` field left unset by a record |
 | `IndexOutOfBoundsException` | A leaf-column index outside `[0, leaf column count)` on a `ColumnBatch` setter, or a field index outside `[0, getFieldCount())` on a `StructBuilder` setter |
 | `IllegalStateException` | Writing, or setting key-value metadata or `created_by`, after `close()`; using both write APIs on one file; using a `ColumnBatch` after it has been submitted, or a nested builder after its filler has returned |
 | `IOException` | The destination cannot be created, written, or finalized |
 
-An `OPTIONAL` struct group that encloses a repeated field is the one nested shape the writer cannot produce, although Hardwood reads files containing it; it is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
+### Schema Shapes
+
+Repetition is writable wherever a `LIST` or `MAP` annotation accounts for it. An annotated group is `REQUIRED` or `OPTIONAL` and holds exactly one `REPEATED` entry, which for a `MAP` is a group of `key` and `value`. That admits the canonical three-level `LIST` and two-level `MAP` layouts `FileSchema.builder` declares, and the legacy two-level lists a schema read from an existing file may carry: `LIST { repeated element }`, whose entry is the element, and `LIST { repeated group element { … } }`, whose entry is an element struct.
+
+Every other arrangement of repetition is rejected when the writer is created, since nothing in the schema says where its entries begin and end:
+
+- a `REPEATED` field — leaf or group — whose parent carries neither annotation;
+- a `LIST` or `MAP` group that is itself `REPEATED`;
+- a `LIST` or `MAP` group holding anything other than its single `REPEATED` entry;
+- a `MAP` whose entry is a leaf rather than a group.
+
+An `OPTIONAL` struct group enclosing a repeated field is rejected as well, although Hardwood reads files containing it; it is tracked as [#1026](https://github.com/hardwood-hq/hardwood/issues/1026).
+
+The row API reaches a list's values through an element node below the entry, which the legacy two-level lists do not have, so `rowWriter()` refuses those two shapes and `columnWriter()` writes them. `rowWriter()` also requires sibling field names to be unique, which the `ColumnBatch` indices and dotted paths do not.
 
 A `ParquetFileWriter` that cannot finish a valid file discards its output, leaving nothing at the destination.

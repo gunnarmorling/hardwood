@@ -8,6 +8,7 @@
 package dev.hardwood.writer;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import dev.hardwood.internal.writer.ByteBufferOutputFile;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.metadata.SchemaElement;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.schema.FileSchema;
@@ -26,6 +28,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// The rules the row-oriented layer enforces: what a record must cover, which verb fits which
 /// field, how long a builder is valid, and which of the two write APIs a file is bound to.
+///
+/// The schema rules this layer adds are about *addressing* a shape: the by-name setters need
+/// sibling names to be unique, and the builders reach a list's values through an element node
+/// below the entry, which the legacy two-level lists do not have. The columnar API addresses by
+/// index and dotted path and writes both. Whether a shape can be produced at all is settled by
+/// [ParquetFileWriter#create] before either view exists, and is asserted in
+/// `WriterSchemaShapeTest`.
 class RowWriterRulesTest {
 
     private static FileSchema schema() {
@@ -305,30 +314,6 @@ class RowWriterRulesTest {
         }
     }
 
-    /// The same unproducible schema shape must be reported the same way whichever API meets it
-    /// first, so a caller catching it from one is not surprised by the other.
-    @Test
-    void bothWriteApisRejectAnUnproducibleShapeTheSameWay() throws Exception {
-        FileSchema schema = FileSchema.builder("schema")
-                .struct("outer", RepetitionType.OPTIONAL, outer -> outer
-                        .list("inner", RepetitionType.REQUIRED,
-                                element -> element.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
-                .build();
-
-        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(writer::rowWriter)
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("nullable struct enclosing a repeated field");
-        }
-        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
-                    .list("outer.inner", new int[] { 0, 1 })
-                    .ints("outer.inner.list.element", new int[] { 1 })))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("nullable struct enclosing a repeated field");
-        }
-    }
-
     /// Calls `writeRow` from inside a filler, where the checked `IOException` cannot be
     /// declared.
     private static void uncheckedWriteRow(RowWriter rows) {
@@ -340,21 +325,48 @@ class RowWriterRulesTest {
         }
     }
 
-    /// The write path cannot emit a repeated field below a nullable struct, and the row layer
-    /// says so when the view is opened rather than when the first batch is submitted.
+    /// A legacy two-level list is producible — `create` accepts it and the columnar API writes
+    /// it — but its entry *is* the element, so there is no element node below the entry for the
+    /// builders to navigate to. That divergence is the only one between the two views, so it is
+    /// pinned on both sides of the same schema.
     @Test
-    void nullableStructEnclosingAListIsRejectedUpFront() throws Exception {
-        FileSchema schema = FileSchema.builder("schema")
-                .struct("outer", RepetitionType.OPTIONAL, outer -> outer
-                        .list("inner", RepetitionType.REQUIRED,
-                                element -> element.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
-                .build();
+    void aLegacyTwoLevelListIsWritableColumnarAndRejectedByTheRowView() throws Exception {
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(
+                SchemaElement.root("schema", 1),
+                SchemaElement.group("items", RepetitionType.OPTIONAL, 1, new LogicalType.ListType()),
+                SchemaElement.primitive("element", PhysicalType.INT32, RepetitionType.REPEATED)));
 
-        ByteBufferOutputFile out = new ByteBufferOutputFile();
-        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
             assertThatThrownBy(writer::rowWriter)
                     .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("outer.inner");
+                    .hasMessageContaining("items")
+                    .hasMessageContaining("legacy two-level list")
+                    .hasMessageContaining("The columnar API writes this schema");
+        }
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            writer.columnWriter().writeBatch(batch -> batch
+                    .list("items", new int[] { 0, 2 })
+                    .ints("items.element", new int[] { 1, 2 }));
+        }
+    }
+
+    /// The same divergence for the other legacy two-level form, where the entry is a group of
+    /// several fields and is therefore itself the element.
+    @Test
+    void aLegacyTwoLevelListOfStructsIsRejectedByTheRowView() throws Exception {
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(
+                SchemaElement.root("schema", 1),
+                SchemaElement.group("items", RepetitionType.OPTIONAL, 1, new LogicalType.ListType()),
+                SchemaElement.group("element", RepetitionType.REPEATED, 2),
+                SchemaElement.primitive("a", PhysicalType.INT32, RepetitionType.REQUIRED),
+                SchemaElement.primitive("b", PhysicalType.INT32, RepetitionType.REQUIRED)));
+
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            assertThatThrownBy(writer::rowWriter)
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining("items.element")
+                    .hasMessageContaining("the list's element itself")
+                    .hasMessageContaining("The columnar API writes this schema");
         }
     }
 

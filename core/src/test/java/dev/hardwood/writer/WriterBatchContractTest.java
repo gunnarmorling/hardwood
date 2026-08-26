@@ -34,6 +34,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /// on a `REQUIRED` column or offsets that disagree with the values they index are all
 /// misuse the writer rejects rather than encodes. Rejection has to happen before any bytes
 /// reach the file, and a writer that cannot finish a valid file must leave none behind.
+///
+/// These are rules about a *batch*. Rules about the *schema* — a physical type or a shape the
+/// writer cannot produce — are settled before either view exists and are asserted in
+/// `WriterSchemaShapeTest`.
 class WriterBatchContractTest {
 
     @Test
@@ -93,17 +97,6 @@ class WriterBatchContractTest {
             assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] { 1, 2, 3 })))
                     .isInstanceOf(IllegalArgumentException.class);
         }
-    }
-
-    @Test
-    void rejectsUnsupportedType() {
-        // INT96 is deprecated and never produced; the writer rejects it up front rather than
-        // producing a partial file.
-        FileSchema schema = FileSchema.builder("schema")
-                .addColumn("v", PhysicalType.INT96, RepetitionType.REQUIRED)
-                .build();
-        assertThatThrownBy(() -> ParquetFileWriter.create(new ByteBufferOutputFile(), schema))
-                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -214,27 +207,6 @@ class WriterBatchContractTest {
                     .ints("props.key_value.key", new int[] { 99, 5 })
                     .ints("props.key_value.value", new int[] { 1, 2 })))
                     .isInstanceOf(IllegalArgumentException.class);
-        }
-    }
-
-    @Test
-    void rejectsNullableStructEnclosingList() throws Exception {
-        // A nullable struct directly enclosing a repeated field is not yet supported and must
-        // be rejected eagerly rather than shredded into an unverified file. It is reported as
-        // an unsupported shape rather than a bad argument, because the batch is well formed and
-        // the schema is what the writer cannot produce — the same type, and the same message,
-        // the row layer raises for it from rowWriter().
-        FileSchema schema = FileSchema.builder("schema")
-                .struct("s", RepetitionType.OPTIONAL, sb -> sb
-                        .list("phones", RepetitionType.OPTIONAL, el -> el.primitive(PhysicalType.INT32, RepetitionType.OPTIONAL)))
-                .build();
-
-        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
-            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
-                    .list("s.phones", new int[] { 0, 1 })
-                    .ints("s.phones.list.element", new int[] { 1 })))
-                    .isInstanceOf(UnsupportedOperationException.class)
-                    .hasMessageContaining("nullable struct enclosing a repeated field");
         }
     }
 
