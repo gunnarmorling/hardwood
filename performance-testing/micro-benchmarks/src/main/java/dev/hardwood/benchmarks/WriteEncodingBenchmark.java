@@ -191,7 +191,7 @@ public class WriteEncodingBenchmark {
     private WriterConfig configFor(Case encodingCase) {
         WriterConfig.Builder builder = WriterConfig.builder()
                 .pageTargetBytes(PAGE_TARGET_BYTES)
-                .rowGroupTargetBytes(ROW_GROUP_TARGET_BYTES)
+                .rowGroupBufferTargetBytes(ROW_GROUP_TARGET_BYTES)
                 .codec(CompressionCodec.valueOf(codec));
         encodingCase.columns().forEach(builder::encoding);
         return builder.build();

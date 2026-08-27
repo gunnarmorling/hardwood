@@ -118,4 +118,13 @@ public final class DictionaryEncoder {
     private static int hash(int value) {
         return value * 0x9E3779B1;
     }
+
+    /// The bytes this dictionary retains: the distinct values, and the open-addressing table that
+    /// finds them. The table is charged from [#size] rather than from its allocated length so that
+    /// a cleared dictionary charges nothing, the writer's memory measure being what a chunk holds
+    /// rather than what its buffers have grown to. A slot is an `int` value beside an `int` index,
+    /// and the table resizes at a 75% load, so two slots per entry bounds it.
+    public long retainedBytes() {
+        return (long) size * (Integer.BYTES + 2 * (Integer.BYTES + Integer.BYTES));
+    }
 }

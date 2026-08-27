@@ -27,7 +27,7 @@ here rather than in the release PR.
 | Columnar input | `ColumnWriter.writeBatch(Consumer<ColumnBatch>)`; `ColumnBatch` — `ints` / `longs` / `floats` / `doubles` / `booleans` / `bytes` / `fixed`, each by column index or name, each with a `Validity` and a `boolean[]` null overload; `struct(path, Validity)`, `list(path, offsets[, Validity])`, `map(path, offsets[, Validity])` |
 | Row input | `RowWriter.writeRow(Consumer<StructBuilder>)`; `StructBuilder` typed setters by name and by field index, including the logical-type setters (`setString`, `setDate`, `setTime`, `setTimestamp`, `setLocalTimestamp`, `setDecimal`, `setUuid`, `setInterval`, `setBinary`), `setNull`, and the nesting fillers `setStruct` / `setList` / `setMap`; `ListBuilder`, `MapBuilder`; `getFieldCount()` / `getFieldName(int)` |
 | Schema | `FileSchema.builder(name)` — `addColumn` overloads (type length, logical type), `struct`, `list`, `map`, and `ElementBuilder` for list elements and map values |
-| Configuration | `WriterConfig` — `pageTargetBytes` (1 MiB), `rowGroupTargetBytes` (128 MiB), `codec` (`ZSTD`, `UNCOMPRESSED` when the ZSTD library is absent), `encoding` file-wide and per leaf path (`AUTO`), `statisticsTruncationLength` (64), `precisionLossPolicy` (`REJECT`) |
+| Configuration | `WriterConfig` — `pageTargetBytes` (1 MiB), `rowGroupBufferTargetBytes` (128 MiB), `codec` (`ZSTD`, `UNCOMPRESSED` when the ZSTD library is absent), `encoding` file-wide and per leaf path (`AUTO`), `statisticsTruncationLength` (64), `precisionLossPolicy` (`REJECT`) |
 | File metadata | `ParquetFileWriter.keyValueMetadata(String, String)`, `keyValueMetadata(Map<String, String>)`, `createdBy(String)`, and the `ParquetFileWriter.DEFAULT_CREATED_BY` constant; the footer's two file-scope fields, settable until `close()` |
 | Enums | `ColumnEncoding`, `PrecisionLossPolicy`, the produced and refused `CompressionCodec` values, `Validity` |
 
@@ -174,7 +174,7 @@ Explanation, no step-by-step.
 - Forward-only, footer-last production, and what follows for the caller: no seeking, no
   file size known up front, nothing readable before `close()`, and `discard()` as the
   failure counterpart.
-- Why memory is bounded by `rowGroupTargetBytes` rather than by how much is written, and
+- Why memory is bounded by `rowGroupBufferTargetBytes` rather than by how much is written, and
   that peak heap is a small multiple of the target — the build pins it below three times,
   and it measures well under two.
 - Why the writer, not the caller, cuts row groups and pages, and what the two targets buy.

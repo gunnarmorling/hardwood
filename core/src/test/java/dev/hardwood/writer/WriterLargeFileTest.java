@@ -68,7 +68,7 @@ class WriterLargeFileTest {
     @Test
     void manyRowGroupsAndPagesReadBackIntact() throws Exception {
         WriterConfig config = WriterConfig.builder()
-                .rowGroupTargetBytes(1L << 20)
+                .rowGroupBufferTargetBytes(1L << 20)
                 .pageTargetBytes(16 << 10)
                 .build();
 
@@ -107,7 +107,7 @@ class WriterLargeFileTest {
         WriterConfig config = WriterConfig.builder()
                 .encoding(ColumnEncoding.PLAIN)
                 .codec(CompressionCodec.UNCOMPRESSED)
-                .rowGroupTargetBytes(128L << 20)
+                .rowGroupBufferTargetBytes(128L << 20)
                 .build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema(), config)) {
             writeRows(writer, rows);
@@ -122,6 +122,64 @@ class WriterLargeFileTest {
                     .as("a chunk offset past what an int holds")
                     .isGreaterThan(Integer.MAX_VALUE);
             assertValues(reader, rows);
+        }
+    }
+
+    /// A row group whose byte target asks for more rows than a column chunk can hold.
+    ///
+    /// The target is a byte target and a `BOOLEAN` value is charged the single bit it occupies,
+    /// so a few hundred megabytes of it names billions of rows in one group. The buffers a chunk
+    /// accumulates into are indexed by `int`, and a chunk that reaches their ceiling cannot take
+    /// another value: the row group has to be cut before it gets there, since a boundary the
+    /// writer declines to place is one the caller has no way to place either.
+    ///
+    /// Every column contributes at least one entry per record, and every entry costs its column
+    /// either a stored value or a level byte, so the ceiling one of those buffers reaches first
+    /// is what bounds the group. A column with more entries than records — a repeated one —
+    /// reaches it earlier still, but only at a target in the tens of gigabytes, its entries
+    /// costing a level byte each on the way.
+    @Test
+    @Tag("large")
+    @EnabledIfSystemProperty(named = "hardwood.largeFileTests", matches = "true")
+    void aRowGroupIsCutBeforeAChunkOutgrowsItsBuffers(@TempDir Path dir) throws Exception {
+        long rows = (1L << 31) + (1 << 16);
+        Path file = dir.resolve("boolean.parquet");
+
+        FileSchema schema = FileSchema.builder("large")
+                .addColumn(COLUMN, PhysicalType.BOOLEAN, RepetitionType.REQUIRED)
+                .build();
+        // Half a gigabyte of charge at one bit a row is four billion rows: the row ceiling is
+        // reached first, which is the point.
+        WriterConfig config = WriterConfig.builder()
+                .rowGroupBufferTargetBytes(512L << 20)
+                // Both configured targets put out of the way, so what cuts the group is the
+                // ceiling this case exists to reach.
+                .rowGroupTargetRows(Long.MAX_VALUE)
+                .codec(CompressionCodec.UNCOMPRESSED)
+                .build();
+
+        boolean[] values = new boolean[BATCH];
+        for (int i = 0; i < BATCH; i++) {
+            values[i] = (i & 7) == 0;
+        }
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
+            ColumnWriter columns = writer.columnWriter();
+            for (long row = 0; row < rows; row += BATCH) {
+                int count = (int) Math.min(BATCH, rows - row);
+                boolean[] slice = count == BATCH ? values : Arrays.copyOf(values, count);
+                columns.writeBatch(batch -> batch.booleans(COLUMN, slice));
+            }
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(file))) {
+            assertThat(reader.getFileMetaData().numRows()).as("footer row count").isEqualTo(rows);
+            assertThat(reader.getFileMetaData().rowGroups())
+                    .as("row groups, each holding what one chunk can carry")
+                    .hasSizeGreaterThan(1)
+                    .allSatisfy(group -> assertThat(group.numRows()).isPositive());
+            assertThat(reader.getFileMetaData().rowGroups().stream().mapToLong(RowGroup::numRows).sum())
+                    .as("rows across the groups agree with the footer")
+                    .isEqualTo(rows);
         }
     }
 

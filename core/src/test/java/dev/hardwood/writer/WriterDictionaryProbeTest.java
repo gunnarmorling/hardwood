@@ -141,7 +141,7 @@ class WriterDictionaryProbeTest {
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         // A row-group target small enough that each batch lands in a row group of its own.
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(64 * 1024).build();
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(64 * 1024).build();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneIntColumn(), config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, allDistinct));
             writer.columnWriter().writeBatch(batch -> batch.ints(0, repeating));

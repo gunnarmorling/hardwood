@@ -32,9 +32,9 @@ final class FloatValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    FloatValueEncoder(int pageValues, boolean buildDictionary) {
-        this.plain = new float[Math.max(1, pageValues)];
-        this.window = new float[Math.max(1, pageValues)];
+    FloatValueEncoder(boolean buildDictionary, int startingCapacity) {
+        this.plain = new float[startingCapacity];
+        this.window = new float[windowCapacity(startingCapacity)];
         this.dictionary = buildDictionary ? new DictionaryEncoder() : null;
     }
 
@@ -149,7 +149,22 @@ final class FloatValueEncoder extends ValueEncoder {
     }
 
     @Override
-    long valueBits(int valueIndex) {
+    long uniformValueBits() {
         return Float.SIZE;
+    }
+
+    @Override
+    long plainValueBits(long presentValues) {
+        return presentValues * Float.SIZE;
+    }
+
+    @Override
+    long retainedBytes() {
+        return (long) plainCount * Float.BYTES + (dictionary == null ? 0 : dictionary.retainedBytes());
+    }
+
+    @Override
+    long maxRetainedBytesPerValue() {
+        return Math.max(Float.BYTES, INDEX_BYTES + INT_DICTIONARY_BYTES_PER_ENTRY);
     }
 }

@@ -7,25 +7,64 @@
  */
 package dev.hardwood.internal.writer;
 
-import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
-/// A [ByteArrayOutputStream] that lends out its backing array instead of copying it.
+/// A growable byte buffer that lends out its backing array instead of copying it.
 ///
-/// `toByteArray()` copies everything written so far, which on the write path means copying a
-/// page body to hand it to the compressor and copying a whole column chunk to hand it to the
-/// output. Both consumers take an `(array, offset, length)` slice, so the copy buys nothing.
-/// [#array()] and [#length()] give them that slice directly.
+/// This is the write path's one byte sink: a chunk's level streams take a byte through it per
+/// entry, a `BYTE_ARRAY` column's values take their bytes through it per value, and every page
+/// body is assembled in one. So it is on the per-value path of every column that has levels or
+/// variable-width values, and what it costs per call is what those columns pay per value.
+///
+/// It is deliberately **not** a [java.io.ByteArrayOutputStream]. That class synchronizes every
+/// `write`, which on this path is an uncontended monitor per level byte and per value — bought
+/// for a thread-safety guarantee a buffer owned by one column chunk has no use for.
 ///
 /// The lent array is valid only until the next write, and [#reset()] lets one builder serve
 /// every page of a chunk rather than allocating and regrowing one per page.
-final class ByteArrayBuilder extends ByteArrayOutputStream {
+final class ByteArrayBuilder {
+
+    private byte[] buf;
+    private int count;
 
     ByteArrayBuilder() {
+        this(32);
     }
 
     ByteArrayBuilder(int initialCapacity) {
-        super(initialCapacity);
+        if (initialCapacity < 0) {
+            throw new IllegalArgumentException("Negative initial capacity: " + initialCapacity);
+        }
+        this.buf = new byte[initialCapacity];
+    }
+
+    /// Appends one byte, of which only the low eight bits are kept — matching the
+    /// [java.io.OutputStream#write(int)] contract the level streams are written through.
+    void write(int b) {
+        if (count == buf.length) {
+            grow(count + 1);
+        }
+        buf[count++] = (byte) b;
+    }
+
+    /// Appends `length` bytes of `source` starting at `offset`.
+    void write(byte[] source, int offset, int length) {
+        int needed = Math.addExact(count, length);
+        if (needed > buf.length) {
+            grow(needed);
+        }
+        System.arraycopy(source, offset, buf, count, length);
+        count = needed;
+    }
+
+    /// Appends every byte of `source`.
+    void writeBytes(byte[] source) {
+        write(source, 0, source.length);
+    }
+
+    /// Empties the buffer, keeping the capacity it has grown to.
+    void reset() {
+        count = 0;
     }
 
     /// The backing array. Only the first [#length()] bytes are written data, and the array is
@@ -55,10 +94,16 @@ final class ByteArrayBuilder extends ByteArrayOutputStream {
         int at = count;
         int needed = Math.addExact(count, length);
         if (needed > buf.length) {
-            buf = Arrays.copyOf(buf, Math.max(needed, buf.length <= MAX_GROWTH ? buf.length * 2 : needed));
+            grow(needed);
         }
         count = needed;
         return at;
+    }
+
+    /// Grows the backing array to hold at least `needed` bytes, doubling where doubling still
+    /// fits an `int` so that a buffer filled a byte at a time is copied a bounded number of times.
+    private void grow(int needed) {
+        buf = Arrays.copyOf(buf, Math.max(needed, buf.length <= MAX_GROWTH ? buf.length * 2 : needed));
     }
 
     /// Largest length that may be doubled without overflowing an `int`.

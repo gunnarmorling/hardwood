@@ -191,10 +191,15 @@ class WriterInteropTest {
                 new LayoutAxis("single page", 200, WriterConfig.defaults(), 1, 1, LayoutBound.EXACTLY),
                 new LayoutAxis("multiple pages", MANY_ROWS,
                         WriterConfig.builder().pageTargetBytes(1024).build(), 1, 2, LayoutBound.AT_LEAST),
-                // The target is well under a BOOLEAN column's buffered bits at this row count,
-                // which is the narrowest of the seven types and so sets the bar for all of them.
+                // The target is well under what a BOOLEAN column retains at this row count — a
+                // byte of definition level per entry beside a bit of value, so 22 KB of the two
+                // — which is the narrowest of the seven types and so sets the bar for all of
+                // them. Room enough, too, that a 64-value dictionary is a fraction of a chunk
+                // rather than most of one: a target that cannot hold a dictionary and a chunk
+                // worth amortizing it over cuts row groups that are written PLAIN, which is
+                // honest about the memory it was given and tests nothing about dictionaries.
                 new LayoutAxis("multiple row groups", MANY_ROWS, WriterConfig.builder()
-                        .pageTargetBytes(1024).rowGroupTargetBytes(1024).build(), 2, 2, LayoutBound.AT_LEAST)),
+                        .pageTargetBytes(1024).rowGroupBufferTargetBytes(8192).build(), 2, 2, LayoutBound.AT_LEAST)),
                 (type, axis) -> new LayoutCase(
                         InteropCase.of(axis.name(), type, Nullability.OPTIONAL_SOME_NULL, 64,
                                 axis.rows(), axis.config()),
@@ -213,7 +218,7 @@ class WriterInteropTest {
                         WriterConfig.defaults())),
                 sweep(List.of(Nullability.OPTIONAL_SOME_NULL), (type, nullability) -> InteropCase.of(
                         "row-written across pages and row groups", type, nullability, 64, MANY_ROWS,
-                        WriterConfig.builder().pageTargetBytes(1024).rowGroupTargetBytes(1024).build())));
+                        WriterConfig.builder().pageTargetBytes(1024).rowGroupBufferTargetBytes(8192).build())));
     }
 
     // ==================== Tests ====================

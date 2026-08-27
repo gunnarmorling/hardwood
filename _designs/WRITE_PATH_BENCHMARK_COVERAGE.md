@@ -103,7 +103,7 @@ useful number in the stage. A column under a named policy builds no dictionary a
 applying `PLAIN` to exactly the columns the flush-time comparison rejects anyway writes the
 same pages as `AUTO` while skipping the interning that produced them. The gap between the two
 cases is the upper bound on what stage 26a (#992) can buy, measured through public API, on the
-fixture stage 18 was argued on, without touching the analysis cap.
+fixture stage 18 was argued on.
 
 The two files agree, and what could separate them is one field: a chunk that still holds the
 dictionary it counted with states `distinct_count`, and a chunk that has counted nothing omits
@@ -138,7 +138,7 @@ Eight configurations, about four minutes on a developer machine.
 documents, as it already is in `FlatWriteBenchmark`'s, and in the run every recorded result is
 taken from. It is a first-class number on the write path rather than a diagnostic: the writer
 retains a row group's values to decide their encoding, its peak retention is roughly three
-times `rowGroupTargetBytes`, and per-page allocation in the encode-compress-frame sequence is
+times `rowGroupBufferTargetBytes`, and per-page allocation in the encode-compress-frame sequence is
 invisible in a time measurement of a fixture whose pages hold tens of thousands of values.
 
 Normalizing to bytes per row rather than per operation is left to whoever reads the result, the
@@ -322,10 +322,10 @@ still.
   scoped on its own evidence, and the ones already sequenced (23, 27, 28) keep their places.
 - **The nested shape and schema width**, which are 21b. Both need a fixture that does not
   exist, and both are worth more once the flat baseline says where the time goes.
-- **A cardinality sweep across distinct ratios and both sides of the analysis cap.** The
+- **A cardinality sweep across distinct ratios.** The
   headline number — what interning a column that discards its dictionary costs — is the
   `AUTO` against `PLAIN_ON_DISTINCT` gap, and this fixture produces it. A full sweep needs a
-  fixture of its own, because the cap is `max(rowGroupTargetBytes / 2, 1 MiB)` and bounds one
+  fixture of its own, because the cap is `max(rowGroupBufferTargetBytes / 2, 1 MiB)` and bounds one
   column's dictionary against a row group holding every column: a chunk crosses it only when
   its own dictionary is about half of everything buffered, which no column of a six-column
   fixture is. It is the evidence stage 26b (#979) needs, it belongs with the change it argues

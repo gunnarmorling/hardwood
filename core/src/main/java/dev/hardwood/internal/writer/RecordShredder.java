@@ -222,6 +222,38 @@ public final class RecordShredder {
     /// Shreds records `[from, from + count)` of column `columnIndex`, pushing each level
     /// entry into `sink`. Records must be shredded in order, since the column's value window
     /// advances monotonically across calls.
+    /// The leaf slots records `[from, from + count)` reach in one column, packed as
+    /// `leafFrom << 32 | leafCount`.
+    ///
+    /// Offsets are cumulative, so a record range's leaf range is had by composing one array
+    /// lookup per repeated layer rather than by walking the records. Packed rather than returned
+    /// as a pair because the writer asks this of every column before every slice it appends.
+    public long leafRange(int columnIndex, int from, int count) {
+        int slotFrom = from;
+        int slotTo = from + count;
+        for (Layer layer : layers[columnIndex]) {
+            if (layer.kind() == Layer.Kind.REPEATED) {
+                int[] offsets = layer.offsets;
+                slotFrom = offsets[slotFrom];
+                slotTo = offsets[slotTo];
+            }
+        }
+        return ((long) slotFrom << Integer.SIZE) | Integer.toUnsignedLong(slotTo - slotFrom);
+    }
+
+    /// How many entries beyond its leaf slots one record can add to a column: one for every layer
+    /// that can stand in for absent content — a null struct, a null list, an empty list — each of
+    /// which emits an entry carrying no value.
+    public int phantomLayers(int columnIndex) {
+        int phantoms = 0;
+        for (Layer layer : layers[columnIndex]) {
+            if (layer.kind() == Layer.Kind.REPEATED || layer.nullable()) {
+                phantoms++;
+            }
+        }
+        return phantoms;
+    }
+
     public void shred(int columnIndex, int from, int count, LevelSink sink) {
         Ctx ctx = new Ctx(columnIndex, layers[columnIndex], maxDef[columnIndex], sink);
         int end = from + count;

@@ -33,9 +33,9 @@ final class DoubleValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    DoubleValueEncoder(int pageValues, boolean buildDictionary) {
-        this.plain = new double[Math.max(1, pageValues)];
-        this.window = new double[Math.max(1, pageValues)];
+    DoubleValueEncoder(boolean buildDictionary, int startingCapacity) {
+        this.plain = new double[startingCapacity];
+        this.window = new double[windowCapacity(startingCapacity)];
         this.dictionary = buildDictionary ? new LongDictionaryEncoder() : null;
     }
 
@@ -150,7 +150,22 @@ final class DoubleValueEncoder extends ValueEncoder {
     }
 
     @Override
-    long valueBits(int valueIndex) {
+    long uniformValueBits() {
         return Double.SIZE;
+    }
+
+    @Override
+    long plainValueBits(long presentValues) {
+        return presentValues * Double.SIZE;
+    }
+
+    @Override
+    long retainedBytes() {
+        return (long) plainCount * Double.BYTES + (dictionary == null ? 0 : dictionary.retainedBytes());
+    }
+
+    @Override
+    long maxRetainedBytesPerValue() {
+        return Math.max(Double.BYTES, INDEX_BYTES + LONG_DICTIONARY_BYTES_PER_ENTRY);
     }
 }

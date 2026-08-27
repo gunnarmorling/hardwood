@@ -106,12 +106,25 @@ public final class RleBitPackingHybridEncoder {
         return Arrays.copyOf(buffer, length);
     }
 
-    /// Finishes the stream and appends the encoded bytes to `out`, which is what a caller
-    /// assembling a larger buffer wants: [#toByteArray] would copy the bytes once for the
-    /// caller to copy them again. The encoder must not be written to afterwards.
-    public void writeTo(ByteArrayOutputStream out) {
+    /// Finishes the stream and returns how many bytes it occupies; [#buffer] then holds them,
+    /// starting at zero.
+    ///
+    /// The bytes are lent rather than written into a sink of the caller's, so that the one sink
+    /// on this path — the page body under construction — needs no particular type and can be a
+    /// plain growable array rather than a synchronized [ByteArrayOutputStream]. The encoder must
+    /// not be written to afterwards.
+    public int finished() {
         finish();
-        out.write(buffer, 0, length);
+        return length;
+    }
+
+    /// The backing array [#finished] reports the length of. Valid until the next reset.
+    ///
+    /// Call [#finished] **first and into a local**: finishing may replace this array, and
+    /// `write(buffer(), 0, finished())` evaluates the array reference before the call that
+    /// replaces it.
+    public byte[] buffer() {
+        return buffer;
     }
 
     /// Empties the encoder for another stream at `bitWidth`, keeping the buffer it grew. One

@@ -181,7 +181,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 ### 6.1 Writer Architecture
 - [x] Implement `RowWriter` — the row-oriented layer over the columnar core, obtained from
   `ParquetFileWriter.rowWriter()` (see `_designs/WRITER_ROW_API.md`)
-- [x] Implement `WriterConfig` (row-group and page targets, per-column encoding policy,
+- [x] Implement `WriterConfig` (row-group row and buffer targets, page target, per-column encoding policy,
   codec, statistics truncation, precision-loss policy)
 - [x] Implement `ColumnWriter` — the columnar entry point, obtained from
   `ParquetFileWriter.columnWriter()`, taking one aligned batch of typed arrays through

@@ -26,7 +26,6 @@ import dev.hardwood.OutputFile;
 import dev.hardwood.internal.BuildInfo;
 import dev.hardwood.internal.compression.Compressor;
 import dev.hardwood.internal.compression.CompressorFactory;
-import dev.hardwood.internal.encoding.LevelEncoder;
 import dev.hardwood.internal.thrift.FileMetaDataWriter;
 import dev.hardwood.internal.thrift.ThriftCompactWriter;
 import dev.hardwood.internal.writer.ColumnSource;
@@ -51,8 +50,11 @@ import dev.hardwood.schema.FileSchema;
 /// of lists, lists of structs, and maps of any in-scope value). Data is supplied as
 /// [ColumnBatch] slices; the writer packs each column into size-bounded data pages — a
 /// levelled column's pages carrying an RLE definition-level stream ahead of the values — and
-/// flushes a row group once its buffered data reaches the configured target, so peak memory is
-/// bounded regardless of how much is written. Each column chunk is encoded one way throughout:
+/// flushes a row group once the bytes it holds for that group reach the configured target. Each
+/// row group is buffered, written and forgotten, so what the writer holds follows the target
+/// rather than the size of the file — and the target counts what is held, so it is that number
+/// and not a multiple of it, give or take the slack the value stores carry from growing
+/// geometrically. Each column chunk is encoded one way throughout:
 /// by default the writer weighs a dictionary against `PLAIN` once the row group is buffered and
 /// takes the smaller, or a [ColumnEncoding] set per column names the encoding outright. Each page
 /// body is compressed with the configured codec (`ZSTD` by default). All of these are
@@ -74,31 +76,14 @@ public final class ParquetFileWriter implements Closeable {
     /// applies its writer-specific correctness workarounds to it by default.
     public static final String DEFAULT_CREATED_BY = defaultCreatedBy();
 
-    /// Nominal `BYTE_ARRAY` value length assumed when estimating the flush-check stride. Only the
-    /// append granularity depends on it; the row group flushes on actual buffered bytes.
-    private static final int ASSUMED_BYTE_ARRAY_LENGTH = 16;
 
-    /// Fraction of the row-group target one column's dictionary may occupy while the writer
-    /// decides how to encode that column. The bound is on memory, not on the encoding choice, so
-    /// it is derived from the target that already states how much the writer may hold rather than
-    /// being a knob of its own. Half is deliberately generous: a dictionary larger than half the
-    /// data it describes cannot beat writing the values `PLAIN` by more than a few percent, so the
-    /// cap bounds the pathological case without ever overruling a decision worth making.
-    private static final int DICTIONARY_ANALYSIS_SHARE = 2;
-
-    /// Floor under the derived cap, so a small row-group target does not reduce every chunk to
-    /// `PLAIN` by starving the analysis.
-    private static final long MIN_DICTIONARY_ANALYSIS_BYTES = 1 << 20;
 
     private final OutputFile out;
     private final FileSchema schema;
     private final WriterConfig config;
-    /// Records appended before the per-record size is known, to learn it without overshooting a
-    /// small row-group target on a batch of large variable-width values.
-    private static final int PROBE_RECORDS = 64;
-
-    private final int pageValues;
-    private final long rowGroupTargetBits;
+    /// The configured row target, held down to what a chunk's buffers can index. One bound rather
+    /// than two: a caller's row target above the structural ceiling is the ceiling.
+    private final int rowGroupTargetRows;
     private final RecordShredder shredder;
     private final Compressor compressor;
     /// The range each column's annotation declares, resolved once and handed to every batch.
@@ -109,11 +94,6 @@ public final class ParquetFileWriter implements Closeable {
     /// ordered so the entries reach the file in the order they were given.
     private final Map<String, String> keyValueMetadata = new LinkedHashMap<>();
     private String createdBy = DEFAULT_CREATED_BY;
-
-    // Running actual buffered-bit average, learned across the whole write so the append stride
-    // between flush checks lands near the row-group boundary regardless of value width.
-    private long cumulativeBits;
-    private long cumulativeRecords;
 
     private final RowGroupBuffer current;
     private long numRows;
@@ -133,21 +113,35 @@ public final class ParquetFileWriter implements Closeable {
         this.out = out;
         this.schema = schema;
         this.config = config;
-        this.pageValues = pageRowCapacity(config.pageTargetBytes(), schema);
-        this.rowGroupTargetBits = Math.multiplyExact(config.rowGroupTargetBytes(), Byte.SIZE);
+        this.rowGroupTargetRows = (int) Math.min(config.rowGroupTargetRows(), RowGroupBuffer.MAX_ROWS);
         this.shredder = new RecordShredder(schema);
         this.compressor = compressor;
         this.ranges = LogicalTypeValueRange.forSchema(schema);
         // One buffer serves every row group: flushing it resets it in place, so the writer's
         // largest allocation is made once per file rather than once per row group.
-        this.current = new RowGroupBuffer(schema, pageValues, encodings,
-                dictionaryAnalysisCapBytes(config), config.statisticsTruncationLength(), compressor, config.codec());
+        this.current = new RowGroupBuffer(schema, config.pageTargetBytes(),
+                config.rowGroupBufferTargetBytes(), encodings,
+                config.statisticsTruncationLength(), compressor, config.codec());
     }
 
-    /// How large one column's dictionary may grow while the writer decides that column's encoding.
-    private static long dictionaryAnalysisCapBytes(WriterConfig config) {
-        return Math.max(config.rowGroupTargetBytes() / DICTIONARY_ANALYSIS_SHARE, MIN_DICTIONARY_ANALYSIS_BYTES);
+    /// The bytes the open row group retains. Exposed to the tests that hold this number against a
+    /// measurement of the heap, which is the only check that it means what it says.
+    long retainedBytes() {
+        return current.retainedBytes();
     }
+
+    /// The most this writer has held for one row group over the file so far.
+    ///
+    /// A row group is cut on what it holds, so what a caller has actually been charged is the
+    /// high-water mark across the file's row groups rather than whatever the open one holds now —
+    /// and the peak of a batch that spans several row groups falls inside a single `writeBatch`,
+    /// where nothing outside the writer can observe it.
+    long peakRetainedBytes() {
+        return peakRetainedBytes;
+    }
+
+    private long peakRetainedBytes;
+
 
     /// Opens a writer with the default [WriterConfig].
     ///
@@ -382,37 +376,44 @@ public final class ParquetFileWriter implements Closeable {
         batch.markConsumed();
         int rows = shredder.recordCount();
         int pos = 0;
+        // Carried across iterations: what the row group holds after a slice is also the room the
+        // next slice is sized against, so it is read once per slice rather than once for each.
+        long retained = current.retainedBytes();
         while (pos < rows) {
-            int n = nextStride(rows - pos);
-            long before = current.bufferedBits();
-            current.appendRecords(shredder, sources, pos, n);
-            cumulativeBits += current.bufferedBits() - before;
-            cumulativeRecords += n;
-            pos += n;
-            if (current.bufferedBits() >= rowGroupTargetBits) {
+            // A slice at a time. What a range actually costs is only known once it has been
+            // appended — a value interned against a live dictionary retains an index where it
+            // repeats and an index plus the value where it does not, which needs the hash — so
+            // the writer sizes a slice by what it *could* cost and then reads what the row group
+            // turned out to hold. Sizing it by the bound is what keeps a batch whose records
+            // widen part way through from carrying a row group far past its target, which no
+            // measurement of the records already appended could anticipate.
+            int slice = Math.min(Math.min(rows - pos, SLICE_RECORDS),
+                    rowGroupTargetRows - current.rowCount());
+            slice = current.sliceThatFits(shredder, sources, pos, slice,
+                    config.rowGroupBufferTargetBytes() - retained);
+            current.appendRecords(shredder, sources, pos, slice);
+            pos += slice;
+            retained = current.retainedBytes();
+            if (retained > peakRetainedBytes) {
+                peakRetainedBytes = retained;
+            }
+            // Either target closes the group, whichever is reached first.
+            if (retained >= config.rowGroupBufferTargetBytes()
+                    || current.rowCount() >= rowGroupTargetRows) {
                 flushRowGroup();
+                retained = current.retainedBytes();
             }
         }
     }
 
-    /// How many of the next `remaining` records to append before re-checking the buffered-byte
-    /// target. Until the per-record size is measured, a small probe learns it without
-    /// overshooting; afterwards the stride is sized to just fill the remaining row-group budget
-    /// from the running average (exact for fixed-width columns), so a row group lands on the
-    /// target regardless of value width. Capped at one page's worth of entries.
-    private int nextStride(int remaining) {
-        if (cumulativeRecords == 0) {
-            return Math.min(remaining, PROBE_RECORDS);
-        }
-        long avgBits = Math.max(1, cumulativeBits / cumulativeRecords);
-        long remainingBits = Math.max(avgBits, rowGroupTargetBits - current.bufferedBits());
-        long stride = Math.min(pageValues, ceilDiv(remainingBits, avgBits));
-        return (int) Math.max(1, Math.min(remaining, stride));
-    }
-
-    private static long ceilDiv(long numerator, long denominator) {
-        return (numerator + denominator - 1) / denominator;
-    }
+    /// Records appended between two readings of what the row group holds.
+    ///
+    /// It bounds how far a row group can overshoot its byte target: at most one slice, and a
+    /// slice is drawn from the batch the caller has already materialized, a [ColumnSource]
+    /// holding the caller's arrays by reference rather than copying them. Small enough that the
+    /// overshoot is a fraction of the target for any record a caller can hold; large enough that
+    /// a column's slice is one bulk copy rather than a call per value.
+    private static final int SLICE_RECORDS = 4096;
 
     @Override
     public void close() throws IOException {
@@ -485,46 +486,6 @@ public final class ParquetFileWriter implements Closeable {
     /// Assembles this build's `created_by` identifier from [BuildInfo].
     private static String defaultCreatedBy() {
         return "hardwood version " + BuildInfo.version() + " (build " + BuildInfo.revisionWithDirtyMark() + ")";
-    }
-
-    /// Rows per data page whose encoded body fits the page target. A page costs each column's
-    /// estimated `PLAIN` value bit width per row plus, for a levelled column, its RLE
-    /// definition-level stream; sizing to the widest column's per-row bit cost keeps every
-    /// column's page within the target. At least one row so a tiny target still makes progress.
-    /// This is a page-level entry-count bound only; the actual row-group flush tracks buffered
-    /// bytes, so a variable-width estimate here does not distort the produced file.
-    private static int pageRowCapacity(long pageTargetBytes, FileSchema schema) {
-        long maxColumnBitsPerRow = 1;
-        for (int c = 0; c < schema.getColumnCount(); c++) {
-            ColumnSchema column = schema.getColumn(c);
-            int defBits = LevelEncoder.bitWidth(column.maxDefinitionLevel());
-            maxColumnBitsPerRow = Math.max(maxColumnBitsPerRow, estimatedValueBits(column) + defBits);
-        }
-        long rows = pageTargetBytes * Byte.SIZE / maxColumnBitsPerRow;
-        return (int) Math.max(1, Math.min(rows, Integer.MAX_VALUE));
-    }
-
-    /// The estimated `PLAIN` bit width of one of a column's values, used only to bound the
-    /// per-page entry count: exact for the fixed-width scalars and for `FIXED_LEN_BYTE_ARRAY`
-    /// (its schema type length), and a nominal estimate for `BYTE_ARRAY` (a 4-byte length prefix
-    /// plus an assumed value length).
-    private static long estimatedValueBits(ColumnSchema column) {
-        return switch (column.type()) {
-            case BOOLEAN -> 1;
-            case INT32, FLOAT -> Integer.SIZE;
-            case INT64, DOUBLE -> Long.SIZE;
-            case FIXED_LEN_BYTE_ARRAY -> (long) requireTypeLength(column) * Byte.SIZE;
-            case BYTE_ARRAY -> (long) (Integer.BYTES + ASSUMED_BYTE_ARRAY_LENGTH) * Byte.SIZE;
-            case INT96 -> throw new IllegalArgumentException("INT96 is not supported by the writer");
-        };
-    }
-
-    private static int requireTypeLength(ColumnSchema column) {
-        if (column.typeLength() == null) {
-            throw new IllegalArgumentException(
-                    "FIXED_LEN_BYTE_ARRAY column " + column.name() + " requires a type length");
-        }
-        return column.typeLength();
     }
 
     /// Whether the writer supports producing a column of this physical type.

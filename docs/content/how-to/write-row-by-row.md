@@ -184,7 +184,7 @@ import dev.hardwood.writer.WriterConfig;
 
 WriterConfig config = WriterConfig.builder()
         .codec(CompressionCodec.ZSTD)
-        .rowGroupTargetBytes(64L << 20)
+        .rowGroupBufferTargetBytes(64L << 20)
         .precisionLossPolicy(PrecisionLossPolicy.TRUNCATE)
         .build();
 

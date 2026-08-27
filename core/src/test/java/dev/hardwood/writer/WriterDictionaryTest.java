@@ -72,7 +72,7 @@ class WriterDictionaryTest {
 
     @Test
     void dictionaryIsGivenUpWhenItOutgrowsTheAnalysisCap() throws Exception {
-        // The cap is max(rowGroupTargetBytes / 2, 1 MiB), so a 4 MiB target caps the dictionary at
+        // The cap is max(rowGroupBufferTargetBytes / 2, 1 MiB), so a 4 MiB target caps the dictionary at
         // 2 MiB — reached after 524,288 distinct INT32 values, part-way through this column. From
         // there the chunk holds resolved values followed by directly appended ones, which is the
         // one path where the value store carries both, and the only path that leaves the chunk
@@ -83,7 +83,7 @@ class WriterDictionaryTest {
             values[i] = i * 3 + 7;
         }
 
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4L << 20).build();
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(4L << 20).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
@@ -307,7 +307,7 @@ class WriterDictionaryTest {
             values[i] = (i % 5) * 100;
         }
 
-        WriterConfig config = WriterConfig.builder().pageTargetBytes(64).rowGroupTargetBytes(512).build();
+        WriterConfig config = WriterConfig.builder().pageTargetBytes(64).rowGroupBufferTargetBytes(512).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, values));

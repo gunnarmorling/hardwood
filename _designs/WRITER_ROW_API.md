@@ -289,7 +289,7 @@ A batch is submitted when either trigger fires:
 - **1024 staged rows.** A fixed internal constant, not a `WriterConfig` knob: the batch is an
   arrival unit with no effect on the produced file, and the file's layout is already governed by
   the page and row-group targets.
-- **staged variable-width payload ≥ `WriterConfig.rowGroupTargetBytes()`.** A row of large
+- **staged variable-width payload ≥ `WriterConfig.rowGroupBufferTargetBytes()`.** A row of large
   `BYTE_ARRAY` values would otherwise let 1024 rows hold arbitrarily much; this bounds staging
   at one row group's worth, which is the memory bound the columnar path already promises.
 

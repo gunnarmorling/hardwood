@@ -41,7 +41,7 @@ dictionary up as soon as it is losing.**
 
 Nothing about the comparison changes, and nothing about the mechanism changes.
 `giveUpDictionary()` already resolves interned indices into stored values mid-chunk — the
-analysis cap has called it that way since stage 18 — and the arithmetic the comparison needs is
+flush comparison has called it that way since stage 18 — and the arithmetic the comparison needs is
 already maintained per value: the interned count, the dictionary's size and plain bytes, and
 the running `PLAIN` width of everything seen. The probe is the existing predicate, evaluated
 earlier against the same fields.
@@ -89,7 +89,7 @@ at 16384 and abandons there, over 5% of the chunk instead of 2.5% — which is n
 worth trading the guard for.
 
 This is the concern [WRITER_DICTIONARY_SELECTION.md](WRITER_DICTIONARY_SELECTION.md) raises
-where it declines to tighten the analysis cap: *"What a small cap risks is the column whose
+where it declines to abandon on a single probe: *"What a small cap risks is the column whose
 cardinality saturates late: it looks all-distinct over its first values and is written `PLAIN`
 on that evidence."* The two-probe rule is what bounds that risk rather than accepting it. It
 does not eliminate it — a column that saturates only after 16384 values still loses its
@@ -113,11 +113,11 @@ cost of being wrong is a larger file; the rule is tuned so that caution is the d
 |---|---|
 | The comparison | Unchanged, and now evaluated at probe points as well as at flush |
 | `giveUpDictionary()` | Unchanged; it is the mechanism, and the probe is a new caller |
-| The analysis cap | Unchanged. It bounds memory and fires independently; a chunk the probe abandons never reaches it |
+| What bounds a dictionary's memory | `rowGroupBufferTargetBytes`, which a dictionary counts against as part of what its chunk retains; a chunk the probe abandons stops adding to it |
 | The flush-time decision | Unchanged for every chunk that survives probing |
 | `Statistics.distinct_count` | Absent for an abandoned chunk, as it already is for one the cap abandons — the position stage 29 (#982) addresses |
 | Named encoding policies | Unaffected; a column under one builds no dictionary to abandon |
-| `WriterConfig` | Unchanged. The schedule is internal, as the analysis cap is: it is a property of how the writer decides, not a decision a caller takes |
+| `WriterConfig` | Unchanged. The schedule is internal: it is a property of how the writer decides, not a decision a caller takes |
 | Produced files | Byte-identical wherever prefix and chunk agree; a chunk abandoned early is one the flush comparison would have rejected anyway |
 
 ## Validation
@@ -165,7 +165,7 @@ same writer produces files of different length from different checkouts.
 
 ## What this does not do
 
-- **It does not keep deciding after the analysis cap fires.** That is stage 26b (#979), and it
+- **It does not keep deciding after a dictionary is abandoned.** That was stage 26b (#979), and it
   is the other half of making the cap a memory bound rather than an encoding verdict. The two
   are complementary: this one declines dictionaries that are losing, and that one rescues
   dictionaries that are winning when the cap cuts the analysis short.

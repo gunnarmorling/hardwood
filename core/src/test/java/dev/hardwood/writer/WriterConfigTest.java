@@ -25,7 +25,8 @@ class WriterConfigTest {
     void defaultsMatchTheDeclaredConstants() {
         WriterConfig config = WriterConfig.defaults();
         assertThat(config.pageTargetBytes()).isEqualTo(WriterConfig.DEFAULT_PAGE_TARGET_BYTES);
-        assertThat(config.rowGroupTargetBytes()).isEqualTo(WriterConfig.DEFAULT_ROW_GROUP_TARGET_BYTES);
+        assertThat(config.rowGroupBufferTargetBytes()).isEqualTo(WriterConfig.DEFAULT_ROW_GROUP_BUFFER_TARGET_BYTES);
+        assertThat(config.rowGroupTargetRows()).isEqualTo(WriterConfig.DEFAULT_ROW_GROUP_TARGET_ROWS);
         assertThat(config.codec()).isEqualTo(WriterConfig.DEFAULT_CODEC);
         // zstd-jni is on the build classpath, so the classpath-conditional default resolves to
         // ZSTD here; it degrades to UNCOMPRESSED only when the library is absent.
@@ -58,9 +59,17 @@ class WriterConfigTest {
 
     @Test
     void rejectsNonPositiveRowGroupTarget() {
-        assertThatThrownBy(() -> WriterConfig.builder().rowGroupTargetBytes(0))
+        assertThatThrownBy(() -> WriterConfig.builder().rowGroupBufferTargetBytes(0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> WriterConfig.builder().rowGroupTargetBytes(-1))
+        assertThatThrownBy(() -> WriterConfig.builder().rowGroupBufferTargetBytes(-1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsNonPositiveRowGroupRowTarget() {
+        assertThatThrownBy(() -> WriterConfig.builder().rowGroupTargetRows(0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> WriterConfig.builder().rowGroupTargetRows(-1))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

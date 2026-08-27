@@ -35,7 +35,7 @@ class EncodingSupportTest {
             if (type == PhysicalType.INT96) {
                 continue; // Not writable, so it has no encoder to disagree with.
             }
-            ValueEncoder encoder = ValueEncoder.forColumn(column(type), 64, ColumnEncoding.AUTO, 64);
+            ValueEncoder encoder = ValueEncoder.forColumn(column(type), ColumnEncoding.AUTO, 64, 4096);
 
             assertThat(encoder.dictionaryCapable())
                     .as("%s: EncodingSupport says %s", type, EncodingSupport.dictionaryCapable(type))
@@ -48,7 +48,7 @@ class EncodingSupportTest {
     @Test
     void aNamedPolicyBuildsNoDictionary() {
         ValueEncoder encoder = ValueEncoder.forColumn(
-                column(PhysicalType.INT64), 64, ColumnEncoding.PLAIN, 64);
+                column(PhysicalType.INT64), ColumnEncoding.PLAIN, 64, 4096);
 
         assertThat(encoder.dictionaryCapable()).isFalse();
     }

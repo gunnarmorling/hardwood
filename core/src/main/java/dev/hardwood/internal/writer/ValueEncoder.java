@@ -25,27 +25,26 @@ import dev.hardwood.writer.ColumnEncoding;
 /// extends the statistics; an absent slot only advances the null count.
 abstract class ValueEncoder {
 
-    /// Selects the encoder for a column's physical type. `pageValues` sizes the per-page value
-    /// buffer and the read window; `encoding` is the column's resolved policy, which builds a
-    /// dictionary only under [ColumnEncoding#AUTO]; `statisticsTruncationLength` bounds
-    /// `BYTE_ARRAY` `min` / `max` bounds.
-    static ValueEncoder forColumn(ColumnSchema column, int pageValues, ColumnEncoding encoding,
-                                  int statisticsTruncationLength) {
+    /// Selects the encoder for a column's physical type. `encoding` is the column's resolved
+    /// policy, which builds a dictionary only under [ColumnEncoding#AUTO];
+    /// `statisticsTruncationLength` bounds `BYTE_ARRAY` `min` / `max` bounds.
+    static ValueEncoder forColumn(ColumnSchema column, ColumnEncoding encoding,
+                                  int statisticsTruncationLength, int startingCapacity) {
         PhysicalType type = column.type();
         boolean unsigned = isUnsigned(column);
         // Only AUTO decides between a dictionary and something else, so only AUTO needs one
         // built: a column under a named policy pays neither the interning nor the index array.
         boolean dictionary = encoding == ColumnEncoding.AUTO;
         return switch (type) {
-            case INT32 -> new IntValueEncoder(pageValues, dictionary, unsigned);
-            case INT64 -> new LongValueEncoder(pageValues, dictionary, unsigned);
-            case FLOAT -> new FloatValueEncoder(pageValues, dictionary);
-            case DOUBLE -> new DoubleValueEncoder(pageValues, dictionary);
-            case BOOLEAN -> new BooleanValueEncoder(pageValues);
-            case BYTE_ARRAY -> new BinaryValueEncoder(pageValues, dictionary, null,
+            case INT32 -> new IntValueEncoder(dictionary, unsigned, startingCapacity);
+            case INT64 -> new LongValueEncoder(dictionary, unsigned, startingCapacity);
+            case FLOAT -> new FloatValueEncoder(dictionary, startingCapacity);
+            case DOUBLE -> new DoubleValueEncoder(dictionary, startingCapacity);
+            case BOOLEAN -> new BooleanValueEncoder(startingCapacity);
+            case BYTE_ARRAY -> new BinaryValueEncoder(dictionary, null, startingCapacity,
                     () -> BinaryStatistics.forColumn(column, statisticsTruncationLength));
-            case FIXED_LEN_BYTE_ARRAY -> new BinaryValueEncoder(pageValues, dictionary,
-                    requireTypeLength(column),
+            case FIXED_LEN_BYTE_ARRAY -> new BinaryValueEncoder(dictionary,
+                    requireTypeLength(column), startingCapacity,
                     () -> BinaryStatistics.forColumn(column, statisticsTruncationLength));
             default -> throw new IllegalArgumentException(
                     "Writer does not support physical type " + type + " for column " + column.name());
@@ -77,6 +76,95 @@ abstract class ValueEncoder {
 
     /// Largest value store a chunk may grow to, below the JVM's array-length ceiling.
     private static final int MAX_STORE_CAPACITY = Integer.MAX_VALUE - 8;
+
+    /// The capacity a column's value store starts at: an equal share of the row group's byte
+    /// budget, counted in values of this column's own width.
+    ///
+    /// A store that starts far below what a row group will hold reaches it by copying itself
+    /// repeatedly, and geometric growth leaves behind about twice the store's final size in
+    /// garbage — for a row group sized in tens of megabytes, the writer's largest source of it.
+    /// Starting from the budget removes most of those copies, and it bounds the eager allocation
+    /// by the number the caller already set: every column starting at its share means the whole
+    /// schema starts at one row group's worth, however many columns it has.
+    ///
+    /// Clamped at both ends. The floor keeps a column of a very wide schema, or of a very small
+    /// target, from starting at a capacity it would immediately outgrow; the ceiling keeps a
+    /// narrow schema with a large target from allocating a row group's worth for a file that may
+    /// hold ten records.
+    /// @param budgetBytesPerColumn the row group's byte target divided among its columns
+    /// @param eagerBytesPerValue what one value costs across the column's eager buffers
+    static int startingCapacity(long budgetBytesPerColumn, long eagerBytesPerValue) {
+        long values = budgetBytesPerColumn / Math.max(1, eagerBytesPerValue);
+        return (int) Math.clamp(values, MIN_BUFFER_VALUES, MAX_BUFFER_VALUES);
+    }
+
+    /// What one value of a column's starting capacity costs across every buffer the column
+    /// allocates before a record arrives.
+    ///
+    /// The value store is one of four. A column that may build a dictionary keeps an index beside
+    /// each value, every column reads its source through a window, and a levelled column keeps a
+    /// byte per entry per level stream — so a capacity derived from the store alone reserves
+    /// several times the share it was given, and the more columns a schema has the further the
+    /// total lands from the target. The window is charged its full width although it is capped at
+    /// a slice, which errs towards a smaller capacity.
+    ///
+    /// @param column the column
+    /// @param dictionaryCapable whether this column may intern, which is [ColumnEncoding#AUTO]
+    ///        over a type that has a dictionary
+    /// @param levelBytesPerEntry a byte for each level stream the column has
+    static long eagerBytesPerValue(ColumnSchema column, boolean dictionaryCapable, int levelBytesPerEntry) {
+        long store = storeBytesPerValue(column);
+        // A binary column reads through a window of references rather than of values.
+        long window = switch (column.type()) {
+            case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY -> REFERENCE_BYTES;
+            default -> store;
+        };
+        return store + window + levelBytesPerEntry + (dictionaryCapable ? INDEX_BYTES : 0);
+    }
+
+    /// A reference in a window of `byte[]`, under compressed oops.
+    private static final long REFERENCE_BYTES = 4;
+
+    /// What one value occupies in a column's store *before a record arrives*, which is what the
+    /// store term above counts.
+    ///
+    /// Both binary forms are sized by the offset they keep per value rather than by their content.
+    /// A `BYTE_ARRAY`'s content is not the schema's to state at all, and a
+    /// `FIXED_LEN_BYTE_ARRAY`'s is — but neither is allocated up front: both hold their bytes in
+    /// one packed buffer that starts at 32 bytes and grows, so charging a fixed width for content
+    /// that has not been allocated would start the column far below the share it was given and
+    /// deny it the regrowth this capacity exists to save.
+    static long storeBytesPerValue(ColumnSchema column) {
+        return switch (column.type()) {
+            case BOOLEAN -> 1;
+            case INT32, FLOAT -> Integer.BYTES;
+            case INT64, DOUBLE -> Long.BYTES;
+            case BYTE_ARRAY -> Integer.BYTES;
+            case FIXED_LEN_BYTE_ARRAY -> Integer.BYTES;
+            case INT96 -> Long.BYTES;
+        };
+    }
+
+    /// The capacity of the fixed window a column reads its source through.
+    ///
+    /// The window is scratch, not storage: it is filled from the batch in bulk and read value by
+    /// value, so what it wants is to span the records appended between two fills — a slice — and
+    /// nothing more. Sized to the slice, a column fills it exactly once per slice.
+    ///
+    /// It is held to the column's starting capacity as well, so that a schema wide enough for the
+    /// per-column buffers to dominate does not pay a slice-sized window on every column. A window
+    /// below the slice is refilled more than once per slice and costs nothing else.
+    static int windowCapacity(int startingCapacity) {
+        return Math.min(WINDOW_VALUES, startingCapacity);
+    }
+
+    private static final int WINDOW_VALUES = 4096;
+
+    /// Low enough that a schema of hundreds of columns still starts near its target rather than
+    /// at a per-column constant multiplied by the column count, and high enough that a column
+    /// which does fill reaches a useful size in a few growths.
+    private static final int MIN_BUFFER_VALUES = 512;
+    private static final int MAX_BUFFER_VALUES = 1 << 16;
 
     /// Whether the column's statistics compare unsigned: only the `UINT_*` annotations do.
     private static boolean isUnsigned(ColumnSchema column) {
@@ -131,6 +219,25 @@ abstract class ValueEncoder {
     /// statistics rather than guessing at it.
     static final long UNKNOWN_DISTINCT_COUNT = -1;
 
+    /// The bits every stored value of this column occupies `PLAIN`-encoded, or
+    /// [#VARIABLE_VALUE_BITS] where they differ. Read once per chunk when its pages are cut, so
+    /// the common column costs no per-value call there.
+    abstract long uniformValueBits();
+
+    /// Stands for a column whose stored values do not all occupy the same width, which is
+    /// `BYTE_ARRAY` and nothing else.
+    static final long VARIABLE_VALUE_BITS = -1;
+
+    /// Where a chunk's stored values end, one entry per value plus a trailing bound, so value
+    /// `i` occupies `offsets[i + 1] - offsets[i]` bytes. `null` where every value is the same
+    /// width and [#uniformValueBits] answers instead.
+    ///
+    /// Handed over as the array rather than answered per value: cutting a page reads one of these
+    /// for every value of the chunk, and a call per value there is a virtual call per value.
+    int[] storedValueOffsets() {
+        return null;
+    }
+
     /// The `PLAIN`-encoded dictionary body — the distinct values in index order.
     abstract byte[] encodeDictionaryBody();
 
@@ -163,8 +270,43 @@ abstract class ValueEncoder {
     /// The accumulated chunk statistics.
     abstract Statistics statistics();
 
-    /// The uncompressed `PLAIN` bit width of the present value at `valueIndex`, used to size the
-    /// buffered row group: a fixed-width type's constant width, or a `BYTE_ARRAY`'s length plus
-    /// its 4-byte length prefix.
-    abstract long valueBits(int valueIndex);
+    /// The most one present value can retain: its width in the value store, or a dictionary index
+    /// and a whole new dictionary entry, whichever is larger — a value being in one or the other
+    /// and the chunk's encoding not being settled while it accumulates. [#VARIABLE_RETAINED_BYTES]
+    /// where the width is not the schema's to state, which is `BYTE_ARRAY` and nothing else.
+    ///
+    /// A bound rather than a cost. What a value actually retains depends on whether its
+    /// dictionary has seen it before, which is not knowable without hashing it, so this is what
+    /// the writer sizes a slice with — never what it cuts a row group on.
+    abstract long maxRetainedBytesPerValue();
+
+    /// Stands for a value whose width has to be read from the batch.
+    static final long VARIABLE_RETAINED_BYTES = -1;
+
+    /// What a new entry costs each dictionary, mirroring the tables charged in `retainedBytes()`.
+    static final long INT_DICTIONARY_BYTES_PER_ENTRY = Integer.BYTES + 2L * (Integer.BYTES + Integer.BYTES);
+    static final long LONG_DICTIONARY_BYTES_PER_ENTRY = Long.BYTES + 2L * (Long.BYTES + Integer.BYTES);
+    /// A binary entry's fixed part: the `byte[]` header, the value array's reference, and the
+    /// table slots. Its content is read from the batch and added to this.
+    static final long BINARY_DICTIONARY_BYTES_PER_ENTRY = 16 + 4 + 2L * (Integer.BYTES + Integer.BYTES);
+
+    /// The bytes an index costs in the chunk's index stream, which a value pays on top of its
+    /// dictionary entry while the chunk is still interning.
+    static final long INDEX_BYTES = Integer.BYTES;
+
+    /// The bytes this encoder retains for the chunk it is accumulating: its value store and, where
+    /// it has one, its dictionary. Charged from what the chunk holds rather than from what its
+    /// buffers have grown to, since the stores keep their capacity across chunks and a reset chunk
+    /// holds nothing.
+    abstract long retainedBytes();
+
+    /// What this chunk's present values would occupy `PLAIN`-encoded, which is the half of the
+    /// encoding comparison the dictionary is weighed against.
+    ///
+    /// Answered for the whole chunk rather than accumulated a value at a time: for every width the
+    /// schema fixes it is arithmetic on the count, and only a variable-width `BYTE_ARRAY` has to
+    /// carry a running total — which it can add to as it reads each value anyway.
+    ///
+    /// @param presentValues how many present values the chunk holds
+    abstract long plainValueBits(long presentValues);
 }

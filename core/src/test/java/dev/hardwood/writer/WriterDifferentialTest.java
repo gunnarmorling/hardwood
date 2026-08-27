@@ -688,7 +688,7 @@ class WriterDifferentialTest {
                 .build();
         // A tiny row-group target forces the single batch to be split across many row
         // groups; DuckDB must read across all of them transparently.
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(4096).build();
         Path file = dir.resolve("multirowgroup.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, v));
@@ -792,7 +792,7 @@ class WriterDifferentialTest {
         FileSchema schema = FileSchema.builder("schema")
                 .addColumn("v", PhysicalType.INT32, RepetitionType.REQUIRED)
                 .build();
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(4096).build();
         Path file = dir.resolve("stats.parquet");
         try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), schema, config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, v));

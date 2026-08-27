@@ -98,15 +98,16 @@ class WriterStatisticsTest {
 
     @Test
     void eachRowGroupCarriesItsOwnStatistics() throws Exception {
-        // Ascending values with a 4 KiB row-group target (1024 rows per group): each chunk's
-        // bounds cover only its own slice, so they advance group by group.
+        // Ascending values, cut every 1024 rows: each chunk's bounds cover only its own slice,
+        // so they advance group by group. The row target states the boundary exactly, where a
+        // byte target would put it wherever these values happen to retain their target.
         int n = 5_000;
         int[] values = new int[n];
         for (int i = 0; i < n; i++) {
             values[i] = i;
         }
 
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
+        WriterConfig config = WriterConfig.builder().rowGroupTargetRows(1024).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, values));

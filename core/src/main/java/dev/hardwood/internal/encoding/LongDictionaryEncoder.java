@@ -117,4 +117,12 @@ public final class LongDictionaryEncoder {
     private static int hash(long value) {
         return (int) ((value ^ (value >>> 32)) * 0x9E3779B1L);
     }
+
+    /// The bytes this dictionary retains: the distinct values, and the open-addressing table that
+    /// finds them. Charged from [#size] rather than from the table's allocated length, so that a
+    /// cleared dictionary charges nothing. A slot is a `long` value beside an `int` index, and the
+    /// table resizes at a 75% load, so two slots per entry bounds it.
+    public long retainedBytes() {
+        return (long) size * (Long.BYTES + 2 * (Long.BYTES + Integer.BYTES));
+    }
 }

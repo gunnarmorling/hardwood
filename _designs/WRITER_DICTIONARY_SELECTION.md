@@ -8,7 +8,7 @@ complete): `WriterConfig.enableDictionary` is replaced by a per-leaf-column enco
 under which the decision this document describes is the default policy `AUTO`, and a caller
 declining a dictionary names the policy `PLAIN` instead — file-wide, which is what the
 removed boolean said, or for one column, which it could not say. The mechanism itself — the
-two passes, the size comparison, the analysis cap, the uniform per-chunk encoding — is
+two passes, the size comparison, the uniform per-chunk encoding — is
 unchanged by that stage.
 
 ## Context
@@ -54,7 +54,7 @@ from the values the whole chunk holds, and the chunk is then encoded as a whole:
 1. **Pass 1 — accumulate and analyze.** Values arrive through `writeBatch` (or the row layer's
    staged batches) and are retained per leaf column, alongside their definition and repetition
    levels. A dictionary is built as they arrive, giving exact cardinality; it is abandoned for
-   that column once its values exceed the analysis cap described below, which by itself decides
+   that column once the size probes described below find a dictionary losing, which decides
    the chunk against dictionary encoding.
 2. **Pass 2 — encode and write.** When the row group's retained data reaches the row-group
    target, each column chunk is encoded whole in its chosen encoding, page by page, and written
@@ -85,7 +85,7 @@ strict reader, and that coverage carries over unchanged.
 - No chunk mixes encodings, so no dictionary page is written for a chunk that ends up `PLAIN`.
 - `Statistics.distinct_count` can be set from the exact cardinality, which the streaming design
   cannot know — for as long as the chunk still holds the dictionary it counted with, which stage
-  26a's early abandonment and the analysis cap each end early for the columns they fire on.
+  26a's early abandonment ends the interning early for the columns it fires on.
 - Dictionary indices are assigned after every value is known, so the dictionary can be written
   in sorted value order and flagged `DictionaryPageHeader.is_sorted` — a later increment, but
   only reachable from this shape.
@@ -107,7 +107,7 @@ first to the second exactly once:
   dictionary. Every present value is interned as it arrives, which is what makes the cardinality
   behind the decision exact rather than estimated.
 - **Raw form** — the values themselves — from the moment the column gives up its dictionary,
-  which happens either when the dictionary reaches the analysis cap or when the comparison at
+  which happens when the comparison at
   flush decides against it. Giving it up walks the indices accumulated so far back through the
   dictionary into the value store, so the chunk holds its values once rather than twice, and the
   dictionary's entries are released.
@@ -139,7 +139,7 @@ time directly to the sink, recording offsets as it goes. Chunk metadata is carri
 footer, so nothing has to be revisited.
 
 The row-group flush cadence is unchanged, and becomes more directly meaningful:
-`rowGroupTargetBytes` already counts buffered uncompressed data, which is now the size of the
+`rowGroupBufferTargetBytes` already counts buffered uncompressed data, which is now the size of the
 retained values themselves rather than of a page stream derived from them. It counts what those
 values occupy `PLAIN`-encoded, which is what the retention matches for every type; the level
 store is the one structure it does not account for. It remains a bound on what the writer holds
@@ -158,11 +158,11 @@ Buffering moves from the output side to the input side rather than being added t
 | This stage, a chunk that builds a dictionary | ~3×: the values, an `int` index per value, the dictionary's entries, and the table behind them |
 | Either, with column-parallel encode | one encoded chunk more, held so chunks can be written in schema order |
 
-The ~3× is a peak rather than a constant, and it is the figure to size `rowGroupTargetBytes`
+The ~3× is a peak rather than a constant, and it is the figure to size `rowGroupBufferTargetBytes`
 against. A chunk the dictionary wins outright stays near 1×, its values held once as dictionary
 entries with an index each and a table too small to matter. The peak belongs to the
 high-cardinality chunk: it grows a dictionary and a table over the values it has seen, and then,
-on losing the comparison or reaching the analysis cap, resolves them into a value store
+on losing the comparison, resolves them into a value store
 alongside. Nothing is handed back at that point — `dropDictionary` empties the dictionary's
 entries but keeps its value array and hash table at the capacity they reached, and `reset()` keeps
 the index array, both deliberately, so that a file's second row group reuses what its first one
@@ -204,21 +204,21 @@ Delivered here:
   depends on it. Its call sites are `WriterConfig`, `ParquetFileWriter`, `WriterRoundTripTest`,
   `WriterDifferentialTest`, `WriterInteropTest` and `FlatWriteBenchmark`.
 
-### The analysis cap
+### What bounds the analysis
 
-The analysis still needs a bound: a column of many million distinct values would otherwise build
-a dictionary of them all before discovering it does not want one. That bound exists for memory
-safety, not to decide encodings, so it is derived rather than configured: half of
-`rowGroupTargetBytes` — the knob that already states how much the writer may hold for a row group
-— with a 1 MiB floor under it, so that a small target does not shrink the cap to the point of
-deciding encodings by starvation. Below a 2 MiB target the floor is what applies. A column whose
-dictionary values exceed its share is decided `PLAIN` without computing the comparison.
+A dictionary needs no size limit of its own. It is part of what a chunk retains, and what a row
+group retains is what `rowGroupBufferTargetBytes` is compared against, so a column building a
+large dictionary spends the row group's budget and the row group is cut — the same bound that
+applies to every other byte the writer holds.
 
-The cap binds only for a column whose distinct values approach the size of its own contribution
-to the row group, so the arithmetic decides the ordinary cases and the cap catches the
-pathological one. The accepted loss is a column just past the cap whose dictionary would have
-been marginally smaller than its values; every writer surveyed caps somewhere, and DuckDB
-likewise derives its default from the row-group size.
+That leaves the two mechanisms doing the jobs they are each suited to. The byte target bounds
+memory, and it does so without deciding an encoding: a column whose dictionary is large but whose
+values repeat enough to pay for it keeps its dictionary and simply reaches the target sooner. The
+size probes bound *work*, giving up on a dictionary that is losing so that a high-cardinality
+column stops hashing values into a table the flush comparison would reject.
+
+A separate cap conflated the two: it was a memory bound that also returned an encoding verdict,
+so a column just past it was written `PLAIN` however well a dictionary would have paid.
 
 Deliberately not here, each reachable only from this shape and sequenced separately:
 
@@ -265,6 +265,4 @@ same file, a column abandoned early being one the comparison would have rejected
 What early abandonment risks is the column whose cardinality saturates late: it looks
 all-distinct over its first values and would be written `PLAIN` on that evidence, losing a
 dictionary that would have paid. Requiring two consecutive losing probes bounds that to a column
-still minting distinct values past the second probe. Removing the residual, and letting the
-analysis cap bound memory without also being an encoding verdict, is delivery stage 26b (#979):
-the cap goes on bounding memory, and a bounded-error distinct counter carries the decision.
+still minting distinct values past the second probe.

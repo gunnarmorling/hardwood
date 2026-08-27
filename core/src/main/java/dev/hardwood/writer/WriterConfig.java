@@ -15,12 +15,28 @@ import dev.hardwood.metadata.CompressionCodec;
 
 /// Tuning knobs for [ParquetFileWriter].
 ///
-/// The two size targets bound the writer's output granularity and peak memory:
+/// Three size targets govern the writer's output granularity:
 ///
-/// - **Page target** — the writer splits a column chunk into data pages of at most this
-///   many uncompressed bytes.
-/// - **Row-group target** — the writer flushes a row group once its buffered
-///   uncompressed data reaches this many bytes, bounding how much it holds in memory.
+/// - **Page target** — the writer cuts a data page once the entries it holds would encode to
+///   this many bytes. The page is cut *before* the entry that would cross it, so this is a
+///   ceiling rather than something a page overshoots; only a single value larger than the whole
+///   target can breach it, a value not being divisible across pages.
+/// - **Row-group row target** — the writer cuts a row group once it holds this many records.
+///   This is the control over how a file is banded, and it is exactly what it says: a row count
+///   needs no estimate and does not vary with the data. It binds for narrow records.
+/// - **Row-group buffer target** — the writer also cuts a row group once the bytes it holds for
+///   that group reach this many: its level streams, dictionary indices, value stores and
+///   dictionaries. This is the memory control, and it bounds a row group of records wider than
+///   expected. A row group passes it by at most one record.
+///
+/// A row group is cut at whichever of the two row-group targets is reached first.
+///
+/// Neither of them is the size of what reaches the file. A row group is encoded and compressed
+/// after it is buffered, and both steps shrink it by a factor of the data's own repetitiveness:
+/// the same buffer target produces a row group a twentieth of its size on dictionary-friendly
+/// data and most of its size on incompressible data. A caller who needs a particular on-disk
+/// size measures one file and scales the setting; a caller who needs a particular banding sets
+/// the row target. See [ParquetFileWriter] for what bounds memory.
 ///
 /// How a column's values are stored is a [ColumnEncoding], set file-wide or per leaf column;
 /// how the resulting page bodies are compressed is the [CompressionCodec]. Both are configured
@@ -31,11 +47,20 @@ import dev.hardwood.metadata.CompressionCodec;
 /// Obtain the defaults with [#defaults] or override individual knobs through [#builder].
 public final class WriterConfig {
 
-    /// Default page target: 1 MiB of uncompressed values per data page.
+    /// Default page target: 1 MiB of encoded values per data page.
     public static final int DEFAULT_PAGE_TARGET_BYTES = 1 << 20;
 
-    /// Default row-group target: 128 MiB of uncompressed data per row group.
-    public static final long DEFAULT_ROW_GROUP_TARGET_BYTES = 128L << 20;
+    /// Default row-group buffer target: 128 MiB of buffered values per row group.
+    public static final long DEFAULT_ROW_GROUP_BUFFER_TARGET_BYTES = 128L << 20;
+
+    /// Default row-group row target: 1,048,576 records.
+    ///
+    /// Both Arrow implementations cap a row group's records here — DuckDB caps lower, at 122,880
+    /// — and on a flat three-column fixture the cap costs a quarter of a percent in file size for
+    /// four times the banding. It binds wherever a record is narrower than the buffer target's share of it — for
+    /// anything under about 128 bytes a record — and the buffer target takes over above that, so
+    /// a narrow schema is banded by its record count and a wide one by what it holds.
+    public static final long DEFAULT_ROW_GROUP_TARGET_ROWS = 1L << 20;
 
     /// Default statistics truncation length: `BYTE_ARRAY` `min` / `max` bounds longer than
     /// 64 bytes are truncated and flagged inexact.
@@ -56,7 +81,8 @@ public final class WriterConfig {
     public static final ColumnEncoding DEFAULT_ENCODING = ColumnEncoding.AUTO;
 
     private final int pageTargetBytes;
-    private final long rowGroupTargetBytes;
+    private final long rowGroupBufferTargetBytes;
+    private final long rowGroupTargetRows;
     private final ColumnEncoding defaultEncoding;
     private final Map<String, ColumnEncoding> columnEncodings;
     private final int statisticsTruncationLength;
@@ -65,7 +91,8 @@ public final class WriterConfig {
 
     private WriterConfig(Builder builder) {
         this.pageTargetBytes = builder.pageTargetBytes;
-        this.rowGroupTargetBytes = builder.rowGroupTargetBytes;
+        this.rowGroupBufferTargetBytes = builder.rowGroupBufferTargetBytes;
+        this.rowGroupTargetRows = builder.rowGroupTargetRows;
         this.defaultEncoding = builder.defaultEncoding;
         this.columnEncodings = Map.copyOf(builder.columnEncodings);
         this.statisticsTruncationLength = builder.statisticsTruncationLength;
@@ -83,14 +110,19 @@ public final class WriterConfig {
         return new Builder();
     }
 
-    /// Maximum uncompressed bytes of values per data page.
+    /// Encoded-byte threshold at which a data page is cut.
     public int pageTargetBytes() {
         return pageTargetBytes;
     }
 
-    /// Uncompressed byte threshold at which a row group is flushed.
-    public long rowGroupTargetBytes() {
-        return rowGroupTargetBytes;
+    /// Byte threshold at which a row group is cut, counted as the bytes the writer holds for it.
+    public long rowGroupBufferTargetBytes() {
+        return rowGroupBufferTargetBytes;
+    }
+
+    /// Record count at which a row group is cut.
+    public long rowGroupTargetRows() {
+        return rowGroupTargetRows;
     }
 
     /// The encoding policy for columns with no override of their own.
@@ -142,7 +174,8 @@ public final class WriterConfig {
     public static final class Builder {
 
         private int pageTargetBytes = DEFAULT_PAGE_TARGET_BYTES;
-        private long rowGroupTargetBytes = DEFAULT_ROW_GROUP_TARGET_BYTES;
+        private long rowGroupBufferTargetBytes = DEFAULT_ROW_GROUP_BUFFER_TARGET_BYTES;
+        private long rowGroupTargetRows = DEFAULT_ROW_GROUP_TARGET_ROWS;
         private ColumnEncoding defaultEncoding = DEFAULT_ENCODING;
         private final Map<String, ColumnEncoding> columnEncodings = new LinkedHashMap<>();
         private int statisticsTruncationLength = DEFAULT_STATISTICS_TRUNCATION_LENGTH;
@@ -162,13 +195,47 @@ public final class WriterConfig {
             return this;
         }
 
-        /// Sets the row-group target; must be positive.
-        public Builder rowGroupTargetBytes(long rowGroupTargetBytes) {
-            if (rowGroupTargetBytes <= 0) {
+        /// Sets the byte threshold at which a row group is cut; must be positive.
+        ///
+        /// The bytes counted are the bytes the writer holds for the open row group: the level
+        /// streams, the dictionary indices, the value stores and the dictionaries. This is the
+        /// writer's memory control, and peak heap follows it. Two things sit on top: the buffers
+        /// hold more than they are charged for while they grow — the value stores by half again,
+        /// the level streams and packed content and every dictionary's arrays by double — and a
+        /// schema with enough columns that each one's share falls below the floor under a
+        /// column's buffers opens at a multiple of the target. Neither grows with how much is
+        /// written.
+        ///
+        /// It is not the size the row group takes on disk. That is smaller by whatever the
+        /// encoding and the codec win, which is a property of the data rather than of this
+        /// setting. A row group passes this threshold by at most one record, a record not being
+        /// divisible across row groups.
+        public Builder rowGroupBufferTargetBytes(long rowGroupBufferTargetBytes) {
+            if (rowGroupBufferTargetBytes <= 0) {
                 throw new IllegalArgumentException(
-                        "rowGroupTargetBytes must be positive but was " + rowGroupTargetBytes);
+                        "rowGroupBufferTargetBytes must be positive but was " + rowGroupBufferTargetBytes);
             }
-            this.rowGroupTargetBytes = rowGroupTargetBytes;
+            this.rowGroupBufferTargetBytes = rowGroupBufferTargetBytes;
+            return this;
+        }
+
+        /// Sets the record count at which a row group is cut; must be positive.
+        ///
+        /// This is the control over how a file is banded, and the row groups it produces hold
+        /// exactly this many records apart from the last. A row group is cut at this count or at
+        /// [#rowGroupBufferTargetBytes], whichever is reached first, so a row target set above
+        /// what the buffer target allows has no effect beyond it.
+        ///
+        /// A structural ceiling sits under both: a chunk accumulates into `int`-indexed buffers,
+        /// so a row group holds at most `Integer.MAX_VALUE - 8` records however many are asked
+        /// for. A target above that is that ceiling, which is what makes `Long.MAX_VALUE` the way
+        /// to say "no row limit, cut on bytes alone".
+        public Builder rowGroupTargetRows(long rowGroupTargetRows) {
+            if (rowGroupTargetRows <= 0) {
+                throw new IllegalArgumentException(
+                        "rowGroupTargetRows must be positive but was " + rowGroupTargetRows);
+            }
+            this.rowGroupTargetRows = rowGroupTargetRows;
             return this;
         }
 

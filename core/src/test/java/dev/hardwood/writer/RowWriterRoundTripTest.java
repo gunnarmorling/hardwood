@@ -390,16 +390,18 @@ class RowWriterRoundTripTest {
                 .addColumn("blob", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)
                 .build();
 
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(64 * 1024).build();
-        byte[] blob = new byte[16 * 1024];
-        Arrays.fill(blob, (byte) 'x');
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(64 * 1024).build();
 
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
             RowWriter rows = writer.rowWriter();
             for (int i = 0; i < 32; i++) {
                 int value = i;
-                rows.writeRow(row -> row.setInt("id", value).setBinary("blob", blob));
+                // A blob per row rather than one blob 32 times: repeats of a single value are
+                // interned once and retain a dictionary entry between them, so the writer would
+                // be holding 16 KiB however many rows arrived, and the target it is being held
+                // against would never be reached.
+                rows.writeRow(row -> row.setInt("id", value).setBinary("blob", largeBlob(value)));
             }
         }
 
@@ -410,10 +412,19 @@ class RowWriterRoundTripTest {
                 for (int i = 0; i < 32; i++) {
                     rows.next();
                     assertThat(rows.getInt("id")).isEqualTo(i);
-                    assertThat(rows.getBinary("blob")).isEqualTo(blob);
+                    assertThat(rows.getBinary("blob")).isEqualTo(largeBlob(i));
                 }
             }
         }
+    }
+
+    /// A 16 KiB value distinct from every other, so that what the writer retains for it grows
+    /// with the rows written rather than being folded into one dictionary entry.
+    private static byte[] largeBlob(int row) {
+        byte[] blob = new byte[16 * 1024];
+        Arrays.fill(blob, (byte) ('a' + row % 26));
+        blob[0] = (byte) row;
+        return blob;
     }
 
     private static ParquetFileReader open(ByteBufferOutputFile out) throws Exception {

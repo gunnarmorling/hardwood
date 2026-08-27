@@ -193,7 +193,7 @@ The whole writer surface is `@Experimental` and is not yet in the user documenta
 ## Row-group flush
 
 The stage 3–11 writer sizes a row group by a rows-per-group proxy computed once from the
-schema: `rowGroupTargetBytes` divided by the summed per-column bit cost, treating every value
+schema: `rowGroupBufferTargetBytes` divided by the summed per-column bit cost, treating every value
 as `Integer.SIZE`. This holds only while every value is four bytes. Two changes generalize it:
 
 - the per-column bit cost uses each type's actual width — `BOOLEAN` = 1, `INT64` / `DOUBLE`
@@ -202,7 +202,7 @@ as `Integer.SIZE`. This holds only while every value is four bytes. Two changes 
 - for variable-width columns no constant per-row cost exists, so the flush trigger moves off
   the proxy entirely: `RowGroupBuffer` sums a **running uncompressed-byte estimate** across its
   column chunks — each entry's level bits plus its value's `PLAIN` width, accumulated as values
-  are appended — and the writer flushes once that crosses `rowGroupTargetBytes`. The estimate is
+  are appended — and the writer flushes once that crosses `rowGroupBufferTargetBytes`. The estimate is
   exact for a non-dictionary column and runs high for a dictionary-encoded one, whose buffered
   index stream is smaller than the summed `PLAIN` widths, so dictionary row groups flush somewhat
   below the target. Sizing a row group from its produced bytes is stage 27 (#980); stage 18 leaves

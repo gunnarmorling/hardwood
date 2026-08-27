@@ -11,9 +11,12 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.zip.CRC32;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.Validity;
@@ -23,6 +26,7 @@ import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
 import dev.hardwood.internal.writer.ByteBufferOutputFile;
 import dev.hardwood.metadata.ColumnMetaData;
+import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
@@ -82,8 +86,12 @@ class WriterLayoutTest {
             values[i] = i;
         }
 
-        // 4 KiB target ⇒ 1024 rows per row group ⇒ the single batch spans several groups.
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
+        // 4 KiB target ⇒ 171 rows per row group ⇒ the single batch spans several groups. The
+        // values are all distinct, so while the chunk is still interning, each one retains a
+        // 4-byte index and a whole dictionary entry — 4 bytes of value plus the 16 the
+        // open-addressing table charges it — which is 24 bytes a record, not the 4 its `PLAIN`
+        // width would suggest.
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(4096).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
@@ -91,11 +99,171 @@ class WriterLayoutTest {
 
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
             assertThat(reader.getFileMetaData().numRows()).isEqualTo(n);
-            // 5000 rows at 1024 per group ⇒ four full groups and a 904-row tail, pinning
-            // the cadence arithmetic rather than merely asserting "more than one".
+            // 4096 / 24 ⇒ 170 records fit and the 171st crosses, so 5000 rows are 29 full
+            // groups and a 41-row tail. Pinned rather than merely asserting "more than one":
+            // the cadence is the arithmetic, and an overshoot would show here first.
             assertThat(reader.getFileMetaData().rowGroups().stream().map(RowGroup::numRows))
-                    .containsExactly(1024L, 1024L, 1024L, 1024L, 904L);
+                    .containsExactly(171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L,
+                            171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L,
+                            171L, 171L, 171L, 171L, 171L, 171L, 171L, 171L, 41L);
             assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();
+        }
+    }
+
+    /// A page holds what the page target says whatever a value is worth, which an entry count
+    /// derived from a nominal value width cannot do. `BYTE_ARRAY` is the type that breaks such an
+    /// estimate: nothing bounds how wide one value is, so a column of values wider than the
+    /// estimate assumed used to carry the whole column chunk in one page.
+    @Test
+    void aPageHoldsThePageTargetWhateverAValueCosts() throws Exception {
+        int valueLength = 8 << 10;                 // far wider than any nominal per-value estimate
+        int pageTarget = 1 << 20;
+        int rows = 4_096;
+
+        byte[][] values = new byte[rows][];
+        Random random = new Random(3);
+        for (int i = 0; i < rows; i++) {
+            values[i] = new byte[valueLength];
+            random.nextBytes(values[i]);           // distinct, so the chunk is written PLAIN
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)
+                .build();
+        WriterConfig config = WriterConfig.builder()
+                .pageTargetBytes(pageTarget)
+                .codec(CompressionCodec.UNCOMPRESSED)   // so a page's bytes are its values
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            writer.columnWriter().writeBatch(batch -> batch.bytes("v", values));
+        }
+
+        byte[] file = out.toByteArray();
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(file)))) {
+            ColumnMetaData meta = reader.getFileMetaData().rowGroups().get(0).columns().get(0).metaData();
+            // The page is cut before the value that would cross the target, so the target is a
+            // ceiling rather than something a page overshoots. Only a value larger than the whole
+            // target can breach it, having nowhere else to go.
+            assertThat(largestDataPage(file, meta.dataPageOffset(), meta.numValues()))
+                    .as("largest data page against a %d KiB target", pageTarget >> 10)
+                    .isLessThanOrEqualTo(pageTarget);
+            // A value costs its four-byte length prefix as well as its bytes, so 127 of them fit
+            // the target and the 4096 values land in 33 pages.
+            assertThat(countDataPages(file, meta.dataPageOffset(), meta.numValues()))
+                    .as("pages over %d MiB of values", (rows * valueLength) >> 20)
+                    .isEqualTo(33);
+        }
+    }
+
+    /// The row target bands a file exactly, which is what the byte target cannot do: what a
+    /// record costs in buffered bytes depends on its values, and what it costs on disk depends on
+    /// how well they encode and compress.
+    @Test
+    void theRowTargetBandsAFileExactly() throws Exception {
+        int rows = 25_000;
+        int perGroup = 4_096;
+        int[] values = new int[rows];
+        for (int i = 0; i < rows; i++) {
+            values[i] = i;
+        }
+
+        WriterConfig config = WriterConfig.builder().rowGroupTargetRows(perGroup).build();
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            assertThat(reader.getFileMetaData().rowGroups().stream().map(RowGroup::numRows))
+                    .containsExactly(4096L, 4096L, 4096L, 4096L, 4096L, 4096L, 424L);
+            assertThat(Arrays.equals(readInts(reader, 0), values)).isTrue();
+        }
+    }
+
+    /// Whichever target is reached first cuts the group: here the byte target, set low enough
+    /// that it lands well inside a row target that would otherwise hold the whole file.
+    @Test
+    void theSmallerOfTheTwoRowGroupTargetsCuts() throws Exception {
+        int rows = 5_000;
+        int[] values = new int[rows];
+        for (int i = 0; i < rows; i++) {
+            values[i] = i;
+        }
+
+        WriterConfig config = WriterConfig.builder()
+                .rowGroupBufferTargetBytes(4096)      // 171 all-distinct INT32 records
+                .rowGroupTargetRows(rows)             // would hold the file in one group
+                .build();
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
+            writer.columnWriter().writeBatch(batch -> batch.ints(0, values));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            List<Long> numRows = reader.getFileMetaData().rowGroups().stream()
+                    .map(RowGroup::numRows)
+                    .toList();
+            // The byte target cut, so no group reached the row target that would have held the
+            // whole file, and every group but the tail is the byte target's own cadence.
+            assertThat(numRows).hasSize(30).allSatisfy(n -> assertThat(n).isLessThan((long) rows));
+            assertThat(numRows.subList(0, numRows.size() - 1))
+                    .allSatisfy(n -> assertThat(n).isEqualTo(171L));
+            assertThat(numRows.get(numRows.size() - 1)).isEqualTo(41L);
+        }
+    }
+
+    /// Narrow records first and wide ones after, which is what a file sorted by size, a batch of
+    /// outliers, or any producer whose records grow part-way through looks like to the writer.
+    ///
+    /// The flush check runs between appends rather than between records, so how many records the
+    /// writer commits to before looking again is what decides how far past the target a row group
+    /// can run. Sizing that from what has arrived so far makes the answer wrong exactly when the
+    /// data changes, and a long file is where it is most wrong: an average over millions of narrow
+    /// records barely moves when the wide ones start, so the writer keeps striding as if they were
+    /// still narrow.
+    @Test
+    void aRowGroupHoldsToItsTargetWhenRecordWidthChanges() throws Exception {
+        int narrowRecords = 40_000;
+        int wideRecords = 4_000;
+        int wideLength = 4 << 10;
+        long target = 1 << 20;
+
+        // Distinct values throughout, so no chunk collapses into a dictionary and what each row
+        // group holds is what it was charged for.
+        byte[][] narrow = new byte[narrowRecords][];
+        for (int i = 0; i < narrowRecords; i++) {
+            narrow[i] = new byte[] { (byte) i, (byte) (i >>> 8), (byte) (i >>> 16), (byte) (i >>> 24) };
+        }
+        byte[][] wide = new byte[wideRecords][];
+        for (int i = 0; i < wideRecords; i++) {
+            wide[i] = new byte[wideLength];
+            new Random(i).nextBytes(wide[i]);
+        }
+
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("v", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED)
+                .build();
+        WriterConfig config = WriterConfig.builder()
+                .rowGroupBufferTargetBytes(target)
+                .codec(CompressionCodec.UNCOMPRESSED)
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            ColumnWriter columns = writer.columnWriter();
+            columns.writeBatch(batch -> batch.bytes("v", narrow));
+            columns.writeBatch(batch -> batch.bytes("v", wide));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())))) {
+            assertThat(reader.getFileMetaData().numRows()).isEqualTo(narrowRecords + wideRecords);
+            assertThat(reader.getFileMetaData().rowGroups())
+                    .as("every row group, against a %d KiB target", target >> 10)
+                    .allSatisfy(group -> assertThat(group.totalByteSize())
+                            .as("row group of %d records", group.numRows())
+                            .isLessThan(2 * target));
         }
     }
 
@@ -113,8 +281,12 @@ class WriterLayoutTest {
             second[i] = 10 + i % 4;        // four distinct values, so this one is dictionary-encoded
         }
 
+        // Cut on the row target: this is about what a chunk carries into the next row group, so
+        // the boundary wants to fall exactly between the two batches rather than wherever the
+        // bytes the two retain happen to land — they differ, one column being all distinct and
+        // the other four values repeated.
         WriterConfig config = WriterConfig.builder()
-                .rowGroupTargetBytes(perGroup * Integer.BYTES)
+                .rowGroupTargetRows(perGroup)
                 .build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneColumn(), config)) {
@@ -278,7 +450,7 @@ class WriterLayoutTest {
             offsets.add(elements.size());
         }
 
-        WriterConfig config = WriterConfig.builder().pageTargetBytes(64).rowGroupTargetBytes(256).build();
+        WriterConfig config = WriterConfig.builder().pageTargetBytes(64).rowGroupBufferTargetBytes(256).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
             writer.columnWriter().writeBatch(batch -> batch
@@ -321,6 +493,82 @@ class WriterLayoutTest {
             offset += reader.getBytesRead() + header.compressedPageSize();
         }
         return pages;
+    }
+
+    /// The largest data page of a column chunk, by uncompressed body size.
+    /// The page target is a ceiling under every encoding, and the width a page is cut on is the
+    /// one the type or the dictionary fixes.
+    ///
+    /// `PLAIN` and `BYTE_STREAM_SPLIT` write a type's own width, so a page of them lands on the
+    /// target. A delta encoding's width is a property of the values — `DELTA_BINARY_PACKED` over
+    /// gently ascending values spends a few bits each — and the cut charges the width the type
+    /// would have taken `PLAIN`, which no delta encoding exceeds. So those pages land under the
+    /// target rather than on it, and what this pins is that they land *under* it: a page that
+    /// passed the ceiling would be the defect, and the shortfall costs page headers rather than
+    /// correctness. Measured on this fixture it is 26 headers and 1,035 bytes in 5.16 MB.
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(value = ColumnEncoding.class,
+            names = { "PLAIN", "BYTE_STREAM_SPLIT", "DELTA_BINARY_PACKED" })
+    void aPageHoldsThePageTargetUnderEveryEncodingItsTypeAllows(ColumnEncoding encoding) throws Exception {
+        // Ascending by a varying step: the deltas are far narrower than the 64 bits the type
+        // would take `PLAIN`, so charging the type's width cuts pages short — but not so narrow
+        // that they cost nothing, which a constant step would make them (every delta equal means
+        // a zero bit width, and then a whole chunk encodes to its block headers and no page can
+        // fill whatever the target).
+        int rows = 4_000_000;
+        long[] values = new long[rows];
+        Random random = new Random(20250827L);
+        long value = 0;
+        for (int i = 0; i < rows; i++) {
+            value += random.nextInt(1 << 10);
+            values[i] = value;
+        }
+
+        int pageTarget = 1 << 20;
+        WriterConfig config = WriterConfig.builder()
+                .pageTargetBytes(pageTarget)
+                .codec(CompressionCodec.UNCOMPRESSED)
+                .encoding(encoding)
+                // The chunk has to outlast several pages for the cut to be observable at all.
+                .rowGroupTargetRows(Long.MAX_VALUE)
+                .build();
+        FileSchema schema = FileSchema.builder("schema")
+                .addColumn("v", PhysicalType.INT64, RepetitionType.REQUIRED)
+                .build();
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema, config)) {
+            writer.columnWriter().writeBatch(batch -> batch.longs("v", values));
+        }
+        byte[] file = out.toByteArray();
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(file)))) {
+            ColumnMetaData meta = reader.getFileMetaData().rowGroups().get(0).columns().get(0).metaData();
+            int largest = largestDataPage(file, meta.dataPageOffset(), meta.numValues());
+            assertThat(largest)
+                    .as("largest %s page against a %,d-byte target", encoding, pageTarget)
+                    .isLessThanOrEqualTo(pageTarget);
+            if (encoding != ColumnEncoding.DELTA_BINARY_PACKED) {
+                assertThat(largest)
+                        .as("a %s page fills the target, its width being the type's", encoding)
+                        .isGreaterThan(pageTarget / 2);
+            }
+        }
+    }
+
+    private static int largestDataPage(byte[] file, long startOffset, long totalValues) throws Exception {
+        ByteBuffer buf = ByteBuffer.wrap(file);
+        int offset = Math.toIntExact(startOffset);
+        long seen = 0;
+        int largest = 0;
+        while (seen < totalValues) {
+            ThriftCompactReader reader = new ThriftCompactReader(buf, offset);
+            PageHeader header = PageHeaderReader.read(reader);
+            largest = Math.max(largest, header.uncompressedPageSize());
+            seen += header.dataPageHeader().numValues();
+            offset += reader.getBytesRead() + header.compressedPageSize();
+        }
+        return largest;
     }
 
     private static int[] toIntArray(List<Integer> list) {

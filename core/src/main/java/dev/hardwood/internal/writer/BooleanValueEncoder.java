@@ -19,7 +19,7 @@ import dev.hardwood.writer.ColumnEncoding;
 ///
 /// The chunk's values are retained one bit each rather than one `boolean` each. The row group's
 /// flush trigger charges a `BOOLEAN` value the bit it occupies `PLAIN`-encoded, so a `boolean[]`
-/// store — a byte per value — would hold eight times what `rowGroupTargetBytes` was told it may,
+/// store — a byte per value — would hold eight times what `rowGroupBufferTargetBytes` was told it may,
 /// which at the default target is a gigabyte for a single column.
 final class BooleanValueEncoder extends ValueEncoder {
 
@@ -37,10 +37,10 @@ final class BooleanValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    BooleanValueEncoder(int pageValues) {
-        this.plainCapacity = Math.max(1, pageValues);
+    BooleanValueEncoder(int startingCapacity) {
+        this.plainCapacity = startingCapacity;
         this.plain = new long[wordsFor(plainCapacity)];
-        this.window = new boolean[Math.max(1, pageValues)];
+        this.window = new boolean[windowCapacity(startingCapacity)];
     }
 
     /// The number of 64-bit words holding `values` bits, computed in `long` because the value
@@ -158,7 +158,25 @@ final class BooleanValueEncoder extends ValueEncoder {
     }
 
     @Override
-    long valueBits(int valueIndex) {
-        return 1; // bit-packed
+    long uniformValueBits() {
+        return 1;
+    }
+
+    @Override
+    long plainValueBits(long presentValues) {
+        return presentValues; // bit-packed
+    }
+
+    @Override
+    long retainedBytes() {
+        // One bit per value, which is how the store holds them.
+        return (long) wordsFor(plainCount) * Long.BYTES;
+    }
+
+    @Override
+    long maxRetainedBytesPerValue() {
+        // A bit in the store, and never a dictionary. Rounded up to the byte it is bounded by,
+        // a bound that undercounts by a fraction of a byte being no bound at all.
+        return 1;
     }
 }

@@ -30,20 +30,22 @@ public final class RowGroupBuffer {
     private int rowCount;
 
     /// @param schema the file schema
-    /// @param pageValues maximum number of level triples per data page
+    /// @param pageTargetBytes buffered bytes after which a data page is cut
     /// @param encodings each leaf column's resolved encoding policy, in schema order
-    /// @param dictionaryAnalysisCapBytes the dictionary size past which a chunk is written `PLAIN`
     /// @param statisticsTruncationLength the maximum `BYTE_ARRAY` `min` / `max` bound length
     /// @param compressor compresses each page body before it is buffered
     /// @param codec the codec `compressor` applies, recorded in each chunk's metadata
-    public RowGroupBuffer(FileSchema schema, int pageValues, ColumnEncoding[] encodings,
-                          long dictionaryAnalysisCapBytes, int statisticsTruncationLength,
+    public RowGroupBuffer(FileSchema schema, int pageTargetBytes, long rowGroupBufferTargetBytes,
+                          ColumnEncoding[] encodings, int statisticsTruncationLength,
                           Compressor compressor, CompressionCodec codec) {
         this.schema = schema;
         this.columns = new ColumnChunkBuffer[schema.getColumnCount()];
+        // An equal share each, so the whole schema's buffers start at one row group's worth
+        // however many columns it has.
+        long budgetBytesPerColumn = rowGroupBufferTargetBytes / columns.length;
         for (int c = 0; c < columns.length; c++) {
-            columns[c] = new ColumnChunkBuffer(schema.getColumn(c), pageValues,
-                    encodings[c], dictionaryAnalysisCapBytes, statisticsTruncationLength, compressor, codec);
+            columns[c] = new ColumnChunkBuffer(schema.getColumn(c), pageTargetBytes, budgetBytesPerColumn,
+                    encodings[c], statisticsTruncationLength, compressor, codec);
         }
     }
 
@@ -60,19 +62,64 @@ public final class RowGroupBuffer {
         rowCount += count;
     }
 
+    /// The largest slice of `[from, from + count)`, halving down from `count`, that this row group
+    /// can take without passing `room` — or one record, which goes in whatever it costs, a record
+    /// not being divisible across row groups.
+    ///
+    /// The bound is what a slice can cost rather than what it will, so this is a floor on how much
+    /// could be appended rather than the most that would fit. That is all it has to be: the row
+    /// group is cut on what it turns out to hold, so an over-cautious slice costs an extra reading
+    /// of a number every buffer already tracks, never a row group cut short.
+    ///
+    /// Halving rather than searching for the largest fit keeps this to a dozen evaluations of the
+    /// bound in the worst case, and to one wherever a whole slice fits — which is every slice of a
+    /// row group but its last few.
+    public int sliceThatFits(RecordShredder shredder, ColumnSource[] sources, int from, int count,
+                             long room) {
+        int slice = count;
+        while (slice > 1 && maxRetainedBytesFor(shredder, sources, from, slice) > room) {
+            slice >>= 1;
+        }
+        return slice;
+    }
+
+    /// The most appending `[from, from + count)` can add across every column.
+    private long maxRetainedBytesFor(RecordShredder shredder, ColumnSource[] sources, int from,
+                                     int count) {
+        long bytes = 0;
+        for (int c = 0; c < columns.length; c++) {
+            long leaves = shredder.leafRange(c, from, count);
+            bytes += columns[c].maxRetainedBytesFor(sources[c], count,
+                    (int) (leaves >>> Integer.SIZE), (int) leaves, shredder.phantomLayers(c));
+        }
+        return bytes;
+    }
+
     /// The number of records buffered so far.
     public int rowCount() {
         return rowCount;
     }
 
-    /// A running estimate of this row group's buffered uncompressed bits, summed across its
-    /// column chunks. The writer flushes the row group once this crosses the configured target.
-    public long bufferedBits() {
-        long bits = 0;
+    /// Records a row group may hold, whatever the configured targets say.
+    ///
+    /// A chunk accumulates its records into `int`-indexed buffers — the value store, the index
+    /// store, the level stores — and the ceiling below is the largest any of them can reach. Each
+    /// record costs every column at least one entry, and every entry costs either a stored value
+    /// or a level byte, so a group of this many records is one that no column can take another
+    /// record of.
+    public static final int MAX_ROWS = Integer.MAX_VALUE - 8;
+
+    /// The bytes this row group retains, summed across its column chunks. The writer flushes the
+    /// row group once this reaches the configured target.
+    ///
+    /// The sum is over columns rather than over values, so it costs the same whether the group
+    /// holds a thousand records or a million, and it is read once per appended slice.
+    public long retainedBytes() {
+        long bytes = 0;
         for (ColumnChunkBuffer column : columns) {
-            bits += column.bufferedBits();
+            bytes += column.retainedBytes();
         }
-        return bits;
+        return bytes;
     }
 
     /// Whether no rows have been buffered.

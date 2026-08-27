@@ -67,7 +67,7 @@ public final class RowWriter {
     RowWriter(ParquetFileWriter writer, FileSchema schema, WriterConfig config) {
         this.writer = writer;
         this.plan = RowPlan.build(schema, config.precisionLossPolicy());
-        this.payloadLimitBytes = config.rowGroupTargetBytes();
+        this.payloadLimitBytes = config.rowGroupBufferTargetBytes();
     }
 
     /// Writes one record.

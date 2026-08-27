@@ -123,7 +123,7 @@ class WriterEncodingPolicyTest {
         WriterConfig config = WriterConfig.builder()
                 .encoding(encoding)
                 .pageTargetBytes(512)
-                .rowGroupTargetBytes(1024)
+                .rowGroupBufferTargetBytes(1024)
                 .build();
 
         byte[] file = write(type, RepetitionType.REQUIRED, config, null, rows);

@@ -78,10 +78,10 @@ public final class WideSchemaFileGenerator {
         // exactly and the writer cuts a row group at every batch boundary. The page target
         // is one row group per page as well, which keeps the writer's per-column pending
         // buffers small — they are sized from it, and there are up to 100,000 of them.
-        long rowGroupTargetBytes = (long) ROWS_PER_ROW_GROUP * VALUE_BYTES * columns;
+        long rowGroupBufferTargetBytes = (long) ROWS_PER_ROW_GROUP * VALUE_BYTES * columns;
         WriterConfig config = WriterConfig.builder()
                 .pageTargetBytes(ROWS_PER_ROW_GROUP * VALUE_BYTES)
-                .rowGroupTargetBytes(rowGroupTargetBytes)
+                .rowGroupBufferTargetBytes(rowGroupBufferTargetBytes)
                 .encoding(ColumnEncoding.PLAIN)
                 .codec(CompressionCodec.UNCOMPRESSED)
                 .build();

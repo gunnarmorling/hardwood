@@ -81,7 +81,7 @@ controls it. `AUTO` already re-decides per chunk — a column may be `RLE_DICTIO
 row group and `PLAIN` in the next, each chunk measured on what it holds — while a named
 policy holds for every chunk of its column, and the codec is uniform for the whole file. The
 caller cannot address a single chunk, and nothing in this stage changes that: row-group
-boundaries follow from `rowGroupTargetBytes` and the data, so there is no stable chunk for a
+boundaries follow from `rowGroupBufferTargetBytes` and the data, so there is no stable chunk for a
 configuration to name. Stage 30 (#985) is where that changes — a caller-placed boundary is
 an addressable point, and the configuration it carries supersedes this one for the row groups
 after it, so what is settled here becomes what a file *starts* with rather than what it is
@@ -219,7 +219,7 @@ same way whatever its type.
 encoding as it has been since stage 9.
 
 There is no policy that demands a dictionary. A dictionary is the one encoding the writer
-cannot promise — a chunk whose distinct values exceed the analysis cap has to be written
+cannot promise — a chunk whose values repeat too little for one to pay has to be written
 some other way — so a `DICTIONARY` member would mean either failing a write over data the
 writer can encode perfectly well, or accepting a request and not honouring it. Dictionary
 encoding stays what stage 18 made it: `AUTO`'s size-decided outcome, declined by naming
@@ -250,7 +250,7 @@ resolution, so a misconfigured file fails before it exists.
 | Aspect | A chunk of a column whose policy is not `AUTO` |
 |---|---|
 | Dictionary analysis | Not run. Values go straight to the value store, so the chunk pays neither the interning nor the index array |
-| The analysis cap | Not consulted: it bounds a dictionary this chunk never builds |
+| The size probes | Not run: they weigh a dictionary this chunk never builds |
 | `Statistics.distinct_count` | Absent, as for any chunk that counted nothing — the same position stage 29 addresses |
 | `min` / `max` / `null_count` | Unchanged: statistics are accumulated from values, independently of encoding |
 | Level streams | Unchanged: `RLE`, length-prefixed, ahead of the value section |
@@ -422,7 +422,7 @@ Each reachable from this shape and sequenced separately:
   the trial-encode or order-statistic that would make it decidable.
 - **`RLE` for `BOOLEAN` data pages**, the one remaining encoding a written column could
   carry.
-- **Forcing a dictionary**, which would need a promise the analysis cap cannot keep.
+- **Forcing a dictionary**, which would need a promise the size comparison cannot keep.
 - **Per-chunk codec choice**, which `ColumnMetaData.codec` permits, for a chunk found
   incompressible — a decision the writer would take from the buffered data at flush, as it
   takes `AUTO`'s, not one the caller names.

@@ -245,7 +245,7 @@ class WriterRoundTripTest {
             nulls[i] = (i & 1) == 1;
         }
 
-        WriterConfig config = WriterConfig.builder().rowGroupTargetBytes(4096).build();
+        WriterConfig config = WriterConfig.builder().rowGroupBufferTargetBytes(4096).build();
         ByteBufferOutputFile out = new ByteBufferOutputFile();
         try (ParquetFileWriter writer = ParquetFileWriter.create(out, oneOptionalColumn(), config)) {
             writer.columnWriter().writeBatch(batch -> batch.ints(0, values, nulls));

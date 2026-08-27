@@ -32,11 +32,11 @@ final class IntValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    IntValueEncoder(int pageValues, boolean buildDictionary, boolean unsignedOrder) {
+    IntValueEncoder(boolean buildDictionary, boolean unsignedOrder, int startingCapacity) {
         this.unsignedOrder = unsignedOrder;
         this.statistics = new IntStatisticsCollector(unsignedOrder);
-        this.plain = new int[Math.max(1, pageValues)];
-        this.window = new int[Math.max(1, pageValues)];
+        this.plain = new int[startingCapacity];
+        this.window = new int[windowCapacity(startingCapacity)];
         this.dictionary = buildDictionary ? new DictionaryEncoder() : null;
     }
 
@@ -152,7 +152,22 @@ final class IntValueEncoder extends ValueEncoder {
     }
 
     @Override
-    long valueBits(int valueIndex) {
+    long uniformValueBits() {
         return Integer.SIZE;
+    }
+
+    @Override
+    long plainValueBits(long presentValues) {
+        return presentValues * Integer.SIZE;
+    }
+
+    @Override
+    long retainedBytes() {
+        return (long) plainCount * Integer.BYTES + (dictionary == null ? 0 : dictionary.retainedBytes());
+    }
+
+    @Override
+    long maxRetainedBytesPerValue() {
+        return Math.max(Integer.BYTES, INDEX_BYTES + INT_DICTIONARY_BYTES_PER_ENTRY);
     }
 }

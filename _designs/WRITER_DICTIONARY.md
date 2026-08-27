@@ -13,7 +13,7 @@ the level streams are as described here.
   choice taken once the row group is buffered, so no chunk mixes encodings and no dictionary
   page is written for a chunk that ends up `PLAIN`. `WriterConfig.dictionaryPageLimitBytes`,
   the threshold that triggered the fallback, is removed with it; the memory bound that
-  remains is derived from `rowGroupTargetBytes`.
+  remains is derived from `rowGroupBufferTargetBytes`.
 - **Stage 19** ([WRITER_CODECS_AND_ENCODINGS.md](WRITER_CODECS_AND_ENCODINGS.md), complete):
   `WriterConfig.enableDictionary` is replaced by a per-leaf-column encoding policy, whose
   default `AUTO` is that choice and whose other values name an encoding outright.

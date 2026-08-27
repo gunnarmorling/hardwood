@@ -33,6 +33,9 @@ final class BinaryValueEncoder extends ValueEncoder {
     private final ByteArrayBuilder plainData = new ByteArrayBuilder();
     private int[] plainOffsets;
     private int plainCount;
+    /// What this chunk's present values would occupy `PLAIN`-encoded, accumulated as each is read
+    /// rather than recomputed: a variable-width value's size is the one the schema cannot state.
+    private long plainValueBits;
 
     private final byte[][] window;
     private final BinaryDictionaryEncoder dictionary; // null when dictionary encoding is disabled
@@ -45,10 +48,10 @@ final class BinaryValueEncoder extends ValueEncoder {
     private int windowBase;
     private int windowLength;
 
-    BinaryValueEncoder(int pageValues, boolean buildDictionary, Integer typeLength,
+    BinaryValueEncoder(boolean buildDictionary, Integer typeLength, int startingCapacity,
                        Supplier<BinaryStatistics> statisticsFactory) {
-        this.plainOffsets = new int[Math.max(1, pageValues) + 1];
-        this.window = new byte[Math.max(1, pageValues)][];
+        this.plainOffsets = new int[startingCapacity + 1];
+        this.window = new byte[windowCapacity(startingCapacity)][];
         this.dictionary = buildDictionary ? new BinaryDictionaryEncoder() : null;
         // FIXED_LEN_BYTE_ARRAY bounds are written whole and always exact — a fixed width already
         // bounds them — so only BYTE_ARRAY truncates. Integer.MAX_VALUE disables truncation, since
@@ -87,8 +90,8 @@ final class BinaryValueEncoder extends ValueEncoder {
     @Override
     int intern(int valueIndex) {
         byte[] value = valueAt(valueIndex);
-        int index = dictionary.indexOf(value);
-        return index >= 0 ? index : dictionary.add(value);
+        plainValueBits += (long) (Integer.BYTES + value.length) * Byte.SIZE;
+        return dictionary.intern(value);
     }
 
     @Override
@@ -115,12 +118,15 @@ final class BinaryValueEncoder extends ValueEncoder {
             dictionary.clear();
         }
         plainCount = 0;
+        plainValueBits = 0;
         plainData.reset();
     }
 
     @Override
     void store(int valueIndex) {
-        append(valueAt(valueIndex));
+        byte[] value = valueAt(valueIndex);
+        plainValueBits += (long) (Integer.BYTES + value.length) * Byte.SIZE;
+        append(value);
     }
 
     @Override
@@ -207,8 +213,43 @@ final class BinaryValueEncoder extends ValueEncoder {
     }
 
     @Override
-    long valueBits(int valueIndex) {
-        return fixedLength() ? (long) typeLength * Byte.SIZE
-                : (long) (Integer.BYTES + valueAt(valueIndex).length) * Byte.SIZE;
+    long uniformValueBits() {
+        return fixedLength() ? (long) typeLength * Byte.SIZE : VARIABLE_VALUE_BITS;
+    }
+
+    /// The packed store's own offsets, which is where a variable-width value's size comes from
+    /// once the batch it arrived in is gone.
+    @Override
+    int[] storedValueOffsets() {
+        return fixedLength() ? null : plainOffsets;
+    }
+
+    @Override
+    long plainValueBits(long presentValues) {
+        // A fixed width is arithmetic; a variable one is the total accumulated as the values
+        // were read, each behind the 4-byte length prefix `PLAIN` puts in front of it.
+        return fixedLength() ? presentValues * typeLength * Byte.SIZE : plainValueBits;
+    }
+
+    @Override
+    long retainedBytes() {
+        // The packed value bytes and one offset per stored value, plus the dictionary where the
+        // chunk is still interning into one.
+        return plainData.length() + (long) plainCount * Integer.BYTES
+                + (dictionary == null ? 0 : dictionary.retainedBytes());
+    }
+
+    @Override
+    long maxRetainedBytesPerValue() {
+        // A fixed width is the schema's to state; a variable one is read from the batch.
+        return fixedLength()
+                ? Math.max(typeLength, INDEX_BYTES + BINARY_DICTIONARY_BYTES_PER_ENTRY + typeLength)
+                : VARIABLE_RETAINED_BYTES;
+    }
+
+    /// What a variable-width value retains beyond its own bytes: an offset in the store, an index
+    /// in the chunk's index stream, and the fixed part of a dictionary entry.
+    static long variableValueOverheadBytes() {
+        return Integer.BYTES + INDEX_BYTES + BINARY_DICTIONARY_BYTES_PER_ENTRY;
     }
 }

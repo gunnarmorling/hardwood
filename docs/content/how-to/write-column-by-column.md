@@ -160,9 +160,9 @@ The `list` and `map` verbs address the entry offsets of a `LIST` or `MAP` group,
 
 ## Batch Size
 
-Batch boundaries leave no trace in the file. The writer distributes each batch's values into per-column page buffers, cuts pages at the page target, and flushes a row group once the buffered data reaches the row-group target; a batch larger than the row-group target is split at that boundary.
+Batch boundaries leave no trace in the file. The writer distributes each batch's values into per-column buffers, flushes a row group once those reach the row-group target, and cuts the pages as the row group is written out; a batch larger than the row-group target is split at that boundary.
 
-Submit whole columns as one large batch, or stream many small ones and discard each after handing it over; the file is the same either way. Memory is bounded by `rowGroupTargetBytes` whatever the batch size — see [The Write Model](../concepts/write-model.md).
+Submit whole columns as one large batch, or stream many small ones and discard each after handing it over; the file is the same either way. What the writer holds follows `rowGroupBufferTargetBytes` rather than the batch size — see [The Write Model](../concepts/write-model.md).
 
 ## Configuring the Writer
 
@@ -175,7 +175,7 @@ import dev.hardwood.writer.WriterConfig;
 
 WriterConfig config = WriterConfig.builder()
         .codec(CompressionCodec.ZSTD)
-        .rowGroupTargetBytes(64L << 20)
+        .rowGroupBufferTargetBytes(64L << 20)
         .encoding("temperature", ColumnEncoding.BYTE_STREAM_SPLIT)
         .build();
 ```

@@ -356,7 +356,7 @@ class WriterNestedInteropTest {
             elementNulls[e] = e % 7 == 0;
         }
 
-        WriterConfig config = WriterConfig.builder().pageTargetBytes(1024).rowGroupTargetBytes(4096).build();
+        WriterConfig config = WriterConfig.builder().pageTargetBytes(1024).rowGroupBufferTargetBytes(4096).build();
         Path file = write(dir, schema, config, batch -> batch
                 .list("v", offsets, Validity.ofNulls(listNulls))
                 .ints("v.list.element", elements, elementNulls));
