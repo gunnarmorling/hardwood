@@ -231,6 +231,32 @@ class WriterLogicalTypeInteropTest {
         assertThat(statistics.genericGetMax()).as("max").isEqualTo(Binary.fromConstantByteArray(two));
     }
 
+    /// A `STRING` orders by unsigned bytes, so a value whose first byte has the high bit set is
+    /// the column's maximum and not its minimum. A signed comparison — the order the deprecated
+    /// `min` / `max` fields were defined in — reverses both bounds, and a reader pruning on them
+    /// would then skip the row group holding the very value it was asked for.
+    ///
+    /// The bound under test is the one the **writer** computes. parquet-java hands back the bytes
+    /// it finds in `min_value` / `max_value` and takes its sort order from the annotation, so this
+    /// holds whether or not the footer declares `column_orders`; that the field reaches the wire
+    /// at all is asserted in `WriterFooterMetadataInteropTest`.
+    @Test
+    void stringBoundsUseUnsignedOrder(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.builder("annotated")
+                .addColumn(COLUMN, PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
+                        new LogicalType.StringType())
+                .build();
+
+        byte[] ascii = bytes("a");
+        byte[] highBit = bytes("über");
+        Path file = write(dir, schema, batch -> batch.bytes(COLUMN, new byte[][] { highBit, ascii }));
+
+        Statistics<?> statistics = ParquetJavaReader.readFooter(file).getBlocks().get(0)
+                .getColumns().get(0).getStatistics();
+        assertThat(statistics.genericGetMin()).as("min").isEqualTo(Binary.fromConstantByteArray(ascii));
+        assertThat(statistics.genericGetMax()).as("max").isEqualTo(Binary.fromConstantByteArray(highBit));
+    }
+
     // ==================== Helpers ====================
 
     private Path write(Path dir, Annotated annotated) throws IOException {
@@ -363,8 +389,12 @@ class WriterLogicalTypeInteropTest {
                 annotated.parquetJava(), annotated.binaryValues(), false, annotated.allNull());
     }
 
+    /// Four ASCII values and one whose first byte has the high bit set. Every candidate order
+    /// sorts ASCII identically, so without the last value the bounds of the three annotations
+    /// that share this fixture — `STRING`, `ENUM`, `BSON` — would agree under the unsigned order
+    /// they define and the signed order they must not be read in.
     private static byte[][] utf8() {
-        return new byte[][] { bytes("ada"), bytes("alan"), bytes(""), bytes("grace") };
+        return new byte[][] { bytes("ada"), bytes("alan"), bytes(""), bytes("grace"), bytes("über") };
     }
 
     private static byte[][] wkb() {
