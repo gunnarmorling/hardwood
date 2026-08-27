@@ -91,21 +91,24 @@ class WriterInteropTest {
                         axis.distinct(), FEW_ROWS, axis.config(), axis.plainOnly()));
     }
 
-    /// The optional-encoding axis: one case per legal (encoding, physical type) pair, written
-    /// under a file-wide policy and read back through parquet-java.
+    /// The optional-encoding axis: one case per legal (encoding, physical type) pair, in every
+    /// repetition shape, written under a file-wide policy and read back through parquet-java.
     ///
     /// These are the encodings Hardwood could read but not write before stage 19b, so this axis
     /// is the first time its own output for them is put in front of another implementation. The
     /// pairs come from the same legality table [ColumnEncoding] states, restricted to the types
-    /// this gate writes.
+    /// this gate writes. Nullability is swept the way [#singleEntryDictionary] sweeps it, since a
+    /// `REQUIRED` column takes a different level path and an `OPTIONAL_ALL_NULL` one asks the
+    /// encoder for an empty range.
     static Stream<InteropCase> optionalEncodings() {
         return Stream.of(TypeFixture.values()).flatMap(type -> Stream.of(
                 ColumnEncoding.DELTA_BINARY_PACKED, ColumnEncoding.DELTA_LENGTH_BYTE_ARRAY,
                 ColumnEncoding.DELTA_BYTE_ARRAY, ColumnEncoding.BYTE_STREAM_SPLIT)
                 .filter(encoding -> legal(encoding, type))
-                .map(encoding -> InteropCase.of("encoding " + encoding, type,
-                        Nullability.OPTIONAL_SOME_NULL, 64, FEW_ROWS,
-                        WriterConfig.builder().encoding(encoding).build())));
+                .flatMap(encoding -> Stream.of(Nullability.values())
+                        .map(nullability -> InteropCase.of("encoding " + encoding, type,
+                                nullability, 64, FEW_ROWS,
+                                WriterConfig.builder().encoding(encoding).build()))));
     }
 
     /// The legality table the writer itself applies, rather than a copy of it: a pair dropped
