@@ -8,15 +8,20 @@
 package dev.hardwood.testing;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
+import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.format.ColumnOrder;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import dev.hardwood.OutputFile;
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.schema.FileSchema;
@@ -24,16 +29,51 @@ import dev.hardwood.writer.ParquetFileWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// The interop gate over the footer's `key_value_metadata`: what Hardwood stamps on a file is
-/// what an independent implementation reads back out of it.
+/// The interop gate over the footer fields a value comparison cannot see: `key_value_metadata`,
+/// `created_by` and `column_orders`. What Hardwood stamps on a file is what an independent
+/// implementation reads back out of it.
 ///
-/// The field is the one Hardwood's own round trip cannot vouch for on its own. It carries
+/// These are the fields Hardwood's own round trip cannot vouch for. `key_value_metadata` carries
 /// `ARROW:schema`, the pandas descriptor and the table-format stamps, which means the consumer
 /// that has to find them is never Hardwood — a reader that agrees with the writer about a
 /// malformed `list<KeyValue>` would hide the break from both halves of a Hardwood round trip.
+/// `column_orders` is the same blind spot in a different place: it declares the order the bounds
+/// were computed in, which a reader sharing the writer's conventions never has to be told.
 class WriterFooterMetadataInteropTest {
 
     private static final String COLUMN = "v";
+
+    /// `column_orders` gives `min_value` / `max_value` their comparison semantics: the format
+    /// leaves their meaning undefined without it, so a file that lost the list carries bounds a
+    /// reader holding the format to its word has to discard.
+    ///
+    /// The assertion is over the **raw** footer because the decoded view cannot fail.
+    /// `PrimitiveType` defaults a missing column order to type-defined for every type but `INT96`
+    /// and `INTERVAL`, so the schema parquet-java exposes reports `TYPE_DEFINED_ORDER` whether the
+    /// field reached the wire or not. Only `getColumn_orders()` tells the two files apart, by
+    /// coming back null.
+    @Test
+    void parquetJavaReadsColumnOrdersForEveryLeafColumn(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("column-orders.parquet");
+        try (ParquetFileWriter writer = ParquetFileWriter.create(OutputFile.of(file), columnOrderSchema())) {
+            writer.columnWriter().writeBatch(batch -> batch
+                    .longs("id", new long[]{ 1L, 2L, 3L })
+                    .bytes("person.name", new byte[][]{ utf8("ada"), utf8("alan"), utf8("grace") })
+                    .doubles("person.score", new double[]{ 1.5, 2.5, 3.5 })
+                    .booleans("active", new boolean[]{ true, false, true }));
+        }
+
+        ParquetMetadata footer = ParquetJavaReader.readFooter(file);
+        List<ColumnDescriptor> columns = footer.getFileMetaData().getSchema().getColumns();
+        assertThat(columns).extracting(column -> String.join(".", column.getPath()))
+                .containsExactly("id", "person.name", "person.score", "active");
+
+        List<ColumnOrder> columnOrders = ParquetJavaReader.readFormatFooter(file).getColumn_orders();
+        assertThat(columnOrders).as("raw footer column_orders")
+                .isNotNull()
+                .hasSameSizeAs(columns)
+                .allSatisfy(order -> assertThat(order.isSetTYPE_ORDER()).isTrue());
+    }
 
     @Test
     void parquetJavaReadsTheMetadataHardwoodWrote(@TempDir Path dir) throws IOException {
@@ -103,5 +143,20 @@ class WriterFooterMetadataInteropTest {
         return FileSchema.builder("footer-metadata")
                 .addColumn(COLUMN, PhysicalType.INT32, RepetitionType.REQUIRED)
                 .build();
+    }
+
+    private static FileSchema columnOrderSchema() {
+        return FileSchema.builder("column-orders")
+                .addColumn("id", PhysicalType.INT64, RepetitionType.REQUIRED)
+                .struct("person", RepetitionType.REQUIRED, person -> person
+                        .addColumn("name", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED,
+                                new LogicalType.StringType())
+                        .addColumn("score", PhysicalType.DOUBLE, RepetitionType.REQUIRED))
+                .addColumn("active", PhysicalType.BOOLEAN, RepetitionType.REQUIRED)
+                .build();
+    }
+
+    private static byte[] utf8(String value) {
+        return value.getBytes(StandardCharsets.UTF_8);
     }
 }

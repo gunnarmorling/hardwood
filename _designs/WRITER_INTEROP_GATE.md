@@ -76,10 +76,16 @@ Per file, four things:
    empty-versus-absent repeated values are compared as written.
 3. **The metadata agrees.** parquet-java parses the footer, and the column-chunk
    statistics it exposes — `min`, `max`, `null_count` — match the written data under
-   *its* comparator, which it derives from the annotation and the footer's
-   `column_orders`. Agreement here is the first cross-implementation check on stage 13b:
-   an order the two implementations disagree about produces bounds that would prune a row
-   group holding a matching row.
+   *its* comparator, which it derives from the column's annotation. Agreement here is the
+   first cross-implementation check on stage 13b: an order the two implementations
+   disagree about produces bounds that would prune a row group holding a matching row.
+
+   The `column_orders` those bounds take their meaning from is asserted separately, over
+   the **raw** footer. parquet-java defaults a missing column order to type-defined for
+   every type but `INT96` and `INTERVAL`, so its decoded schema reports
+   `TYPE_DEFINED_ORDER` whether the field reached the wire or not, and every other
+   assertion here would hold on a file that dropped the list — leaving bounds the format
+   calls undefined for a reader that holds it to its word.
 4. **The case covered what it claims to.** The encodings say the case actually produced
    the dictionary, `PLAIN` fallback or plain-only chunk it exists to cover, and the layout
    cases walk parquet-java's page readers to count the data pages they crossed. Without
@@ -198,18 +204,19 @@ classes, split by what they parameterize over rather than by size:
 - `WriterNestedInteropTest` — the enumerated `struct`, `LIST` and `MAP` shapes.
 - `WriterLogicalTypeInteropTest` — the annotation table, pairing each Hardwood
   `LogicalType` with the parquet-java `LogicalTypeAnnotation` it must read back as, plus
-  the two sort orders that differ from their physical type's own (unsigned integers and
-  binary `DECIMAL`).
+  the three sort orders a table of well-behaved values cannot discriminate on its own:
+  unsigned integers, binary `DECIMAL`, and a `STRING` across the signed-byte boundary.
 - `RowWriterLogicalTypeInteropTest` — the same annotation table driven through the
   row-oriented entry point, its expectations taken from Avro's conversions rather than
   from the inverse Hardwood decodes with, so it is an external oracle for
   `PhysicalValueConverter`.
-- `WriterFooterMetadataInteropTest` — the footer's `key_value_metadata` and a
-  caller-supplied `created_by`, read back through parquet-java.
+- `WriterFooterMetadataInteropTest` — the footer fields a value comparison cannot see,
+  read back through parquet-java: `key_value_metadata`, a caller-supplied `created_by`,
+  and the raw `column_orders`, one `TYPE_DEFINED_ORDER` per leaf.
 
-A shared `ParquetJavaReader` helper wraps the Group reader, the footer reader, the page
-walk and the `created_by` check, so the parquet-java surface the gate depends on sits in
-one place. It is separate from `Utils`, which serves the read direction and carries the
+A shared `ParquetJavaReader` helper wraps the Group reader, the footer reader in both its
+decoded and raw-Thrift forms, the page walk and the `created_by` check, so the
+parquet-java surface the gate depends on sits in one place. It is separate from `Utils`, which serves the read direction and carries the
 Avro comparison.
 
 None of the classes touch the `parquet-testing` fixture repository: the gate's inputs are
