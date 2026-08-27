@@ -27,6 +27,7 @@ import dev.hardwood.Validity;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.metadata.SchemaElement;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ColumnBatch;
 import dev.hardwood.writer.ParquetFileWriter;
@@ -592,6 +593,85 @@ class WriterNestedInteropTest {
 
     /// How many instances of a field a group holds; zero means the field is absent, which is how
     /// parquet-java represents a null leaf, a null `struct` instance and an absent list alike.
+    /// A legacy two-level list, whose entry is the element rather than a group holding one.
+    ///
+    /// `FileSchema.Builder` will not declare this shape, so it reaches the writer only from a
+    /// schema read back off an existing file — which is how a copy of a parquet-mr, Hive or Avro
+    /// file reaches it. The writer produced one one-element list per row for it until #1035, and
+    /// what says it produces a real list now is another implementation reading one back: our own
+    /// reader accepts the shape by design and would agree with a file that only it can read.
+    @Test
+    void legacyTwoLevelListWithALeafEntry(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(
+                SchemaElement.root("nested", 1),
+                SchemaElement.group("items", RepetitionType.OPTIONAL, 1, new LogicalType.ListType()),
+                SchemaElement.primitive("element", PhysicalType.INT32, RepetitionType.REPEATED)));
+
+        // Row 0: [1,2]; row 1: []; row 2: [3,4,5].
+        List<Group> rows = writeAndRead(dir, schema, batch -> batch
+                .list("items", new int[] { 0, 2, 2, 5 })
+                .ints("items.element", new int[] { 1, 2, 3, 4, 5 }));
+
+        assertThat(rows).hasSize(3);
+        assertThat(twoLevelIntLists(rows, "items")).containsExactly(
+                List.of(1, 2), List.of(), List.of(3, 4, 5));
+    }
+
+    /// The other legacy spelling, whose entry is a repeated group of fields. Both of the group's
+    /// leaves repeat under the single layer the annotation supplies, so a reader that disagreed
+    /// about where the entries begin would show them misaligned against each other.
+    @Test
+    void legacyTwoLevelListOfStructs(@TempDir Path dir) throws IOException {
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(
+                SchemaElement.root("nested", 1),
+                SchemaElement.group("items", RepetitionType.OPTIONAL, 1, new LogicalType.ListType()),
+                SchemaElement.group("element", RepetitionType.REPEATED, 2),
+                SchemaElement.primitive("a", PhysicalType.INT32, RepetitionType.REQUIRED),
+                SchemaElement.primitive("b", PhysicalType.INT32, RepetitionType.REQUIRED)));
+
+        // Row 0: [{1,10},{2,20}]; row 1: [{3,30}].
+        List<Group> rows = writeAndRead(dir, schema, batch -> batch
+                .list("items", new int[] { 0, 2, 3 })
+                .ints("items.element.a", new int[] { 1, 2, 3 })
+                .ints("items.element.b", new int[] { 10, 20, 30 }));
+
+        assertThat(rows).hasSize(2);
+        assertThat(twoLevelFieldLists(rows, "items", "a")).containsExactly(List.of(1, 2), List.of(3));
+        assertThat(twoLevelFieldLists(rows, "items", "b")).containsExactly(List.of(10, 20), List.of(30));
+    }
+
+    /// The entries of a legacy two-level `LIST` whose entry is a leaf, per row.
+    private static List<List<Integer>> twoLevelIntLists(List<Group> rows, String field) {
+        List<List<Integer>> lists = new ArrayList<>(rows.size());
+        for (Group row : rows) {
+            List<Integer> values = new ArrayList<>();
+            if (count(row, field) > 0) {
+                Group list = row.getGroup(field, 0);
+                for (int i = 0; i < count(list, "element"); i++) {
+                    values.add(list.getInteger("element", i));
+                }
+            }
+            lists.add(values);
+        }
+        return lists;
+    }
+
+    /// One field of each entry of a legacy two-level `LIST` whose entry is a group, per row.
+    private static List<List<Integer>> twoLevelFieldLists(List<Group> rows, String field, String leaf) {
+        List<List<Integer>> lists = new ArrayList<>(rows.size());
+        for (Group row : rows) {
+            List<Integer> values = new ArrayList<>();
+            if (count(row, field) > 0) {
+                Group list = row.getGroup(field, 0);
+                for (int i = 0; i < count(list, "element"); i++) {
+                    values.add(list.getGroup("element", i).getInteger(leaf, 0));
+                }
+            }
+            lists.add(values);
+        }
+        return lists;
+    }
+
     private static int count(Group group, String field) {
         return group.getFieldRepetitionCount(field);
     }
