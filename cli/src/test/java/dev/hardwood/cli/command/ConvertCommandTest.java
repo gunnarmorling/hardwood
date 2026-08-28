@@ -18,6 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.SchemaNode;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,6 +82,7 @@ class ConvertCommandTest implements ConvertCommandContract {
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).contains("\"foo\":\"[42, 7]\"");
     }
+
     @Test
     void jsonKeepsAnnotatedLogicalTypesAsStrings() {
         Cli.Result result = Cli.launch("convert", "-f", getClass().getResource("/logical_types_test.parquet").getPath(),
@@ -127,6 +129,29 @@ class ConvertCommandTest implements ConvertCommandContract {
         assertThat(float16.exitCode()).isZero();
         assertThat(float16.output()).contains("\"half\":\"").contains("\"half\":null");
     }
+
+    @Test
+    void variantNullValueIsDistinctFromANullVariantColumn() {
+        String file = getClass().getResource("/convert_variant_null_test.parquet").getPath();
+
+        Cli.Result csv = Cli.launch("convert", "-f", file, "--format", "csv", "--null-string", "\\N");
+        Cli.Result json = Cli.launch("convert", "-f", file, "--format", "json");
+
+        assertThat(csv.exitCode()).isZero();
+        assertThat(csv.output()).isEqualTo("""
+                id,var
+                1,42
+                2,\\N
+                3,null""");
+        assertThat(json.exitCode()).isZero();
+        assertThat(json.output()).isEqualTo("""
+                [
+                  {"id":1,"var":42},
+                  {"id":2,"var":null},
+                  {"id":3,"var":null}
+                ]""");
+    }
+
     @Test
     void csvFlattenRejectsStructFieldThatIsNotAStruct() {
         SchemaNode.PrimitiveNode child = new SchemaNode.PrimitiveNode("id", PhysicalType.INT32,
@@ -135,15 +160,13 @@ class ConvertCommandTest implements ConvertCommandContract {
                 List.of(child), 1, 0);
         List<String> values = new ArrayList<>();
 
-        assertThatThrownBy(() -> ConvertCommand.flattenValues("not a struct", account, values, ""))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Field 'account' is a struct in the schema")
-                .hasMessageContaining("java.lang.String");
+        assertThatThrownBy(() -> ConvertCommand.flattenValues("not a struct", account, "account",
+                ColumnProjection.all(), values, ""))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("Field 'account' is a struct in the schema")
+                        .hasMessageContaining("java.lang.String");
         assertThat(values).isEmpty();
     }
-
-
-
 
 
     private String nestedBinaryFile() {

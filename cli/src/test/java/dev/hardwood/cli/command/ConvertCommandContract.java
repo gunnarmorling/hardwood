@@ -91,6 +91,7 @@ interface ConvertCommandContract {
                 3,,2147483647,,Infinity,NaN,literal
                 4,true,-1,-5,-Infinity,-2.5,""");
     }
+
     @Test
     default void csvNullStringAppliesToFlattenedStructLeaves() {
         Cli.Result result = Cli.launch("convert", "-f", deepNestedFile(), "--format", "csv",
@@ -105,15 +106,27 @@ interface ConvertCommandContract {
                 4,Diana,\\N,\\N,\\N,\\N,\\N""");
     }
 
+    @Test
+    default void csvProjectingANestedLeafEmitsOnlyThatColumn() {
+        Cli.Result result = Cli.launch("convert", "-f", deepNestedFile(), "--format", "csv",
+                "--columns", "account.organization.address.zip", "--null-string", "\\N");
 
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                account.organization.address.zip
+                10001
+                \\N
+                \\N
+                \\N""");
+    }
 
     @Test
-    default void nullStringIsIgnoredForJson() {
+    default void nullStringIsRejectedForJson() {
         Cli.Result result = Cli.launch("convert", "-f", fidelityFile(), "--format", "json",
                 "--null-string", "NULL");
 
-        assertThat(result.exitCode()).isZero();
-        assertThat(result.output()).doesNotContain("NULL").contains("\"text\":null");
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.errorOutput()).contains("--null-string applies to CSV output only");
     }
 
     @Test

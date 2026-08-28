@@ -7,6 +7,19 @@
  */
 package dev.hardwood.cli.command;
 
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.aesh.command.Command;
+import org.aesh.command.CommandDefinition;
+import org.aesh.command.CommandResult;
+import org.aesh.command.invocation.CommandInvocation;
+import org.aesh.command.option.Mixin;
+import org.aesh.command.option.Option;
+
 import dev.hardwood.InputFile;
 import dev.hardwood.cli.internal.JsonStrings;
 import dev.hardwood.cli.internal.table.RowTable;
@@ -19,18 +32,6 @@ import dev.hardwood.row.PqVariant;
 import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.schema.SchemaNode;
-import org.aesh.command.Command;
-import org.aesh.command.CommandDefinition;
-import org.aesh.command.CommandResult;
-import org.aesh.command.invocation.CommandInvocation;
-import org.aesh.command.option.Mixin;
-import org.aesh.command.option.Option;
-
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.List;
 
 @CommandDefinition(name = "convert", description = "Convert Parquet file to CSV or JSON.", generateHelp = true)
 public class ConvertCommand implements Command<CommandInvocation> {
@@ -55,13 +56,17 @@ public class ConvertCommand implements Command<CommandInvocation> {
     @Option(shortName = 'n', name = "rows", defaultValue = RowLimits.ALL, description = "Number of rows to convert. Positive values convert the first N rows (head), negative values convert the last N rows (tail), 'ALL' converts every row.")
     String n;
 
-    @Option(name = "null-string", description = "CSV value for SQL NULL fields (default: empty); ignored for JSON output.")
+    @Option(name = "null-string", description = "CSV field to write for a null value (default: an empty field). CSV output only.")
     String nullString;
 
     @Override
     public CommandResult execute(CommandInvocation ci) {
         InputFile inputFile = fileMixin.toInputFile();
         if (inputFile == null) {
+            return CommandResult.FAILURE;
+        }
+        if (format == Format.JSON && nullString != null) {
+            System.err.println("--null-string applies to CSV output only; JSON output writes null.");
             return CommandResult.FAILURE;
         }
 
@@ -75,7 +80,7 @@ public class ConvertCommand implements Command<CommandInvocation> {
             String effectiveNullString = nullString == null ? "" : nullString;
             try (RowReader rowReader = RowLimits.buildRowReader(reader, projection, rowLimit)) {
                 switch (format) {
-                    case CSV -> writeCsv(out, fields, rowReader, effectiveNullString);
+                    case CSV -> writeCsv(out, fields, rowReader, projection, effectiveNullString);
                     case JSON -> writeJson(out, fields, rowReader);
                 }
             }
@@ -130,10 +135,10 @@ public class ConvertCommand implements Command<CommandInvocation> {
     // ==================== CSV ====================
 
     private static void writeCsv(PrintWriter out, List<SchemaNode> fields, RowReader rowReader,
-                                 String nullString) {
+                                 ColumnProjection projection, String nullString) {
         List<String> flatHeaders = new ArrayList<>();
         for (SchemaNode field : fields) {
-            flattenHeaders(field, field.name(), flatHeaders);
+            flattenHeaders(field, field.name(), projection, flatHeaders);
         }
         out.println(csvRow(flatHeaders.toArray(new String[0])));
 
@@ -141,64 +146,89 @@ public class ConvertCommand implements Command<CommandInvocation> {
             rowReader.next();
             List<String> flatValues = new ArrayList<>();
             for (int i = 0; i < fields.size(); i++) {
-                flattenValues(rowReader.getValue(i), fields.get(i), flatValues, nullString);
+                SchemaNode field = fields.get(i);
+                flattenValues(rowReader.getValue(i), field, field.name(), projection, flatValues, nullString);
             }
             out.println(csvRow(flatValues.toArray(new String[0])));
         }
     }
 
-    private static void flattenHeaders(SchemaNode node, String prefix, List<String> headers) {
-        if (node instanceof SchemaNode.GroupNode group && !group.isList() && !group.isMap() && !group.isVariant()) {
+    private static void flattenHeaders(SchemaNode node, String path, ColumnProjection projection,
+                                       List<String> headers) {
+        if (node instanceof SchemaNode.GroupNode group && isStruct(group)) {
             for (SchemaNode child : group.children()) {
-                flattenHeaders(child, prefix + "." + child.name(), headers);
+                String childPath = path + "." + child.name();
+                if (isProjected(projection, childPath)) {
+                    flattenHeaders(child, childPath, projection, headers);
+                }
             }
-        } else {
-            headers.add(prefix);
+        }
+        else {
+            headers.add(path);
         }
     }
 
     // package visibility for tests
-    static void flattenValues(Object value, SchemaNode schema, List<String> values,
-                              String nullString) {
-        if (schema instanceof SchemaNode.GroupNode group && !group.isList() && !group.isMap() && !group.isVariant()) {
+    static void flattenValues(Object value, SchemaNode schema, String path, ColumnProjection projection,
+                              List<String> values, String nullString) {
+        if (schema instanceof SchemaNode.GroupNode group && isStruct(group)) {
             if (value == null) {
+                flattenNulls(group, path, projection, values, nullString);
+            }
+            else if (value instanceof PqStruct struct) {
                 for (SchemaNode child : group.children()) {
-                    flattenNulls(child, values, nullString);
+                    String childPath = path + "." + child.name();
+                    if (isProjected(projection, childPath)) {
+                        flattenValues(struct.getValue(child.name()), child, childPath, projection, values, nullString);
+                    }
                 }
-            } else if (value instanceof PqStruct struct) {
-                for (int i = 0; i < struct.getFieldCount(); i++) {
-                    String name = struct.getFieldName(i);
-                    SchemaNode childSchema = findChildSchema(group, name);
-                    flattenValues(struct.getValue(name), childSchema, values, nullString);
-                }
-            } else {
+            }
+            else {
                 throw new IllegalStateException("Field '" + group.name() + "' is a struct in the schema, but the"
                         + " reader returned a " + value.getClass().getName());
             }
-        } else if (value == null) {
+        }
+        else if (value == null) {
             values.add(nullString);
-        } else {
+        }
+        else {
             values.add(RowTable.renderValue(value, schema));
         }
     }
 
-    private static void flattenNulls(SchemaNode schema, List<String> values, String nullString) {
-        if (schema instanceof SchemaNode.GroupNode group && !group.isList() && !group.isMap() && !group.isVariant()) {
+    private static void flattenNulls(SchemaNode schema, String path, ColumnProjection projection,
+                                     List<String> values, String nullString) {
+        if (schema instanceof SchemaNode.GroupNode group && isStruct(group)) {
             for (SchemaNode child : group.children()) {
-                flattenNulls(child, values, nullString);
+                String childPath = path + "." + child.name();
+                if (isProjected(projection, childPath)) {
+                    flattenNulls(child, childPath, projection, values, nullString);
+                }
             }
-        } else {
+        }
+        else {
             values.add(nullString);
         }
     }
 
-    private static SchemaNode findChildSchema(SchemaNode.GroupNode groupNode, String name) {
-        for (SchemaNode child : groupNode.children()) {
-            if (child.name().equals(name)) {
-                return child;
+    /// A group is flattened into one CSV column per leaf only when it is a plain
+    /// struct; lists, maps and Variants render into a single cell.
+    private static boolean isStruct(SchemaNode.GroupNode group) {
+        return !group.isList() && !group.isMap() && !group.isVariant();
+    }
+
+    /// A dotted field path is exported when the projection selects it, an ancestor
+    /// of it, or a descendant of it.
+    private static boolean isProjected(ColumnProjection projection, String path) {
+        if (projection.projectsAll()) {
+            return true;
+        }
+        for (String name : projection.getProjectedColumnNames()) {
+            if (name.equals(path) || name.startsWith(path + ".") || path.startsWith(name + ".")) {
+                return true;
             }
         }
-        return null;
+        return false;
     }
 
     // ==================== JSON ====================
@@ -270,7 +300,8 @@ public class ConvertCommand implements Command<CommandInvocation> {
             out.print(Long.toUnsignedString(n));
         } else {
             out.print(n);
-        } return true;
+        }
+        return true;
     }
 
     private static boolean writeJsonFloat(PrintWriter out, float f) {

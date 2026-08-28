@@ -2790,6 +2790,40 @@ print("\nGenerated variant_test.parquet:")
 print("  - 4 rows: BOOLEAN_TRUE, BOOLEAN_FALSE, INT32(42), short string 'hi'")
 print("  - `var` is a VARIANT-annotated group of {metadata, value} binaries")
 
+# A Variant column that separates the two ways a cell can read as "null": row 2
+# is a null Variant column (the group itself is absent), row 3 carries the
+# Variant null, which is a value. `convert --null-string` applies to the first
+# and not the second.
+
+convert_variant_null_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('var', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), True),
+])
+
+convert_variant_null_table = pa.table({
+    'id': [1, 2, 3],
+    'var': [
+        {'metadata': _empty_metadata, 'value': bytes([0x14, 42, 0, 0, 0])},  # INT32 = 42
+        None,                                                               # null column value
+        {'metadata': _empty_metadata, 'value': bytes([0x00])},              # Variant null
+    ],
+}, schema=convert_variant_null_schema)
+
+pq.write_table(
+    convert_variant_null_table,
+    'core/src/test/resources/convert_variant_null_test.parquet',
+    compression='NONE',
+    use_dictionary=False,
+    data_page_version='1.0',
+)
+annotate_group_as_variant('core/src/test/resources/convert_variant_null_test.parquet', 'var')
+
+print("\nGenerated convert_variant_null_test.parquet:")
+print("  - 3 rows: INT32(42), a null Variant column, the Variant null value")
+
 # ============================================================================
 # Variant logical type — metadata with offset_size = 2
 # ============================================================================
