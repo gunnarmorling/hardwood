@@ -282,7 +282,7 @@ public final class ColumnChunkDetailScreen {
         long dictionaryEntries = model.dictionaryEntries(state.rowGroupIndex(), state.columnIndex());
         long dictionaryValues = summary.hasPresentValues() ? summary.presentValues() : cmd.numValues();
         lines.row(fact("Encoding",
-                Encodings.label(Encodings.dataPages(cmd), dictionaryEntries, dictionaryValues, "—")
+                Encodings.label(Encodings.dataPages(cmd), dictionaryEntries, dictionaryValues)
                         + dictionaryQualifier(dictionaryEntries, dictionaryValues)));
         if (Encodings.hasEncodingStats(cmd)) {
             lines.row(fact("Chunk encodings", cmd.encodings().stream()
@@ -461,7 +461,7 @@ public final class ColumnChunkDetailScreen {
     /// does not have to infer it from two adjacent sizes.
     private static String compressionQualifier(ColumnMetaData cmd) {
         return cmd.totalUncompressedSize() > 0
-                ? qualifier(Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize(), "")
+                ? qualifier(Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize())
                         + " of uncompressed")
                 : "";
     }

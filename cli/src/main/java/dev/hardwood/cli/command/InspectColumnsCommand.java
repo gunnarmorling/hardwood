@@ -179,10 +179,10 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
                 summary.hasAvgFanOut() ? Fmt.fmt("%.2f", summary.avgFanOut()) : "-",
                 cmd.codec().name(),
                 Sizes.format(cmd.totalCompressedSize()),
-                Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize(), "-"),
+                Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize()),
                 Encodings.label(Encodings.dataPages(cmd),
                         Encodings.dictionaryEntries(chunk, inputFile),
-                        dictionaryDenominator(summary, cmd), "-"),
+                        dictionaryDenominator(summary, cmd)),
                 summary.hasUnencoded()
                         ? Sizes.format(summary.unencodedBytes())
                         : "-"
@@ -333,10 +333,10 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
                     s.codec(),
                     Sizes.format(s.compressed()),
                     totalCompressed > 0 ? Fmt.fmt("%.1f%%", 100.0 * s.compressed() / totalCompressed) : "-",
-                    Sizes.compression(s.compressed(), s.uncompressed(), "-"),
+                    Sizes.compression(s.compressed(), s.uncompressed()),
                     Encodings.label(s.encodings(),
                             s.dictionaryEntriesAvailable() ? s.dictionaryEntries() : -1,
-                            s.dictionaryDenominator(), "-"),
+                            s.dictionaryDenominator()),
                     s.unencodedAvailable() ? Sizes.format(s.unencoded()) : "-",
                     s.pageCountAvailable() ? String.valueOf(s.pageCount()) : "-"
             });

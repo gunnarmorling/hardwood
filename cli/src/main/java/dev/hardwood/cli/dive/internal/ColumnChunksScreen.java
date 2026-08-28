@@ -74,7 +74,7 @@ public final class ColumnChunksScreen {
                     logical != null ? logical.toString() : "—",
                     cmd.codec().name(),
                     Sizes.format(cmd.totalCompressedSize()),
-                    Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize(), "—"),
+                    Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize()),
                     cmd.dictionaryPageOffset() != null ? "yes" : "no"));
         }
         Row header = Row.from("#", "Column", "Type", "Logical", "Codec", "Compressed", "Compression", "Dict")

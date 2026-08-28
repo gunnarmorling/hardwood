@@ -140,7 +140,7 @@ public final class ColumnAcrossRowGroupsScreen {
                     Fmt.fmt("%,d", rg.numRows()),
                     pages,
                     Sizes.format(cmd.totalCompressedSize()),
-                    Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize(), "—"),
+                    Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize()),
                     summary.hasUnencoded() ? Sizes.format(summary.unencodedBytes()) : "—",
                     cmd.dictionaryPageOffset() != null ? "yes" : "no",
                     cc.columnIndexOffset() != null ? "yes" : "no",

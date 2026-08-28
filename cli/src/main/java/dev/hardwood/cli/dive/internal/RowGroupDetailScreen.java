@@ -198,7 +198,7 @@ public final class RowGroupDetailScreen {
         lines.decoration(Line.from(new Span(" Storage ", Theme.accent().bold())));
         lines.row(fact("  Compressed", Sizes.dualFormat(compressed)));
         lines.row(fact("  Uncompressed", Sizes.dualFormat(uncompressed)));
-        lines.row(fact("  Compression", Sizes.compression(compressed, uncompressed, "—")));
+        lines.row(fact("  Compression", Sizes.compression(compressed, uncompressed)));
         lines.blank();
         lines.decoration(Line.from(new Span(" Encoding mix ", Theme.accent().bold())));
         lines.row(fact("  Encodings", mix(encodingCounts)));
