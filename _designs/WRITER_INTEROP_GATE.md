@@ -99,17 +99,22 @@ repetition shape.
 
 Beyond the floor, the matrix varies one axis at a time against a representative base
 rather than taking the full cross product, which would multiply to hundreds of files for
-coverage the axes already give independently. Every axis is swept across all seven
-writable physical types (`BOOLEAN`, `INT32`, `INT64`, `FLOAT`, `DOUBLE`, `BYTE_ARRAY`,
+coverage the axes already give independently. An axis is swept across all seven writable
+physical types (`BOOLEAN`, `INT32`, `INT64`, `FLOAT`, `DOUBLE`, `BYTE_ARRAY`,
 `FIXED_LEN_BYTE_ARRAY`), since the value encoders are per-type and that is where an
-encoding defect lives.
+encoding defect lives — except where the axis is defined over only some of them, as an
+encoding legal for two types is, and there the sweep is restricted to those.
 
 | Axis | Values |
 |------|--------|
 | Repetition | `REQUIRED`; `OPTIONAL` all-present; `OPTIONAL` with interleaved nulls; `OPTIONAL` all-null |
-| Encoding | single-entry dictionary; multi-entry dictionary; dictionary overflowing to mid-chunk `PLAIN`; dictionary disabled |
-| Codec | `UNCOMPRESSED`; `ZSTD` |
+| Encoding | single-entry dictionary; multi-entry dictionary; an all-distinct column the size comparison writes `PLAIN`; dictionary disabled |
+| Optional encoding | `DELTA_BINARY_PACKED`; `DELTA_LENGTH_BYTE_ARRAY`; `DELTA_BYTE_ARRAY`; `BYTE_STREAM_SPLIT` — one case per legal (encoding, physical type) pair, in every repetition shape |
+| Optional encoding × codec | each of those four encodings, on one type it is legal for, against every codec, in every repetition shape |
+| `FIXED_LEN_BYTE_ARRAY` length | 2, 8, 12 and 16 bytes against every encoding legal for the type |
+| Codec | `UNCOMPRESSED`; `GZIP`; `SNAPPY`; `ZSTD`; `LZ4_RAW` |
 | Layout | one page (pinned exactly); several pages; several row groups |
+| Write path | the columnar batch entry point; the row-oriented `RowWriter` |
 
 Two further groups are enumerated rather than swept, because their shapes differ too much
 to parameterize:
@@ -125,8 +130,20 @@ to parameterize:
   merely as `min <= max`: most annotations carry values that sort identically under every
   candidate order, so a consistency check passes for them whichever order the writer used.
 
-Only `UNCOMPRESSED` and `ZSTD` appear on the codec axis because those are the only codecs
-the writer produces today. Stage 19 adds the rest, and extends this axis with them.
+`BROTLI` is the one codec the writer produces that the codec axis omits, because the pinned
+parquet-java resolves a codec by a Hadoop class name that ships in neither parquet-java nor
+Hadoop, but in an unmaintained third-party artifact whose native binaries cover a few
+platforms only — putting it on the classpath would make the gate's result depend on the
+architecture it runs on. It is covered against DuckDB by `WriterDifferentialTest` instead,
+and `WriterInteropTest.parquetJavaHasNoBrotliCodec` pins the reason, so a parquet-java that
+gains the codec fails there rather than leaving the omission standing by inertia.
+
+The repetition axis is not only its own row. The three axes whose defect lives in the value
+encoder — the single-entry dictionary floor, the optional encodings, and those encodings
+crossed with the codecs — are each swept across all four repetition shapes as well, because
+what an encoder is handed differs by shape: a `REQUIRED` column has no definition-level
+stream at all, and an all-null one gives the encoder an empty range and the codec after it a
+page body with no values in it.
 
 ## Writer identification
 

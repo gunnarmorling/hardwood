@@ -126,6 +126,10 @@ class WriterInteropTest {
     /// that makes the point — it changes no page's size on its own, and exists entirely for what
     /// the codec after it can then do — so each encoding is swept over the codecs on one type it
     /// is legal for rather than over all of them.
+    ///
+    /// Nullability is swept as it is in [#optionalEncodings], since the shape of a page body is
+    /// what a codec sees: an `OPTIONAL_ALL_NULL` case hands the codec a body with no values in it
+    /// at all, and a `REQUIRED` one a body the definition levels are absent from.
     static Stream<InteropCase> optionalEncodingCodecs() {
         return Stream.of(
                 new EncodingCodecAxis(ColumnEncoding.DELTA_BINARY_PACKED, TypeFixture.INT64),
@@ -133,12 +137,14 @@ class WriterInteropTest {
                 new EncodingCodecAxis(ColumnEncoding.DELTA_BYTE_ARRAY, TypeFixture.BYTE_ARRAY),
                 new EncodingCodecAxis(ColumnEncoding.BYTE_STREAM_SPLIT, TypeFixture.DOUBLE))
                 .flatMap(axis -> PARQUET_JAVA_CODECS.stream()
-                        .map(codec -> InteropCase.of(axis.encoding() + " under " + codec, axis.type(),
-                                Nullability.OPTIONAL_SOME_NULL, 64, FEW_ROWS,
-                                WriterConfig.builder()
-                                        .encoding(axis.encoding())
-                                        .codec(codec)
-                                        .build())));
+                        .flatMap(codec -> Stream.of(Nullability.values())
+                                .map(nullability -> InteropCase.of(
+                                        axis.encoding() + " under " + codec, axis.type(),
+                                        nullability, 64, FEW_ROWS,
+                                        WriterConfig.builder()
+                                                .encoding(axis.encoding())
+                                                .codec(codec)
+                                                .build()))));
     }
 
     /// The `FIXED_LEN_BYTE_ARRAY` lengths the writer has a reason to see, against every encoding
