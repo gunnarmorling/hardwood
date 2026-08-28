@@ -222,9 +222,13 @@ Projected rows read via `RowReader`. Per-frame the screen knows the viewport hei
 and shows that many rows. `←` / `→` scrolls the visible column window with the row
 number column pinned; `PgDn` / `PgUp` flips pages forward (and backward via cursor
 re-creation). The title shows `rows X-Y of T · cols A-B of C · physical|logical`.
-`Enter` opens a row-detail modal with one line per field; in the modal `↑` / `↓`
-moves the cursor across fields, `Enter` toggles inline expansion of the focused
-field's full value (cursor is hidden when no field is expandable and content fits).
+`Enter` opens a row-detail modal with one line per field. `↑` / `↓` step between the
+fields `Enter` can expand — a field is expandable when its full value does not
+already fit the collapsed line, measured in display cells — and `PgDn` / `PgUp`
+scroll the body, so fields the cursor skips over are still readable. The modal opens
+with the cursor on the first expandable field, scrolled into view, and `▶` marks it;
+a record with nothing to expand shows no cursor at all. `Enter` toggles inline
+expansion of the focused field's full value.
 `e` / `c` expand / collapse all fields. `t` toggles logical types both in-table
 and in the modal. Long cell values get `…` indicators sized to the actual rendered
 column width.
@@ -251,7 +255,7 @@ Dive lives in the existing `cli` module:
 ```
 cli/src/main/java/dev/hardwood/cli/
 ├── command/
-│   └── DiveCommand.java          (picocli entry point on HardwoodCommand)
+│   └── DiveCommand.java          (aesh entry point on HardwoodCommand)
 └── dive/
     ├── DiveApp.java              (TuiRunner wiring; dispatchKey / render)
     ├── NavigationStack.java      (push / pop / replaceTop / clearToRoot)

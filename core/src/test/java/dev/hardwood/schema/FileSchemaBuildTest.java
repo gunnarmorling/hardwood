@@ -15,6 +15,9 @@ import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.metadata.SchemaElement;
 
+import static dev.hardwood.metadata.SchemaElement.group;
+import static dev.hardwood.metadata.SchemaElement.primitive;
+import static dev.hardwood.metadata.SchemaElement.root;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// Characterization test for [FileSchema#fromSchemaElements]: pins the exact
@@ -27,14 +30,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// once a group's whole subtree has been consumed (the invariant behind the
 /// `columnIndex` ⇄ `ColumnChunk`-order coupling the reader relies on).
 class FileSchemaBuildTest {
-
-    private static SchemaElement group(String name, RepetitionType rep, int numChildren) {
-        return new SchemaElement(name, null, null, rep, numChildren, null, null, null, null, null);
-    }
-
-    private static SchemaElement prim(String name, PhysicalType type, RepetitionType rep) {
-        return new SchemaElement(name, type, null, rep, null, null, null, null, null, null);
-    }
 
     private static void assertColumn(ColumnSchema c, String path, int index, int maxDef, int maxRep) {
         assertThat(c.fieldPath().toString()).isEqualTo(path);
@@ -65,19 +60,19 @@ class FileSchemaBuildTest {
     @Test
     void leafOrderingIndicesAndLevels() {
         List<SchemaElement> elements = List.of(
-                group("user", null, 6),
-                prim("id", PhysicalType.INT64, RepetitionType.REQUIRED),
-                prim("name", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
+                root("user", 6),
+                primitive("id", PhysicalType.INT64, RepetitionType.REQUIRED),
+                primitive("name", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
                 group("address", RepetitionType.OPTIONAL, 3),
-                prim("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
+                primitive("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
                 group("geo", RepetitionType.OPTIONAL, 2),
-                prim("lat", PhysicalType.DOUBLE, RepetitionType.OPTIONAL),
-                prim("lon", PhysicalType.DOUBLE, RepetitionType.REQUIRED),
-                prim("zip", PhysicalType.INT32, RepetitionType.OPTIONAL),
-                prim("scores", PhysicalType.INT32, RepetitionType.REPEATED),
+                primitive("lat", PhysicalType.DOUBLE, RepetitionType.OPTIONAL),
+                primitive("lon", PhysicalType.DOUBLE, RepetitionType.REQUIRED),
+                primitive("zip", PhysicalType.INT32, RepetitionType.OPTIONAL),
+                primitive("scores", PhysicalType.INT32, RepetitionType.REPEATED),
                 group("tags", RepetitionType.REPEATED, 1),
-                prim("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED),
-                prim("footer", PhysicalType.INT32, RepetitionType.REQUIRED));
+                primitive("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED),
+                primitive("footer", PhysicalType.INT32, RepetitionType.REQUIRED));
 
         FileSchema schema = FileSchema.fromSchemaElements(elements);
 
@@ -98,19 +93,19 @@ class FileSchemaBuildTest {
     @Test
     void treeStructureMirrorsNesting() {
         List<SchemaElement> elements = List.of(
-                group("user", null, 6),
-                prim("id", PhysicalType.INT64, RepetitionType.REQUIRED),
-                prim("name", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
+                root("user", 6),
+                primitive("id", PhysicalType.INT64, RepetitionType.REQUIRED),
+                primitive("name", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
                 group("address", RepetitionType.OPTIONAL, 3),
-                prim("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
+                primitive("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL),
                 group("geo", RepetitionType.OPTIONAL, 2),
-                prim("lat", PhysicalType.DOUBLE, RepetitionType.OPTIONAL),
-                prim("lon", PhysicalType.DOUBLE, RepetitionType.REQUIRED),
-                prim("zip", PhysicalType.INT32, RepetitionType.OPTIONAL),
-                prim("scores", PhysicalType.INT32, RepetitionType.REPEATED),
+                primitive("lat", PhysicalType.DOUBLE, RepetitionType.OPTIONAL),
+                primitive("lon", PhysicalType.DOUBLE, RepetitionType.REQUIRED),
+                primitive("zip", PhysicalType.INT32, RepetitionType.OPTIONAL),
+                primitive("scores", PhysicalType.INT32, RepetitionType.REPEATED),
                 group("tags", RepetitionType.REPEATED, 1),
-                prim("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED),
-                prim("footer", PhysicalType.INT32, RepetitionType.REQUIRED));
+                primitive("value", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED),
+                primitive("footer", PhysicalType.INT32, RepetitionType.REQUIRED));
 
         List<SchemaNode> top = FileSchema.fromSchemaElements(elements).getRootNode().children();
 

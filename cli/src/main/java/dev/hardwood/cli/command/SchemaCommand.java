@@ -9,7 +9,9 @@ package dev.hardwood.cli.command;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.aesh.command.Command;
 import org.aesh.command.CommandDefinition;
@@ -19,6 +21,8 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.JsonStrings;
+import dev.hardwood.internal.schema.SchemaNames;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ParquetFileReader;
@@ -78,12 +82,18 @@ public class SchemaCommand implements Command<CommandInvocation> {
         String p = "  ".repeat(indent);
         sb.append(p).append("{\n");
         sb.append(p).append("  \"type\": \"record\",\n");
-        sb.append(p).append("  \"name\": \"").append(capitalize(name)).append("\",\n");
+        sb.append(p).append("  \"name\": \"").append(SchemaNames.sanitize(capitalize(name))).append("\",\n");
+        String doc = avroDoc(name);
+        if (!doc.isEmpty()) {
+            sb.append(p).append("  ").append(doc).append("\n");
+        }
         sb.append(p).append("  \"fields\": [\n");
 
         List<SchemaNode> children = group.children();
+        Set<String> usedNames = new HashSet<>(children.size());
         for (int i = 0; i < children.size(); i++) {
-            appendAvroField(sb, children.get(i), indent + 2);
+            SchemaNode child = children.get(i);
+            appendAvroField(sb, child, disambiguate(SchemaNames.sanitize(child.name()), usedNames), indent + 2);
             if (i < children.size() - 1) {
                 sb.append(",");
             }
@@ -94,15 +104,42 @@ public class SchemaCommand implements Command<CommandInvocation> {
         sb.append(p).append("}");
     }
 
-    private static void appendAvroField(StringBuilder sb, SchemaNode node, int indent) {
+    private static void appendAvroField(StringBuilder sb, SchemaNode node, String avroName, int indent) {
         boolean optional = node.repetitionType() == RepetitionType.OPTIONAL;
         String p = "  ".repeat(indent);
-        sb.append(p).append("{ \"name\": \"").append(node.name()).append("\", \"type\": ");
+        sb.append(p).append("{ \"name\": \"").append(avroName).append("\", ");
+        String doc = avroDoc(node.name());
+        if (!doc.isEmpty()) {
+            sb.append(doc).append(" ");
+        }
+        sb.append("\"type\": ");
         appendAvroType(sb, node, optional, indent);
         if (optional) {
             sb.append(", \"default\": null");
         }
         sb.append(" }");
+    }
+
+    /// Returns a `doc` attribute carrying the Parquet name whenever that name does not
+    /// survive the mapping onto the Avro name grammar, so the rewrite is visible rather
+    /// than silent. Compared against the sanitized name only: the capitalization applied
+    /// to record names is cosmetic and does not warrant a note.
+    private static String avroDoc(String parquetName) {
+        if (parquetName.equals(SchemaNames.sanitize(parquetName))) {
+            return "";
+        }
+        return "\"doc\": \"Parquet name: " + JsonStrings.escape(parquetName) + "\",";
+    }
+
+    /// Sanitizing is not injective, so two Parquet names can map onto the same name.
+    /// Neither Avro nor proto allows a record or message to repeat a field name,
+    /// hence the numeric suffix.
+    private static String disambiguate(String name, Set<String> usedNames) {
+        String candidate = name;
+        for (int suffix = 2; !usedNames.add(candidate); suffix++) {
+            candidate = name + "_" + suffix;
+        }
+        return candidate;
     }
 
     private static void appendAvroType(StringBuilder sb, SchemaNode node, boolean optional, int indent) {
@@ -155,13 +192,15 @@ public class SchemaCommand implements Command<CommandInvocation> {
 
     private static void appendProtoMessage(StringBuilder sb, SchemaNode.GroupNode group, int indent) {
         String p = "  ".repeat(indent);
-        sb.append(p).append("message ").append(capitalize(group.name())).append(" {\n");
+        sb.append(p).append("message ").append(protoMessageName(group)).append(" {\n");
 
         List<SchemaNode.GroupNode> nestedStructs = new ArrayList<>();
+        Set<String> usedNames = new HashSet<>(group.children().size());
         int fieldNum = 1;
 
         for (SchemaNode child : group.children()) {
-            fieldNum = appendProtoField(sb, child, fieldNum, indent + 1, nestedStructs);
+            String protoName = disambiguate(SchemaNames.sanitize(child.name()), usedNames);
+            fieldNum = appendProtoField(sb, child, protoName, fieldNum, indent + 1, nestedStructs);
         }
 
         for (SchemaNode.GroupNode nested : nestedStructs) {
@@ -172,30 +211,49 @@ public class SchemaCommand implements Command<CommandInvocation> {
         sb.append(p).append("}\n");
     }
 
-    private static int appendProtoField(StringBuilder sb, SchemaNode node, int fieldNum, int indent,
+    private static int appendProtoField(StringBuilder sb, SchemaNode node, String protoName, int fieldNum, int indent,
                                         List<SchemaNode.GroupNode> nestedStructs) {
         String p = "  ".repeat(indent);
+        appendProtoComment(sb, p, node.name());
         switch (node) {
             case SchemaNode.PrimitiveNode prim -> {
                 String mod = prim.repetitionType() == RepetitionType.OPTIONAL ? "optional " : "";
                 sb.append(p).append(mod).append(primitiveToProtoType(prim))
-                        .append(" ").append(prim.name()).append(" = ").append(fieldNum).append(";\n");
+                        .append(" ").append(protoName).append(" = ").append(fieldNum).append(";\n");
             }
             case SchemaNode.GroupNode group when group.isList() -> {
                 SchemaNode elem = group.getListElement();
-                String protoType = elem instanceof SchemaNode.PrimitiveNode prim ? primitiveToProtoType(prim) : capitalize(elem.name());
+                String protoType = elem instanceof SchemaNode.PrimitiveNode prim ? primitiveToProtoType(prim) : protoMessageName(elem);
                 sb.append(p).append("repeated ").append(protoType)
-                        .append(" ").append(group.name()).append(" = ").append(fieldNum).append(";\n");
+                        .append(" ").append(protoName).append(" = ").append(fieldNum).append(";\n");
             }
             case SchemaNode.GroupNode group when group.isMap() -> sb.append(p).append("map<string, string> ")
-                    .append(group.name()).append(" = ").append(fieldNum).append(";\n");
+                    .append(protoName).append(" = ").append(fieldNum).append(";\n");
             case SchemaNode.GroupNode group -> {
-                sb.append(p).append(capitalize(group.name())).append(" ")
-                        .append(group.name()).append(" = ").append(fieldNum).append(";\n");
+                sb.append(p).append(protoMessageName(group)).append(" ")
+                        .append(protoName).append(" = ").append(fieldNum).append(";\n");
                 nestedStructs.add(group);
             }
         }
         return fieldNum + 1;
+    }
+
+    /// The message name a group is declared and referenced under. Both sites go through
+    /// here so a rewritten name stays consistent between the declaration and the field
+    /// that refers to it.
+    private static String protoMessageName(SchemaNode node) {
+        return SchemaNames.sanitize(capitalize(node.name()));
+    }
+
+    /// Notes the Parquet name in a line comment whenever it does not survive the mapping
+    /// onto the proto identifier grammar — the counterpart to Avro's `doc` attribute.
+    /// The name is escaped so that one containing a line break cannot end the comment
+    /// early and swallow the field that follows.
+    private static void appendProtoComment(StringBuilder sb, String p, String parquetName) {
+        if (parquetName.equals(SchemaNames.sanitize(parquetName))) {
+            return;
+        }
+        sb.append(p).append("// Parquet name: ").append(JsonStrings.escape(parquetName)).append("\n");
     }
 
     private static String primitiveToProtoType(SchemaNode.PrimitiveNode prim) {

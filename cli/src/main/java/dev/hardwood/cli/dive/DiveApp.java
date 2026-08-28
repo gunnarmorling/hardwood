@@ -27,6 +27,7 @@ import dev.hardwood.cli.dive.internal.RowGroupDetailScreen;
 import dev.hardwood.cli.dive.internal.RowGroupIndexesScreen;
 import dev.hardwood.cli.dive.internal.RowGroupsScreen;
 import dev.hardwood.cli.dive.internal.SchemaScreen;
+import dev.hardwood.cli.dive.internal.ScrollPane;
 import dev.hardwood.cli.dive.internal.Theme;
 import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Rect;
@@ -45,6 +46,13 @@ public final class DiveApp {
     private final ParquetModel model;
     private final NavigationStack stack;
     private boolean helpOpen;
+
+    /// Scroll offset into the help overlay, and the line count the last
+    /// frame produced — the overlay wraps to the terminal width, so its
+    /// length is not known until it has been rendered once.
+    private int helpScroll;
+
+    private int helpLineCount;
 
     public DiveApp(ParquetModel model) {
         this.model = model;
@@ -99,11 +107,19 @@ public final class DiveApp {
         }
         if (!textInput && ke.code() == KeyCode.CHAR && ke.character() == '?') {
             helpOpen = !helpOpen;
+            helpScroll = 0;
             return Action.HANDLED;
         }
         if (helpOpen) {
             if (ke.isCancel()) {
                 helpOpen = false;
+                return Action.HANDLED;
+            }
+            // The overlay is longer than a short terminal can show, so it
+            // scrolls like any other document pane while it has the keys.
+            int next = ScrollPane.scroll(ke, helpScroll, helpLineCount, Keys.viewportStride());
+            if (next != ScrollPane.UNHANDLED) {
+                helpScroll = next;
                 return Action.HANDLED;
             }
             return Action.IGNORED;
@@ -166,10 +182,16 @@ public final class DiveApp {
         // the same frame for the body itself, but the keybar is computed
         // first so it needs the seed.
         Keys.observeViewport(Math.max(1, area.height() - 5));
+        Keys.observeViewportWidth(area.width());
         String screenKeys = keybarForActive();
         String globalKeys = " [?] help   [q] quit";
         int kbHeight = Chrome.keybarHeight(screenKeys, globalKeys, area.width());
         Chrome.Regions regions = Chrome.split(area, kbHeight);
+
+        // Data preview loads exactly the rows its body can paint, so the
+        // page has to be fitted before the body is rendered rather than
+        // after — otherwise the frame the screen is entered on is short.
+        DataPreviewScreen.fitToViewport(model, stack, regions.body());
 
         Chrome.renderTopBar(buffer, regions.topBar(), model);
         Chrome.renderBreadcrumb(buffer, regions.breadcrumb(), stack, model);
@@ -181,7 +203,8 @@ public final class DiveApp {
             // Clear+paint restores full intensity inside its area.
             // Chrome (top bar, breadcrumb, keybar) stays unchanged.
             buffer.setStyle(regions.body(), Theme.dim());
-            HelpOverlay.render(buffer, area);
+            helpLineCount = HelpOverlay.lineCount(area);
+            HelpOverlay.render(buffer, area, helpScroll);
         }
     }
 
@@ -211,7 +234,7 @@ public final class DiveApp {
             case ScreenState.Overview s -> OverviewScreen.keybarKeys(s, model);
             case ScreenState.Schema s -> SchemaScreen.keybarKeys(s, model);
             case ScreenState.RowGroups s -> RowGroupsScreen.keybarKeys(s, model);
-            case ScreenState.RowGroupDetail s -> RowGroupDetailScreen.keybarKeys(s);
+            case ScreenState.RowGroupDetail s -> RowGroupDetailScreen.keybarKeys(s, model);
             case ScreenState.RowGroupIndexes s -> RowGroupIndexesScreen.keybarKeys(s, model);
             case ScreenState.ColumnChunks s -> ColumnChunksScreen.keybarKeys(s, model);
             case ScreenState.ColumnChunkDetail s -> ColumnChunkDetailScreen.keybarKeys(s, model);

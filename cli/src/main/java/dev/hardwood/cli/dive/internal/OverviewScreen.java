@@ -14,8 +14,8 @@ import java.util.Map;
 import dev.hardwood.cli.dive.NavigationStack;
 import dev.hardwood.cli.dive.ParquetModel;
 import dev.hardwood.cli.dive.ScreenState;
-import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Constraint;
 import dev.tamboui.layout.Layout;
@@ -50,6 +50,28 @@ public final class OverviewScreen {
 
     static final int MENU_SIZE = MenuItem.values().length;
 
+    /// Rows the facts pane holds before its key/value list: the five facts.
+    /// The heading and the blank above it are decoration, so they do not
+    /// count — an entry's row is this plus its index.
+    private static final int FACTS_HEADER_ROWS = 5;
+
+    /// Rows in the facts pane, which is what the cursor moves over.
+    private static int factsRowCount(ParquetModel model) {
+        return FACTS_HEADER_ROWS + model.facts().keyValueMetadata().size();
+    }
+
+    /// The key/value entry `row` shows, or `-1` for one of the facts above
+    /// the list — a row the cursor rests on but `Enter` cannot act on.
+    private static int kvIndexForRow(int row) {
+        return row < FACTS_HEADER_ROWS ? -1 : row - FACTS_HEADER_ROWS;
+    }
+
+    /// The pane row showing key/value entry `index` — the inverse of
+    /// [#kvIndexForRow(int)], for callers that know which entry they want.
+    public static int kvEntryRow(int index) {
+        return FACTS_HEADER_ROWS + index;
+    }
+
     private OverviewScreen() {
     }
 
@@ -60,73 +82,39 @@ public final class OverviewScreen {
                 stack.replaceTop(withKvModal(state, false));
                 return true;
             }
-            int totalLines = kvModalLineCount(model, state);
-            // Scroll is meaningful only when content overflows the modal
-            // viewport. Use Keys.viewportStride as a proxy for the modal's
-            // own viewport (the modal sizes to the screen body area).
-            // When content fits in full, ↑/↓ are no-ops — match the
-            // general "scroll enabled iff content > viewport" rule.
-            int viewport = Keys.viewportStride();
-            int maxScroll = Math.max(0, totalLines - viewport);
-            if (maxScroll == 0) {
+            int next = ScrollPane.scroll(event, state.kvModalScroll(),
+                    kvModalLineCount(model, state), Keys.viewportStride());
+            if (next == ScrollPane.UNHANDLED) {
                 return false;
             }
-            if (event.isUp() && !event.hasShift()) {
-                if (state.kvModalScroll() == 0) {
-                    return false;
-                }
-                stack.replaceTop(withKvScroll(state, state.kvModalScroll() - 1));
-                return true;
+            if (next != state.kvModalScroll()) {
+                stack.replaceTop(withKvScroll(state, next));
             }
-            if (event.isDown() && !event.hasShift()) {
-                if (state.kvModalScroll() >= maxScroll) {
-                    return false;
-                }
-                stack.replaceTop(withKvScroll(state, state.kvModalScroll() + 1));
-                return true;
-            }
-            if (event.isUp() && event.hasShift()) {
-                stack.replaceTop(withKvScroll(state, Math.max(0, state.kvModalScroll() - 10)));
-                return true;
-            }
-            if (event.isDown() && event.hasShift()) {
-                stack.replaceTop(withKvScroll(state, Math.min(maxScroll, state.kvModalScroll() + 10)));
-                return true;
-            }
-            return false;
+            return true;
         }
         if (event.isFocusNext() || event.isFocusPrevious()) {
             ScreenState.Overview.Pane next = state.focus() == ScreenState.Overview.Pane.FACTS
                     ? ScreenState.Overview.Pane.MENU
                     : ScreenState.Overview.Pane.FACTS;
-            stack.replaceTop(withFocus(state, next));
+            stack.replaceTop(withFocus(state, next, model));
             return true;
         }
         if (state.focus() == ScreenState.Overview.Pane.FACTS) {
-            int kvCount = model.facts().keyValueMetadata().size();
-            if (kvCount == 0) {
-                return false;
-            }
-            if (event.isUp()) {
-                stack.replaceTop(withKvSelection(state, Math.max(0, state.kvSelection() - 1)));
+            int selected = factsDocument(model, state, true)
+                    .select(event, state.kvSelection(), Keys.viewportStride());
+            if (selected != CursorPane.UNHANDLED) {
+                stack.replaceTop(withKvSelection(state, selected, model));
                 return true;
             }
-            if (event.isDown()) {
-                stack.replaceTop(withKvSelection(state, Math.min(kvCount - 1, state.kvSelection() + 1)));
-                return true;
-            }
-            if (event.isConfirm()) {
+            if (event.isConfirm() && kvIndexForRow(state.kvSelection()) >= 0) {
                 stack.replaceTop(withKvModal(state, true));
                 return true;
             }
             return false;
         }
-        if (event.isUp()) {
-            stack.replaceTop(withMenuSelection(state, Math.max(0, state.menuSelection() - 1)));
-            return true;
-        }
-        if (event.isDown()) {
-            stack.replaceTop(withMenuSelection(state, Math.min(MENU_SIZE - 1, state.menuSelection() + 1)));
+        int onMenu = CursorPane.select(event, state.menuSelection(), MENU_SIZE);
+        if (onMenu != CursorPane.UNHANDLED) {
+            stack.replaceTop(withMenuSelection(state, onMenu));
             return true;
         }
         if (event.isConfirm()) {
@@ -134,7 +122,7 @@ public final class OverviewScreen {
             switch (item) {
                 case SCHEMA -> stack.push(ScreenState.Schema.initial());
                 case ROW_GROUPS -> stack.push(new ScreenState.RowGroups(0));
-                case FOOTER -> stack.push(ScreenState.Footer.initial());
+                case FOOTER -> stack.push(FooterScreen.initialState(model));
                 case DATA_PREVIEW -> stack.push(DataPreviewScreen.initialState(model));
             }
             return true;
@@ -142,28 +130,45 @@ public final class OverviewScreen {
         return false;
     }
 
-    private static ScreenState.Overview withFocus(ScreenState.Overview s, ScreenState.Overview.Pane next) {
-        return new ScreenState.Overview(next, s.menuSelection(), s.kvSelection(),
-                s.kvModalOpen(), s.kvModalScroll());
+    /// Switching into the facts pane puts the cursor on the first key/value
+    /// entry rather than the first fact: the entries are what `Enter` acts
+    /// on, and the facts above them are read without being visited.
+    private static ScreenState.Overview withFocus(ScreenState.Overview s,
+                                                  ScreenState.Overview.Pane next,
+                                                  ParquetModel model) {
+        int cursor = s.kvSelection();
+        int top = s.factsTop();
+        if (next == ScreenState.Overview.Pane.FACTS && cursor == 0
+                && !model.facts().keyValueMetadata().isEmpty()) {
+            cursor = FACTS_HEADER_ROWS;
+        }
+        return new ScreenState.Overview(next, s.menuSelection(), cursor,
+                s.kvModalOpen(), s.kvModalScroll(), top);
     }
 
     private static ScreenState.Overview withMenuSelection(ScreenState.Overview s, int sel) {
         return new ScreenState.Overview(s.focus(), sel, s.kvSelection(),
-                s.kvModalOpen(), s.kvModalScroll());
+                s.kvModalOpen(), s.kvModalScroll(), s.factsTop());
     }
 
-    private static ScreenState.Overview withKvSelection(ScreenState.Overview s, int sel) {
-        return new ScreenState.Overview(s.focus(), s.menuSelection(), sel,
-                s.kvModalOpen(), 0);
+    /// Moving the key/value cursor resets the modal scroll — a new entry is
+    /// a new document — and slides the pane's window the least it can to keep
+    /// the cursor on screen.
+    private static ScreenState.Overview withKvSelection(ScreenState.Overview s, int sel,
+                                                       ParquetModel model) {
+        Document facts = factsDocument(model, s, true);
+        return new ScreenState.Overview(s.focus(), s.menuSelection(), sel, s.kvModalOpen(), 0,
+                facts.windowTopAfterMove(s.factsTop(), s.kvSelection(), sel,
+                        Keys.viewportStride()));
     }
 
     private static ScreenState.Overview withKvModal(ScreenState.Overview s, boolean open) {
-        return new ScreenState.Overview(s.focus(), s.menuSelection(), s.kvSelection(), open, 0);
+        return new ScreenState.Overview(s.focus(), s.menuSelection(), s.kvSelection(), open, 0, s.factsTop());
     }
 
     private static ScreenState.Overview withKvScroll(ScreenState.Overview s, int scroll) {
         return new ScreenState.Overview(s.focus(), s.menuSelection(), s.kvSelection(),
-                s.kvModalOpen(), scroll);
+                s.kvModalOpen(), scroll, s.factsTop());
     }
 
     private static int kvModalLineCount(ParquetModel model, ScreenState.Overview state) {
@@ -171,7 +176,7 @@ public final class OverviewScreen {
         if (kv.isEmpty()) {
             return 0;
         }
-        int idx = Math.min(state.kvSelection(), kv.size() - 1);
+        int idx = Math.max(0, Math.min(kvIndexForRow(state.kvSelection()), kv.size() - 1));
         java.util.Map.Entry<String, String> entry = kv.get(idx);
         return KvMetadataFormatter.format(entry.getKey(), entry.getValue()).split("\n", -1).length;
     }
@@ -197,40 +202,64 @@ public final class OverviewScreen {
         boolean factsHasKv = kvCount > 0;
         return new Keys.Hints()
                 .add(factsHasKv, "[Tab] pane")
-                .add(onFacts ? kvCount > 1 : MENU_SIZE > 1, "[↑↓] move")
-                .add(onFacts && factsHasKv, "[Enter] view entry")
+                .add(true, onFacts
+                        ? factsDocument(model, state, true).hints(Keys.viewportStride())
+                        : CursorPane.hints(MENU_SIZE))
+                .add(onFacts && kvIndexForRow(state.kvSelection()) >= 0, "[Enter] view entry")
                 .add(!onFacts, "[Enter] open")
                 .build();
     }
 
-    private static void renderFactsPane(Buffer buffer, Rect area, ParquetModel model, ScreenState.Overview state) {
-        boolean focused = state.focus() == ScreenState.Overview.Pane.FACTS;
-        Block block = paneBlock("File facts", focused);
+    /// The facts pane's content: the facts, then the key/value entries.
+    /// Section headings and the blank above them are decoration — the cursor
+    /// passes over them, since there is nothing there to be at.
+    private static Document factsDocument(ParquetModel model, ScreenState.Overview state,
+                                          boolean focused) {
         ParquetModel.Facts f = model.facts();
-        List<Line> lines = new ArrayList<>();
-        lines.add(factsLine("Format version", String.valueOf(f.formatVersion())));
-        lines.add(factsLine("Created by", f.createdBy() != null ? f.createdBy() : "unknown"));
-        lines.add(factsLine("Uncompressed", Sizes.format(f.uncompressedBytes())));
-        lines.add(factsLine("Compressed", Sizes.format(f.compressedBytes())));
-        lines.add(factsLine("Ratio", Fmt.fmt("%.1f×", f.compressionRatio())));
+        int cursorRow = focused ? state.kvSelection() : -1;
         List<Map.Entry<String, String>> kv = f.keyValueMetadata();
+        Document.Builder doc = Document.builder();
+        doc.row(factsLine("Format version", String.valueOf(f.formatVersion()), cursorRow == 0));
+        doc.row(factsLine("Created by", f.createdBy() != null ? f.createdBy() : "unknown",
+                cursorRow == 1));
+        doc.row(factsLine("Uncompressed", Sizes.format(f.uncompressedBytes()), cursorRow == 2));
+        doc.row(factsLine("Compressed", Sizes.format(f.compressedBytes()), cursorRow == 3));
+        doc.row(factsLine("Compression",
+                Sizes.compression(f.compressedBytes(), f.uncompressedBytes(), "—"), cursorRow == 4));
         if (!kv.isEmpty()) {
-            lines.add(Line.empty());
-            lines.add(Line.from(new Span("key/value meta (" + kv.size() + ")", Theme.accent().bold())));
+            doc.blank();
+            doc.decoration(Line.from(new Span("  key/value meta (" + kv.size() + ")",
+                    Theme.accent().bold())));
             for (int i = 0; i < kv.size(); i++) {
                 Map.Entry<String, String> entry = kv.get(i);
-                boolean selected = focused && i == state.kvSelection();
-                String marker = selected ? "▶ " : "  ";
+                boolean selected = FACTS_HEADER_ROWS + i == cursorRow;
+                // The facts above are not actionable, so this is a mixed
+                // pane: every entry is marked, not only the one under the
+                // cursor.
+                String marker = CursorPane.marker(true, selected, true);
                 Style rowStyle = selected ? Theme.selection() : null;
                 Style keyStyle = rowStyle != null ? rowStyle : Theme.primary();
                 Style valueStyle = rowStyle != null ? rowStyle : Style.EMPTY;
-                lines.add(Line.from(
+                doc.row(Line.from(
                         new Span(marker, keyStyle),
                         new Span(padRight(entry.getKey(), 16), keyStyle),
                         new Span(trim(entry.getValue(), 32), valueStyle)));
             }
         }
-        renderParagraph(buffer, area, block, Text.from(lines));
+        return doc.build();
+    }
+
+    private static void renderFactsPane(Buffer buffer, Rect area, ParquetModel model, ScreenState.Overview state) {
+        boolean focused = state.focus() == ScreenState.Overview.Pane.FACTS;
+        Document facts = factsDocument(model, state, focused);
+        int viewport = Math.max(1, area.height() - 2);
+        Keys.observeViewport(viewport);
+        int cursorLine = Math.max(0, facts.lineOfRow(state.kvSelection()));
+        RowWindow window = RowWindow.from(
+                facts.windowTop(state.factsTop(), state.kvSelection(), viewport),
+                cursorLine, facts.lineCount(), viewport);
+        renderParagraph(buffer, area, paneBlock("File facts", focused),
+                Text.from(facts.lines().subList(window.start(), window.end())));
     }
 
     private static void renderKvModal(Buffer buffer, Rect screenArea, ParquetModel model, ScreenState.Overview state) {
@@ -238,7 +267,7 @@ public final class OverviewScreen {
         if (kv.isEmpty()) {
             return;
         }
-        int idx = Math.min(state.kvSelection(), kv.size() - 1);
+        int idx = Math.max(0, Math.min(kvIndexForRow(state.kvSelection()), kv.size() - 1));
         Map.Entry<String, String> entry = kv.get(idx);
         // Grow the modal to fill the available area (leaving a 2-cell margin),
         // not a fixed 30 lines — for ARROW:schema the formatted hex dump can
@@ -254,7 +283,10 @@ public final class OverviewScreen {
         // Reserve 2 rows for borders + 2 rows for the close hint and a blank
         // separator. The remaining inner height is the content viewport.
         int viewport = Math.max(1, height - 4);
-        int maxScroll = Math.max(0, all.length - viewport);
+        // The modal is the only scrollable thing on screen while it is open,
+        // so its inner height is the stride the key handler should use.
+        Keys.observeViewport(viewport);
+        int maxScroll = ScrollPane.maxScroll(all.length, viewport);
         int scroll = Math.max(0, Math.min(state.kvModalScroll(), maxScroll));
         int end = Math.min(all.length, scroll + viewport);
 
@@ -264,9 +296,11 @@ public final class OverviewScreen {
         }
         lines.add(Line.empty());
         String hint = scroll + viewport < all.length
-                ? " ↓ " + (all.length - end) + " more lines · Esc / Enter close · ↑↓ scroll · Shift+↑↓ page"
+                ? " ↓ " + (all.length - end) + " more lines · Esc / Enter close · "
+                        + ScrollPane.hints(all.length, viewport)
                 : (scroll > 0
-                        ? " ↑ " + scroll + " lines above · Esc / Enter close · ↑↓ scroll · Shift+↑↓ page"
+                        ? " ↑ " + scroll + " lines above · Esc / Enter close · "
+                                + ScrollPane.hints(all.length, viewport)
                         : " Press Esc or Enter to close");
         lines.add(Line.from(new Span(hint, Theme.dim())));
         Block block = Block.builder()
@@ -285,7 +319,7 @@ public final class OverviewScreen {
         for (int i = 0; i < items.length; i++) {
             MenuItem item = items[i];
             boolean selected = focused && i == state.menuSelection();
-            String cursor = selected ? "▶ " : "  ";
+            String cursor = CursorPane.marker(true, selected, false);
             MenuHint hint = menuHint(item, model);
             Style labelStyle = selected
                     ? Theme.selection()
@@ -329,10 +363,15 @@ public final class OverviewScreen {
     /// menu rows regardless of count length.
     private static final int AXIS_HINT_WIDTH = 14;
 
-    private static Line factsLine(String key, String value) {
+    /// One fact row. The cursor stops on these as it does on the key/value
+    /// entries below them, but `Enter` does nothing here, so they carry the
+    /// selection colour without a marker.
+    private static Line factsLine(String key, String value, boolean selected) {
+        Style keyStyle = selected ? Theme.selection() : Theme.primary();
         return Line.from(
-                new Span(padRight(key, 16), Theme.primary()),
-                new Span(value, Style.EMPTY));
+                new Span(CursorPane.marker(false, selected, true), keyStyle),
+                new Span(padRight(key, 16), keyStyle),
+                new Span(value, selected ? Theme.selection() : Style.EMPTY));
     }
 
     private static Block paneBlock(String title, boolean focused) {

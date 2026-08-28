@@ -39,7 +39,7 @@ import dev.hardwood.schema.SchemaNode;
 /// repetition levels, record offsets) and delegates typed accessors to
 /// [NestedBatchDataView]. Index structures are pre-computed by the
 /// [NestedColumnWorker] drain thread before publishing.
-public final class NestedRowReader implements RowReader {
+public final class NestedRowReader implements FileAwareRowReader {
 
     private final BatchExchange<NestedBatch>[] exchanges;
     private final NestedColumnWorker[] columnWorkers;
@@ -49,9 +49,14 @@ public final class NestedRowReader implements RowReader {
     private final ProjectedSchema projectedSchema;
     private final NestedBatchDataView dataView;
     private final ColumnSchema[] columnSchemas;
+    /// Per-file record-filter counts for JFR, or `null` when the read has no
+    /// filter and nothing evaluates records.
+    private final RecordFilterTally tally;
 
     // Iteration state
     private NestedBatch[] previousBatches;
+    /// File name from the current batch — used for exception enrichment
+    private String currentFileName;
     private int rowIndex = -1;
     private int batchSize = 0;
     private boolean exhausted;
@@ -59,7 +64,8 @@ public final class NestedRowReader implements RowReader {
 
 
     NestedRowReader(BatchExchange<NestedBatch>[] exchanges, NestedColumnWorker[] columnWorkers,
-                    FileSchema fileSchema, ProjectedSchema projectedSchema) {
+                    FileSchema fileSchema, ProjectedSchema projectedSchema, RecordFilterTally tally) {
+        this.tally = tally;
         this.exchanges = exchanges;
         this.columnWorkers = columnWorkers;
         this.columnCount = exchanges.length;
@@ -152,7 +158,8 @@ public final class NestedRowReader implements RowReader {
             worker.start();
         }
 
-        NestedRowReader reader = new NestedRowReader(buffers, workers, schema, projectedSchema);
+        RecordFilterTally tally = filter != null ? new RecordFilterTally() : null;
+        NestedRowReader reader = new NestedRowReader(buffers, workers, schema, projectedSchema, tally);
         reader.initialize();
         if (filter != null) {
             // Indexed compile path: for nested schemas, the reader's
@@ -162,7 +169,7 @@ public final class NestedRowReader implements RowReader {
             // (or `-1` for nested-leaf columns and unprojected fields).
             int[] topLevelLookup = buildTopLevelFieldIndexLookup(schema, projectedSchema);
             RowMatcher matcher = RecordFilterCompiler.compile(filter, schema, col -> topLevelLookup[col]);
-            return new FilteredRowReader(reader, matcher, maxRows);
+            return new FilteredRowReader(reader, matcher, maxRows, tally);
         }
         return reader;
     }
@@ -274,12 +281,20 @@ public final class NestedRowReader implements RowReader {
         batchSize = batches[0].recordCount;
 
         // Index structures are pre-computed by the drain — just assemble the view
-        dataView.setBatchData(batches, columnSchemas, batches[0].fileName);
+        currentFileName = batches[0].fileName;
+        if (tally != null) {
+            // Ahead of any record of this batch being counted, so the counts land
+            // on the file the batch came from. Batches never straddle files.
+            tally.switchFile(currentFileName);
+        }
+        dataView.setBatchData(batches, columnSchemas, currentFileName);
         rowIndex = -1;
         return true;
     }
 
     // ==================== Accessors (delegate to NestedBatchDataView) ====================
+
+    @Override public String currentFileName() { return currentFileName; }
 
     @Override public boolean isNull(int i) { return dataView.isNull(i); }
     @Override public boolean isNull(String name) { return dataView.isNull(name); }
@@ -349,6 +364,9 @@ public final class NestedRowReader implements RowReader {
             return;
         }
         closed = true;
+        if (tally != null) {
+            tally.close();
+        }
         if (columnWorkers != null) {
             for (NestedColumnWorker worker : columnWorkers) {
                 worker.close();

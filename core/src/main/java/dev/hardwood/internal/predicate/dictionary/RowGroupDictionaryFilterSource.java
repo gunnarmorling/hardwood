@@ -1,0 +1,203 @@
+/*
+ *  SPDX-License-Identifier: Apache-2.0
+ *
+ *  Copyright The original authors
+ *
+ *  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+ */
+package dev.hardwood.internal.predicate.dictionary;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+
+import dev.hardwood.InputFile;
+import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.reader.Dictionary;
+import dev.hardwood.internal.reader.DictionaryParser;
+import dev.hardwood.internal.reader.HardwoodContextImpl;
+import dev.hardwood.metadata.ColumnChunk;
+import dev.hardwood.metadata.ColumnMetaData;
+import dev.hardwood.metadata.Encoding;
+import dev.hardwood.metadata.PageEncodingStats;
+import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.schema.ColumnSchema;
+import dev.hardwood.schema.FileSchema;
+
+/// Lazily reads and caches a row group's dictionary pages so predicate evaluation can use them to
+/// prove a value absent from a column chunk.
+///
+/// Dictionaries are read on demand: a row group dropped by statistics or a bloom filter never pays
+/// for the dictionary page I/O.
+public final class RowGroupDictionaryFilterSource {
+
+    /// Bytes read speculatively when the offsets give no gap to size the read — an absent
+    /// `dictionary_page_offset`. Covers a page header plus the body of all but unusually large
+    /// dictionaries, so the common case still resolves in a single read.
+    private static final int DICTIONARY_PROBE_BYTES = 64 * 1024;
+
+    private final InputFile inputFile;
+    private final RowGroup rowGroup;
+    private final FileSchema fileSchema;
+    private final HardwoodContextImpl context;
+    private final Dictionary[] dictionaries;
+    private final boolean[] read;
+
+    public RowGroupDictionaryFilterSource(InputFile inputFile, RowGroup rowGroup,
+                                          FileSchema fileSchema, HardwoodContextImpl context) {
+        this.inputFile = inputFile;
+        this.rowGroup = rowGroup;
+        this.fileSchema = fileSchema;
+        this.context = context;
+        int columnCount = rowGroup.columns().size();
+        this.dictionaries = new Dictionary[columnCount];
+        this.read = new boolean[columnCount];
+    }
+
+    public Dictionary forColumn(int columnIndex) {
+        if (columnIndex < 0 || columnIndex >= dictionaries.length) {
+            return null;
+        }
+
+        if (!read[columnIndex]) {
+            dictionaries[columnIndex] = readDictionary(columnIndex);
+            read[columnIndex] = true;
+        }
+        return dictionaries[columnIndex];
+    }
+
+    /// Whether every value in the column chunk is dictionary-encoded, so its dictionary page
+    /// enumerates all of the chunk's non-null values — the precondition for proving a value absent
+    /// from the chunk.
+    ///
+    /// True when [ColumnMetaData#encodingStats()] records a dictionary page, at least one
+    /// dictionary-encoded data page, and no data page written with a non-dictionary encoding. A
+    /// writer may start a chunk dictionary-encoded and fall back to plain pages once the dictionary
+    /// grows too large; such a chunk reports `false`, since its dictionary covers only part of the
+    /// data. Returns `false` when `encodingStats` is empty and likewise for a data page whose
+    /// encoding isn't a dictionary.
+    private static boolean isFullyDictionaryEncoded(ColumnMetaData metaData) {
+        boolean hasDictionaryPage = false;
+        boolean hasDataPage = false;
+
+        for (PageEncodingStats stats : metaData.encodingStats()) {
+            switch (stats.pageType()) {
+                case DICTIONARY_PAGE -> hasDictionaryPage = true;
+                case INDEX_PAGE -> { } // An index page holds no values, so it cannot contradict the dictionary.
+                case UNKNOWN -> {
+                    return false;
+                }
+                case DATA_PAGE, DATA_PAGE_V2 -> {
+                    if (stats.encoding() != Encoding.PLAIN_DICTIONARY && stats.encoding() != Encoding.RLE_DICTIONARY) {
+                        return false;
+                    }
+                    hasDataPage = true;
+                }
+            }
+        }
+        return hasDictionaryPage && hasDataPage;
+    }
+
+    private Dictionary readDictionary(int columnIndex) {
+        ColumnChunk columnChunk = rowGroup.columns().get(columnIndex);
+        ColumnMetaData metaData = columnChunk.metaData();
+
+        if (!isFullyDictionaryEncoded(metaData)) {
+            return null;
+        }
+
+        // Reading this chunk's dictionary from the file being read would decode bytes belonging
+        // to some other column, and prune row groups on them. Fail rather than degrade to
+        // "no dictionary": the scan cannot read the chunk either.
+        requireSameFile(columnChunk, columnIndex);
+
+        Long dictionaryOffset = metaData.dictionaryPageOffset();
+        long dataPageOffset = metaData.dataPageOffset();
+
+        // A first data page *preceding* the dictionary page cannot be read at all, so fail rather
+        // than degrade to "no dictionary".
+        if (dictionaryOffset != null && dataPageOffset < dictionaryOffset) {
+            throw new IllegalStateException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Malformed Parquet metadata: column " + columnIndex
+                    + " declares a dictionary page at offset " + dictionaryOffset
+                    + " which lies after its first data page at offset " + dataPageOffset);
+        }
+
+        // A dictionary page is always the chunk's first page, so one offset is both the page's
+        // start and the chunk's, and `chunkStartOffset()` yields it: the declared
+        // `dictionary_page_offset` verbatim when the file gives one, `data_page_offset` otherwise.
+        //
+        // The fallback is not a guess. `dictionary_page_offset` is optional in parquet.thrift, so
+        // its absence is ordinary rather than corrupt: parquet-mr 1.12 omits it on every
+        // PLAIN_DICTIONARY column of alltypes_tiny_pages.parquet in apache/parquet-testing, and
+        // Trino did too before 427.
+        long chunkStart = columnChunk.chunkStartOffset();
+        long chunkEnd = chunkStart + metaData.totalCompressedSize();
+        if (chunkEnd <= chunkStart) {
+            throw new IllegalStateException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Malformed Parquet metadata: column " + columnIndex
+                    + " declares a dictionary page at offset " + chunkStart
+                    + " but its chunk ends at offset " + chunkEnd);
+        }
+        int availableBytes = Math.toIntExact(chunkEnd - chunkStart);
+
+        ColumnSchema columnSchema = fileSchema.getColumn(columnIndex);
+        try {
+            ByteBuffer region = readDictionaryPage(columnIndex, chunkStart,
+                    dataPageOffset > chunkStart
+                            ? Math.toIntExact(dataPageOffset - chunkStart)
+                            : DICTIONARY_PROBE_BYTES,
+                    availableBytes);
+            return region == null ? null : DictionaryParser.parse(region, columnSchema, metaData, context);
+        } catch (IOException e) {
+            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Failed to read dictionary for column " + columnIndex, e);
+        }
+    }
+
+    /// Reads the bytes of the dictionary page beginning at `dictionaryStart`, or `null` when no
+    /// dictionary page is there.
+    ///
+    /// The page's own header states its length; the offsets only size the opening read — the gap to
+    /// the first data page where there is one, a bounded probe otherwise. For a well-formed chunk
+    /// the gap equals the page's length, so the opening read is exact and no second one happens.
+    ///
+    /// A header-declared length is file data, so it is checked against the enclosing column chunk
+    /// before being used to size a read. A page that claims to run past its own chunk is corrupt
+    /// and is rejected here — truncating the read to the chunk instead would fail later and less
+    /// clearly.
+    private ByteBuffer readDictionaryPage(int columnIndex, long dictionaryStart, int gapBytes,
+            int availableBytes) throws IOException {
+        ByteBuffer region = inputFile.readRange(dictionaryStart, Math.min(gapBytes, availableBytes));
+        int pageLength = DictionaryParser.pageLength(region);
+        if (pageLength < 0) {
+            return null;
+        }
+
+        if (pageLength > availableBytes) {
+            throw new IllegalStateException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Malformed Parquet metadata: column " + columnIndex
+                    + " declares a dictionary page of " + pageLength
+                    + " bytes but only " + availableBytes + " bytes remain in its chunk");
+        }
+
+        return pageLength > region.remaining()
+                ? inputFile.readRange(dictionaryStart, pageLength)
+                : region;
+    }
+
+
+    /// Fails unless this chunk stores its data in the file being read.
+    ///
+    /// Unchecked because the pruning path this sits on cannot throw a checked exception; the
+    /// cause is the [IOException] the metadata contract advertises for the split-file layout.
+    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) {
+        try {
+            columnChunk.requireSameFile();
+        }
+        catch (IOException e) {
+            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+                    + "Cannot read column " + columnIndex + ": " + e.getMessage(), e);
+        }
+    }
+}

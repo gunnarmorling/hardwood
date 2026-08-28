@@ -37,6 +37,26 @@ import dev.hardwood.schema.ColumnSchema;
 /// Page scanning and dictionary parsing are handled by [PageScanner].
 public class PageDecoder {
 
+    /// Reusable level-decoding buffers owned by one in-flight page slot.
+    static final class LevelScratch {
+        private int[] repetitionLevels;
+        private int[] definitionLevels;
+
+        int[] repetitionLevels(int size) {
+            if (repetitionLevels == null || repetitionLevels.length < size) {
+                repetitionLevels = new int[size];
+            }
+            return repetitionLevels;
+        }
+
+        int[] definitionLevels(int size) {
+            if (definitionLevels == null || definitionLevels.length < size) {
+                definitionLevels = new int[size];
+            }
+            return definitionLevels;
+        }
+    }
+
     private final ColumnMetaData columnMetaData;
     private final ColumnSchema column;
     private final DecompressorFactory decompressorFactory;
@@ -118,6 +138,16 @@ public class PageDecoder {
     /// @param dictionary dictionary for this page, or null if not dictionary-encoded
     /// @return decoded page
     public Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary) throws IOException {
+        // Standalone callers have no reorder slot to reuse across, so a throwaway
+        // scratch (allocated fresh here, buffers grown lazily) matches the old
+        // per-call allocation while keeping the decode path free of null handling.
+        return decodePage(pageBuffer, dictionary, new LevelScratch());
+    }
+
+    /// Decode a single data page, reusing the supplied slot-owned level scratch.
+    /// `scratch` must not be null; standalone callers pass a throwaway instance via
+    /// the two-argument overload.
+    Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary, LevelScratch scratch) throws IOException {
         PageDecodedEvent event = new PageDecodedEvent();
         event.begin();
 
@@ -138,10 +168,11 @@ public class PageDecoder {
             case DATA_PAGE -> {
                 Decompressor decompressor = decompressorFactory.getDecompressor(columnMetaData.codec());
                 byte[] uncompressedData = decompressor.decompress(pageData, pageHeader.uncompressedPageSize());
-                yield parseDataPage(pageHeader.dataPageHeader(), uncompressedData, dictionary);
+                yield parseDataPage(pageHeader.dataPageHeader(), uncompressedData, dictionary, scratch);
             }
             case DATA_PAGE_V2 -> {
-                yield parseDataPageV2(pageHeader.dataPageHeaderV2(), pageData, pageHeader.uncompressedPageSize(), dictionary);
+                yield parseDataPageV2(pageHeader.dataPageHeaderV2(), pageData,
+                        pageHeader.uncompressedPageSize(), dictionary, scratch);
             }
             default -> throw new IOException("Unexpected page type for single-page decode: " + pageHeader.type());
         };
@@ -155,8 +186,9 @@ public class PageDecoder {
     }
 
     /// Decode levels using RLE/Bit-Packing Hybrid encoding.
-    private int[] decodeRepetitionLevels(byte[] levelData, int offset, int length, int numValues, int maxLevel) {
-        int[] levels = new int[numValues];
+    private int[] decodeRepetitionLevels(byte[] levelData, int offset, int length, int numValues, int maxLevel,
+            LevelScratch scratch) {
+        int[] levels = scratch.repetitionLevels(numValues);
         RleBitPackingHybridDecoder decoder = new RleBitPackingHybridDecoder(levelData, offset, length, getBitWidth(maxLevel));
         decoder.readInts(levels, 0, numValues);
         return levels;
@@ -172,7 +204,8 @@ public class PageDecoder {
     /// definition-level array as all-present (every leaf at `maxDef`) and takes a
     /// whole-page bulk-copy path; the repetition levels are still materialised, so
     /// record boundaries are preserved.
-    private int[] decodeDefinitionLevels(byte[] levelData, int offset, int length, int numValues) {
+    private int[] decodeDefinitionLevels(byte[] levelData, int offset, int length, int numValues,
+            LevelScratch scratch) {
         int maxDef = column.maxDefinitionLevel();
         int bitWidth = getBitWidth(maxDef);
         RleBitPackingHybridDecoder decoder = new RleBitPackingHybridDecoder(levelData, offset, length, bitWidth);
@@ -181,7 +214,7 @@ public class PageDecoder {
         if (decoder.isSingleRleRunOf(maxDef, numValues)) {
             return null;
         }
-        int[] levels = new int[numValues];
+        int[] levels = scratch.definitionLevels(numValues);
         decoder.readInts(levels, 0, numValues);
         return levels;
     }
@@ -238,7 +271,8 @@ public class PageDecoder {
         };
     }
 
-    private Page parseDataPage(DataPageHeader header, byte[] data, Dictionary dictionary) throws IOException {
+    private Page parseDataPage(DataPageHeader header, byte[] data, Dictionary dictionary, LevelScratch scratch)
+            throws IOException {
         int numValues = header.numValues();
         int offset = 0;
 
@@ -277,25 +311,27 @@ public class PageDecoder {
                     column.maxRepetitionLevel(), column.maxDefinitionLevel());
             if (shape instanceof FixedSizeListShape.FixedWidth(int k)) {
                 Page page = decodeTypedValues(
-                        header.encoding(), data, valuesOffset, numValues, null, null, dictionary);
+                        header.encoding(), header.encodingValue(),
+                        data, valuesOffset, numValues, null, null, dictionary);
                 return Page.withFixedListK(page, k);
             }
         }
 
         int[] repetitionLevels = column.maxRepetitionLevel() > 0
-                ? decodeRepetitionLevels(data, repLevelOffset, repLevelLength, numValues, column.maxRepetitionLevel())
+                ? decodeRepetitionLevels(data, repLevelOffset, repLevelLength, numValues,
+                        column.maxRepetitionLevel(), scratch)
                 : null;
         int[] definitionLevels = column.maxDefinitionLevel() > 0
-                ? decodeDefinitionLevels(data, defLevelOffset, defLevelLength, numValues)
+                ? decodeDefinitionLevels(data, defLevelOffset, defLevelLength, numValues, scratch)
                 : null;
 
         return decodeTypedValues(
-                header.encoding(), data, valuesOffset, numValues,
+                header.encoding(), header.encodingValue(), data, valuesOffset, numValues,
                 definitionLevels, repetitionLevels, dictionary);
     }
 
     private Page parseDataPageV2(DataPageHeaderV2 header, ByteBuffer pageData, int uncompressedPageSize,
-            Dictionary dictionary) throws IOException {
+            Dictionary dictionary, LevelScratch scratch) throws IOException {
         int repLevelLen = header.repetitionLevelsByteLength();
         int defLevelLen = header.definitionLevelsByteLength();
         int valuesOffset = repLevelLen + defLevelLen;
@@ -330,22 +366,24 @@ public class PageDecoder {
                 byte[] valuesData = readValueRegion(header, pageData, uncompressedPageSize,
                         repLevelLen, defLevelLen, valuesOffset, compressedValuesLen);
                 Page page = decodeTypedValues(
-                        header.encoding(), valuesData, 0, numValues, null, null, dictionary);
+                        header.encoding(), header.encodingValue(),
+                        valuesData, 0, numValues, null, null, dictionary);
                 return Page.withFixedListK(page, k);
             }
         }
 
         int[] repetitionLevels = repLevelData != null
-                ? decodeRepetitionLevels(repLevelData, 0, repLevelLen, numValues, column.maxRepetitionLevel())
+                ? decodeRepetitionLevels(repLevelData, 0, repLevelLen, numValues,
+                        column.maxRepetitionLevel(), scratch)
                 : null;
         int[] definitionLevels = defLevelData != null
-                ? decodeDefinitionLevels(defLevelData, 0, defLevelLen, numValues)
+                ? decodeDefinitionLevels(defLevelData, 0, defLevelLen, numValues, scratch)
                 : null;
 
         byte[] valuesData = readValueRegion(header, pageData, uncompressedPageSize,
                 repLevelLen, defLevelLen, valuesOffset, compressedValuesLen);
         return decodeTypedValues(
-                header.encoding(), valuesData, 0, numValues,
+                header.encoding(), header.encodingValue(), valuesData, 0, numValues,
                 definitionLevels, repetitionLevels, dictionary);
     }
 
@@ -366,7 +404,7 @@ public class PageDecoder {
     }
 
     /// Decode values into Page using primitive arrays where possible.
-    private Page decodeTypedValues(Encoding encoding, byte[] data, int offset,
+    private Page decodeTypedValues(Encoding encoding, int encodingValue, byte[] data, int offset,
                                    int numValues,
                                    int[] definitionLevels, int[] repetitionLevels,
                                    Dictionary dictionary) throws IOException {
@@ -374,10 +412,10 @@ public class PageDecoder {
         PhysicalType type = column.type();
 
         // Try to decode into primitive arrays for supported type/encoding combinations
-        switch (encoding) {
+        return switch (encoding) {
             case PLAIN -> {
                 PlainDecoder decoder = new PlainDecoder(data, offset, type, column.typeLength());
-                return switch (type) {
+                yield switch (type) {
                     case INT64 -> {
                         long[] values = new long[numValues];
                         decoder.readLongs(values, definitionLevels, maxDefLevel);
@@ -412,7 +450,7 @@ public class PageDecoder {
             }
             case DELTA_BINARY_PACKED -> {
                 DeltaBinaryPackedDecoder decoder = new DeltaBinaryPackedDecoder(data, offset);
-                return switch (type) {
+                yield switch (type) {
                     case INT64 -> {
                         long[] values = new long[numValues];
                         decoder.readLongs(values, definitionLevels, maxDefLevel);
@@ -423,15 +461,22 @@ public class PageDecoder {
                         decoder.readInts(values, definitionLevels, maxDefLevel);
                         yield new Page.IntPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
                     }
-                    default -> throw new UnsupportedOperationException(
-                            "DELTA_BINARY_PACKED not supported for type: " + type);
+                    default -> throw undefinedOverType(Encoding.DELTA_BINARY_PACKED, type,
+                            PhysicalType.INT32, PhysicalType.INT64);
                 };
             }
             case BYTE_STREAM_SPLIT -> {
+                // The decoder derives its byte width from the physical type, so an undefined pair
+                // has to be refused before it is constructed — otherwise the width lookup, and not
+                // the format check, is what the file fails on.
+                if (type == PhysicalType.BOOLEAN || type == PhysicalType.BYTE_ARRAY
+                        || type == PhysicalType.INT96) {
+                    throw byteStreamSplitUndefinedOverType(type);
+                }
                 int numNonNullValues = countNonNullValues(numValues, definitionLevels);
                 ByteStreamSplitDecoder decoder = new ByteStreamSplitDecoder(
                         data, offset, numNonNullValues, type, column.typeLength());
-                return switch (type) {
+                yield switch (type) {
                     case INT64 -> {
                         long[] values = new long[numValues];
                         decoder.readLongs(values, definitionLevels, maxDefLevel);
@@ -457,8 +502,7 @@ public class PageDecoder {
                         decoder.readByteArrays(values, definitionLevels, maxDefLevel);
                         yield new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
                     }
-                    default -> throw new UnsupportedOperationException(
-                            "BYTE_STREAM_SPLIT not supported for type: " + type);
+                    default -> throw byteStreamSplitUndefinedOverType(type);
                 };
             }
             case RLE_DICTIONARY, PLAIN_DICTIONARY -> {
@@ -472,13 +516,16 @@ public class PageDecoder {
                 }
                 RleBitPackingHybridDecoder indexDecoder = new RleBitPackingHybridDecoder(data, offset, data.length - offset, bitWidth);
 
-                return dictionary.decodePage(indexDecoder, numValues, definitionLevels, repetitionLevels, maxDefLevel);
+                yield dictionary.decodePage(indexDecoder, numValues, definitionLevels, repetitionLevels, maxDefLevel);
             }
             case RLE -> {
-                // RLE encoding for boolean values uses bit-width of 1
+                // In the value position RLE carries booleans and nothing else; the format also
+                // gives it the level streams and dictionary indices, which do not come through
+                // here. Refusing another type is the format's position, not a decoder this
+                // release has yet to write.
                 if (type != PhysicalType.BOOLEAN) {
-                    throw new UnsupportedOperationException(
-                            "RLE encoding for non-boolean types not yet supported: " + type);
+                    throw new IOException(
+                            "RLE encodes only boolean values in a data page, not " + type);
                 }
 
                 // Read 4-byte length prefix (little-endian)
@@ -488,25 +535,78 @@ public class PageDecoder {
                 RleBitPackingHybridDecoder decoder = new RleBitPackingHybridDecoder(data, offset, rleLength, 1);
                 boolean[] values = new boolean[numValues];
                 decoder.readBooleans(values, definitionLevels, maxDefLevel);
-                return new Page.BooleanPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
+                yield new Page.BooleanPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
             case DELTA_LENGTH_BYTE_ARRAY -> {
+                // The lengths are delta-encoded ahead of the bytes, so the values are byte arrays
+                // whatever the column claims; decoding an integer column's page this way would
+                // build a page of the wrong shape rather than fail.
+                if (type != PhysicalType.BYTE_ARRAY) {
+                    throw undefinedOverType(Encoding.DELTA_LENGTH_BYTE_ARRAY, type,
+                            PhysicalType.BYTE_ARRAY);
+                }
                 int numNonNullValues = countNonNullValues(numValues, definitionLevels);
                 DeltaLengthByteArrayDecoder decoder = new DeltaLengthByteArrayDecoder(data, offset);
                 decoder.initialize(numNonNullValues);
                 byte[][] values = new byte[numValues][];
                 decoder.readByteArrays(values, definitionLevels, maxDefLevel);
-                return new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
+                yield new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
             case DELTA_BYTE_ARRAY -> {
+                if (type != PhysicalType.BYTE_ARRAY && type != PhysicalType.FIXED_LEN_BYTE_ARRAY) {
+                    throw undefinedOverType(Encoding.DELTA_BYTE_ARRAY, type,
+                            PhysicalType.BYTE_ARRAY, PhysicalType.FIXED_LEN_BYTE_ARRAY);
+                }
                 int numNonNullValues = countNonNullValues(numValues, definitionLevels);
                 DeltaByteArrayDecoder decoder = new DeltaByteArrayDecoder(data, offset);
                 decoder.initialize(numNonNullValues);
                 byte[][] values = new byte[numValues][];
                 decoder.readByteArrays(values, definitionLevels, maxDefLevel);
-                return new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
+                yield new Page.ByteArrayPage(values, definitionLevels, repetitionLevels, maxDefLevel, numValues);
             }
-            default -> throw new UnsupportedOperationException("Encoding not yet supported: " + encoding);
+            // BIT_PACKED encodes levels, never a page's values, so refusing it is the format's
+            // position rather than a decoder this release has yet to write.
+            case BIT_PACKED -> throw new IOException(
+                    "BIT_PACKED encodes levels and is not valid for a data page's values");
+            // UNKNOWN stands for every Thrift value this release cannot name, so on its own it
+            // does not say which encoding was met; the raw value does. This is the one refusal
+            // here that is a gap in this release rather than a malformed file, so it is the one
+            // that keeps UnsupportedOperationException.
+            case UNKNOWN -> throw new UnsupportedOperationException(
+                    "Encoding not yet supported: UNKNOWN (Thrift encoding value " + encodingValue + ")");
+        };
+    }
+
+    /// Refusal for a page whose declared encoding is not defined over its column's physical type.
+    ///
+    /// The format names the physical types each encoding may carry, so such a page is a malformed
+    /// file rather than a gap in this release — which is why this is an [IOException] and not the
+    /// [UnsupportedOperationException] an unrecognized encoding raises. Decoding it anyway would
+    /// build a page of the wrong shape rather than fail: wrong in the values, and wrong in the
+    /// [Page] variant handed to the column reader.
+    ///
+    /// @param encoding the encoding the page declares
+    /// @param type the column's physical type
+    /// @param definedOver the physical types the format defines `encoding` over
+    /// @return the exception to throw
+    private static IOException undefinedOverType(Encoding encoding, PhysicalType type,
+            PhysicalType... definedOver) {
+        StringBuilder legalTypes = new StringBuilder();
+        for (PhysicalType candidate : definedOver) {
+            if (!legalTypes.isEmpty()) {
+                legalTypes.append(", ");
+            }
+            legalTypes.append(candidate);
         }
+        return new IOException(encoding + " is not defined over " + type
+                + "; the format defines it over " + legalTypes + " only");
+    }
+
+    /// [#undefinedOverType] for `BYTE_STREAM_SPLIT`, whose legal types are named both before the
+    /// decoder is constructed and by the value switch that follows it.
+    private static IOException byteStreamSplitUndefinedOverType(PhysicalType type) {
+        return undefinedOverType(Encoding.BYTE_STREAM_SPLIT, type, PhysicalType.INT32,
+                PhysicalType.INT64, PhysicalType.FLOAT, PhysicalType.DOUBLE,
+                PhysicalType.FIXED_LEN_BYTE_ARRAY);
     }
 }

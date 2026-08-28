@@ -7,10 +7,19 @@
  */
 package dev.hardwood.internal.thrift;
 
-/// Thrift Compact Protocol type codes, defined once and shared by the reader and
-/// writer so the wire constants are not duplicated.
+/// Thrift Compact Protocol type codes, defined once and shared by every reader,
+/// writer and test fixture that encodes or decodes the wire format, so the
+/// constants are not duplicated.
 /// Reference: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
-final class ThriftCompactConstants {
+public final class ThriftCompactConstants {
+
+    /// The byte a struct terminates with, where a field header would otherwise start. It is
+    /// not a type code, so it belongs to neither [FieldType] nor [ElementType].
+    public static final byte STOP = 0x00;
+
+    /// The list-header size nibble that saturates, meaning the real element count follows the
+    /// header as a varint rather than fitting in the nibble.
+    public static final int LONG_FORM_SIZE = 15;
 
     /// Type codes for struct field headers.
     public enum FieldType {
@@ -36,7 +45,7 @@ final class ThriftCompactConstants {
         }
 
         /// The Thrift Compact Protocol wire code for this type.
-        byte code() {
+        public byte code() {
             return code;
         }
 
@@ -66,9 +75,9 @@ final class ThriftCompactConstants {
     }
 
     /// Type codes for list/set/map elements. These mirror [FieldType] except boolean:
-    /// a collection has a single [#BOOL] element type, whereas a field packs
-    /// true/false into the type. `BOOL` is written as `1` — the de-facto standard;
-    /// the spec's original code was `2` and readers should accept either.
+    /// a collection has a single element type for `bool`, whereas a field packs
+    /// true/false into the type. [#BOOL] is written as `1` — the de-facto standard; the spec's
+    /// original code is `2`, which readers accept as well.
     public enum ElementType {
 
         BOOL(FieldType.Codes.BOOLEAN_TRUE),
@@ -91,7 +100,7 @@ final class ThriftCompactConstants {
         }
 
         /// The Thrift Compact Protocol wire code for this element type.
-        byte code() {
+        public byte code() {
             return code;
         }
     }

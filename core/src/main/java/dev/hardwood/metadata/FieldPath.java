@@ -36,8 +36,8 @@ public record FieldPath(List<String> elements) {
     /// Returns true if this path matches the given dotted name.
     ///
     /// A dotted name like `"address.zip"` matches the path `["address", "zip"]`.
-    /// A prefix match is allowed: `"address"` matches `["address", "zip"]`
-    /// (useful for filtering on a top-level field that contains nested columns).
+    /// A prefix match is allowed: `"address"` matches `["address", "zip"]`, so a group name
+    /// selects every leaf below it.
     ///
     /// @param dottedName a dot-separated field reference (e.g. `"address.zip"`)
     /// @return true if this path matches the dotted name

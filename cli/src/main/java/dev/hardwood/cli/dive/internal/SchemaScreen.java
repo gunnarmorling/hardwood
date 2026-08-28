@@ -18,6 +18,7 @@ import dev.hardwood.cli.dive.NavigationStack;
 import dev.hardwood.cli.dive.ParquetModel;
 import dev.hardwood.cli.dive.ScreenState;
 import dev.hardwood.cli.internal.Fmt;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.schema.SchemaNode;
 import dev.tamboui.buffer.Buffer;
@@ -70,34 +71,9 @@ public final class SchemaScreen {
         if (rows.isEmpty()) {
             return false;
         }
-        if (Keys.isStepUp(event)) {
-            stack.replaceTop(with(state,
-                    Math.max(0, state.selection() - 1), state.expanded(), state.filter(), false));
-            return true;
-        }
-        if (Keys.isStepDown(event)) {
-            stack.replaceTop(with(state,
-                    Math.min(rows.size() - 1, state.selection() + 1), state.expanded(), state.filter(), false));
-            return true;
-        }
-        if (Keys.isPageDown(event)) {
-            stack.replaceTop(with(state,
-                    Math.min(rows.size() - 1, state.selection() + Keys.viewportStride()),
-                    state.expanded(), state.filter(), false));
-            return true;
-        }
-        if (Keys.isPageUp(event)) {
-            stack.replaceTop(with(state,
-                    Math.max(0, state.selection() - Keys.viewportStride()),
-                    state.expanded(), state.filter(), false));
-            return true;
-        }
-        if (Keys.isJumpTop(event)) {
-            stack.replaceTop(with(state, 0, state.expanded(), state.filter(), false));
-            return true;
-        }
-        if (Keys.isJumpBottom(event)) {
-            stack.replaceTop(with(state, rows.size() - 1, state.expanded(), state.filter(), false));
+        int selected = CursorPane.select(event, state.selection(), rows.size());
+        if (selected != CursorPane.UNHANDLED) {
+            stack.replaceTop(with(state, selected, state.expanded(), state.filter(), false));
             return true;
         }
         // Expand / collapse all — modifier-free e / c. Filter mode (handled
@@ -205,6 +181,11 @@ public final class SchemaScreen {
             maxLogical = Math.max(maxLogical, parts[i].logical().length());
             maxRepetition = Math.max(maxRepetition, parts[i].repetition().length());
         }
+        // Column widths are measured over every row so they do not shift as
+        // the tree scrolls; only the rows on screen become Lines. See
+        // DIVE_LIST_VIEWPORT_VIRTUALIZATION.md.
+        RowWindow window = RowWindow.from(state.scrollTop(), state.selection(),
+                rows.size(), Math.max(1, split.get(1).height() - 3));
         Style headerStyle = Theme.accent().bold();
         lines.add(Line.from(
                 Span.raw("  "),
@@ -212,23 +193,26 @@ public final class SchemaScreen {
                 new Span("  " + padRight("Type", maxType), headerStyle),
                 new Span("  " + padRight("Logical", maxLogical), headerStyle),
                 new Span("  " + padRight("Repetition", maxRepetition), headerStyle)));
-        for (int i = 0; i < rows.size(); i++) {
+        for (int i = window.start(); i < window.end(); i++) {
             Row row = rows.get(i);
             boolean selected = i == state.selection();
-            String cursor = selected ? "▸ " : "  ";
-            Style nameStyle = selected ? Theme.selection() : Style.EMPTY;
+            // Every schema row is actionable — a group expands, a leaf drills
+            // — so the marker rides the cursor. The tree's own ▶/▼ keeps its
+            // own column and its own meaning.
+            String cursor = CursorPane.marker(true, selected, false);
+            Style rowStyle = selected ? Theme.selection() : Style.EMPTY;
             TypeParts p = parts[i];
             String colSuffix = !row.isGroup() ? "[col " + row.columnIndex() + "]" : "";
             if (filtering) {
                 String pad = " ".repeat(maxName - row.path().length());
                 lines.add(Line.from(
-                        Span.raw(cursor),
-                        new Span(row.path(), nameStyle),
+                        new Span(cursor, rowStyle),
+                        new Span(row.path(), rowStyle),
                         Span.raw(pad),
-                        new Span("  " + padRight(p.type(), maxType), Style.EMPTY),
-                        new Span("  " + padRight(p.logical(), maxLogical), Style.EMPTY),
-                        new Span("  " + padRight(p.repetition(), maxRepetition), Style.EMPTY),
-                        new Span("  " + colSuffix, Style.EMPTY)));
+                        new Span("  " + padRight(p.type(), maxType), rowStyle),
+                        new Span("  " + padRight(p.logical(), maxLogical), rowStyle),
+                        new Span("  " + padRight(p.repetition(), maxRepetition), rowStyle),
+                        new Span("  " + colSuffix, rowStyle)));
                 continue;
             }
             String indent = "  ".repeat(row.depth());
@@ -242,19 +226,19 @@ public final class SchemaScreen {
             int rowName = row.depth() * 2 + 2 + row.node().name().length();
             String pad = " ".repeat(maxName - rowName);
             lines.add(Line.from(
-                    Span.raw(cursor),
+                    new Span(cursor, rowStyle),
                     Span.raw(indent),
-                    new Span(marker, Theme.accent()),
-                    new Span(row.node().name(), nameStyle),
+                    new Span(marker, selected ? rowStyle : Theme.accent()),
+                    new Span(row.node().name(), rowStyle),
                     Span.raw(pad),
-                    new Span("  " + padRight(p.type(), maxType), Style.EMPTY),
-                    new Span("  " + padRight(p.logical(), maxLogical), Style.EMPTY),
-                    new Span("  " + padRight(p.repetition(), maxRepetition), Style.EMPTY),
-                    new Span("  " + colSuffix, Style.EMPTY)));
+                    new Span("  " + padRight(p.type(), maxType), rowStyle),
+                    new Span("  " + padRight(p.logical(), maxLogical), rowStyle),
+                    new Span("  " + padRight(p.repetition(), maxRepetition), rowStyle),
+                    new Span("  " + colSuffix, rowStyle)));
         }
         Block block = Block.builder()
                 .title(" Schema "
-                        + Plurals.rangeOf(state.selection(), rows.size(), Keys.viewportStride())
+                        + Plurals.rangeOf(window, rows.size())
                         + (filtering
                                 ? " · "
                                         + Plurals.format(model.columnCount(), "leaf column", "leaf columns")
@@ -275,9 +259,7 @@ public final class SchemaScreen {
         boolean expanded = isGroup && state.expanded().contains(current.path());
         boolean hasGroups = !model.allGroupPaths().isEmpty();
         return new Keys.Hints()
-                .add(count > 1, "[↑↓] move")
-                .add(count > Keys.viewportStride(), "[PgDn/PgUp or Shift+↓↑] page")
-                .add(count > 1, "[g/G] first/last")
+                .add(true, CursorPane.hints(count))
                 .add(current != null, isGroup ? "[→/Enter] expand" : "[Enter] open")
                 .add(expanded, "[←] collapse")
                 .add(hasGroups, "[e/c] all")
@@ -364,10 +346,15 @@ public final class SchemaScreen {
         }
     }
 
+    /// Rebuilds the state, sliding the visible window the least it can to
+    /// keep `selection` on screen. Expanding or filtering changes which rows
+    /// exist, so the offset is recomputed on every transition rather than
+    /// only on cursor movement.
     private static ScreenState.Schema with(ScreenState.Schema state,
                                             int selection, Set<String> expanded,
                                             String filter, boolean searching) {
-        return new ScreenState.Schema(selection, expanded, filter, searching);
+        return new ScreenState.Schema(selection, expanded, filter, searching,
+                RowWindow.adjustTop(state.scrollTop(), selection, Keys.viewportStride()));
     }
 
     /// Decomposed type-info columns (physical type or group tag, optional

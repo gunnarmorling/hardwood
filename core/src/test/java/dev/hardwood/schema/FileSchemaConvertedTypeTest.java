@@ -38,8 +38,7 @@ class FileSchemaConvertedTypeTest {
 
     private static ColumnSchema resolveColumn(
             PhysicalType type, ConvertedType convertedType, Integer scale, Integer precision) {
-        SchemaElement root = new SchemaElement(
-                ROOT, null, null, RepetitionType.REQUIRED, 1, null, null, null, null, null);
+        SchemaElement root = SchemaElement.group(ROOT, RepetitionType.REQUIRED, 1);
         SchemaElement leaf = new SchemaElement(
                 COLUMN, type, null, RepetitionType.OPTIONAL, null, convertedType, scale, precision, null, null);
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, leaf));
@@ -175,8 +174,7 @@ class FileSchemaConvertedTypeTest {
 
     @Test
     void modernLogicalTypeWinsOverConvertedType() {
-        SchemaElement root = new SchemaElement(
-                ROOT, null, null, RepetitionType.REQUIRED, 1, null, null, null, null, null);
+        SchemaElement root = SchemaElement.group(ROOT, RepetitionType.REQUIRED, 1);
         // converted_type=UTF8, but logical type is explicitly an Int, logical type must win.
         LogicalType.IntType modern = new LogicalType.IntType(32, false);
         SchemaElement leaf = new SchemaElement(

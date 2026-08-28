@@ -7,6 +7,9 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -14,6 +17,9 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.reader.CountingInputFile;
+import dev.hardwood.metadata.FileMetaData;
+import dev.hardwood.reader.ColumnReaders;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqStruct;
@@ -24,6 +30,191 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Tests for MultiFileRowReader and cross-file prefetching.
 class MultiFileRowReaderTest {
+
+    @Test
+    void exposesPerFileMetadataLazily() throws Exception {
+        CountingInputFile file0 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile file1 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+        CountingInputFile file2 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+
+        try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(file0, file1, file2))) {
+            int file0FooterReadsAfterOpen = file0.footerReadCount();
+
+            assertThat(reader.getFileCount()).isEqualTo(3);
+            assertThat(file0.footerReadCount()).isEqualTo(file0FooterReadsAfterOpen);
+            assertThat(file1.footerReadCount()).isZero();
+            assertThat(file2.footerReadCount()).isZero();
+
+            assertThat(reader.getFileMetaData(0)).isSameAs(reader.getFileMetaData());
+            assertThat(file0.footerReadCount()).isEqualTo(file0FooterReadsAfterOpen);
+
+            FileMetaData file1MetaData = reader.getFileMetaData(1);
+            assertThat(file1MetaData.numRows()).isEqualTo(100);
+            int file1FooterReadsAfterAccess = file1.footerReadCount();
+            assertThat(file1FooterReadsAfterAccess).isPositive();
+            assertThat(file2.footerReadCount()).isZero();
+
+            assertThat(reader.getFileMetaData(1)).isSameAs(file1MetaData);
+            assertThat(file1.footerReadCount()).isEqualTo(file1FooterReadsAfterAccess);
+            assertThat(reader.getFileMetaData(0).numRows()
+                    + file1MetaData.numRows()
+                    + reader.getFileMetaData(2).numRows()).isEqualTo(350);
+            assertThat(file2.footerReadCount()).isPositive();
+
+            assertThatThrownBy(() -> reader.getFileMetaData(-1))
+                    .isInstanceOf(IndexOutOfBoundsException.class);
+            assertThatThrownBy(() -> reader.getFileMetaData(3))
+                    .isInstanceOf(IndexOutOfBoundsException.class);
+        }
+    }
+
+    @Test
+    void dataReadersReusePerFileMetadata() throws Exception {
+        CountingInputFile file0 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile file1 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+
+        try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(file0, file1))) {
+            reader.getFileMetaData(1);
+            int file1FooterReads = file1.footerReadCount();
+
+            try (RowReader rows = reader.rowReader()) {
+                while (rows.hasNext()) {
+                    rows.next();
+                }
+            }
+            assertThat(file1.footerReadCount()).isEqualTo(file1FooterReads);
+
+            try (ColumnReaders columns = reader.columnReaders(ColumnProjection.columns("id"))) {
+                while (columns.nextBatch()) {
+                    // Consume all batches so reuse is checked across the file boundary.
+                }
+            }
+            assertThat(file1.footerReadCount()).isEqualTo(file1FooterReads);
+        }
+    }
+
+    @Test
+    void rowReaderMetadataLoadIsReusedByIndexedAccess() throws Exception {
+        CountingInputFile file0 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile file1 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+
+        try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(file0, file1))) {
+            try (RowReader rows = reader.rowReader()) {
+                while (rows.hasNext()) {
+                    rows.next();
+                }
+            }
+            int file1FooterReads = file1.footerReadCount();
+            assertThat(file1FooterReads).isPositive();
+
+            assertThat(reader.getFileMetaData(1).numRows()).isEqualTo(100);
+            assertThat(file1.footerReadCount()).isEqualTo(file1FooterReads);
+        }
+    }
+
+    @Test
+    void columnReaderMetadataLoadIsReusedByIndexedAccess() throws Exception {
+        CountingInputFile file0 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile file1 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+
+        try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(file0, file1))) {
+            try (ColumnReaders columns = reader.columnReaders(ColumnProjection.columns("id"))) {
+                while (columns.nextBatch()) {
+                    // Consume all batches so the second file is read.
+                }
+            }
+            int file1FooterReads = file1.footerReadCount();
+            assertThat(file1FooterReads).isPositive();
+
+            assertThat(reader.getFileMetaData(1).numRows()).isEqualTo(100);
+            assertThat(file1.footerReadCount()).isEqualTo(file1FooterReads);
+        }
+    }
+
+    @Test
+    void childReadersLeaveInputLifecycleToParent() throws Exception {
+        CountingInputFile file0 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile file1 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+        ParquetFileReader reader = ParquetFileReader.openAll(List.of(file0, file1));
+
+        try {
+            try (RowReader rows = reader.rowReader()) {
+                assertThat(rows.hasNext()).isTrue();
+                rows.next();
+            }
+            assertThat(file0.closeCount()).isZero();
+            assertThat(file1.closeCount()).isZero();
+
+            try (ColumnReaders columns = reader.columnReaders(ColumnProjection.columns("id"))) {
+                while (columns.nextBatch()) {
+                    // Consume all batches before closing the child reader.
+                }
+            }
+            assertThat(file0.closeCount()).isZero();
+            assertThat(file1.closeCount()).isZero();
+        }
+        finally {
+            reader.close();
+        }
+
+        assertThat(file0.closeCount()).isEqualTo(1);
+        assertThat(file1.closeCount()).isEqualTo(1);
+    }
+
+    @Test
+    void failedMetadataIsSharedWithDataReaderAndRetriedAfterReopen() throws Exception {
+        CountingInputFile valid = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile invalid = new CountingInputFile(ByteBuffer.allocate(12));
+
+        try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(valid, invalid))) {
+            assertThatThrownBy(() -> reader.getFileMetaData(1))
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("Not a Parquet file");
+            int readsAfterFailure = invalid.footerReadCount();
+
+            assertThatThrownBy(reader::rowReader)
+                    .isInstanceOf(UncheckedIOException.class)
+                    .hasMessageContaining("Failed to read metadata");
+            assertThat(invalid.footerReadCount()).isEqualTo(readsAfterFailure);
+        }
+
+        int readsBeforeReopen = invalid.footerReadCount();
+        try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(valid, invalid))) {
+            assertThatThrownBy(() -> reader.getFileMetaData(1))
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("Not a Parquet file");
+        }
+        assertThat(invalid.footerReadCount()).isGreaterThan(readsBeforeReopen);
+    }
+
+    @Test
+    void rejectsIndexedMetadataAccessAfterClose() throws Exception {
+        CountingInputFile file0 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part0.parquet")));
+        CountingInputFile file1 = new CountingInputFile(InputFile.of(
+                Paths.get("src/test/resources/multi_file_part1.parquet")));
+        ParquetFileReader reader = ParquetFileReader.openAll(List.of(file0, file1));
+
+        reader.close();
+
+        assertThat(reader.getFileCount()).isEqualTo(2);
+        assertThatThrownBy(() -> reader.getFileMetaData(0))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("ParquetFileReader is closed");
+        assertThat(file1.footerReadCount()).isZero();
+    }
 
     @Test
     void testReadSingleFile() throws Exception {

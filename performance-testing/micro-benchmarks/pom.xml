@@ -43,8 +43,13 @@
       <groupId>com.github.luben</groupId>
       <artifactId>zstd-jni</artifactId>
     </dependency>
+    <dependency>
+      <groupId>at.yawk.lz4</groupId>
+      <artifactId>lz4-java</artifactId>
+    </dependency>
 
-    <!-- parquet-java, used only by the benchmark corpus generators to write fixtures -->
+    <!-- parquet-java: writes the benchmark corpora, and is the contender the read and write
+         benchmarks measure Hardwood against -->
     <dependency>
       <groupId>org.apache.parquet</groupId>
       <artifactId>parquet-avro</artifactId>

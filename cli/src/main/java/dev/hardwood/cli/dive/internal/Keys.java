@@ -63,10 +63,29 @@ public final class Keys {
     /// Fallback stride when no screen has yet rendered (no viewport observed).
     public static final int PAGE_STRIDE = 20;
 
+    /// Fallback terminal width before the first frame renders.
+    private static final int DEFAULT_VIEWPORT_COLUMNS = 120;
+
+    /// Fallback terminal height before the first frame renders.
+    private static final int DEFAULT_VIEWPORT_ROWS = 40;
+
     /// Side channel from a list screen's render → its handle: the visible
     /// row count the screen settled on. Used to size PgDn/PgUp jumps so
     /// they advance by exactly one viewport instead of a hard-coded 20.
     private static int observedViewportRows = -1;
+
+    /// Side channel used by horizontally scrolling screens to keep key
+    /// handling consistent with the most recently rendered column window.
+    private static int observedViewportColumns = -1;
+
+    /// Side channel from Data preview's render → its handle. The record modal
+    /// derives its wrapping budget and viewport height from the area it is
+    /// drawn into, and the key handler has to reach the same answers as the
+    /// drawing code — which field is expandable, how far a page scrolls.
+    /// Scoped to the one screen that owns it: a second writer would silently
+    /// change how the modal navigates.
+    private static int observedDataPreviewWidth = -1;
+    private static int observedDataPreviewHeight = -1;
 
     /// Called by a list screen's `render` to record the body row count it
     /// can show. The next `handle` will use this as the PgDn/PgUp stride.
@@ -80,18 +99,58 @@ public final class Keys {
         return observedViewportRows > 0 ? observedViewportRows : PAGE_STRIDE;
     }
 
-    /// True iff a screen has rendered and recorded a viewport size — used
-    /// by Data preview to gate viewport-driven page resizing so unit tests
-    /// that supply an explicit page size aren't overridden.
-    public static boolean hasObservedViewport() {
-        return observedViewportRows > 0;
+    /// Content width of the modal the last frame rendered. Modals wrap their
+    /// content, so the key handler needs the same width the renderer used to
+    /// agree with it on the line count.
+    private static int observedModalWidth = -1;
+
+    /// Called by [ScrollPane#renderModal] with the width it wrapped to.
+    public static void observeModalWidth(int columns) {
+        observedModalWidth = Math.max(1, columns);
     }
 
-    /// Test hook — clears the observed viewport so handler-only tests
-    /// that ran after a render-path test don't see a viewport seeded
-    /// by that render and trigger unwanted auto-resize.
-    public static void resetObservedViewport() {
+    /// Most recently observed modal content width, or a pre-render fallback.
+    public static int modalWidth() {
+        return observedModalWidth > 0 ? observedModalWidth : DEFAULT_VIEWPORT_COLUMNS;
+    }
+
+    /// Records the terminal width used by horizontally scrolling screens.
+    public static void observeViewportWidth(int columns) {
+        observedViewportColumns = Math.max(1, columns);
+    }
+
+    /// Most recently observed terminal width, or a pre-render fallback.
+    public static int viewportWidth() {
+        return observedViewportColumns > 0 ? observedViewportColumns : DEFAULT_VIEWPORT_COLUMNS;
+    }
+
+    /// Called by Data preview's `render` to record the area it was drawn into.
+    public static void observeDataPreviewArea(int width, int height) {
+        observedDataPreviewWidth = Math.max(1, width);
+        observedDataPreviewHeight = Math.max(1, height);
+    }
+
+    /// Width of the area Data preview last rendered into, or a pre-render
+    /// fallback.
+    public static int dataPreviewAreaWidth() {
+        return observedDataPreviewWidth > 0 ? observedDataPreviewWidth : DEFAULT_VIEWPORT_COLUMNS;
+    }
+
+    /// Height of the area Data preview last rendered into, or a pre-render
+    /// fallback.
+    public static int dataPreviewAreaHeight() {
+        return observedDataPreviewHeight > 0 ? observedDataPreviewHeight : DEFAULT_VIEWPORT_ROWS;
+    }
+
+    /// Test hook — clears every observed geometry so handler-only tests that
+    /// ran after a render-path test don't see a viewport or area seeded by
+    /// that render and trigger unwanted auto-resize.
+    public static void resetObservedGeometry() {
         observedViewportRows = -1;
+        observedViewportColumns = -1;
+        observedModalWidth = -1;
+        observedDataPreviewWidth = -1;
+        observedDataPreviewHeight = -1;
     }
 
     /// Conditional-keybar builder. Each `add(enabled, binding)` appends the
@@ -99,11 +158,15 @@ public final class Keys {
     /// lists exactly the keys that have a meaningful effect in the current
     /// screen state. Callers should phrase enablement at the
     /// "would-pressing-this-do-something-visible" level.
+    ///
+    /// An empty binding is dropped rather than separated, so a fragment
+    /// produced elsewhere — [ScrollPane#hints(int,int)], say — can be added
+    /// unconditionally and contribute nothing when it is empty.
     public static final class Hints {
         private final StringBuilder sb = new StringBuilder();
 
         public Hints add(boolean enabled, String binding) {
-            if (enabled) {
+            if (enabled && !binding.isEmpty()) {
                 if (!sb.isEmpty()) {
                     sb.append("  ");
                 }

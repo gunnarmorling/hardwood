@@ -41,9 +41,29 @@ Stage 5 settles three things:
 
 Leaf physical type stays `INT32` for the shredding increments; type breadth is stage
 12 and rides unchanged on top of the level machinery. Dictionary encoding (stage 9),
-compression (stage 10), and statistics (stage 11) layer on afterwards. The writer
-emits the canonical 3-level `LIST` and 2-level `MAP` layouts only; the legacy
-backward-compatibility list shapes the reader tolerates on read are not produced.
+compression (stage 10), and statistics (stage 11) layer on afterwards.
+
+`FileSchema.Builder` declares the canonical 3-level `LIST` and 2-level `MAP` layouts
+only. A schema the caller did not build — one read from an existing file through
+`FileSchema.fromSchemaElements` — may carry a legacy shape, and the writer's rule for
+those is that repetition is producible exactly where a `LIST` or `MAP` annotation
+accounts for it: the annotated group is what gives the shredder a repetition layer and
+`ColumnBatch` a path to address its entry offsets under.
+
+An annotation accounts for one repetition, its entry's. So an annotated group is
+`REQUIRED` or `OPTIONAL` and holds exactly one `REPEATED` field, which for a `MAP` is a
+group of `key` and `value`. Both legacy 2-level lists satisfy that and are written:
+`LIST { repeated element }`, whose entry is the element, and
+`LIST { repeated group element { … } }`, whose entry is an element struct. Everything
+else repeated is refused by `ParquetFileWriter.create`:
+
+- a `repeated` leaf or group with no annotated parent, because nothing could supply its
+  entry offsets and shredding it would emit one entry per record — every value its own
+  one-element list;
+- an annotated group that repeats on its own behalf, holds more than its entry, or holds
+  an entry that does not repeat, because the shredder derives one layer from the
+  annotation while the schema declares a different number of repetition levels, and the
+  file's levels and schema then disagree.
 
 ## Path addressing model
 
@@ -316,7 +336,7 @@ the serializer writes it — so neither is complete without the other.
 **Struct with a nullable leaf** — `address: {street, zip?}`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .ints("id", ids)
         .struct("address", addrPresent)              // omit ⇒ all structs present
         .ints("address.street", streets)
@@ -326,7 +346,7 @@ writer.writeBatch(b -> b
 **List of nullable int** — `phones: [int?]`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .list("phones", phoneOffsets, phonesPresent)     // list-null validity + offsets
         .ints("phones.list.element", phoneValues, elemNulls));
 ```
@@ -334,7 +354,7 @@ writer.writeBatch(b -> b
 **Map of int to int** — `props: {int: int?}`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .map("props", entryOffsets, propsPresent)
         .ints("props.key_value.key", keys)
         .ints("props.key_value.value", values, valueNulls));
@@ -343,7 +363,7 @@ writer.writeBatch(b -> b
 **List of struct** — `people: [{name, age?}]`:
 
 ```java
-writer.writeBatch(b -> b
+columns.writeBatch(b -> b
         .list("people", offsets, peoplePresent)
         .struct("people.list.element", elemPresent)      // omit if the element is REQUIRED
         .ints("people.list.element.name", names)

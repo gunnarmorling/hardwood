@@ -4,6 +4,20 @@
 of [WRITER_SUPPORT.md](WRITER_SUPPORT.md). This document is the reference the dictionary
 increment implements against.
 
+**Superseded in part by later stages.** How a chunk's encoding is *chosen* has moved twice
+since; the dictionary page layout, the `RLE_DICTIONARY` index stream, and how both ride with
+the level streams are as described here.
+
+- **Stage 18** ([WRITER_DICTIONARY_SELECTION.md](WRITER_DICTIONARY_SELECTION.md), complete):
+  the streaming build with a mid-chunk `PLAIN` fallback described here is replaced by a
+  choice taken once the row group is buffered, so no chunk mixes encodings and no dictionary
+  page is written for a chunk that ends up `PLAIN`. `WriterConfig.dictionaryPageLimitBytes`,
+  the threshold that triggered the fallback, is removed with it; the memory bound that
+  remains is derived from `rowGroupBufferTargetBytes`.
+- **Stage 19** ([WRITER_CODECS_AND_ENCODINGS.md](WRITER_CODECS_AND_ENCODINGS.md), complete):
+  `WriterConfig.enableDictionary` is replaced by a per-leaf-column encoding policy, whose
+  default `AUTO` is that choice and whose other values name an encoding outright.
+
 ## Context
 
 Through stage 8 every value section a page carries is `PLAIN`: after the optional
@@ -55,8 +69,8 @@ Dictionary encoding is exercised on `REQUIRED`, `OPTIONAL`, and nested (`struct`
 type stays `INT32`; type breadth (stage 12) repeats this proven mechanism for the remaining
 types — most importantly `BYTE_ARRAY`, where dictionary encoding is the dominant real-world
 encoding — inheriting the page and chunk layout unchanged. Compression (stage 10) and
-statistics (stage 11) layer on afterwards. `DELTA_*` and `BYTE_STREAM_SPLIT` remain out of
-scope (stage 14). Only the modern `RLE_DICTIONARY` form is produced; the deprecated
+statistics (stage 11) layer on afterwards. `DELTA_*` and `BYTE_STREAM_SPLIT` are out of
+scope here and arrive in stage 19. Only the modern `RLE_DICTIONARY` form is produced; the deprecated
 `PLAIN_DICTIONARY` (which the reader still tolerates) is not written.
 
 ## Column-chunk layout
@@ -156,7 +170,7 @@ from the start with no dictionary page — the stage 1–8 behaviour.
 
 The mid-chunk fallback described here is the stage-9 mechanism: the encoding is chosen
 value-by-value from a byte-limit heuristic, so a chunk can carry an `RLE_DICTIONARY` prefix
-followed by `PLAIN` pages. Stage 16 ([WRITER_SUPPORT.md](WRITER_SUPPORT.md)) replaces the
+followed by `PLAIN` pages. Stage 18 ([WRITER_SUPPORT.md](WRITER_SUPPORT.md)) replaces the
 heuristic with a row-group-global decision taken once the group is buffered — each chunk is
 encoded `RLE_DICTIONARY` or `PLAIN` as a whole from its true cardinality, so no chunk mixes
 encodings and no dictionary page is written for a chunk that ends up `PLAIN`. The

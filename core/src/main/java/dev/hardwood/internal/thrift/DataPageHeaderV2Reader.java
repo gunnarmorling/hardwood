@@ -10,6 +10,7 @@ package dev.hardwood.internal.thrift;
 import java.io.IOException;
 
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.Statistics;
 
@@ -31,62 +32,69 @@ public class DataPageHeaderV2Reader {
         int numNulls = 0;
         int numRows = 0;
         Encoding encoding = null;
+        int encodingValue = -1;
         int definitionLevelsByteLength = 0;
         int repetitionLevelsByteLength = 0;
         boolean isCompressed = true; // Default value per Parquet spec
         Statistics statistics = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // num_values
-                    numValues = reader.readNonNegativeI32("DataPageHeaderV2.num_values");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numValues = reader.readNonNegativeI32("DataPageHeaderV2.num_values");
+                    }
                     break;
                 case 2: // num_nulls
-                    numNulls = reader.readNonNegativeI32("DataPageHeaderV2.num_nulls");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numNulls = reader.readNonNegativeI32("DataPageHeaderV2.num_nulls");
+                    }
                     break;
                 case 3: // num_rows
-                    numRows = reader.readNonNegativeI32("DataPageHeaderV2.num_rows");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        numRows = reader.readNonNegativeI32("DataPageHeaderV2.num_rows");
+                    }
                     break;
                 case 4: // encoding
-                    encoding = ThriftEnumLookup.encoding(reader.readI32());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        encodingValue = reader.readI32();
+                        encoding = ThriftEnumLookup.encoding(encodingValue);
+                    }
                     break;
                 case 5: // definition_levels_byte_length
-                    definitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.definition_levels_byte_length");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        definitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.definition_levels_byte_length");
+                    }
                     break;
                 case 6: // repetition_levels_byte_length
-                    repetitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.repetition_levels_byte_length");
+                    if (reader.acceptField(header, Codes.I32)) {
+                        repetitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.repetition_levels_byte_length");
+                    }
                     break;
-                case 7: // is_compressed (boolean encoded in type: 0x01=true, 0x02=false)
-                    if (header.type() == 0x01) {
-                        isCompressed = true;
-                    }
-                    else if (header.type() == 0x02) {
-                        isCompressed = false;
-                    }
-                    else {
-                        reader.skipField(header.type());
-                    }
+                case 7: // is_compressed
+                    isCompressed = reader.readBooleanField(header, isCompressed);
                     break;
                 case 8: // statistics
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         statistics = StatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
 
-        return new DataPageHeaderV2(numValues, numNulls, numRows, encoding,
+        if (encoding == null) {
+            throw new IOException("DataPageHeaderV2 missing required field: encoding");
+        }
+
+        return new DataPageHeaderV2(numValues, numNulls, numRows, encoding, encodingValue,
                 definitionLevelsByteLength, repetitionLevelsByteLength, isCompressed, statistics);
     }
 }

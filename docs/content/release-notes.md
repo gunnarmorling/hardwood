@@ -20,6 +20,9 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
 - `hardwood help <command>` is removed — use `hardwood <command> --help` (or `-h`)
 - Shell completion scripts are now generated for zsh and fish in addition to bash
 - The native `hardwood` binary now reads LZ4 and LZ4_RAW compressed files
+- Byte sizes printed by the CLI and the `dive` TUI carry binary unit labels (`KiB`, `MiB`, `GiB`), matching the 1024-based scaling they have always used
+- `hardwood convert --format json` writes numbers and booleans as JSON scalars instead of quoted strings, and a null as `null` instead of the string `"null"`
+- `hardwood convert --format csv` writes a null as an empty field instead of the text `null`, which collided with a string value of `null`; the new `--null-string` option picks a different representation, e.g. `--null-string '\N'`
 
 ## 1.0.0.Final (2026-06-25)
 

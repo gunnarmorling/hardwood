@@ -665,9 +665,8 @@ class FilterPredicateTest {
 
     @Test
     void uuidPredicateOnNonUuidColumnThrows() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
-                RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.fixedLengthPrimitive("col", 16, RepetitionType.REQUIRED);
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, col));
 
         assertThatThrownBy(() -> FilterPredicateResolver.resolve(
@@ -1307,8 +1306,8 @@ class FilterPredicateTest {
         Statistics stats = new Statistics(min, max, 0L, null, false);
         ColumnMetaData cmd = new ColumnMetaData(
                 type, List.of(Encoding.PLAIN), FieldPath.of("col"),
-                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats, null, null, null);
-        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null);
+                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats, null, null, null, List.of(), null);
+        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null, "");
         return new RowGroup(List.of(chunk), 1000, 100);
     }
 
@@ -1316,16 +1315,16 @@ class FilterPredicateTest {
         Statistics stats = new Statistics(null, null, nullCount, null, false);
         ColumnMetaData cmd = new ColumnMetaData(
                 type, List.of(Encoding.PLAIN), FieldPath.of("col"),
-                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats, null, null, null);
-        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null);
+                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats, null, null, null, List.of(), null);
+        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null, "");
         return new RowGroup(List.of(chunk), 1000, numRows);
     }
 
     private static RowGroup createRowGroupWithoutStatistics() {
         ColumnMetaData cmd = new ColumnMetaData(
                 PhysicalType.INT32, List.of(Encoding.PLAIN), FieldPath.of("col"),
-                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, null, null, null, null);
-        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null);
+                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, null, null, null, null, List.of(), null);
+        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null, "");
         return new RowGroup(List.of(chunk), 1000, 100);
     }
 
@@ -1347,8 +1346,8 @@ class FilterPredicateTest {
     private static ColumnChunk createGeostatsColumnChunk(GeospatialStatistics geospatialStatistics) {
         ColumnMetaData cmd = new ColumnMetaData(
                 PhysicalType.BYTE_ARRAY, List.of(Encoding.PLAIN), FieldPath.of("col"),
-                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, null, geospatialStatistics, null, null);
-        return new ColumnChunk(cmd, null, null, null, null);
+                CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, null, geospatialStatistics, null, null, List.of(), null);
+        return new ColumnChunk(cmd, null, null, null, null, "");
     }
 
     private static FileSchema createIntSchema() {
@@ -1376,9 +1375,8 @@ class FilterPredicateTest {
     }
 
     private static FileSchema createUuidSchema() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", PhysicalType.FIXED_LEN_BYTE_ARRAY, 16,
-                RepetitionType.REQUIRED, null, null, null, null, null, new LogicalType.UuidType());
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.fixedLengthPrimitive("col", 16, RepetitionType.REQUIRED, new LogicalType.UuidType());
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 
@@ -1392,14 +1390,14 @@ class FilterPredicateTest {
 
     private static FileSchema createSchemaForType(PhysicalType type) {
         // Root element + one column
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", type, null, RepetitionType.REQUIRED, null, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.primitive("col", type, RepetitionType.REQUIRED);
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 
     private static FileSchema createSchemaForType(PhysicalType type, LogicalType logicalType) {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement col = new SchemaElement("col", type, null, RepetitionType.REQUIRED, null, null, null, null, null, logicalType);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement col = SchemaElement.primitive("col", type, RepetitionType.REQUIRED, logicalType);
         return FileSchema.fromSchemaElements(List.of(root, col));
     }
 

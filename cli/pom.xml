@@ -244,6 +244,12 @@
       <artifactId>hardwood-test-support</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Parses the emitted Avro schema in SchemaCommandTest -->
+    <dependency>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <profiles>
@@ -313,6 +319,14 @@
                     <property>
                       <key>tamboui.record.fps</key>
                       <value>30</value>
+                    </property>
+                    <!-- Pins the Solarized palette into the captured SVGs. Without it the
+                         recording inherits the terminal's $COLORTERM, so regenerating from a
+                         non-truecolor terminal silently rewrites every checked-in screenshot
+                         to the named-ANSI fallback. -->
+                    <property>
+                      <key>hardwood.dive.truecolor</key>
+                      <value>true</value>
                     </property>
                   </systemProperties>
                 </configuration>
@@ -599,19 +613,6 @@
   </profiles>
 
   <build>
-    <resources>
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>false</filtering>
-      </resource>
-      <resource>
-        <directory>src/main/resources</directory>
-        <filtering>true</filtering>
-        <includes>
-          <include>application.properties</include>
-        </includes>
-      </resource>
-    </resources>
     <plugins>
       <!-- Copy test Parquet files from core into this module's test-classes so they
            are accessible on the classpath during tests -->
@@ -667,8 +668,8 @@
 
       <!-- Run native integration tests during the integration-test phase.
            Skipped by default; enabled when the native profile sets skipITs=false.
-           native.image.path tells the Quarkus integration-test extension where
-           to find the compiled native binary. -->
+           native.image.path tells the native ITs where to find the compiled
+           binary. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>

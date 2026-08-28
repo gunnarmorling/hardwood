@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.PageLocation;
 
 /// Reader for PageLocation from Thrift Compact Protocol.
@@ -30,38 +31,29 @@ public class PageLocationReader {
         long firstRowIndex = 0;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // offset (i64)
-                    if (header.type() == 0x06) {
-                        offset = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I64)) {
+                        offset = reader.readNonNegativeI64("PageLocation.offset");
                     }
                     break;
                 case 2: // compressed_page_size (i32)
-                    if (header.type() == 0x05) {
-                        compressedPageSize = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        compressedPageSize = reader.readNonNegativeI32("PageLocation.compressed_page_size");
                     }
                     break;
                 case 3: // first_row_index (i64)
-                    if (header.type() == 0x06) {
-                        firstRowIndex = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I64)) {
+                        firstRowIndex = reader.readNonNegativeI64("PageLocation.first_row_index");
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

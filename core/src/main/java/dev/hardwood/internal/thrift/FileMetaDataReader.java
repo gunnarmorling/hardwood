@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import dev.hardwood.internal.EncryptedParquetException;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
@@ -23,87 +24,64 @@ import dev.hardwood.metadata.SchemaElement;
 public class FileMetaDataReader {
 
     public static FileMetaData read(ThriftCompactReader reader) throws IOException {
-        reader.resetLastFieldId();
+        short saved = reader.pushFieldIdContext();
+        try {
+            return readInternal(reader);
+        }
+        finally {
+            reader.popFieldIdContext(saved);
+        }
+    }
 
+    private static FileMetaData readInternal(ThriftCompactReader reader) throws IOException {
         int version = 0;
-        List<SchemaElement> schema = new ArrayList<>();
+        List<SchemaElement> schema = Collections.emptyList();
         long numRows = 0;
-        List<RowGroup> rowGroups = new ArrayList<>();
+        List<RowGroup> rowGroups = Collections.emptyList();
         Map<String, String> keyValueMetadata = Collections.emptyMap();
         String createdBy = null;
         List<ColumnOrder> columnOrders = Collections.emptyList();
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // version
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         version = reader.readI32();
                     }
-                    else {
-                        reader.skipField(header.type());
-                    }
                     break;
-                case 2: // schema
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            schema.add(SchemaElementReader.read(reader));
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 2: // schema (required list<SchemaElement>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        schema = reader.readStructList("FileMetaData.schema", SchemaElementReader::read);
                     }
                     break;
                 case 3: // num_rows
-                    if (header.type() == 0x06) {
-                        numRows = reader.readI64();
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I64)) {
+                        numRows = reader.readNonNegativeI64("FileMetaData.num_rows");
                     }
                     break;
-                case 4: // row_groups
-                    if (header.type() == 0x09) {
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            rowGroups.add(RowGroupReader.read(reader));
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                case 4: // row_groups (required list<RowGroup>)
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        rowGroups = reader.readStructList("FileMetaData.row_groups", RowGroupReader::read);
                     }
                     break;
                 case 5: // key_value_metadata (optional list<KeyValue>)
-                    if (header.type() == 0x09) { // LIST
-                        keyValueMetadata = KeyValueMetadataReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        keyValueMetadata = KeyValueMetadataReader.read(reader, "FileMetaData.key_value_metadata");
                     }
                     break;
                 case 6: // created_by (optional)
-                    if (header.type() == 0x08) {
+                    if (reader.acceptField(header, Codes.BINARY)) {
                         createdBy = reader.readString();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 7: // column_orders (optional list<ColumnOrder>)
-                    if (header.type() == 0x09) { // LIST
-                        ThriftCompactReader.CollectionHeader listHeader = reader.readListHeader();
-                        columnOrders = new ArrayList<>(listHeader.size());
-                        for (int i = 0; i < listHeader.size(); i++) {
-                            columnOrders.add(ColumnOrderReader.read(reader));
-                        }
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.LIST)) {
+                        columnOrders = readColumnOrders(reader);
                     }
                     break;
                 case 8: // encryption_algorithm (present only with a plaintext footer)
@@ -112,12 +90,28 @@ public class FileMetaDataReader {
                     // later page scan crash with an unattributable error.
                     throw new EncryptedParquetException();
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
 
         return new FileMetaData(version, schema, numRows, rowGroups, keyValueMetadata, createdBy,
                 columnOrders);
+    }
+
+    /// The column orders are optional and only refine how statistics are compared, so a list
+    /// this reader will not decode leaves them empty — the same shape as a writer that omits
+    /// the field.
+    private static List<ColumnOrder> readColumnOrders(ThriftCompactReader reader) throws IOException {
+        long listHeader =
+                reader.acceptListHeader(Codes.STRUCT, "FileMetaData.column_orders");
+        if (listHeader == ThriftCompactReader.ABSENT_LIST) {
+            return List.of();
+        }
+        List<ColumnOrder> orders = new ArrayList<>(ThriftCompactReader.listSize(listHeader));
+        for (int i = 0; i < ThriftCompactReader.listSize(listHeader); i++) {
+            orders.add(ColumnOrderReader.read(reader));
+        }
+        return Collections.unmodifiableList(orders);
     }
 }

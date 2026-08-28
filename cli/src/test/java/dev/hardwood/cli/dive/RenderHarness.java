@@ -74,7 +74,7 @@ final class RenderHarness {
             case ScreenState.Overview s -> OverviewScreen.keybarKeys(s, model);
             case ScreenState.Schema s -> SchemaScreen.keybarKeys(s, model);
             case ScreenState.RowGroups s -> RowGroupsScreen.keybarKeys(s, model);
-            case ScreenState.RowGroupDetail s -> RowGroupDetailScreen.keybarKeys(s);
+            case ScreenState.RowGroupDetail s -> RowGroupDetailScreen.keybarKeys(s, model);
             case ScreenState.RowGroupIndexes s -> RowGroupIndexesScreen.keybarKeys(s, model);
             case ScreenState.ColumnChunks s -> ColumnChunksScreen.keybarKeys(s, model);
             case ScreenState.ColumnChunkDetail s -> ColumnChunkDetailScreen.keybarKeys(s, model);

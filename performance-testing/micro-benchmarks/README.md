@@ -44,11 +44,21 @@ allocation profiling, `-rf json -rff out.json` for machine-readable results,
 | `nested/NestedListReadBenchmark` | `LIST<primitive>` reads across element types and null densities vs. a flat floor | self-generating (`NestedListFileGenerator`) |
 | `nested/NestedMultiListReadBenchmark` | Multi-list-column schema effects on the nested read path | self-generating (`NestedListFileGenerator`) |
 | `mixed/MixedSchemaReadBenchmark` | Schema-composition effects (scalars next to lists, structs, depth) on the nested path (#732) | self-generating (`MixedSchemaFileGenerator`) |
+| `wide/WideSchemaMetadataBenchmark` | Footer decode, schema build and `open()` for 10 … 100,000 `FLOAT64` columns (#919) | self-generating (`WideSchemaFileGenerator`) |
+| `wide/WideSchemaMetadataParquetJavaBenchmark` | The same three steps through parquet-java, over the same fixtures | self-generating (`WideSchemaFileGenerator`) |
 
 Python generator scripts live in the parent `performance-testing/` directory and
 default their output to `performance-testing/test-data-setup/target/benchmark-data`;
 pass that directory as `-p dataDir=...`. Fixture generation is idempotent —
 existing files are skipped.
+
+The widest wide-schema fixture (100,000 columns × 10 row groups) is a ~150 MB file
+with a ~69 MB footer that decodes into ~270 MB of live metadata and allocates
+~300 MB per decode. The wide-schema benchmarks fork with `-Xmx8g` so that allocation
+rate does not turn the result into a GC measurement; they run correctly on far less.
+Narrow the sweep with `-p columns=10,100,1000` to keep the run small. Run them
+together — the class filter `WideSchemaMetadata` matches both — to get the Hardwood
+and parquet-java numbers in one table.
 
 ## Correctness gates
 

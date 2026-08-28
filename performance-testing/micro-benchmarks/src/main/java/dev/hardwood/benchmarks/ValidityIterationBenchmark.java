@@ -40,7 +40,7 @@ import dev.hardwood.Validity;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @State(Scope.Benchmark)
-@Fork(value = 1, jvmArgs = { "-Xms512m", "-Xmx512m" })
+@Fork(value = 1, jvmArgsAppend = { "-Xms512m", "-Xmx512m" })
 @Warmup(iterations = 2, time = 1)
 @Measurement(iterations = 3, time = 1)
 public class ValidityIterationBenchmark {

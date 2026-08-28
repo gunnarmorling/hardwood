@@ -8,6 +8,7 @@
 package dev.hardwood.cli.dive.internal;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import dev.hardwood.cli.dive.NavigationStack;
@@ -16,6 +17,7 @@ import dev.hardwood.cli.dive.ScreenState;
 import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.IndexValueFormatter;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
 import dev.hardwood.internal.metadata.DictionaryPageHeader;
@@ -23,6 +25,7 @@ import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
+import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
 import dev.tamboui.buffer.Buffer;
@@ -31,12 +34,10 @@ import dev.tamboui.layout.Rect;
 import dev.tamboui.style.Style;
 import dev.tamboui.text.Line;
 import dev.tamboui.text.Span;
-import dev.tamboui.text.Text;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.BorderType;
 import dev.tamboui.widgets.block.Borders;
-import dev.tamboui.widgets.paragraph.Paragraph;
 import dev.tamboui.widgets.table.Row;
 import dev.tamboui.widgets.table.Table;
 import dev.tamboui.widgets.table.TableState;
@@ -45,6 +46,38 @@ import dev.tamboui.widgets.table.TableState;
 /// the full thrift page header; Esc in the modal closes it, Esc on the list
 /// pops back to Column chunk detail.
 public final class PagesScreen {
+
+    /// The fixed-width columns, in display order. Header label and cell width
+    /// travel together so they cannot drift, and the widths feed [#statBudget]
+    /// rather than being restated there as a literal.
+    private enum Col {
+        NUM("#", 4),
+        TYPE("Type", 16),
+        FIRST_ROW("First row", 12),
+        VALUES("Values", 10),
+        /// Fits `DELTA_LENGTH_BYTE_ARRAY`, the longest encoding name.
+        ENCODING("Encoding", 23),
+        COMP("Comp", 10),
+        UNCOMP("Uncomp", 10),
+        NULLS("Nulls", 10);
+
+        private final String label;
+        private final int width;
+
+        Col(String label, int width) {
+            this.label = label;
+            this.width = width;
+        }
+    }
+
+    /// Cached so rendering a frame does not clone the constant pool array.
+    private static final Col[] COLUMNS = Col.values();
+    /// Min and Max, appended when the chunk carries statistics. They fill the
+    /// width the fixed columns leave, so they are not part of [Col].
+    private static final String[] STAT_LABELS = {"Min", "Max"};
+    private static final int STAT_COLUMN_COUNT = STAT_LABELS.length;
+    private static final int TABLE_BORDER_WIDTH = 2;
+    private static final int HIGHLIGHT_SYMBOL_WIDTH = 2;
 
     private PagesScreen() {
     }
@@ -62,7 +95,7 @@ public final class PagesScreen {
         // on a data page.
         boolean onDataPage = !headers.isEmpty()
                 && state.selection() < headers.size()
-                && headers.get(state.selection()).type() != PageHeader.PageType.DICTIONARY_PAGE;
+                && headers.get(state.selection()).type() != PageType.DICTIONARY_PAGE;
         if (event.code() == dev.tamboui.tui.event.KeyCode.CHAR && event.character() == 't'
                 && !event.hasCtrl() && !event.hasAlt() && onDataPage) {
             stack.replaceTop(new ScreenState.Pages(
@@ -77,32 +110,21 @@ public final class PagesScreen {
                         state.scrollTop()));
                 return true;
             }
-            return false;
-        }
-        if (Keys.isStepUp(event)) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - 1), logical));
+            int next = ScrollPane.scroll(event, state.modalScroll(),
+                    modalLineCount(model, state), Keys.viewportStride());
+            if (next == ScrollPane.UNHANDLED) {
+                return false;
+            }
+            if (next != state.modalScroll()) {
+                stack.replaceTop(new ScreenState.Pages(
+                        state.rowGroupIndex(), state.columnIndex(), state.selection(), true, logical,
+                        state.scrollTop(), next));
+            }
             return true;
         }
-        if (Keys.isStepDown(event)) {
-            stack.replaceTop(moved(state, Math.min(headers.size() - 1, state.selection() + 1), logical));
-            return true;
-        }
-        if (Keys.isPageDown(event) && !headers.isEmpty()) {
-            stack.replaceTop(moved(state,
-                    Math.min(headers.size() - 1, state.selection() + Keys.viewportStride()), logical));
-            return true;
-        }
-        if (Keys.isPageUp(event) && !headers.isEmpty()) {
-            stack.replaceTop(moved(state,
-                    Math.max(0, state.selection() - Keys.viewportStride()), logical));
-            return true;
-        }
-        if (Keys.isJumpTop(event) && !headers.isEmpty()) {
-            stack.replaceTop(moved(state, 0, logical));
-            return true;
-        }
-        if (Keys.isJumpBottom(event) && !headers.isEmpty()) {
-            stack.replaceTop(moved(state, headers.size() - 1, logical));
+        int selected = CursorPane.select(event, state.selection(), headers.size());
+        if (selected != CursorPane.UNHANDLED) {
+            stack.replaceTop(moved(state, selected, logical));
             return true;
         }
         if (event.isConfirm() && !headers.isEmpty()) {
@@ -131,7 +153,7 @@ public final class PagesScreen {
         // anywhere (no ColumnIndex AND no inline statistics on any page). Every
         // row would be "—" otherwise, pure visual noise.
         boolean hasAnyStats = columnIndex != null || headers.stream()
-                .anyMatch(h -> h.type() != PageHeader.PageType.DICTIONARY_PAGE && inlineStats(h) != null);
+                .anyMatch(h -> h.type() != PageType.DICTIONARY_PAGE && inlineStats(h) != null);
         // Build Row objects only for the visible window — see RowWindow.
         RowWindow window = RowWindow.from(state.scrollTop(), state.selection(),
                 headers.size(), area.height() - 3);
@@ -140,11 +162,12 @@ public final class PagesScreen {
         // by counting non-dict pages in the skipped prefix.
         int dataPageIdx = 0;
         for (int i = 0; i < window.start(); i++) {
-            if (headers.get(i).type() != PageHeader.PageType.DICTIONARY_PAGE) {
+            if (headers.get(i).type() != PageType.DICTIONARY_PAGE) {
                 dataPageIdx++;
             }
         }
         List<Row> rows = new ArrayList<>(window.size());
+        int statBudget = statBudget(area.width());
         for (int i = window.start(); i < window.end(); i++) {
             PageHeader h = headers.get(i);
             String firstRow = "—";
@@ -153,7 +176,7 @@ public final class PagesScreen {
             String nulls = "—";
             int values;
             String uncompressed = Sizes.format(h.uncompressedPageSize());
-            if (h.type() == PageHeader.PageType.DICTIONARY_PAGE) {
+            if (h.type() == PageType.DICTIONARY_PAGE) {
                 DictionaryPageHeader dph = h.dictionaryPageHeader();
                 values = dph != null ? dph.numValues() : 0;
             }
@@ -164,18 +187,18 @@ public final class PagesScreen {
                     firstRow = Fmt.fmt("%,d", loc.firstRowIndex());
                 }
                 if (columnIndex != null && dataPageIdx < columnIndex.getPageCount()) {
-                    min = formatStat(columnIndex.minValues().get(dataPageIdx), col, state.logicalTypes());
-                    max = formatStat(columnIndex.maxValues().get(dataPageIdx), col, state.logicalTypes());
+                    min = formatStat(columnIndex.minValues().get(dataPageIdx), col, state.logicalTypes(), statBudget);
+                    max = formatStat(columnIndex.maxValues().get(dataPageIdx), col, state.logicalTypes(), statBudget);
                     if (columnIndex.nullCounts() != null
-                            && dataPageIdx < columnIndex.nullCounts().size()) {
-                        nulls = Fmt.fmt("%,d", columnIndex.nullCounts().get(dataPageIdx));
+                            && dataPageIdx < columnIndex.nullCounts().length) {
+                        nulls = Fmt.fmt("%,d", columnIndex.nullCounts()[dataPageIdx]);
                     }
                 }
                 else {
                     Statistics inline = inlineStats(h);
                     if (inline != null) {
-                        min = formatStat(inline.minValue(), col, state.logicalTypes());
-                        max = formatStat(inline.maxValue(), col, state.logicalTypes());
+                        min = formatStat(inline.minValue(), col, state.logicalTypes(), statBudget);
+                        max = formatStat(inline.maxValue(), col, state.logicalTypes(), statBudget);
                         if (inline.nullCount() != null) {
                             nulls = Fmt.fmt("%,d", inline.nullCount());
                         }
@@ -208,42 +231,20 @@ public final class PagesScreen {
                         nulls));
             }
         }
-        Row header = hasAnyStats
-                ? Row.from("#", "Type", "First row", "Values", "Encoding", "Comp", "Uncomp", "Nulls", "Min", "Max")
-                        .style(Theme.accent().bold())
-                : Row.from("#", "Type", "First row", "Values", "Encoding", "Comp", "Uncomp", "Nulls")
-                        .style(Theme.accent().bold());
+        Row header = header(hasAnyStats);
         String titleSuffix = hasAnyStats ? "" : " (no column index)";
         String typeMode = state.logicalTypes() ? "" : " · physical";
         Block block = Block.builder()
                 .title(" Pages "
-                        + Plurals.rangeOf(state.selection(), headers.size(), Keys.viewportStride())
+                        + Plurals.rangeOf(window, headers.size())
                         + titleSuffix + typeMode + " ")
                 .borders(Borders.ALL)
                 .borderType(BorderType.ROUNDED)
                 .build();
-        List<Constraint> widths = new ArrayList<>();
-        widths.add(new Constraint.Length(4));   // #
-        widths.add(new Constraint.Length(16));  // Type
-        widths.add(new Constraint.Length(12));  // First row
-        widths.add(new Constraint.Length(10));  // Values
-        widths.add(new Constraint.Length(23));  // Encoding (fits DELTA_LENGTH_BYTE_ARRAY = 23)
-        widths.add(new Constraint.Length(10));  // Comp
-        widths.add(new Constraint.Length(10));  // Uncomp
-        widths.add(new Constraint.Length(10));  // Nulls
-        if (hasAnyStats) {
-            // Fixed Length(20) so the cell width is known at format time
-            // and our `…` truncation indicator (added by formatStat when
-            // the value exceeds TABLE_STAT_MAX) is always visible. With
-            // Fill(1) the cell could end up narrower than our cap, in
-            // which case tamboui clipped past the `…` and hid it.
-            widths.add(new Constraint.Length(20)); // Min
-            widths.add(new Constraint.Length(20)); // Max
-        }
         Table table = Table.builder()
                 .header(header)
                 .rows(rows)
-                .widths(widths)
+                .widths(widths(hasAnyStats))
                 .columnSpacing(1)
                 .block(block)
                 .highlightSymbol("▶ ")
@@ -258,7 +259,7 @@ public final class PagesScreen {
         if (state.modalOpen() && !headers.isEmpty()) {
             buffer.setStyle(area, Theme.dim());
             renderHeaderModal(buffer, area, headers.get(state.selection()), state.selection(), col,
-                    state.logicalTypes());
+                    state.logicalTypes(), state.modalScroll());
         }
     }
 
@@ -266,7 +267,7 @@ public final class PagesScreen {
         if (state.modalOpen()) {
             return "";
         }
-        java.util.List<PageHeader> headers = model.pageHeaders(state.rowGroupIndex(), state.columnIndex());
+        List<PageHeader> headers = model.pageHeaders(state.rowGroupIndex(), state.columnIndex());
         int count = headers.size();
         ColumnSchema col = model.schema().getColumn(state.columnIndex());
         // `t` toggles logical-type rendering of inline-stats Min / Max,
@@ -275,12 +276,10 @@ public final class PagesScreen {
         // DICTIONARY_PAGE row.
         boolean onDataPage = count > 0
                 && state.selection() < count
-                && headers.get(state.selection()).type() != PageHeader.PageType.DICTIONARY_PAGE;
+                && headers.get(state.selection()).type() != PageType.DICTIONARY_PAGE;
         boolean hasLogical = col.logicalType() != null && onDataPage;
         return new Keys.Hints()
-                .add(count > 1, "[↑↓] move")
-                .add(count > Keys.viewportStride(), "[PgDn/PgUp or Shift+↓↑] page")
-                .add(count > 1, "[g/G] first/last")
+                .add(true, CursorPane.hints(count))
                 .add(count > 0, "[Enter] view page header")
                 .add(hasLogical, "[t] logical types")
                 .add(true, "[Esc] back")
@@ -310,46 +309,85 @@ public final class PagesScreen {
         return "—";
     }
 
-    /// Used by the table cells, where two Min/Max columns share whatever's
-    /// left after the fixed-width columns. tamboui's Table clips silently,
-    /// so cap the formatted string ourselves and append `…` to make
-    /// truncation visible. The page-header modal calls the un-capped
-    /// `IndexValueFormatter.format` directly.
-    private static final int TABLE_STAT_MAX = 20;
+    private static Row header(boolean hasAnyStats) {
+        int count = hasAnyStats ? COLUMNS.length + STAT_COLUMN_COUNT : COLUMNS.length;
+        String[] labels = new String[count];
+        // The header is two label sources laid end to end: the fixed columns
+        // first, then Min / Max. `count` decides whether the second source is
+        // there at all, so the index alone tells which one to read from.
+        Arrays.setAll(labels, i -> i < COLUMNS.length
+                ? COLUMNS[i].label
+                : STAT_LABELS[i - COLUMNS.length]);
+        return Row.from(labels).style(Theme.accent().bold());
+    }
 
-    private static String formatStat(byte[] bytes, ColumnSchema col, boolean logical) {
-        if (bytes == null) {
-            return "—";
-        }
-        String full = IndexValueFormatter.format(bytes, col, logical);
-        if (full.length() <= TABLE_STAT_MAX) {
-            return full;
-        }
-        return full.substring(0, TABLE_STAT_MAX - 1) + "…";
+    /// Min and Max share the width left after the fixed columns. The renderer
+    /// computes the matching display budget in [#statBudget].
+    private static Constraint[] widths(boolean hasAnyStats) {
+        int count = hasAnyStats ? COLUMNS.length + STAT_COLUMN_COUNT : COLUMNS.length;
+        Constraint[] widths = new Constraint[count];
+        // Same two sources as [#header], in the same order.
+        Arrays.setAll(widths, i -> i < COLUMNS.length
+                ? new Constraint.Length(COLUMNS[i].width)
+                : new Constraint.Fill(1));
+        return widths;
+    }
+
+    /// Used by the table cells, where two Min/Max columns share whatever's
+    /// left after the fixed-width columns. Compute that width before rendering
+    /// and mark the cut with `…`. The table gives the columns everything except
+    /// its border, the selection marker, and one gap between each pair.
+    private static int statBudget(int viewportWidth) {
+        int fixedColumns = Arrays.stream(COLUMNS).mapToInt(column -> column.width).sum();
+        int gaps = COLUMNS.length + STAT_COLUMN_COUNT - 1;
+        return Math.max(1, (viewportWidth - fixedColumns - gaps
+                - TABLE_BORDER_WIDTH - HIGHLIGHT_SYMBOL_WIDTH) / STAT_COLUMN_COUNT);
+    }
+
+    private static String formatStat(byte[] bytes, ColumnSchema col, boolean logical, int budget) {
+        return bytes == null ?
+                "—" :
+                Strings.truncateRight(
+                        IndexValueFormatter.format(bytes, col, logical, budget),
+                        budget);
     }
 
     private static String formatStatFull(byte[] bytes, ColumnSchema col, boolean logical) {
-        if (bytes == null) {
-            return "—";
-        }
-        // Modal has space — bypass the per-string 20-char cap.
-        return IndexValueFormatter.format(bytes, col, logical, false);
+        // Modal has space — no budget constraint, so the whole value is rendered.
+        return bytes == null ?
+                "—" :
+                IndexValueFormatter.format(bytes, col, logical);
     }
 
     private static void renderHeaderModal(Buffer buffer, Rect screenArea, PageHeader header,
-                                          int index, ColumnSchema col, boolean logical) {
+                                          int index, ColumnSchema col, boolean logical, int scroll) {
         // Grow the modal to fill the available area so long inline-stats
-        // values aren't clipped at a fixed 60-cell width (the previous cap
-        // hid the bulk of any UTF-8 string min/max past ~50 chars).
-        int width = Math.max(40, screenArea.width() - 4);
-        int height = Math.max(8, screenArea.height() - 2);
-        int x = screenArea.left() + (screenArea.width() - width) / 2;
-        int y = screenArea.top() + (screenArea.height() - height) / 2;
-        Rect area = new Rect(x, y, width, height);
-        // Wipe the area so the underlying table doesn't bleed through cells
-        // that the Paragraph doesn't paint (Paragraph only writes where text is).
-        dev.tamboui.widgets.Clear.INSTANCE.render(area, buffer);
+        // values aren't clipped at a fixed 60-cell width.
+        Rect area = ScrollPane.modalArea(screenArea, Math.max(40, screenArea.width()), screenArea.height());
+        // Dictionary pages have no inline stats — `t` is a no-op even
+        // when the column carries a logical type, so suppress the hint.
+        boolean onDataPage = header.type() != PageType.DICTIONARY_PAGE;
+        boolean hasLogical = col.logicalType() != null && onDataPage;
+        ScrollPane.renderModal(buffer, area, "Page #" + index + " header",
+                headerModalLines(header, col, logical), scroll,
+                "Esc / Enter close" + (hasLogical ? " · t logical types" : ""));
+    }
 
+    /// Line count of the open header modal, so the key handler and the
+    /// renderer agree on how far it can scroll.
+    private static int modalLineCount(ParquetModel model, ScreenState.Pages state) {
+        List<PageHeader> headers = model.pageHeaders(state.rowGroupIndex(), state.columnIndex());
+        if (headers.isEmpty()) {
+            return 0;
+        }
+        ColumnSchema col = model.schema().getColumn(state.columnIndex());
+        int index = Math.min(state.selection(), headers.size() - 1);
+        return headerModalLines(headers.get(index), col, state.logicalTypes()).size();
+    }
+
+    /// The header modal's content. Shared with the key handler, which needs
+    /// the line count to know how far the modal can scroll.
+    private static List<Line> headerModalLines(PageHeader header, ColumnSchema col, boolean logical) {
         List<Line> lines = new ArrayList<>();
         lines.add(kv("Type", header.type().name()));
         lines.add(kv("Compressed size", Sizes.dualFormat(header.compressedPageSize())));
@@ -388,20 +426,7 @@ public final class PagesScreen {
                 lines.add(kv("  Nulls", Fmt.fmt("%,d", inline.nullCount())));
             }
         }
-        lines.add(Line.empty());
-        // Dictionary pages have no inline stats — `t` is a no-op even
-        // when the column carries a logical type, so suppress the hint.
-        boolean onDataPage = header.type() != PageHeader.PageType.DICTIONARY_PAGE;
-        boolean hasLogical = col.logicalType() != null && onDataPage;
-        String hint = " Esc / Enter close" + (hasLogical ? " · t logical types" : "");
-        lines.add(Line.from(new Span(hint, Theme.dim())));
-
-        Block block = Block.builder()
-                .title(" Page #" + index + " header ")
-                .borders(Borders.ALL)
-                .borderType(BorderType.ROUNDED)
-                .build();
-        Paragraph.builder().block(block).text(Text.from(lines)).left().build().render(area, buffer);
+        return lines;
     }
 
     /// Returns the per-page inline statistics (if any), preferring v2 over v1

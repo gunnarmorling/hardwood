@@ -66,7 +66,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Implement `DictionaryDecoder<T>`
 - [x] Dictionary page serialization
 - [x] Dictionary page deserialization
-- [x] Fallback to plain encoding when dictionary grows too large
+- [x] Chosen against plain encoding per column chunk, by comparing their sizes
 
 ### 2.3 RLE/Bit-Packing Hybrid
 - [x] Implement `RleBitPackingHybridEncoder`
@@ -84,24 +84,24 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Block/miniblock structure
   - [x] Min delta calculation per block
   - [x] Bit width calculation per miniblock
-  - [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+  - [x] Encoder implementation
   - [x] Decoder implementation
 - [x] DELTA_LENGTH_BYTE_ARRAY
   - [x] Length encoding with DELTA_BINARY_PACKED
   - [x] Raw byte concatenation
-  - [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+  - [x] Encoder implementation
   - [x] Decoder implementation
 - [x] DELTA_BYTE_ARRAY
   - [x] Prefix length calculation
   - [x] Suffix extraction
-  - [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+  - [x] Encoder implementation
   - [x] Decoder implementation
 
 ### 2.5 Byte Stream Split (BYTE_STREAM_SPLIT)
 - [x] Float byte separation/interleaving
 - [x] Double byte separation/interleaving
 - [x] FIXED_LEN_BYTE_ARRAY support
-- [ ] Encoder implementation (optional encoding; sequenced as a late writer-breadth increment)
+- [x] Encoder implementation
 - [x] Decoder implementation
 
 ---
@@ -164,7 +164,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Schema elements
   - [x] Num rows
   - [x] Row groups
-  - [x] Key-value metadata
+  - [x] Key-value metadata (decoded onto `FileMetaData.keyValueMetadata`; written at #1029)
   - [x] Created by string
   - [x] Column orders (decoded onto `FileMetaData.columnOrders`; #595)
 - [x] FileMetaData serialization
@@ -179,20 +179,30 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 > record. The boxes below are the fine-grained inventory ticked as increments land.
 
 ### 6.1 Writer Architecture
-- [ ] Implement `ParquetWriter<T>` main class
-- [ ] Implement `WriterConfig` (row group size, page size, dictionary size, codec, version)
-- [ ] Implement `RowGroupWriter`
-- [ ] Implement `ColumnWriter`
-- [ ] Implement `PageWriter`
+- [x] Implement `RowWriter` — the row-oriented layer over the columnar core, obtained from
+  `ParquetFileWriter.rowWriter()` (see `_designs/WRITER_ROW_API.md`)
+- [x] Implement `WriterConfig` (row-group row and buffer targets, page target, per-column encoding policy,
+  codec, statistics truncation, precision-loss policy)
+- [x] Implement `ColumnWriter` — the columnar entry point, obtained from
+  `ParquetFileWriter.columnWriter()`, taking one aligned batch of typed arrays through
+  `ColumnBatch`
+- [x] Row-group and page assembly (`internal.writer.RowGroupBuffer`, `ColumnChunkBuffer`), the
+  internal counterparts of the `RowGroupWriter` / `PageWriter` this inventory first sketched
+- [x] User documentation for the writer public API (`docs/content/`, see
+  [`_designs/WRITER_DOCS.md`](_designs/WRITER_DOCS.md))
 
 ### 6.2 Write Flow
-- [ ] Record buffering
+- [x] Record buffering
 - [x] Row group size tracking
 - [x] Automatic row group flushing
 - [x] Dictionary page writing
-- [x] Data page encoding and writing
-- [x] Page compression
+- [x] Data page encoding and writing (`AUTO` dictionary-or-`PLAIN` per chunk, or a named
+  per-column policy: `PLAIN`, the three delta encodings, `BYTE_STREAM_SPLIT`)
+- [x] Page compression (UNCOMPRESSED, GZIP, SNAPPY, ZSTD, LZ4_RAW, BROTLI; `LZ4`'s deprecated
+  Hadoop framing and `LZO` are refused at writer creation)
 - [x] Footer writing
+- [x] Footer key-value metadata, and `created_by` alongside it, set on `ParquetFileWriter`
+  rather than `WriterConfig` (#1029)
 - [x] File finalization
 
 ### 6.3 Record Shredding (Dremel Algorithm)
@@ -205,10 +215,11 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Optional field handling
 
 ### 6.4 Logical Type Writing
-- [ ] Implement `LogicalTypeWriter` (`LogicalType` union serialization; inverse of `LogicalTypeReader`)
-- [ ] Serialize legacy `converted_type` / `scale` / `precision` on `SchemaElement`
-- [ ] `FileSchema.Builder` logical-type overload (and `FIXED_LEN_BYTE_ARRAY` type length)
-- [ ] Logical-type value conversion in the writer API (inverse of `LogicalTypeConverter`)
+- [x] Implement `LogicalTypeWriter` (`LogicalType` union serialization; inverse of `LogicalTypeReader`)
+- [x] Serialize legacy `converted_type` / `scale` / `precision` on `SchemaElement`
+- [x] `FileSchema.Builder` logical-type overload (and `FIXED_LEN_BYTE_ARRAY` type length)
+- [x] Logical-type value conversion in the writer API (`PhysicalValueConverter`, inverse of `LogicalTypeConverter`)
+- [x] Annotation range checks on both write APIs (`LogicalTypeValueRange`)
 
 ---
 
@@ -231,6 +242,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Data page reading and decoding
 - [x] Page decompression
 - [x] Parallel column batch fetching
+- [x] Lazy per-file metadata access with a parent-owned footer cache (see [`_designs/PER_FILE_METADATA.md`](_designs/PER_FILE_METADATA.md))
 
 ### 7.3 Record Assembly (Inverse Dremel)
 - [x] Column reader synchronization (via RowReader)
@@ -260,7 +272,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] UINT_8, UINT_16, UINT_32, UINT_64 (unsigned integers)
   - [x] Generic getObject() with automatic conversion based on logical type
 - [x] Logical type implementations (code exists, partial test coverage)
-  - [x] ENUM (no test coverage - PyArrow doesn't write ENUM logical type)
+  - [x] ENUM (tested; fixture is post-processed to set the ENUM annotation since PyArrow cannot emit it natively)
   - [x] UUID (tested with PyArrow 21+ which writes UUID logical type)
   - [x] JSON (tested with PyArrow 22+ which writes JSON logical type via `pa.json_()`)
   - [x] BSON (tested; fixture is post-processed to set the BSON annotation since PyArrow cannot emit it natively)
@@ -297,7 +309,8 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] ZSTD (zstd-jni)
 - [x] BROTLI (brotli4j)
 - [x] GZIP via libdeflate (optional faster alternative, Java 22+)
-- [ ] LZO (lzo-java, optional)
+- LZO — not supported, in either direction: there is no maintained JVM implementation under a
+  licence this project can depend on. Both the read and the write path refuse it by name.
 
 ---
 
@@ -306,10 +319,15 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 ### 9.1 Statistics
 - [x] Implement `Statistics` record (minValue, maxValue, nullCount, distinctCount)
 - [x] Statistics deserialization (`StatisticsReader` with deprecated/preferred field fallback)
+- [x] `nan_count` deserialization (`StatisticsReader` field 9; no functional consumer yet)
+- [x] Implement `SizeStatistics` record (unencoded `BYTE_ARRAY` size, repetition/definition level histograms)
+- [x] SizeStatistics deserialization (`SizeStatisticsReader`, `ColumnMetaData` field 16)
+- [x] SizeStatistics and level histograms surfaced in the CLI (`dive` column chunk detail, `inspect columns --column`)
 - [x] Type-specific comparators (`StatisticsDecoder` for int, long, float, double, boolean, binary)
 - [x] Statistics collection during writing (`StatisticsCollector`, INT32 min/max/null_count)
 - [ ] Binary min/max truncation for efficiency
 - [x] Statistics serialization (`StatisticsWriter`, preferred `min_value`/`max_value` fields)
+- [x] `nan_count` serialization (`StatisticsWriter` field 9; written for every `FLOAT`, `DOUBLE` and `FLOAT16` chunk, zero included)
 
 ### 9.2 Page Index (Column Index & Offset Index)
 - [x] Implement `ColumnIndex` structure
@@ -317,8 +335,10 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Min/max values per page
   - [x] Boundary order
   - [x] Null counts
+  - [x] Per-page repetition/definition level histograms and NaN counts
 - [x] Implement `OffsetIndex` structure
   - [x] Page locations (offset, size, first row)
+  - [x] Per-page unencoded `BYTE_ARRAY` sizes
 - [x] Page index reading (`ColumnIndexReader`, `OffsetIndexReader`)
 - [x] Coalesced index fetching (`RowGroupIndexBuffers` — single read per row group)
 - [x] OffsetIndex-based page scanning (`PageScanner.scanPagesFromIndex()`)
@@ -345,7 +365,9 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 - [x] Drain-side per-batch record filtering (`BatchFilterCompiler` + `ColumnBatchMatcher`, on by default for column-local AND queries; see `_designs/DRAIN_SIDE_RECORD_FILTERING.md`)
 - [x] Exact column-reader filtering — `buildColumnReader(...).filter(...)` / `buildColumnReaders(...).filter(...)` return only matching rows with no client-side residual (`SelectionEngine` + `FilterCoordinator`; see `_designs/EXACT_COLUMN_READER_FILTERING.md`)
 - [x] Bloom filter-based row group filtering: `eq` on INT32, INT64, FLOAT, DOUBLE, and binary columns, and `in` on the integer and binary types (`RowGroupBloomFilterSource`; see `_designs/BLOOM_FILTER_PUSHDOWN.md`)
-- [x] Always-match statistics decision: tri-state `StatsDecision` proves from statistics when every row in a row group matches, skipping per-row filter evaluation for that group and dropping the filter wholesale when all surviving groups fully match (see `_designs/ALWAYS_MATCH_STATISTICS.md`)
+- [x] Dictionary-based row group filtering: `eq` on INT32, INT64, FLOAT, DOUBLE and binary columns, and `in` on the integer and binary types, for chunks whose `encoding_stats` prove every data page is dictionary-encoded (`RowGroupDictionaryFilterSource`; see `_designs/DICTIONARY_PUSHDOWN.md`)
+- [x] Always-match statistics decision: tri-state `FilterDecision` proves from statistics when every row in a row group matches, skipping per-row filter evaluation for that group and dropping the filter wholesale when all surviving groups fully match (see `_designs/ALWAYS_MATCH_STATISTICS.md`)
+- [x] Reader opt-out of metadata-based filtering: `hardwood.metadata-filtering` `ReaderConfig` option falls back to full-scan per-row predicate evaluation for files with unreliable footer/page-index metadata
 
 ### 9.5 Fixed-size-list read fast path
 - [x] Detect fixed-width fixed-*k* `LIST` pages from level streams alone (`FixedSizeListDetector`): O(1) definition-level gate + O(rows) repetition verification
@@ -394,6 +416,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
 ### 11.1 S3 Support (`hardwood-s3`)
 - [x] `S3InputFile` implementation with suffix-range GET for footer pre-fetch
 - [x] Tail caching (64 KB) for Parquet footer locality
+- [x] Range backing (`RangeBacking.SPARSE_TEMPFILE`) — mmap-backed whole-file range cache for repeat reads
 - [x] Client ownership model (caller-owned vs self-owned `S3Client`)
 - [x] LocalStack integration tests
 
@@ -405,6 +428,7 @@ For field-level `parquet.thrift` metadata coverage (which spec fields are read/p
   - [x] Nested structs → nested Avro RECORD
   - [x] LIST → Avro ARRAY (3-level encoding unwrap)
   - [x] MAP → Avro MAP
+- [x] Deterministic, grammar-legal named types with projection-stable Parquet-name recovery (#895)
 - [x] `AvroRowReader` — wraps `RowReader`, materializes `GenericRecord` per row
   - [x] Recursive nested record materialization
   - [x] List and map materialization into standard Java collections
@@ -554,6 +578,8 @@ Remaining Failures by Category (7 total):
 - [ ] Fuzz testing (random schemas and data)
 - [ ] Edge cases (empty files, single values, max nesting)
 - [x] Performance benchmarks vs parquet-java (JMH micro-benchmarks + end-to-end performance tests)
+- [x] Write-path performance benchmark vs parquet-java (`FlatWriteBenchmark` — the columnar and
+  row-oriented APIs against `ExampleParquetWriter`; see `_designs/FLAT_WRITE_BENCHMARK.md`)
 - [x] Predicate pushdown tests (`PredicatePushDownTest` — 28 test methods)
 - [x] Column projection tests (`ColumnProjectionTest` — 21 test methods)
 - [x] Multi-file reader tests (`MultiFileRowReaderTest` — 16 test methods)

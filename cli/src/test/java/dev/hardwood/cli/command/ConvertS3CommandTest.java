@@ -15,6 +15,11 @@ class ConvertS3CommandTest extends AbstractS3CommandTest implements ConvertComma
     }
 
     @Override
+    public String fidelityFile() {
+        return S3_FIDELITY_FILE;
+    }
+
+    @Override
     public String deepNestedFile() {
         return S3_DEEP_NESTED_FILE;
     }

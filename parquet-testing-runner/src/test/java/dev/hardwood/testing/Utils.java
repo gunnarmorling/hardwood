@@ -69,8 +69,14 @@ public class Utils {
             "delta_encoding_required_column.parquet", // Illegal character in field name (c_customer_sk:)
             "hadoop_lz4_compressed.parquet", // Empty field name in schema
 
+            // parquet-java cannot resolve the codec at all: CompressionCodecName.BROTLI names
+            // org.apache.hadoop.io.compress.BrotliCodec, which is in neither parquet-java nor
+            // Hadoop — only in the unmaintained com.github.rdblue:brotli-codec, whose native
+            // binaries cover a few platforms. Hardwood reads the file through brotli4j; what is
+            // missing is a second reader to compare against, not the ability to read it.
+            "large_string_map.brotli.parquet", // ClassNotFoundException for the codec class
+
             // parquet-java Avro reader decoding issues
-            "large_string_map.brotli.parquet", // ParquetDecodingException (block -1)
             "non_hadoop_lz4_compressed.parquet", // ParquetDecodingException (block -1)
             "nation.dict-malformed.parquet", // EOF error (intentionally malformed)
 
@@ -80,6 +86,16 @@ public class Utils {
             "repeated_no_annotation.parquet", // ClassCast: int64 number is not a group
             "repeated_primitive_no_list.parquet", // ClassCast: int32 Int32_list is not a group
             "unknown-logical-type.parquet", // Unknown logical type
+
+            // ALP is Encoding value 10 in parquet-format; the Encoding enum generated into
+            // parquet-format-structures 1.17.1 stops at BYTE_STREAM_SPLIT (9). Thrift's Java
+            // binding turns an unrecognized enum value into null, which for the required
+            // PageEncodingStats.encoding field is indistinguishable from an absent field, so
+            // parquet-java rejects the footer with "Required field 'encoding' was not present!".
+            // A parquet-java that knew the constant still could not decode ALP pages, so there
+            // is no reference reader to compare against. Hardwood reads the footer, column index
+            // and page index, and rejects the pages themselves until #581 adds ALP support.
+            "alp_extended.zstd.parquet", // No parquet-java oracle: ALP encoding
 
             // shredded_variant fixtures are skipped outside this list: spec-invalid
             // ones by isInvalidFixture() (the `-INVALID` suffix), error cases by
@@ -1031,8 +1047,12 @@ public class Utils {
             case DOUBLE -> reader.getDoubles()[index];
             case BOOLEAN -> reader.getBooleans()[index];
             case BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY, INT96 -> {
-                if (colSchema.logicalType() instanceof LogicalType.StringType
-                        || colSchema.logicalType() instanceof LogicalType.JsonType) {
+                // JSON leaves stay binary here: parquet-java's Avro reader has no
+                // JSON type and surfaces the raw bytes, so reading them as bytes
+                // keeps this a byte-exact comparison (matching the row-level path,
+                // which reads the same column via the Avro BYTES accessor). The
+                // UTF8/JSON String-interning path is already covered by StringType.
+                if (colSchema.logicalType() instanceof LogicalType.StringType) {
                     yield reader.getStrings()[index];
                 }
                 yield reader.getBinaries()[index];

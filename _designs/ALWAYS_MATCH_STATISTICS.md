@@ -18,7 +18,7 @@ evaluation over those groups reproduces a foregone conclusion at full decode-sid
 
 ## The decision model
 
-`StatsDecision` (internal.predicate) is the three-valued extension of the boolean drop:
+`FilterDecision` (internal.predicate) is the three-valued extension of the boolean drop:
 
 | decision         | meaning                             | today's equivalent |
 |------------------|-------------------------------------|--------------------|

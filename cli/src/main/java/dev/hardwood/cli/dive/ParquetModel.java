@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.Encodings;
 import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.internal.reader.ColumnIndexBuffers;
 import dev.hardwood.internal.reader.Dictionary;
@@ -71,6 +72,7 @@ public final class ParquetModel implements AutoCloseable {
 
     private final Map<ChunkKey, ColumnIndex> columnIndexCache = new HashMap<>();
     private final Map<ChunkKey, OffsetIndex> offsetIndexCache = new HashMap<>();
+    private final Map<ChunkKey, Long> dictionaryEntriesCache = new HashMap<>();
     /// Bounded LRU: page headers are decoded once per chunk-visit and a wide
     /// table can have hundreds of chunks. Capping prevents the cache from
     /// growing unboundedly across a long dive session.
@@ -236,6 +238,19 @@ public final class ParquetModel implements AutoCloseable {
         });
     }
 
+    /// How many distinct values a chunk's dictionary holds, or -1 when it has
+    /// none. Cached for the session: the facts pane re-renders on every
+    /// keystroke, and the figure costs a read the footer cannot serve.
+    ///
+    /// Only the column chunk detail screen asks. The list screens deliberately
+    /// do not — one short read per visible row would turn a screen that is
+    /// currently pure footer arithmetic into N round trips on remote storage,
+    /// paid again for every row that scrolls into view.
+    public long dictionaryEntries(int rowGroupIndex, int columnIndex) {
+        return dictionaryEntriesCache.computeIfAbsent(new ChunkKey(rowGroupIndex, columnIndex),
+                key -> Encodings.dictionaryEntries(chunk(key.rowGroupIndex(), key.columnIndex()), inputFile));
+    }
+
     /// Walks a column chunk's byte range and returns its page headers (dictionary
     /// header first if present, then data pages). Cached after the first call.
     public List<PageHeader> pageHeaders(int rowGroupIndex, int columnIndex) {
@@ -251,6 +266,9 @@ public final class ParquetModel implements AutoCloseable {
         long totalBytes = cmd.totalCompressedSize();
         List<PageHeader> headers = new ArrayList<>();
         try {
+            // The offsets address the file named by file_path, not this one; the pages this
+            // would walk are whatever happens to sit there.
+            cc.requireSameFile();
             ByteBuffer buffer = inputFile.readRange(start, Math.toIntExact(totalBytes));
             int position = 0;
             while (position < buffer.limit()) {
@@ -316,6 +334,7 @@ public final class ParquetModel implements AutoCloseable {
         long chunkStart = dictOffset != null && dictOffset > 0 ? dictOffset : cmd.dataPageOffset();
         int readSize = Math.toIntExact(cmd.totalCompressedSize());
         try (HardwoodContextImpl context = HardwoodContextImpl.create(1)) {
+            cc.requireSameFile();
             ByteBuffer region = inputFile.readRange(chunkStart, readSize);
             Dictionary dict = DictionaryParser.parse(region, schema.getColumn(columnIndex), cmd, context);
             if (dict != null) {
@@ -397,7 +416,6 @@ public final class ParquetModel implements AutoCloseable {
                 uncompressed += cmd.totalUncompressedSize();
             }
         }
-        double ratio = compressed == 0 ? 0.0 : (double) uncompressed / compressed;
         Map<String, String> kv = metadata.keyValueMetadata();
         List<Map.Entry<String, String>> kvList = kv == null ? List.of() : new ArrayList<>(kv.entrySet());
         return new Facts(
@@ -408,7 +426,6 @@ public final class ParquetModel implements AutoCloseable {
                 schema.getColumnCount(),
                 compressed,
                 uncompressed,
-                ratio,
                 List.copyOf(kvList));
     }
 
@@ -422,7 +439,6 @@ public final class ParquetModel implements AutoCloseable {
             int columnCount,
             long compressedBytes,
             long uncompressedBytes,
-            double compressionRatio,
             List<Map.Entry<String, String>> keyValueMetadata) {
     }
 }

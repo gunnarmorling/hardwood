@@ -9,12 +9,11 @@ package dev.hardwood.internal.thrift;
 
 import java.io.IOException;
 
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.BoundingBox;
 
 /// Reader for the Thrift BoundingBox struct from Parquet metadata.
 public class BoundingBoxReader {
-
-    private static final int TYPE_DOUBLE = 0x07;
 
     public static BoundingBox read(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
@@ -37,21 +36,21 @@ public class BoundingBoxReader {
         Double mmax = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
-                case 1 -> xmin = readRequiredDouble(reader, header.type(), "xmin");
-                case 2 -> xmax = readRequiredDouble(reader, header.type(), "xmax");
-                case 3 -> ymin = readRequiredDouble(reader, header.type(), "ymin");
-                case 4 -> ymax = readRequiredDouble(reader, header.type(), "ymax");
-                case 5 -> zmin = readOptionalDouble(reader, header.type());
-                case 6 -> zmax = readOptionalDouble(reader, header.type());
-                case 7 -> mmin = readOptionalDouble(reader, header.type());
-                case 8 -> mmax = readOptionalDouble(reader, header.type());
-                default -> reader.skipField(header.type());
+            switch (ThriftCompactReader.fieldId(header)) {
+                case 1 -> xmin = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "xmin");
+                case 2 -> xmax = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "xmax");
+                case 3 -> ymin = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "ymin");
+                case 4 -> ymax = readRequiredDouble(reader, ThriftCompactReader.fieldType(header), "ymax");
+                case 5 -> zmin = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                case 6 -> zmax = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                case 7 -> mmin = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                case 8 -> mmax = readOptionalDouble(reader, ThriftCompactReader.fieldType(header));
+                default -> reader.skipField(ThriftCompactReader.fieldType(header));
             }
         }
 
@@ -69,7 +68,7 @@ public class BoundingBoxReader {
 
     private static double readRequiredDouble(ThriftCompactReader reader, byte type, String name)
             throws IOException {
-        if (type != TYPE_DOUBLE) {
+        if (type != Codes.DOUBLE) {
             throw new IllegalStateException(
                     "Invalid BoundingBox: required field '" + name
                             + "' has wrong wire type 0x" + Integer.toHexString(type & 0xFF));
@@ -78,7 +77,7 @@ public class BoundingBoxReader {
     }
 
     private static Double readOptionalDouble(ThriftCompactReader reader, byte type) throws IOException {
-        if (type == TYPE_DOUBLE) {
+        if (type == Codes.DOUBLE) {
             return reader.readDouble();
         }
         reader.skipField(type);

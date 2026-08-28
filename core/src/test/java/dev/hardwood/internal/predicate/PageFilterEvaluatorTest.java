@@ -8,6 +8,7 @@
 package dev.hardwood.internal.predicate;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,9 @@ import dev.hardwood.InputFile;
 import dev.hardwood.internal.reader.ParquetMetadataReader;
 import dev.hardwood.internal.reader.RowGroupIndexBuffers;
 import dev.hardwood.internal.reader.RowRanges;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
+import dev.hardwood.internal.thrift.ThriftStructBuilder;
+import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.OffsetIndex;
@@ -34,6 +38,7 @@ import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.FilterPredicate.Operator;
 import dev.hardwood.schema.FileSchema;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -128,11 +133,11 @@ class PageFilterEvaluatorTest {
     void testNullOnlyPagesAreSkipped() {
         // Page 1 is null-only
         ColumnIndex nullPageColumnIndex = new ColumnIndex(
-                List.of(false, true, false),
+                new boolean[]{ false, true, false },
                 List.of(intBytes(1), intBytes(0), intBytes(21)),
                 List.of(intBytes(10), intBytes(0), intBytes(30)),
                 ColumnIndex.BoundaryOrder.UNORDERED,
-                null);
+                null, null, null, null);
 
         RowRanges ranges = PageFilterEvaluator.evaluatePages(nullPageColumnIndex, THREE_PAGE_OFFSET_INDEX, THREE_PAGE_ROW_COUNT,
                 (columnIndex, pageIndex) -> {
@@ -441,7 +446,8 @@ class PageFilterEvaluatorTest {
             ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
             RowGroup rowGroup = metaData.rowGroups().get(0);
             RowGroupIndexBuffers indexBuffers = RowGroupIndexBuffers.fetch(inputFile, rowGroup);
-            return PageFilterEvaluator.computeMatchingRows(resolved, rowGroup, indexBuffers);
+            return PageFilterEvaluator.computeMatchingRows(resolved, rowGroup, indexBuffers,
+                    new PageFilterEvaluator.IndexLocation(inputFile.name(), 0));
         }
         finally {
             inputFile.close();
@@ -469,27 +475,25 @@ class PageFilterEvaluatorTest {
     private static ColumnIndex intColumnIndex(int[] mins, int[] maxs) {
         List<byte[]> minValues = new ArrayList<>();
         List<byte[]> maxValues = new ArrayList<>();
-        List<Boolean> nullPages = new ArrayList<>();
+        boolean[] nullPages = new boolean[mins.length];
         for (int i = 0; i < mins.length; i++) {
             minValues.add(intBytes(mins[i]));
             maxValues.add(intBytes(maxs[i]));
-            nullPages.add(false);
         }
         return new ColumnIndex(nullPages, minValues, maxValues,
-                ColumnIndex.BoundaryOrder.UNORDERED, null);
+                ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
     }
 
     private static ColumnIndex longColumnIndex(long[] mins, long[] maxs) {
         List<byte[]> minValues = new ArrayList<>();
         List<byte[]> maxValues = new ArrayList<>();
-        List<Boolean> nullPages = new ArrayList<>();
+        boolean[] nullPages = new boolean[mins.length];
         for (int i = 0; i < mins.length; i++) {
             minValues.add(longBytes(mins[i]));
             maxValues.add(longBytes(maxs[i]));
-            nullPages.add(false);
         }
         return new ColumnIndex(nullPages, minValues, maxValues,
-                ColumnIndex.BoundaryOrder.UNORDERED, null);
+                ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
     }
 
     @Test
@@ -556,49 +560,88 @@ class PageFilterEvaluatorTest {
     private static ColumnIndex floatColumnIndex(float[] mins, float[] maxs) {
         List<byte[]> minValues = new ArrayList<>();
         List<byte[]> maxValues = new ArrayList<>();
-        List<Boolean> nullPages = new ArrayList<>();
+        boolean[] nullPages = new boolean[mins.length];
         for (int i = 0; i < mins.length; i++) {
             minValues.add(floatBytes(mins[i]));
             maxValues.add(floatBytes(maxs[i]));
-            nullPages.add(false);
         }
         return new ColumnIndex(nullPages, minValues, maxValues,
-                ColumnIndex.BoundaryOrder.UNORDERED, null);
+                ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
     }
 
     private static ColumnIndex doubleColumnIndex(double[] mins, double[] maxs) {
         List<byte[]> minValues = new ArrayList<>();
         List<byte[]> maxValues = new ArrayList<>();
-        List<Boolean> nullPages = new ArrayList<>();
+        boolean[] nullPages = new boolean[mins.length];
         for (int i = 0; i < mins.length; i++) {
             minValues.add(doubleBytes(mins[i]));
             maxValues.add(doubleBytes(maxs[i]));
-            nullPages.add(false);
         }
         return new ColumnIndex(nullPages, minValues, maxValues,
-                ColumnIndex.BoundaryOrder.UNORDERED, null);
+                ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
     }
 
     private static ColumnIndex booleanColumnIndex(boolean[] mins, boolean[] maxs) {
         List<byte[]> minValues = new ArrayList<>();
         List<byte[]> maxValues = new ArrayList<>();
-        List<Boolean> nullPages = new ArrayList<>();
+        boolean[] nullPages = new boolean[mins.length];
         for (int i = 0; i < mins.length; i++) {
             minValues.add(new byte[]{ (byte) (mins[i] ? 1 : 0) });
             maxValues.add(new byte[]{ (byte) (maxs[i] ? 1 : 0) });
-            nullPages.add(false);
         }
         return new ColumnIndex(nullPages, minValues, maxValues,
-                ColumnIndex.BoundaryOrder.UNORDERED, null);
+                ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
     }
 
     private static ColumnIndex binaryColumnIndex(List<byte[]> mins, List<byte[]> maxs) {
-        List<Boolean> nullPages = new ArrayList<>();
-        for (int i = 0; i < mins.size(); i++) {
-            nullPages.add(false);
-        }
+        boolean[] nullPages = new boolean[mins.size()];
         return new ColumnIndex(nullPages, mins, maxs,
-                ColumnIndex.BoundaryOrder.UNORDERED, null);
+                ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
+    }
+
+    @Test
+    void pageCountDisagreementBetweenTheTwoIndexesIsAttributed() throws IOException {
+        // The ColumnIndex describes three pages, the OffsetIndex locates two. Page filtering
+        // walks them with a single index, so this has to fail before it does — naming the file,
+        // the row group and the column, none of which the page index itself carries.
+        byte[] columnIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST).boolList(false, false, false)
+                .field(2, FieldType.LIST)
+                .binaryList(intBytes(1), intBytes(11), intBytes(21))
+                .field(3, FieldType.LIST)
+                .binaryList(intBytes(10), intBytes(20), intBytes(30))
+                .stop().build();
+        byte[] offsetIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .structList(pageLocation(0, 0), pageLocation(100, 30))
+                .stop().build();
+
+        ByteBuffer file = ByteBuffer.allocate(offsetIndex.length + columnIndex.length);
+        file.put(offsetIndex).put(columnIndex).flip();
+        ColumnChunk chunk = new ColumnChunk(null, 0L, offsetIndex.length,
+                (long) offsetIndex.length, columnIndex.length, "");
+        RowGroup rowGroup = new RowGroup(List.of(chunk), 1000, 60);
+
+        try (InputFile inputFile = InputFile.of(file)) {
+            RowGroupIndexBuffers buffers = RowGroupIndexBuffers.fetch(inputFile, rowGroup);
+            assertThatThrownBy(() -> PageFilterEvaluator.computeMatchingRows(
+                    new ResolvedPredicate.IsNotNullPredicate(0), rowGroup, buffers,
+                    new PageFilterEvaluator.IndexLocation("indexes.parquet", 7)))
+                    .isInstanceOf(UncheckedIOException.class)
+                    .hasMessageContaining("indexes.parquet")
+                    .hasMessageContaining("row group 7")
+                    .hasMessageContaining("column 0")
+                    .hasMessageContaining("ColumnIndex describes 3 pages but OffsetIndex locates 2");
+        }
+    }
+
+    /// A PageLocation struct body: offset, compressed_page_size, first_row_index.
+    private static byte[] pageLocation(long offset, long firstRowIndex) {
+        return new ThriftStructBuilder()
+                .field(1, FieldType.I64).i64(offset)
+                .field(2, FieldType.I32).i32(100)
+                .field(3, FieldType.I64).i64(firstRowIndex)
+                .stop().build();
     }
 
     /// Creates an OffsetIndex with the given number of rows per page.
@@ -612,6 +655,6 @@ class PageFilterEvaluatorTest {
             currentRow += rows;
             currentOffset += 100;
         }
-        return new OffsetIndex(pages);
+        return new OffsetIndex(pages, null);
     }
 }

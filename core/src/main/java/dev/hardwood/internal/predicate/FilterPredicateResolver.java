@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
 
+import dev.hardwood.internal.schema.SchemaPathResolver;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
@@ -36,6 +37,7 @@ import dev.hardwood.reader.FilterPredicate.Or;
 import dev.hardwood.reader.FilterPredicate.TimeColumnPredicate;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.schema.SchemaNode;
 
 /// Resolves user-facing [FilterPredicate] into the internal [ResolvedPredicate] tree.
 ///
@@ -237,24 +239,28 @@ public class FilterPredicateResolver {
 
     // ==================== Column resolution ====================
 
-    /// Resolves a column name to its [ColumnSchema]. Tries exact name/path lookup first,
-    /// then falls back to matching by top-level field name (for nested/repeated columns).
+    /// Resolves a column name to its [ColumnSchema].
+    ///
+    /// Only leaf columns can carry a predicate. A name denoting a group — a struct, a `LIST`, or a
+    /// `MAP` — is rejected rather than resolved to one of the group's leaves, which would answer a
+    /// different question than the one that was asked.
     ///
     /// @return the resolved column schema
-    /// @throws IllegalArgumentException if the column is not found
+    /// @throws IllegalArgumentException if the column is not found, or names a group rather than a
+    ///         leaf column
     private static ColumnSchema resolveColumn(String columnName, FileSchema schema) {
         try {
             return schema.getColumn(columnName);
         }
         catch (IllegalArgumentException e) {
-            // Fall back to matching by top-level field name for nested/repeated columns
-            // (e.g. "scores" matches "scores.list.element")
-            int columnCount = schema.getColumnCount();
-            for (int i = 0; i < columnCount; i++) {
-                ColumnSchema col = schema.getColumn(i);
-                if (col.fieldPath().topLevelName().equals(columnName)) {
-                    return col;
+            SchemaNode node = SchemaPathResolver.resolve(schema, columnName).node();
+            if (node instanceof SchemaNode.GroupNode group) {
+                if (group.isList() || group.isMap() || group.maxRepetitionLevel() > 0) {
+                    throw repeatedColumnRejected(columnName);
                 }
+                throw new IllegalArgumentException(
+                        "Filter predicates require a leaf column. "
+                                + "Column '" + columnName + "' is a group.");
             }
             throw new IllegalArgumentException(
                     "Column '" + columnName + "' not found in schema", e);
@@ -265,10 +271,14 @@ public class FilterPredicateResolver {
 
     private static void rejectRepeated(String columnName, ColumnSchema columnSchema) {
         if (columnSchema.maxRepetitionLevel() > 0) {
-            throw new IllegalArgumentException(
-                    "Filter predicates do not support repeated columns. "
-                    + "Column '" + columnName + "' is repeated.");
+            throw repeatedColumnRejected(columnName);
         }
+    }
+
+    private static IllegalArgumentException repeatedColumnRejected(String columnName) {
+        return new IllegalArgumentException(
+                "Filter predicates do not support repeated columns. "
+                        + "Column '" + columnName + "' is repeated.");
     }
 
     private static void validateType(String columnName, PhysicalType expectedType,

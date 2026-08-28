@@ -10,10 +10,11 @@ package dev.hardwood.metadata;
 import java.util.List;
 
 /// @param bbox bounding box, or `null` if absent
-/// @param geospatialTypes list of geospatial type codes for geometry/geography column, empty list if not known.
-///     Values correspond to the Parquet `GeospatialType` enum:
-///     0=Point, 1=LineString, 2=Polygon, 3=MultiPoint, 4=MultiLineString, 5=MultiPolygon,
-///     6=GeometryCollection.
+/// @param geospatialTypes geospatial type codes of all instances in a geometry/geography column,
+///     or an empty list if not known. Values are Well-Known Binary (WKB) geometry type codes:
+///     1=Point, 2=LineString, 3=Polygon, 4=MultiPoint, 5=MultiLineString, 6=MultiPolygon,
+///     7=GeometryCollection, each offset by 1000 for a Z coordinate, 2000 for M, and 3000 for
+///     both — so a 3D point is 1001.
 /// @see <a href="https://github.com/apache/parquet-format/blob/master/Geospatial.md#statistics">Geospatial – statistics</a>
 /// @see <a href="https://github.com/apache/parquet-format/blob/master/Geospatial.md#geospatial-types">Geospatial - types</a>
 public record GeospatialStatistics(

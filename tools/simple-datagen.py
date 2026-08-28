@@ -28,14 +28,18 @@ from parquet_annotators import (
     annotate_element_at_path_as_json,
     annotate_element_at_path_as_time,
     annotate_element_at_path_as_decimal,
+    annotate_element_at_path_as_enum,
     annotate_columns_as_legacy_converted_type,
     annotate_map_as_legacy_key_value,
     collapse_list_to_unannotated_repeated,
     collapse_list_of_structs_to_unannotated_repeated_group,
     collapse_list_of_lists_to_legacy_two_level,
+    clear_key_value_metadata_value,
     strip_converted_type,
     corrupt_data_page_offset_negative,
+    falsify_int64_row_group_minmax,
     remove_map_value_field,
+    drop_dictionary_page_offset,
 )
 
 
@@ -1626,6 +1630,49 @@ print("  - Compression: UNCOMPRESSED")
 print(f"  - Data: {num_rows} rows with small page size (4096) and page index enabled")
 
 # ============================================================================
+# CLI Long Value Test File
+# ============================================================================
+
+cli_long_value_schema = pa.schema([
+    ('s', pa.string(), False),
+])
+cli_long_value_values = [
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-0',
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-1',
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-2',
+    'the-quick-brown-fox-jumps-over-the-lazy-dog-3',
+]
+cli_long_value_table = pa.table({'s': cli_long_value_values}, schema=cli_long_value_schema)
+
+pq.write_table(
+    cli_long_value_table,
+    'core/src/test/resources/cli_long_value_test.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+    write_statistics=True,
+    write_page_index=True,
+)
+
+print("\nGenerated cli_long_value_test.parquet:")
+print("  - Dictionary-encoded STRING column s")
+print("  - Four distinct 45-byte values with statistics and page index")
+cli_unicode_value_table = pa.table(
+    {'s': ['aaaaaaaaaaaaaaaaaa😀b', 'aaaaaaaaaaaaaaaaaa😀c']},
+    schema=cli_long_value_schema,
+)
+pq.write_table(
+    cli_unicode_value_table,
+    'core/src/test/resources/cli_unicode_value_test.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+    write_statistics=True,
+    write_page_index=True,
+)
+print("  - Two distinct values with an emoji at the truncation boundary")
+
+# ============================================================================
 # CRC Checksum Test Files
 # ============================================================================
 
@@ -1895,6 +1942,81 @@ pq.write_table(kv_table, 'core/src/test/resources/kv_metadata_test.parquet',
 print("\nGenerated kv_metadata_test.parquet:")
 print("  - Custom key-value metadata: app.version=1.2.3, writer.tool=hardwood-test, empty.value=''")
 print("  - Also contains ARROW:schema metadata from pyarrow")
+
+# ===== CLI `info` command key-value metadata test file =====
+# Mirrors what real files carry in practice — Arrow's own embedded schema plus
+# the row-metadata JSON Spark and pandas write — alongside the edge cases real
+# writers don't reliably produce on demand: a value short enough to print in
+# full, an empty one, a pair straddling the truncation boundary, and an entry
+# with no value field at all.
+
+cli_info_kv_schema = pa.schema([
+    ('id', pa.int64(), False),
+    ('name', pa.string(), True)
+])
+
+cli_info_kv_table = pa.table({
+    'id': [1, 2, 3],
+    'name': ['alice', 'bob', 'charlie']
+}, schema=cli_info_kv_schema)
+
+# JSON is minified (no spaces) so the truncation cutoff below is easy to compute:
+# both are well past MAX_VALUE_WIDTH (60 cells) in InfoCommand.
+cli_info_kv_pandas_metadata = (
+    b'{"index_columns":["__index_level_0__"],"column_indexes":[{"name":null,'
+    b'"field_name":null,"pandas_type":"unicode","numpy_type":"object","metadata":'
+    b'{"encoding":"UTF-8"}}],"columns":[{"name":"order_id","field_name":"order_id",'
+    b'"pandas_type":"int64","numpy_type":"int64","metadata":null},{"name":"customer",'
+    b'"field_name":"customer","pandas_type":"unicode","numpy_type":"object","metadata":'
+    b'null}],"creator":{"library":"pyarrow","version":"24.0.0"},"pandas_version":"2.2.0"}'
+)
+cli_info_kv_spark_metadata = (
+    b'{"type":"struct","fields":[{"name":"order_id","type":"long","nullable":false,'
+    b'"metadata":{}},{"name":"customer","type":"string","nullable":true,"metadata":{}},'
+    b'{"name":"amount","type":"double","nullable":true,"metadata":{}}]}'
+)
+
+# A value of exactly MAX_VALUE_WIDTH cells prints in full; one cell more is cut
+# short. The pair pins the boundary, which entries far away from it can't.
+cli_info_kv_at_limit = b'b' * 60
+cli_info_kv_over_limit = b'c' * 61
+
+# Values are arbitrary writer-supplied bytes: a raw newline would break the
+# column alignment and a raw escape sequence would drive the reader's terminal.
+cli_info_kv_control_chars = b'line1\nline2\x1b[31m'
+
+cli_info_kv_metadata = {
+    b'short.key': b'1.2.3',
+    b'empty.key': b'',
+    b'absent.key': b'',
+    b'at.limit.key': cli_info_kv_at_limit,
+    b'over.limit.key': cli_info_kv_over_limit,
+    b'control.key': cli_info_kv_control_chars,
+    b'pandas': cli_info_kv_pandas_metadata,
+    b'org.apache.spark.sql.parquet.row.metadata': cli_info_kv_spark_metadata,
+}
+cli_info_kv_schema_with_meta = cli_info_kv_schema.with_metadata(cli_info_kv_metadata)
+cli_info_kv_table = cli_info_kv_table.cast(cli_info_kv_schema_with_meta)
+
+cli_info_kv_path = 'core/src/test/resources/cli_info_kv_metadata_test.parquet'
+pq.write_table(cli_info_kv_table, cli_info_kv_path,
+               use_dictionary=False,
+               compression=None,
+               data_page_version='1.0')
+# PyArrow appends its own ARROW:schema entry alongside the 8 custom ones above,
+# for 9 total — left in place since it's exactly the kind of entry `info` needs
+# to show a realistic reader.
+# `KeyValue.value` is optional in parquet.thrift, but no writer will omit it on
+# request, so `absent.key` is written with an empty value and stripped of the
+# field afterwards.
+clear_key_value_metadata_value(cli_info_kv_path, 'absent.key')
+
+print("\nGenerated cli_info_kv_metadata_test.parquet:")
+print("  - short.key=1.2.3 (no truncation), empty.key='' (0 bytes), absent.key (no value field)")
+print("  - at.limit.key / over.limit.key: 60 and 61 chars, straddling the truncation boundary")
+print("  - control.key: embedded newline and ANSI escape")
+print("  - pandas / org.apache.spark.sql.parquet.row.metadata: realistic JSON (truncated)")
+print("  - plus PyArrow's own ARROW:schema entry")
 
 # ===== Column-level key-value metadata test file =====
 # pyarrow doesn't write Thrift-level ColumnMetaData key_value_metadata (field 8),
@@ -2253,6 +2375,254 @@ pq.write_table(plain_int_table, 'core/src/test/resources/compat_plain_int64.parq
                use_dictionary=False, compression=None, data_page_version='1.0')
 print("Generated compat_plain_int64.parquet (ts is plain INT64, no logical type)")
 
+# --- Cross-file leaf ordering (#903) ---
+# Same two columns, opposite leaf order. Physical, logical and repetition types
+# match per column name, so path-based schema validation accepts the pair; only
+# the leaf ordinal differs.
+order_ab_schema = pa.schema([
+    ('a', pa.int64(), False),
+    ('b', pa.int64(), False),
+])
+order_ab_table = pa.table({
+    'a': [1, 2, 3],
+    'b': [101, 102, 103],
+}, schema=order_ab_schema)
+pq.write_table(order_ab_table, 'core/src/test/resources/compat_order_ab.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("\nGenerated compat_order_ab.parquet (leaves a, b)")
+
+order_ba_schema = pa.schema([
+    ('b', pa.int64(), False),
+    ('a', pa.int64(), False),
+])
+order_ba_table = pa.table({
+    'b': [104, 105, 106],
+    'a': [4, 5, 6],
+}, schema=order_ba_schema)
+pq.write_table(order_ba_table, 'core/src/test/resources/compat_order_ba.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_ba.parquet (leaves b, a - reordered)")
+
+# Same reordering, but the two columns have different physical types, so reading
+# the wrong ordinal yields a type mismatch rather than plausible values.
+order_ab_mixed_schema = pa.schema([
+    ('a', pa.int64(), False),
+    ('b', pa.float64(), False),
+])
+order_ab_mixed_table = pa.table({
+    'a': [1, 2, 3],
+    'b': [1.5, 2.5, 3.5],
+}, schema=order_ab_mixed_schema)
+pq.write_table(order_ab_mixed_table, 'core/src/test/resources/compat_order_ab_mixed.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_ab_mixed.parquet (leaves a:INT64, b:DOUBLE)")
+
+order_ba_mixed_schema = pa.schema([
+    ('b', pa.float64(), False),
+    ('a', pa.int64(), False),
+])
+order_ba_mixed_table = pa.table({
+    'b': [4.5, 5.5, 6.5],
+    'a': [4, 5, 6],
+}, schema=order_ba_mixed_schema)
+pq.write_table(order_ba_mixed_table, 'core/src/test/resources/compat_order_ba_mixed.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_ba_mixed.parquet (leaves b:DOUBLE, a:INT64 - reordered)")
+
+# Extra leading column: 'a' and 'b' are present with matching types but shifted
+# one ordinal to the right by a column the projection never asks for.
+order_x_ab_schema = pa.schema([
+    ('x', pa.int64(), False),
+    ('a', pa.int64(), False),
+    ('b', pa.int64(), False),
+])
+order_x_ab_table = pa.table({
+    'x': [900, 901, 902],
+    'a': [4, 5, 6],
+    'b': [104, 105, 106],
+}, schema=order_x_ab_schema)
+pq.write_table(order_x_ab_table, 'core/src/test/resources/compat_order_x_ab.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_x_ab.parquet (leaves x, a, b - extra leading column)")
+
+# Fewer columns than the reference schema: 'b' exists and matches, but sits at an
+# ordinal the reference schema does not have.
+order_b_only_schema = pa.schema([
+    ('b', pa.int64(), False),
+])
+order_b_only_table = pa.table({
+    'b': [104, 105, 106],
+}, schema=order_b_only_schema)
+pq.write_table(order_b_only_table, 'core/src/test/resources/compat_order_b_only.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_b_only.parquet (leaf b only)")
+
+# FIXED_LEN_BYTE_ARRAY columns differing only in width. Physical, logical and
+# repetition types are identical; typeLength is not.
+flba_4_schema = pa.schema([('v', pa.binary(4), False)])
+flba_4_table = pa.table({'v': [b'aaaa', b'bbbb']}, schema=flba_4_schema)
+pq.write_table(flba_4_table, 'core/src/test/resources/compat_flba_4.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_flba_4.parquet (FIXED_LEN_BYTE_ARRAY(4))")
+
+flba_8_schema = pa.schema([('v', pa.binary(8), False)])
+flba_8_table = pa.table({'v': [b'cccccccc', b'dddddddd']}, schema=flba_8_schema)
+pq.write_table(flba_8_table, 'core/src/test/resources/compat_flba_8.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_flba_8.parquet (FIXED_LEN_BYTE_ARRAY(8))")
+
+# Same leaf path 'g.v' under a required vs an optional group. The leaf's own
+# repetition type is REQUIRED in both; only the ancestor differs, so the max
+# definition level differs.
+nested_req_schema = pa.schema([
+    ('g', pa.struct([pa.field('v', pa.int64(), False)]), False),
+])
+nested_req_table = pa.table({'g': [{'v': 1}, {'v': 2}]}, schema=nested_req_schema)
+pq.write_table(nested_req_table, 'core/src/test/resources/compat_nested_req_group.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_nested_req_group.parquet (required group g)")
+
+nested_opt_schema = pa.schema([
+    ('g', pa.struct([pa.field('v', pa.int64(), False)]), True),
+])
+nested_opt_table = pa.table({'g': [{'v': 3}, None]}, schema=nested_opt_schema)
+pq.write_table(nested_opt_table, 'core/src/test/resources/compat_nested_opt_group.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_nested_opt_group.parquet (optional group g)")
+
+# Same leaf path 'g.list.element' under a repeated vs a non-repeated ancestor.
+# Physical, logical and repetition types match, and so does the maximum
+# definition level (three optional/repeated ancestors either way); only the
+# maximum repetition level differs.
+maxrep_list_schema = pa.schema([
+    pa.field('g', pa.list_(pa.field('element', pa.int64(), nullable=True)), nullable=True),
+])
+maxrep_list_table = pa.table({'g': [[1, 2], [3]]}, schema=maxrep_list_schema)
+pq.write_table(maxrep_list_table, 'core/src/test/resources/compat_maxrep_list.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_maxrep_list.parquet (g is a LIST - maxRepetitionLevel 1)")
+
+maxrep_struct_schema = pa.schema([
+    pa.field('g', pa.struct([
+        pa.field('list', pa.struct([pa.field('element', pa.int64(), nullable=True)]), nullable=True),
+    ]), nullable=True),
+])
+maxrep_struct_table = pa.table(
+    {'g': [{'list': {'element': 7}}, {'list': {'element': 8}}]}, schema=maxrep_struct_schema)
+pq.write_table(maxrep_struct_table, 'core/src/test/resources/compat_maxrep_struct.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_maxrep_struct.parquet (g is nested groups - maxRepetitionLevel 0)")
+
+# Reordered leaves with dictionary pages, bloom filters and a page index, so that
+# the dictionary, bloom and page-index pruning sources are all addressed per file.
+# The two files' 'a' statistics overlap, so only the dictionary can decide.
+order_ab_dict_table = pa.table({
+    'a': [1, 3, 5, 7],
+    'b': [201, 203, 205, 207],
+}, schema=pa.schema([('a', pa.int64(), False), ('b', pa.int64(), False)]))
+pq.write_table(order_ab_dict_table, 'core/src/test/resources/compat_order_ab_dict.parquet',
+               use_dictionary=True, compression=None, data_page_version='1.0',
+               write_page_index=True,
+               bloom_filter_options={'a': {'ndv': 4, 'fpp': 0.05}, 'b': {'ndv': 4, 'fpp': 0.05}})
+print("Generated compat_order_ab_dict.parquet (leaves a, b - dictionary, bloom, page index)")
+
+order_ba_dict_table = pa.table({
+    'b': [202, 204, 206, 208],
+    'a': [2, 4, 6, 8],
+}, schema=pa.schema([('b', pa.int64(), False), ('a', pa.int64(), False)]))
+pq.write_table(order_ba_dict_table, 'core/src/test/resources/compat_order_ba_dict.parquet',
+               use_dictionary=True, compression=None, data_page_version='1.0',
+               write_page_index=True,
+               bloom_filter_options={'b': {'ndv': 4, 'fpp': 0.05}, 'a': {'ndv': 4, 'fpp': 0.05}})
+print("Generated compat_order_ba_dict.parquet (leaves b, a - reordered)")
+
+# Reordered leaves that are nested and repeated, so the leaf paths have more than
+# one element and the per-page mask gate has to resolve an ordinal rather than
+# short-circuiting on maxRepetitionLevel 0.
+order_nested_ab_schema = pa.schema([
+    ('l1', pa.list_(pa.int64()), True),
+    ('l2', pa.list_(pa.int64()), True),
+])
+order_nested_ab_table = pa.table({
+    'l1': [[1, 2], [3]],
+    'l2': [[101], [102, 103]],
+}, schema=order_nested_ab_schema)
+pq.write_table(order_nested_ab_table, 'core/src/test/resources/compat_order_nested_ab.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_nested_ab.parquet (leaves l1.list.element, l2.list.element)")
+
+order_nested_ba_schema = pa.schema([
+    ('l2', pa.list_(pa.int64()), True),
+    ('l1', pa.list_(pa.int64()), True),
+])
+order_nested_ba_table = pa.table({
+    'l2': [[104, 105], [106]],
+    'l1': [[4], [5, 6]],
+}, schema=order_nested_ba_schema)
+pq.write_table(order_nested_ba_table, 'core/src/test/resources/compat_order_nested_ba.parquet',
+               use_dictionary=False, compression=None, data_page_version='1.0')
+print("Generated compat_order_nested_ba.parquet (leaves l2.list.element, l1.list.element - reordered)")
+
+# Internally inconsistent footer: the schema declares leaves (a, b), but the row
+# group lists the two column chunks with their path_in_schema swapped. Reading
+# either column by its schema ordinal picks up the other column's chunk.
+swapped_base_path = '/tmp/_chunk_path_swapped_base.parquet'
+pq.write_table(
+    pa.table({'a': [1, 2, 3], 'b': [101, 102, 103]},
+             schema=pa.schema([('a', pa.int64(), False), ('b', pa.int64(), False)])),
+    swapped_base_path, use_dictionary=False, compression=None, data_page_version='1.0')
+
+with open(swapped_base_path, 'rb') as f:
+    swapped_base_data = f.read()
+swapped_footer_len = struct.unpack('<I', swapped_base_data[-8:-4])[0]
+swapped_pre_footer = swapped_base_data[:len(swapped_base_data) - 8 - swapped_footer_len]
+swapped_base_rg = pq.ParquetFile(swapped_base_path).metadata.row_group(0)
+
+fm = _ThriftWriter()
+fm.f(1, _T_I32).i32(2)
+fm.f(2, _T_LIST).lst(_T_STRUCT, 3)
+fm.raw(_schema_elem("schema", num_children=2))
+fm.raw(_schema_elem("a", type_val=2, rep=0))
+fm.raw(_schema_elem("b", type_val=2, rep=0))
+fm.f(3, _T_I64).i64(swapped_base_rg.num_rows)
+fm.f(4, _T_LIST).lst(_T_STRUCT, 1)
+
+rw = _ThriftWriter()
+rw.f(1, _T_LIST).lst(_T_STRUCT, 2)
+for ci in range(2):
+    col = swapped_base_rg.column(ci)
+    cc = _ThriftWriter()
+    cc.f(2, _T_I64).i64(col.file_offset)
+    cc.f(3, _T_STRUCT)
+
+    md = _ThriftWriter()
+    md.f(1, _T_I32).i32(2)
+    md.f(2, _T_LIST).lst(_T_I32, 1).i32(0)
+    # The swap: chunk 0 claims to be 'b', chunk 1 claims to be 'a'.
+    md.f(3, _T_LIST).lst(_T_BIN, 1).s('b' if ci == 0 else 'a')
+    md.f(4, _T_I32).i32(0)
+    md.f(5, _T_I64).i64(col.num_values)
+    md.f(6, _T_I64).i64(col.total_uncompressed_size)
+    md.f(7, _T_I64).i64(col.total_compressed_size)
+    md.f(9, _T_I64).i64(col.data_page_offset)
+    md.end()
+
+    cc.raw(md.out()).end()
+    rw.raw(cc.out())
+
+rw.f(2, _T_I64).i64(swapped_base_rg.total_byte_size)
+rw.f(3, _T_I64).i64(swapped_base_rg.num_rows)
+rw.end()
+fm.raw(rw.out())
+fm.f(6, _T_BIN).s("hardwood-test-datagen")
+fm.end()
+
+swapped_footer = fm.out()
+with open('core/src/test/resources/compat_chunk_path_swapped.parquet', 'wb') as f:
+    f.write(swapped_pre_footer + swapped_footer
+            + struct.pack('<I', len(swapped_footer)) + b'PAR1')
+print("Generated compat_chunk_path_swapped.parquet (chunk path_in_schema swapped vs schema order)")
+
 # Nullable primitives test: all primitive types with null values
 nullable_primitives_schema = pa.schema([
     ('id', pa.int32(), False),           # REQUIRED - row identifier
@@ -2277,6 +2647,38 @@ pq.write_table(nullable_primitives_table, 'core/src/test/resources/nullable_prim
 print("\nGenerated nullable_primitives_test.parquet:")
 print("  - Data: 4 rows, rows 2 and 4 have all nullable columns as null")
 print("  - Types: int32, int64, float32, float64, bool")
+
+# Convert export fidelity fixture: scalar JSON types, non-finite floats, and
+# a string column that distinguishes the literal text "null" from SQL NULL.
+convert_fidelity_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('flag', pa.bool_(), True),
+    ('small', pa.int32(), True),
+    ('large', pa.int64(), True),
+    ('single', pa.float32(), True),
+    ('double', pa.float64(), True),
+    ('text', pa.string(), True),
+])
+
+convert_fidelity_table = pa.table({
+    'id': [1, 2, 3, 4],
+    'flag': [True, False, None, True],
+    'small': [10, None, 2_147_483_647, -1],
+    'large': [100, -3, None, -5],
+    'single': [1.5, float('nan'), float('inf'), float('-inf')],
+    'double': [2.5, float('inf'), float('nan'), -2.5],
+    'text': ['null', None, 'literal', None],
+}, schema=convert_fidelity_schema)
+
+pq.write_table(
+    convert_fidelity_table,
+    'core/src/test/resources/convert_fidelity_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0',
+)
+print("\nGenerated convert_fidelity_test.parquet:")
+print("  - Scalar types, non-finite floats, literal 'null', and SQL NULL")
 
 # Unsigned int test file
 unsigned_int_schema = pa.schema([
@@ -2430,6 +2832,40 @@ annotate_group_as_variant('core/src/test/resources/variant_test.parquet', 'var')
 print("\nGenerated variant_test.parquet:")
 print("  - 4 rows: BOOLEAN_TRUE, BOOLEAN_FALSE, INT32(42), short string 'hi'")
 print("  - `var` is a VARIANT-annotated group of {metadata, value} binaries")
+
+# A Variant column that separates the two ways a cell can read as "null": row 2
+# is a null Variant column (the group itself is absent), row 3 carries the
+# Variant null, which is a value. `convert --null-string` applies to the first
+# and not the second.
+
+convert_variant_null_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('var', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), True),
+])
+
+convert_variant_null_table = pa.table({
+    'id': [1, 2, 3],
+    'var': [
+        {'metadata': _empty_metadata, 'value': bytes([0x14, 42, 0, 0, 0])},  # INT32 = 42
+        None,                                                               # null column value
+        {'metadata': _empty_metadata, 'value': bytes([0x00])},              # Variant null
+    ],
+}, schema=convert_variant_null_schema)
+
+pq.write_table(
+    convert_variant_null_table,
+    'core/src/test/resources/convert_variant_null_test.parquet',
+    compression='NONE',
+    use_dictionary=False,
+    data_page_version='1.0',
+)
+annotate_group_as_variant('core/src/test/resources/convert_variant_null_test.parquet', 'var')
+
+print("\nGenerated convert_variant_null_test.parquet:")
+print("  - 3 rows: INT32(42), a null Variant column, the Variant null value")
 
 # ============================================================================
 # Variant logical type — metadata with offset_size = 2
@@ -2642,6 +3078,75 @@ annotate_group_at_path_as_variant(
 print("\nGenerated variant_in_repeated_test.parquet:")
 print("  - 2 rows covering top-level Variant, Map<String, Variant>, List<Variant>")
 print("  - All unshredded; payloads: BOOLEAN_TRUE, INT32(7), short string 'hi'")
+
+# ============================================================================
+# Variant logical type — identity versus ordinary {metadata, value} records
+# ============================================================================
+#
+# The ordinary records deliberately have the same required two-byte-field shape
+# as a canonical Variant.  Only the two real Variant groups are annotated in the
+# footer; the Avro reader must preserve that distinction from schema conversion.
+
+variant_identity_schema = pa.schema([
+    ('plain_top', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), False),
+    ('plain_container', pa.struct([
+        pa.field('plain_nested', pa.struct([
+            pa.field('metadata', pa.binary(), False),
+            pa.field('value', pa.binary(), False),
+        ]), False),
+    ]), False),
+    ('plain_list', pa.list_(pa.field('element', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), nullable=False)), False),
+    ('plain_map', pa.map_(pa.string(), pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), keys_sorted=False), False),
+    ('real_variant', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), False),
+    ('variant_container', pa.struct([
+        pa.field('real_nested_variant', pa.struct([
+            pa.field('metadata', pa.binary(), False),
+            pa.field('value', pa.binary(), False),
+        ]), False),
+    ]), False),
+])
+
+variant_identity_table = pa.table({
+    'plain_top': [{'metadata': b'plain-top-metadata', 'value': b'plain-top-value'}],
+    'plain_container': [{'plain_nested': {
+        'metadata': b'plain-nested-metadata', 'value': b'plain-nested-value'}}],
+    'plain_list': [[
+        {'metadata': b'plain-list-metadata', 'value': b'plain-list-value'}]],
+    'plain_map': [[
+        ('plain-key', {'metadata': b'plain-map-metadata', 'value': b'plain-map-value'})]],
+    'real_variant': [{'metadata': _empty_metadata, 'value': bytes([0x04])}],
+    'variant_container': [{'real_nested_variant': {
+        'metadata': _empty_metadata, 'value': bytes([0x14, 42, 0, 0, 0])}}],
+}, schema=variant_identity_schema)
+
+pq.write_table(
+    variant_identity_table,
+    'core/src/test/resources/avro_variant_identity_test.parquet',
+    compression='NONE',
+    use_dictionary=False,
+    data_page_version='1.0',
+)
+annotate_group_as_variant(
+    'core/src/test/resources/avro_variant_identity_test.parquet', 'real_variant')
+annotate_group_at_path_as_variant(
+    'core/src/test/resources/avro_variant_identity_test.parquet',
+    ['variant_container', 'real_nested_variant'])
+
+print("\nGenerated avro_variant_identity_test.parquet:")
+print("  - Ordinary required {metadata, value} records at top, nested, list, and map positions")
+print("  - Variant annotations only on real_variant and variant_container.real_nested_variant")
 
 # ============================================================================
 # Variant attributes example — EAV table backing the docs/tweet snippet
@@ -3019,6 +3524,69 @@ print("  - Fixture for hardwood#445: INTERVAL list, INTERVAL-value map,")
 print("    TIME-keyed map, DECIMAL-keyed map, JSON-value map, FLOAT16-value map,")
 print("    struct{ts, JSON, INT_8}.")
 
+# enum_nested_test.parquet
+# Regression fixture for hardwood-hq/hardwood#847. PyArrow does not emit ENUM,
+# so each BYTE_ARRAY leaf is annotated after writing. The same ENUM representation
+# appears at the top level, in a struct, as a list element, and as a map value.
+enum_nested_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('status', pa.binary(), True),
+    ('tags', pa.list_(pa.binary())),
+    ('meta', pa.struct([('kind', pa.binary())])),
+    ('labels', pa.map_(pa.string(), pa.binary())),
+])
+enum_nested_table = pa.table({
+    'id': [1, 2, 3],
+    'status': [b'ACTIVE', b'INACTIVE', None],
+    'tags': [[b'RED', b'GREEN'], [b'BLUE'], [None, b'RED']],
+    'meta': [{'kind': b'PRIMARY'}, {'kind': b'SECONDARY'}, {'kind': None}],
+    'labels': [[('a', b'ON')], [('b', b'OFF'), ('c', b'ON')], [('d', None)]],
+}, schema=enum_nested_schema)
+pq.write_table(
+    enum_nested_table,
+    'core/src/test/resources/enum_nested_test.parquet',
+    use_dictionary=True,
+    compression=None,
+    data_page_version='1.0',
+)
+for enum_path in (
+        ['status'],
+        ['tags', 'list', 'element'],
+        ['meta', 'kind'],
+        ['labels', 'key_value', 'value'],
+):
+    annotate_element_at_path_as_enum(
+        'core/src/test/resources/enum_nested_test.parquet', enum_path)
+print("\nGenerated enum_nested_test.parquet:")
+print("  - ENUM at top level, in a struct, as a list element, and as a map value")
+print("  - dictionary-encoded values with nulls and repeated symbols")
+
+# uuid_list_test.parquet
+# UUID list elements: the materializers decode a UUID element to its canonical
+# string form rather than the 16 raw bytes, and only the list position exercises
+# that through the generic element accessor.
+# PyArrow cannot infer a list of the UUID extension type from raw bytes, so the
+# element array is built explicitly and wrapped in a ListArray.
+uuid_list_elements = pa.ExtensionArray.from_storage(pa.uuid(), pa.array([
+    uuid.UUID('12345678-1234-5678-1234-567812345678').bytes,
+    uuid.UUID('87654321-4321-8765-4321-876543218765').bytes,
+    None,
+], type=pa.binary(16)))
+uuid_list_table = pa.table({
+    'id': pa.array([1, 2, 3], type=pa.int32()),
+    'session_ids': pa.ListArray.from_arrays(
+        pa.array([0, 2, 3, 3], type=pa.int32()), uuid_list_elements),
+})
+pq.write_table(
+    uuid_list_table,
+    'core/src/test/resources/uuid_list_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0',
+)
+print("\nGenerated uuid_list_test.parquet:")
+print("  - list<uuid> with a two-element list, a null element, and an empty list")
+
 # old_list_structure_test.parquet
 # Tests reading the pre-standard 2-level LIST encoding (see hardwood-hq/hardwood#282).
 # PyArrow only writes the standard 3-level encoding, so this fixture cannot be
@@ -3240,6 +3808,69 @@ print("\nGenerated geospatial_stats_test.parquet:")
 print("  - city_geom column has GeospatialStatistics at field 17")
 print("  - BoundingBox: xmin=-4.0, xmax=7.5, ymin=20.96, ymax=77.08, zmin=10.5, zmax=90.0")
 print("  - geospatial_types: [1, 6]")
+
+# ----------------------------------------------------------------------------
+# geography_algorithm.parquet — GEOGRAPHY logical type carrying a non-default
+# edge-interpolation algorithm. `GeographyType.algorithm` is a Thrift *enum*
+# (SPHERICAL=0 .. KARNEY=4), so it is an i32 field, not a union.
+# ----------------------------------------------------------------------------
+
+def _geography_logical_type(crs, algorithm):
+    # LogicalType union field 18 = GeographyType { 1: crs, 2: algorithm }
+    geography = _ThriftWriter()
+    geography.f(1, _T_BIN).s(crs)
+    geography.f(2, _T_I32).i32(algorithm)
+    geography.end()
+    w = _ThriftWriter()
+    w.f(18, _T_STRUCT).raw(geography.out())
+    w.end()
+    return w.out()
+
+fm = _ThriftWriter()
+fm.f(1, _T_I32).i32(2)
+fm.f(2, _T_LIST).lst(_T_STRUCT, 3)
+fm.raw(_schema_elem("schema", num_children=2))
+fm.raw(_schema_elem("city_name", type_val=6, rep=0))
+fm.raw(_schema_elem("city_geom", type_val=6, rep=1,
+                    logical_type=_geography_logical_type("EPSG:4326", 2)))  # THOMAS
+fm.f(3, _T_I64).i64(3)
+fm.f(4, _T_LIST).lst(_T_STRUCT, 1)
+
+rw = _ThriftWriter()
+rw.f(1, _T_LIST).lst(_T_STRUCT, 2)
+for ci in range(2):
+    col = base_rg.column(ci)
+    encs = [enc_map.get(str(e), 0) for e in col.encodings]
+    cc = _ThriftWriter()
+    cc.f(2, _T_I64).i64(col.file_offset)
+    cc.f(3, _T_STRUCT)
+    md = _ThriftWriter()
+    md.f(1, _T_I32).i32(6)
+    md.f(2, _T_LIST).lst(_T_I32, len(encs))
+    for e in encs: md.i32(e)
+    md.f(3, _T_LIST).lst(_T_BIN, 1).s(col.path_in_schema)
+    md.f(4, _T_I32).i32(0)
+    md.f(5, _T_I64).i64(col.num_values)
+    md.f(6, _T_I64).i64(col.total_uncompressed_size)
+    md.f(7, _T_I64).i64(col.total_compressed_size)
+    md.f(9, _T_I64).i64(col.data_page_offset)
+    md.end()
+    cc.raw(md.out()).end()
+    rw.raw(cc.out())
+rw.f(2, _T_I64).i64(base_rg.total_byte_size)
+rw.f(3, _T_I64).i64(base_rg.num_rows)
+rw.end()
+fm.raw(rw.out())
+fm.f(6, _T_BIN).s("hardwood-test-datagen")
+fm.end()
+
+footer_bytes = fm.out()
+output = pre_footer + footer_bytes + struct.pack('<I', len(footer_bytes)) + b'PAR1'
+with open('core/src/test/resources/geography_algorithm.parquet', 'wb') as f:
+    f.write(output)
+
+print("\nGenerated geography_algorithm.parquet:")
+print("  - city_geom column is GEOGRAPHY(crs=EPSG:4326, algorithm=THOMAS)")
 
 # ============================================================================
 # Geospatial fixtures: variants that exercise optional-field handling
@@ -3821,6 +4452,41 @@ print("  - Bloom filters on 'id', 'name', 'code', 'price', 'ratio', 'dec', 'ts',
       " 'value' has none")
 
 # =====================================================================
+# FLOAT / DOUBLE signed-zero bloom-filter fixture (#829). Both columns
+# contain only -0.0, whose raw IEEE-754 bloom hash differs from +0.0.
+# Statistics are disabled so row-group decisions isolate bloom-filter
+# behavior: +0.0 is absent, -0.0 is present, and NaN probes must stay
+# conservative because raw-bit hashing distinguishes NaN payloads while
+# Float.compare / Double.compare do not.
+# =====================================================================
+
+signed_zero_bloom_schema = pa.schema([
+    ('float_value', pa.float32(), False),
+    ('double_value', pa.float64(), False),
+])
+signed_zero_bloom_table = pa.table({
+    'float_value': [-0.0] * 16,
+    'double_value': [-0.0] * 16,
+}, schema=signed_zero_bloom_schema)
+
+pq.write_table(
+    signed_zero_bloom_table,
+    'core/src/test/resources/bloom_filter_signed_zero_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0',
+    write_statistics=False,
+    bloom_filter_options={
+        'float_value': {'ndv': 1, 'fpp': 0.01},
+        'double_value': {'ndv': 1, 'fpp': 0.01},
+    },
+)
+
+print("\nGenerated bloom_filter_signed_zero_test.parquet:")
+print("  - 1 row group, 16 rows, FLOAT float_value + DOUBLE double_value, all -0.0")
+print("  - Bloom filters on both columns; statistics disabled")
+
+# =====================================================================
 # Local-wall-clock TIMESTAMP fixture (#568). PyArrow's `pa.timestamp(unit)`
 # with no `tz=` argument emits TIMESTAMP(isAdjustedToUTC=false), the
 # "naive" / wall-clock case. The companion UTC-adjusted column lets the
@@ -4341,6 +5007,35 @@ corrupt_data_page_offset_negative(_negative_offset_path)
 print("\nGenerated negative_data_page_offset.parquet:")
 print("  - valid footer with data_page_offset = -1 (controlled-rejection fixture)")
 
+# ============================================================================
+# Lying-Statistics Test File (hardwood-hq/hardwood#797)
+# ============================================================================
+#
+# Same 3-row-group layout as filter_pushdown_int.parquet (RG1 id 1-100, RG2
+# 101-200, RG3 201-300), but RG3's `id` statistics are rewritten to advertise a
+# false [101, 200] range. A reader trusting the footer prunes RG3 for
+# gt(id, 200) and returns zero rows; the real data holds 201-300, so the correct
+# answer is 100 rows. The `hardwood.metadata-filtering` opt-out must recover
+# those rows by ignoring the statistics and evaluating every row.
+
+_lying_stats_path = 'core/src/test/resources/filter_pushdown_int_lying_stats.parquet'
+_lying_writer = pq.ParquetWriter(
+    _lying_stats_path,
+    schema=filter_int_schema,
+    use_dictionary=False,
+    compression='NONE',
+    data_page_version='1.0',
+    write_statistics=True,
+)
+_lying_writer.write_table(rg1)
+_lying_writer.write_table(rg2)
+_lying_writer.write_table(rg3)
+_lying_writer.close()
+falsify_int64_row_group_minmax(_lying_stats_path, 'id', 2, fake_min=101, fake_max=200)
+print("\nGenerated filter_pushdown_int_lying_stats.parquet:")
+print("  - RG3 `id` statistics falsified to [101, 200]; real data is 201-300")
+print("  - gt(id, 200) yields 0 rows if stats are trusted, 100 rows if ignored")
+
 
 # Key-only map (set) fixture (#657).
 # Spec: the MAP value field "can be required, optional, or omitted"; if omitted
@@ -4573,3 +5268,307 @@ _copy_if_exists(
     f'{_codec_dir}/lz4_hadoop.parquet',
     'build parquet-testing-runner to fetch the apache/parquet-testing data set',
 )
+
+# Dictionary-encoded FLOAT / DOUBLE columns holding -0.0 but never +0.0, so a
+# +0.0 probe is provably absent from the dictionary while a -0.0 probe is
+# present. A dictionary holds exact stored values and is compared with
+# Float.compare / Double.compare, the same total order the row matchers apply,
+# so this prunes on every column regardless of the column's ColumnOrder.
+_signed_zero_schema = pa.schema([
+    ('f', pa.float32(), False),
+    ('d', pa.float64(), False),
+])
+_signed_zero_values = [-0.0, 1.5, 2.5, 3.5]
+_signed_zero_table = pa.table({
+    'f': [_signed_zero_values[i % 4] for i in range(4096)],
+    'd': [_signed_zero_values[i % 4] for i in range(4096)],
+}, schema=_signed_zero_schema)
+pq.write_table(
+    _signed_zero_table,
+    'core/src/test/resources/dict_signed_zero.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_signed_zero.parquet:")
+print("  - 4096 rows, dictionary-encoded FLOAT 'f' and DOUBLE 'd'")
+print("  - values {-0.0, 1.5, 2.5, 3.5}; +0.0 is absent from both dictionaries")
+
+# A column chunk that omits dictionary_page_offset, leaving data_page_offset to name the
+# dictionary page at the chunk start.
+#
+# dictionary_page_offset is optional in parquet.thrift, and files that omit it are ordinary rather
+# than corrupt: apache/parquet-testing's alltypes_tiny_pages.parquet, written by parquet-mr 1.12,
+# omits it on every one of its PLAIN_DICTIONARY columns, and Trino did the same before 427
+# (trinodb/trino#19032). Current parquet-java writes it whenever a dictionary page exists, so a
+# reader cannot rely on its presence but will usually see it. Readers locate the page the way
+# parquet-java's ColumnChunkMetaData.getStartingPos() does: fall back to the first data page
+# offset, which for such a chunk is the dictionary page.
+#
+# PyArrow always writes the offset, so the footer is rewritten afterwards. Every page stays
+# byte-for-byte where PyArrow put it, so the file reads and prunes exactly like its conventional
+# twin.
+#
+# 'id' keeps conventional offsets, so one file carries both shapes.
+_missing_dict_offset_schema = pa.schema([
+    ('id', pa.int64(), False),
+    ('label', pa.string(), False),
+])
+_missing_dict_offset_rows = 2000
+_missing_dict_offset_table = pa.table({
+    'id': list(range(_missing_dict_offset_rows)),
+    'label': [f'label_{i % 50}' for i in range(_missing_dict_offset_rows)],
+}, schema=_missing_dict_offset_schema)
+pq.write_table(
+    _missing_dict_offset_table,
+    'core/src/test/resources/dict_missing_page_offset.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+    write_page_index=True,
+)
+drop_dictionary_page_offset('core/src/test/resources/dict_missing_page_offset.parquet', 'label')
+print("\nGenerated dict_missing_page_offset.parquet:")
+print("  - 1 row group, 2000 rows, fully dictionary-encoded 'id' and 'label'")
+print("  - 'label' omits the optional dictionary_page_offset; 'id' is conventional")
+
+# Dictionary-encoded INT32 / INT64 / FLOAT / DOUBLE columns whose values leave gaps inside their
+# own min/max range, so a probe for a missing in-range value is provable only by the dictionary and
+# never by statistics. Covers the numeric arms of dictionary push-down that the STRING fixtures
+# cannot reach.
+#
+# The float columns also carry NaN, so that the total-order equality dictionary push-down uses --
+# which treats all NaNs as equal -- can be asserted against a real NaN dictionary entry.
+_dict_numeric_schema = pa.schema([
+    ('i32', pa.int32(), False),
+    ('i64', pa.int64(), False),
+    ('f32', pa.float32(), False),
+    ('f64', pa.float64(), False),
+])
+_dict_numeric_rows = 4096
+_dict_numeric_i32 = [0, 3, 6, 9]
+_dict_numeric_i64 = [0, 1000, 2000, 3000]
+_dict_numeric_float = [1.5, 2.5, float('nan'), 4.5]
+_dict_numeric_table = pa.table({
+    'i32': [_dict_numeric_i32[i % 4] for i in range(_dict_numeric_rows)],
+    'i64': [_dict_numeric_i64[i % 4] for i in range(_dict_numeric_rows)],
+    'f32': [_dict_numeric_float[i % 4] for i in range(_dict_numeric_rows)],
+    'f64': [_dict_numeric_float[i % 4] for i in range(_dict_numeric_rows)],
+}, schema=_dict_numeric_schema)
+pq.write_table(
+    _dict_numeric_table,
+    'core/src/test/resources/dict_numeric_pushdown.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_numeric_pushdown.parquet:")
+print("  - 4096 rows, dictionary-encoded INT32 'i32' {0,3,6,9}, INT64 'i64' {0,1000,2000,3000}")
+print("  - FLOAT 'f32' / DOUBLE 'f64' {1.5, 2.5, NaN, 4.5}")
+print("  - every column leaves in-range gaps only the dictionary can prove absent")
+
+# A dictionary-encoded FIXED_LEN_BYTE_ARRAY column. FLBA shares the ByteArrayDictionary arm with
+# BYTE_ARRAY but reaches it through a distinct physical type, and no other fixture carries a
+# dictionary-encoded one. The codes are fixed-width ASCII so they can be probed through the
+# String-valued predicate factories, and they leave lexicographic gaps ('aa05', 'aa07') inside the
+# ['aa00', 'aa09'] range statistics advertise, so only the dictionary can prove a probe absent.
+_dict_flba_schema = pa.schema([('code', pa.binary(4), False)])
+_dict_flba_rows = 4096
+_dict_flba_codes = [b'aa00', b'aa03', b'aa06', b'aa09']
+_dict_flba_table = pa.table({
+    'code': [_dict_flba_codes[i % 4] for i in range(_dict_flba_rows)],
+}, schema=_dict_flba_schema)
+pq.write_table(
+    _dict_flba_table,
+    'core/src/test/resources/dict_flba_pushdown.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_flba_pushdown.parquet:")
+print("  - 4096 rows, dictionary-encoded FIXED_LEN_BYTE_ARRAY(4) 'code'")
+print("  - values {aa00, aa03, aa06, aa09}; 'aa05' / 'aa07' are in-range but absent")
+
+# A dictionary-encoded FLOAT16 column. FLOAT16 is FIXED_LEN_BYTE_ARRAY(2) annotated Float16Type,
+# so it shares the ByteArrayDictionary arm with the other binary types but is probed through the
+# float-valued predicate factories. float16_logical_type_test.parquet is written plain, so it
+# cannot exercise push-down. Every value here is exactly representable in binary16, so the probes
+# say what they look like: 3.0 and 6.0 fall inside the [1.0, 8.0] range statistics advertise while
+# being absent from the dictionary.
+_dict_float16_schema = pa.schema([('half', pa.float16(), False)])
+_dict_float16_rows = 4096
+_dict_float16_values = [numpy.float16(v) for v in (1.0, 2.0, 4.0, 8.0)]
+_dict_float16_table = pa.table({
+    'half': [_dict_float16_values[i % 4] for i in range(_dict_float16_rows)],
+}, schema=_dict_float16_schema)
+pq.write_table(
+    _dict_float16_table,
+    'core/src/test/resources/dict_float16_pushdown.parquet',
+    use_dictionary=True,
+    compression='NONE',
+    write_statistics=True,
+)
+print("\nGenerated dict_float16_pushdown.parquet:")
+print("  - 4096 rows, dictionary-encoded FLOAT16 'half'")
+print("  - values {1.0, 2.0, 4.0, 8.0}; 3.0 / 6.0 are in-range but absent")
+
+# A dictionary page whose compressed size differs sharply from its uncompressed size, so a reader
+# that sizes the dictionary read from `uncompressed_page_size` instead of `compressed_page_size`
+# over-reads measurably. Every other dictionary fixture is written with compression off, where the
+# two are equal and the mistake is invisible.
+#
+# 256 distinct labels sharing a 40-character run of filler compress to roughly a tenth of their
+# plain size. Only even suffixes are written, so `pad_1_...` stays lexicographically inside the
+# column's min/max while being absent from the dictionary.
+_dict_compressed_schema = pa.schema([
+    ('label', pa.string(), False),
+    ('payload', pa.int64(), False),
+])
+_dict_compressed_rows = 20000
+_dict_compressed_names = [f'pad_{2 * i}_' + 'z' * 40 for i in range(256)]
+_dict_compressed_table = pa.table({
+    'label': [_dict_compressed_names[i % 256] for i in range(_dict_compressed_rows)],
+    'payload': list(range(_dict_compressed_rows)),
+}, schema=_dict_compressed_schema)
+pq.write_table(
+    _dict_compressed_table,
+    'core/src/test/resources/dict_compressed_page.parquet',
+    use_dictionary=True,
+    compression='snappy',
+    write_statistics=True,
+)
+print("\nGenerated dict_compressed_page.parquet:")
+print("  - 1 row group, 20000 rows, Snappy-compressed dictionary-encoded 'label'")
+print("  - dictionary page compresses ~10x, so compressed and uncompressed sizes diverge")
+
+# Size statistics and level histograms (#607).
+# PyArrow writes SizeStatistics (ColumnMetaData field 16) by default and, with
+# write_page_index, the per-page histograms and unencoded BYTE_ARRAY sizes in the
+# ColumnIndex / OffsetIndex. The three columns cover the shapes that make those
+# fields non-trivial:
+#   - name:  BYTE_ARRAY with a null, so unencoded_byte_array_data_bytes is set and
+#            the definition-level histogram has a non-zero null bucket
+#   - tags:  a LIST, the only shape with a repetition-level histogram
+#   - score: DOUBLE including a NaN. No nan_count is written — no available writer
+#            emits Statistics field 9 or ColumnIndex field 8 — so those two fields
+#            have unit coverage only.
+# One row group, one page per column, so each histogram covers the whole column.
+_size_stats_table = pa.table({
+    'name': pa.array(['alpha', None, 'gamma', 'delta'], pa.string()),
+    'tags': pa.array([[1, 2], [], None, [3]], pa.list_(pa.int32())),
+    'score': pa.array([1.5, float('nan'), 3.0, None], pa.float64()),
+})
+pq.write_table(
+    _size_stats_table,
+    'core/src/test/resources/size_statistics_test.parquet',
+    use_dictionary=False,
+    compression=None,
+    write_page_index=True,
+)
+print("\nGenerated size_statistics_test.parquet:")
+print("  - Schema: name: string, tags: list<int32>, score: double")
+print("  - 4 rows, one row group: SizeStatistics per chunk, histograms in the page index")
+
+# Unannotated BYTE_ARRAY at every nesting position (#1012).
+# A bare BYTE_ARRAY carries bytes the schema gives no interpretation for, and the
+# CLI decides text vs. binary from the bytes themselves. `convert` has to carry
+# the value rather than describe it, so it renders binary as full hex — including
+# for a payload nested inside a list, a struct or a map, which reach the renderer
+# by a different path than a top-level leaf.
+# The payload is a 21-byte WKB Point, the shape GeoParquet 1.x stores in a bare
+# BYTE_ARRAY geometry column: too long for a table cell and not valid UTF-8.
+_wkb_point = bytes.fromhex('010100000000000000005366c0f71622f0fa1955c0')
+_wkb_point_2 = bytes.fromhex('0101000000f71622f0fa1955c000000000005366c0')
+# The same payload in a FIXED_LEN_BYTE_ARRAY column, at the same positions.
+# The two physical types render identically; the pair is here so a change that
+# reintroduced a per-type rule would be caught.
+#
+# A Variant column carries a BINARY payload far past any cell budget. The
+# record modal renders a value whole, so the payload is the tripwire for a
+# budget leaking into that path: it would be cut with nothing to mark the cut.
+_variant_blob = bytes(range(256)) * 12  # 3072 bytes, never valid UTF-8
+_variant_binary_value = (bytes([0x3C])                       # primitive header, type 15 = binary
+                         + len(_variant_blob).to_bytes(4, 'little')
+                         + _variant_blob)
+_nested_binary_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('blob', pa.binary(), True),
+    ('blobs', pa.list_(pa.binary())),
+    ('holder', pa.struct([('payload', pa.binary())])),
+    ('by_name', pa.map_(pa.string(), pa.binary())),
+    ('fixed', pa.binary(21), True),
+    ('fixeds', pa.list_(pa.binary(21))),
+    ('fixed_holder', pa.struct([('payload', pa.binary(21))])),
+    ('fixed_by_name', pa.map_(pa.string(), pa.binary(21))),
+    ('var', pa.struct([
+        pa.field('metadata', pa.binary(), False),
+        pa.field('value', pa.binary(), False),
+    ]), True),
+])
+_nested_binary_table = pa.table({
+    'id': pa.array([1, 2], pa.int32()),
+    'blob': [_wkb_point, None],
+    'blobs': [[_wkb_point, _wkb_point_2], []],
+    'holder': [{'payload': _wkb_point}, {'payload': None}],
+    'by_name': [[('geom', _wkb_point)], []],
+    'fixed': pa.array([_wkb_point, None], pa.binary(21)),
+    'fixeds': pa.array([[_wkb_point, _wkb_point_2], []], pa.list_(pa.binary(21))),
+    'fixed_holder': pa.array([{'payload': _wkb_point}, {'payload': None}],
+                             pa.struct([('payload', pa.binary(21))])),
+    'fixed_by_name': pa.array([[('geom', _wkb_point)], []], pa.map_(pa.string(), pa.binary(21))),
+    'var': [
+        {'metadata': _empty_metadata, 'value': _variant_binary_value},
+        {'metadata': _empty_metadata, 'value': bytes([0x04])},
+    ],
+}, schema=_nested_binary_schema)
+pq.write_table(
+    _nested_binary_table,
+    'core/src/test/resources/nested_binary_test.parquet',
+    # Dictionary-encoded, as GeoParquet writers encode geometry, so the dive
+    # dictionary screen has opaque entries as well as opaque bounds.
+    use_dictionary=True,
+    compression=None,
+    write_statistics=True,
+    write_page_index=True,
+)
+annotate_group_as_variant('core/src/test/resources/nested_binary_test.parquet', 'var')
+
+print("\nGenerated nested_binary_test.parquet:")
+print("  - Bare BYTE_ARRAY (WKB Point payload) at top level, as a list element,")
+print("    as a struct field and as a map value, and the same four positions")
+print("    again as FIXED_LEN_BYTE_ARRAY(21)")
+print("  - a VARIANT column whose first row holds a 3072-byte BINARY payload")
+print("  - page index written, so the dive column-index screen has opaque bounds")
+
+# ---------------------------------------------------------------------------
+# Avro name resolution (hardwood-hq/hardwood#895).
+# Three shapes that the Avro schema converter has to rename or namespace, in one
+# file so a reader test can prove the renamed names still address real values:
+#   - home.address / work.address: two records sharing a simple name. Avro
+#     identifies a named type by its full name, so both need a namespace.
+#   - 'acme.address': a group name outside the Avro grammar [A-Za-z_][A-Za-z0-9_]*,
+#     rewritten to 'acme_address'. Its 'city' child is legal and keeps its name, so
+#     reading it exercises a rewritten struct addressed by its Parquet name.
+#   - 'a-b': the same rewrite at a flat top-level column.
+_avro_names_schema = pa.schema([
+    ('home', pa.struct([('address', pa.struct([('city', pa.string())]))])),
+    ('work', pa.struct([('address', pa.struct([('zip', pa.int32())]))])),
+    ('acme.address', pa.struct([('city', pa.string())])),
+    ('a-b', pa.int32()),
+])
+_avro_names_table = pa.table({
+    'home': [{'address': {'city': 'Timbuktu'}}, {'address': {'city': 'Reykjavik'}}],
+    'work': [{'address': {'zip': 73}}, {'address': {'zip': 101}}],
+    'acme.address': [{'city': 'Valparaiso'}, None],
+    'a-b': [42, 7],
+}, schema=_avro_names_schema)
+pq.write_table(
+    _avro_names_table,
+    'core/src/test/resources/avro_name_resolution.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='1.0'
+)
+print("\nGenerated avro_name_resolution.parquet:")
+print("  - Schema: home.address.city, work.address.zip, 'acme.address'.city, 'a-b'")
+print("  - 2 rows: duplicate nested record names plus names outside the Avro grammar")

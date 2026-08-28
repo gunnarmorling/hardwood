@@ -17,12 +17,15 @@ RUN microdnf install -y --nodocs \
       unzip \
       tar \
       diffutils \
+      ShellCheck \
       binutils \
       gcc \
       glibc-devel \
       zlib-devel \
       file \
+      poppler-utils \
       vim-common \
+      util-linux-script \
       fontconfig \
       dejavu-sans-fonts \
       google-noto-sans-vf-fonts \
@@ -37,6 +40,16 @@ RUN curl -s "https://get.sdkman.io" | bash \
     && bash -c "source $SDKMAN_DIR/bin/sdkman-init.sh && sdk install java 25-tem"
 ENV PATH="$SDKMAN_DIR/candidates/java/current/bin:$PATH"
 ENV JAVA_HOME="$SDKMAN_DIR/candidates/java/current"
+
+# Install the Hardwood CLI from a tagged GitHub release. The tarball ships the
+# native binary alongside a lib/ of codec .so files it resolves relative to its
+# real path, so keep them together under /opt and symlink only the launcher.
+ARG HARDWOOD_CLI_VERSION=1.0.0.Final
+RUN arch="$(uname -m)" \
+    && url="https://github.com/hardwood-hq/hardwood/releases/download/v${HARDWOOD_CLI_VERSION}/hardwood-cli-${HARDWOOD_CLI_VERSION}-linux-${arch}.tar.gz" \
+    && curl -fsSL "$url" | tar -xz -C /opt \
+    && ln -s "/opt/hardwood-cli-${HARDWOOD_CLI_VERSION}-linux-${arch}/bin/hardwood" /usr/local/bin/hardwood \
+    && hardwood --version
 
 # Install Claude Code (native installer)
 RUN curl -fsSL https://claude.ai/install.sh | bash

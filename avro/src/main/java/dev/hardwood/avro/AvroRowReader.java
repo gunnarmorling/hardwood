@@ -15,17 +15,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.apache.avro.LogicalType;
-import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 
-import dev.hardwood.avro.internal.AvroSchemaConverter;
+import dev.hardwood.avro.internal.AvroPlanNode;
+import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.reader.FileAwareRowReader;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqList;
 import dev.hardwood.row.PqMap;
 import dev.hardwood.row.PqStruct;
+import dev.hardwood.row.PqVariant;
+import dev.hardwood.row.StructAccessor;
 
 /// Reads Parquet rows as Avro [GenericRecord] instances.
 ///
@@ -45,12 +47,55 @@ import dev.hardwood.row.PqStruct;
 /// ```
 public class AvroRowReader implements AutoCloseable {
 
-    private final RowReader rowReader;
-    private final Schema avroSchema;
+    private sealed interface ValueLocation
+            permits RootFieldLocation, StructFieldLocation, ListElementLocation, MapValueLocation {
+        String description();
+    }
 
-    AvroRowReader(RowReader rowReader, Schema avroSchema) {
+    private record RootFieldLocation(String name) implements ValueLocation {
+        @Override
+        public String description() {
+            return "field '" + name + "'";
+        }
+    }
+
+    private record StructFieldLocation(String name) implements ValueLocation {
+        @Override
+        public String description() {
+            return "struct field '" + name + "'";
+        }
+    }
+
+    private record ListElementLocation(int index) implements ValueLocation {
+        @Override
+        public String description() {
+            return "list element " + index;
+        }
+    }
+
+    private record MapValueLocation(String key) implements ValueLocation {
+        @Override
+        public String description() {
+            return "map value for key '" + key + "'";
+        }
+    }
+
+    private enum RecordPosition {
+        ROOT,
+        STRUCT
+    }
+
+    private final RowReader rowReader;
+
+    /// Per-value accessor decisions, taken from the Parquet schema when the Avro
+    /// schema was converted. Materialization switches on these rather than on the
+    /// converted Avro shape, which no longer distinguishes a Variant group from an
+    /// ordinary `{metadata, value}` struct.
+    private final AvroPlanNode plan;
+
+    AvroRowReader(RowReader rowReader, AvroPlanNode plan) {
         this.rowReader = rowReader;
-        this.avroSchema = avroSchema;
+        this.plan = plan;
     }
 
     /// Check if there are more rows to read.
@@ -65,14 +110,14 @@ public class AvroRowReader implements AutoCloseable {
     /// @return the current row as a GenericRecord
     public GenericRecord next() {
         rowReader.next();
-        return materializeRow();
+        return materializeRecord(rowReader, plan, RecordPosition.ROOT);
     }
 
     /// Returns the Avro schema used for materialization.
     ///
     /// @return the Avro record schema
     public Schema getSchema() {
-        return avroSchema;
+        return plan.avro();
     }
 
     @Override
@@ -80,172 +125,131 @@ public class AvroRowReader implements AutoCloseable {
         rowReader.close();
     }
 
-    private GenericRecord materializeRow() {
-        GenericRecord record = new GenericData.Record(avroSchema);
-        for (Schema.Field field : avroSchema.getFields()) {
-            String name = field.name();
-            if (rowReader.isNull(name)) {
-                record.put(field.pos(), null);
+    /// Materialize a row or a nested struct. [RowReader] and [PqStruct] are both
+    /// [StructAccessor], so the two differ only in the plan node they are read with.
+    private GenericRecord materializeRecord(StructAccessor accessor, AvroPlanNode node,
+            RecordPosition position) {
+        Schema recordSchema = node.avro();
+        GenericRecord record = new GenericData.Record(recordSchema);
+        int fieldCount = recordSchema.getFields().size();
+        for (int i = 0; i < fieldCount; i++) {
+            AvroPlanNode child = node.child(i);
+            String parquetName = child.source().name();
+            if (accessor.isNull(parquetName)) {
+                record.put(i, null);
                 continue;
             }
-            record.put(field.pos(), materializeValue(rowReader, name, field.schema()));
+            ValueLocation location = position == RecordPosition.ROOT
+                    ? new RootFieldLocation(parquetName)
+                    : new StructFieldLocation(parquetName);
+            record.put(i, materializeField(accessor, parquetName, child, location));
         }
         return record;
     }
 
-    private Object materializeValue(RowReader reader, String name, Schema schema) {
-        Schema resolved = resolveUnion(schema);
-        return switch (resolved.getType()) {
-            case BOOLEAN -> reader.getBoolean(name);
-            case INT -> reader.getInt(name);
-            case LONG -> isUnsignedInt32(resolved)
-                    ? Integer.toUnsignedLong(reader.getInt(name))
-                    : reader.getLong(name);
-            case FLOAT -> reader.getFloat(name);
-            case DOUBLE -> reader.getDouble(name);
-            case STRING -> isUuid(resolved) ? uuidString(reader.getUuid(name)) : reader.getString(name);
-            case BYTES -> isDecimal(resolved)
-                    ? decimalBytes(reader.getDecimal(name))
-                    : wrapBytes(reader.getBinary(name));
-            case FIXED -> wrapFixed(reader.getBinary(name), resolved);
-            case RECORD -> isVariantShape(resolved)
-                    ? materializeVariant(reader.getVariant(name), resolved)
-                    : materializeStruct(reader.getStruct(name), resolved);
-            case ARRAY -> materializeList(reader.getList(name), resolved.getElementType());
-            case MAP -> materializeMap(reader.getMap(name), resolved.getValueType());
-            default -> reader.getValue(name);
+    private Object materializeField(StructAccessor accessor, String name, AvroPlanNode node,
+            ValueLocation location) {
+        return switch (node.kind()) {
+            case BOOLEAN, INT, LONG, FLOAT, DOUBLE, UNSIGNED_INT32, BINARY, FIXED ->
+                    rawToAvro(accessor.getRawValue(name), node, location);
+            case STRING -> requireValue(accessor.getString(name), node, location);
+            case UUID -> uuidString(requireValue(accessor.getUuid(name), node, location));
+            case DECIMAL -> decimalBytes(requireValue(accessor.getDecimal(name), node, location));
+            case STRUCT -> materializeRecord(requireValue(accessor.getStruct(name), node, location),
+                    node, RecordPosition.STRUCT);
+            case VARIANT -> materializeVariant(requireValue(accessor.getVariant(name), node, location),
+                    node.avro());
+            case LIST -> materializeList(requireValue(accessor.getList(name), node, location),
+                    node.listElement());
+            case MAP -> materializeMap(requireValue(accessor.getMap(name), node, location),
+                    node.mapValue());
+            case NULL -> throw materializationFailure(node, location, accessor.getValue(name),
+                    "NULL has no non-null materialization");
         };
     }
 
-    /// Detect the two-field `{metadata: bytes, value: bytes}` RECORD shape
-    /// emitted by [dev.hardwood.avro.internal.AvroSchemaConverter#convertVariant]
-    /// for Variant-annotated columns.
-    private static boolean isVariantShape(Schema recordSchema) {
-        List<Schema.Field> fields = recordSchema.getFields();
-        if (fields.size() != 2) {
-            return false;
-        }
-        Schema.Field first = fields.get(0);
-        Schema.Field second = fields.get(1);
-        return "metadata".equals(first.name())
-                && first.schema().getType() == Schema.Type.BYTES
-                && "value".equals(second.name())
-                && second.schema().getType() == Schema.Type.BYTES;
+    /// Represent a value read in its physical form as Avro expects it.
+    ///
+    /// These kinds take the same shape at every position — a field, a list element,
+    /// a map value — because Avro types them as the physical type and leaves any
+    /// logical type in the schema. Reading them through one helper is what keeps the
+    /// three positions from drifting apart: a temporal column that materializes as a
+    /// number in one place and a `java.time` object in another produces records that
+    /// contradict their own schema.
+    ///
+    /// @param raw the value in its physical representation
+    /// @param node the plan node for the value's position
+    /// @param location the value's position for a materialization failure
+    /// @return the value as its Avro schema requires
+    private Object rawToAvro(Object raw, AvroPlanNode node, ValueLocation location) {
+        return switch (node.kind()) {
+            case UNSIGNED_INT32 -> Integer.toUnsignedLong(
+                    requireValueType(raw, Integer.class, node, location));
+            case BINARY -> wrapBytes(requireValueType(raw, byte[].class, node, location));
+            case FIXED -> wrapFixed(requireValueType(raw, byte[].class, node, location), node, location);
+            // Already in their Avro representation as read.
+            case BOOLEAN -> requireValueType(raw, Boolean.class, node, location);
+            case INT -> requireValueType(raw, Integer.class, node, location);
+            case LONG -> requireValueType(raw, Long.class, node, location);
+            case FLOAT -> requireValueType(raw, Float.class, node, location);
+            case DOUBLE -> requireValueType(raw, Double.class, node, location);
+            case STRING, UUID, DECIMAL, STRUCT, VARIANT, LIST, MAP, NULL -> throw new IllegalStateException(
+                    "Not a physically represented kind: " + node.kind());
+        };
     }
 
-    private static GenericRecord materializeVariant(dev.hardwood.row.PqVariant variant, Schema recordSchema) {
-        if (variant == null) {
-            return null;
-        }
+    private static GenericRecord materializeVariant(PqVariant variant, Schema recordSchema) {
         GenericRecord record = new GenericData.Record(recordSchema);
         record.put(0, ByteBuffer.wrap(variant.metadata()));
         record.put(1, ByteBuffer.wrap(variant.value()));
         return record;
     }
 
-    private Object materializeStructValue(PqStruct struct, String name, Schema schema) {
-        Schema resolved = resolveUnion(schema);
-        return switch (resolved.getType()) {
-            case BOOLEAN -> struct.getBoolean(name);
-            case INT -> struct.getInt(name);
-            case LONG -> isUnsignedInt32(resolved)
-                    ? Integer.toUnsignedLong(struct.getInt(name))
-                    : struct.getLong(name);
-            case FLOAT -> struct.getFloat(name);
-            case DOUBLE -> struct.getDouble(name);
-            case STRING -> isUuid(resolved) ? uuidString(struct.getUuid(name)) : struct.getString(name);
-            case BYTES -> isDecimal(resolved)
-                    ? decimalBytes(struct.getDecimal(name))
-                    : wrapBytes(struct.getBinary(name));
-            case FIXED -> wrapFixed(struct.getBinary(name), resolved);
-            case RECORD -> isVariantShape(resolved)
-                    ? materializeVariant(struct.getVariant(name), resolved)
-                    : materializeStruct(struct.getStruct(name), resolved);
-            case ARRAY -> materializeList(struct.getList(name), resolved.getElementType());
-            case MAP -> materializeMap(struct.getMap(name), resolved.getValueType());
-            default -> struct.getValue(name);
-        };
-    }
-
-    private GenericRecord materializeStruct(PqStruct struct, Schema recordSchema) {
-        GenericRecord record = new GenericData.Record(recordSchema);
-        for (Schema.Field field : recordSchema.getFields()) {
-            String name = field.name();
-            if (struct.isNull(name)) {
-                record.put(field.pos(), null);
-                continue;
-            }
-            record.put(field.pos(), materializeStructValue(struct, name, field.schema()));
-        }
-        return record;
-    }
-
-    private List<Object> materializeList(PqList pqList, Schema elementSchema) {
-        Schema resolved = resolveUnion(elementSchema);
+    private List<Object> materializeList(PqList pqList, AvroPlanNode element) {
         List<Object> result = new ArrayList<>(pqList.size());
         for (int i = 0; i < pqList.size(); i++) {
             if (pqList.isNull(i)) {
                 result.add(null);
                 continue;
             }
-            result.add(materializeListElement(pqList, i, resolved));
+            result.add(materializeListElement(pqList, i, element));
         }
         return result;
     }
 
-    private Object materializeListElement(PqList pqList, int index, Schema elementSchema) {
-        return switch (elementSchema.getType()) {
-            case BOOLEAN -> pqList.get(index);
-            case INT -> pqList.get(index);
-            case LONG -> {
-                Object raw = pqList.get(index);
-                yield isUnsignedInt32(elementSchema) && raw instanceof Integer i
-                        ? Integer.toUnsignedLong(i)
-                        : raw;
-            }
-            case FLOAT -> pqList.get(index);
-            case DOUBLE -> pqList.get(index);
-            case STRING -> {
-                Object val = pqList.get(index);
-                yield isUuid(elementSchema) && val instanceof UUID u ? u.toString() : val;
-            }
-            case BYTES -> {
-                Object val = pqList.get(index);
-                if (isDecimal(elementSchema) && val instanceof BigDecimal d) {
-                    yield decimalBytes(d);
-                }
-                yield val instanceof byte[] bytes ? ByteBuffer.wrap(bytes) : val;
-            }
-            case FIXED -> {
-                // Read the raw physical bytes, not the decoded element: a decimal
-                // stored as FIXED_LEN_BYTE_ARRAY decodes to BigDecimal via
-                // get(index), but Avro `fixed` needs the on-disk bytes — the same
-                // form the top-level / struct / map paths read via getBinary.
-                Object val = pqList.getRaw(index);
-                yield val instanceof byte[] bytes ? wrapFixed(bytes, elementSchema) : val;
-            }
-            case RECORD -> {
-                Object val = pqList.get(index);
-                yield val instanceof PqStruct struct ? materializeStruct(struct, elementSchema) : val;
-            }
-            case ARRAY -> {
-                Object val = pqList.get(index);
-                yield val instanceof PqList nested
-                        ? materializeList(nested, elementSchema.getElementType())
-                        : val;
-            }
-            case MAP -> {
-                Object val = pqList.get(index);
-                yield val instanceof PqMap nested
-                        ? materializeMap(nested, elementSchema.getValueType())
-                        : val;
-            }
-            default -> pqList.get(index);
+    /// Materialize one list element under its plan node.
+    ///
+    /// [PqList#getRaw] serves the physical value and [PqList#get] the decoded one, so
+    /// each kind takes whichever its Avro representation is defined in terms of — the
+    /// same split the field and map paths make between their raw and typed accessors.
+    ///
+    /// Each accessor result is validated against the planned representation. A mismatch
+    /// throws an `IllegalArgumentException` naming the element index, Avro type, and
+    /// actual Java value type.
+    private Object materializeListElement(PqList pqList, int index, AvroPlanNode node) {
+        ValueLocation location = new ListElementLocation(index);
+        return switch (node.kind()) {
+            case BOOLEAN, INT, LONG, FLOAT, DOUBLE, UNSIGNED_INT32, BINARY, FIXED ->
+                    rawToAvro(pqList.getRaw(index), node, location);
+            // Decoded value: the Avro representation is defined in terms of the logical
+            // value, which the raw physical bytes or number do not carry.
+            case UUID -> uuidString(requireValueType(pqList.get(index), UUID.class, node, location));
+            case DECIMAL -> decimalBytes(requireValueType(pqList.get(index), BigDecimal.class, node, location));
+            case STRING -> requireValueType(pqList.get(index), String.class, node, location);
+            case STRUCT -> materializeRecord(requireValueType(pqList.get(index), PqStruct.class, node, location),
+                    node, RecordPosition.STRUCT);
+            case VARIANT -> materializeVariant(requireValueType(pqList.get(index), PqVariant.class, node, location),
+                    node.avro());
+            case LIST -> materializeList(requireValueType(pqList.get(index), PqList.class, node, location),
+                    node.listElement());
+            case MAP -> materializeMap(requireValueType(pqList.get(index), PqMap.class, node, location),
+                    node.mapValue());
+            case NULL -> throw materializationFailure(node, location, pqList.get(index),
+                    "NULL has no non-null materialization");
         };
     }
 
-    private Map<String, Object> materializeMap(PqMap pqMap, Schema valueSchema) {
-        Schema resolved = resolveUnion(valueSchema);
+    private Map<String, Object> materializeMap(PqMap pqMap, AvroPlanNode value) {
         Map<String, Object> result = new HashMap<>(pqMap.size());
         for (PqMap.Entry entry : pqMap.getEntries()) {
             String key = entry.getStringKey();
@@ -253,74 +257,44 @@ public class AvroRowReader implements AutoCloseable {
                 result.put(key, null);
                 continue;
             }
-            result.put(key, materializeMapValue(entry, resolved));
+            result.put(key, materializeMapValue(entry, key, value));
         }
         return result;
     }
 
-    private Object materializeMapValue(PqMap.Entry entry, Schema valueSchema) {
-        return switch (valueSchema.getType()) {
-            case BOOLEAN -> entry.getBooleanValue();
-            case INT -> entry.getIntValue();
-            case LONG -> isUnsignedInt32(valueSchema)
-                    ? Integer.toUnsignedLong(entry.getIntValue())
-                    : entry.getLongValue();
-            case FLOAT -> entry.getFloatValue();
-            case DOUBLE -> entry.getDoubleValue();
-            case STRING -> isUuid(valueSchema) ? uuidString(entry.getUuidValue()) : entry.getStringValue();
-            case BYTES -> isDecimal(valueSchema)
-                    ? decimalBytes(entry.getDecimalValue())
-                    : wrapBytes(entry.getBinaryValue());
-            case FIXED -> wrapFixed(entry.getBinaryValue(), valueSchema);
-            case RECORD -> materializeStruct(entry.getStructValue(), valueSchema);
-            case ARRAY -> materializeList(entry.getListValue(), valueSchema.getElementType());
-            case MAP -> materializeMap(entry.getMapValue(), valueSchema.getValueType());
-            default -> entry.getValue();
+    private Object materializeMapValue(PqMap.Entry entry, String key, AvroPlanNode node) {
+        ValueLocation location = new MapValueLocation(key);
+        return switch (node.kind()) {
+            case BOOLEAN, INT, LONG, FLOAT, DOUBLE, UNSIGNED_INT32, BINARY, FIXED ->
+                    rawToAvro(entry.getRawValue(), node, location);
+            case STRING -> requireValue(entry.getStringValue(), node, location);
+            case UUID -> uuidString(requireValue(entry.getUuidValue(), node, location));
+            case DECIMAL -> decimalBytes(requireValue(entry.getDecimalValue(), node, location));
+            case STRUCT -> materializeRecord(requireValue(entry.getStructValue(), node, location),
+                    node, RecordPosition.STRUCT);
+            case VARIANT -> materializeVariant(requireValue(entry.getVariantValue(), node, location),
+                    node.avro());
+            case LIST -> materializeList(requireValue(entry.getListValue(), node, location),
+                    node.listElement());
+            case MAP -> materializeMap(requireValue(entry.getMapValue(), node, location),
+                    node.mapValue());
+            case NULL -> throw materializationFailure(node, location, entry.getValue(),
+                    "NULL has no non-null materialization");
         };
-    }
-
-    private static boolean isUnsignedInt32(Schema schema) {
-        return Boolean.TRUE.equals(schema.getObjectProp(AvroSchemaConverter.UNSIGNED_INT32_PROP));
-    }
-
-    /// True for an Avro `BYTES` schema carrying the decimal logical type. Such a
-    /// column may be physically `INT32`/`INT64`/`BYTE_ARRAY`-backed, so it must be
-    /// read through the logical `getDecimal` accessor rather than `getBinary`.
-    private static boolean isDecimal(Schema schema) {
-        return schema.getLogicalType() instanceof LogicalTypes.Decimal;
-    }
-
-    /// True for an Avro `STRING` schema carrying the uuid logical type. The source
-    /// column is `FIXED_LEN_BYTE_ARRAY`, so it must be read through `getUuid` and
-    /// rendered as the canonical UUID string rather than decoded as raw bytes.
-    private static boolean isUuid(Schema schema) {
-        LogicalType logicalType = schema.getLogicalType();
-        return logicalType != null && "uuid".equals(logicalType.getName());
     }
 
     /// Encode a decimal as the two's-complement big-endian unscaled bytes Avro's
     /// `decimal` logical type expects on a `BYTES` schema.
     private static ByteBuffer decimalBytes(BigDecimal value) {
-        return value == null ? null : ByteBuffer.wrap(value.unscaledValue().toByteArray());
+        return ByteBuffer.wrap(value.unscaledValue().toByteArray());
     }
 
     private static String uuidString(UUID value) {
-        return value == null ? null : value.toString();
-    }
-
-    private static Schema resolveUnion(Schema schema) {
-        if (schema.getType() == Schema.Type.UNION) {
-            for (Schema member : schema.getTypes()) {
-                if (member.getType() != Schema.Type.NULL) {
-                    return member;
-                }
-            }
-        }
-        return schema;
+        return value.toString();
     }
 
     private static ByteBuffer wrapBytes(byte[] bytes) {
-        return bytes != null ? ByteBuffer.wrap(bytes) : null;
+        return ByteBuffer.wrap(bytes);
     }
 
     /// Wrap raw bytes as a [GenericData.Fixed] of the schema's declared size.
@@ -330,16 +304,56 @@ public class AvroRowReader implements AutoCloseable {
     /// record is serialized through a `GenericDatumWriter`. A `FIXED_LEN_BYTE_ARRAY`
     /// column stores exactly `type_length` bytes per value, so a payload whose width
     /// does not match the declared `fixed` size is malformed and rejected.
-    private static GenericData.Fixed wrapFixed(byte[] bytes, Schema fixedSchema) {
-        if (bytes == null) {
-            return null;
-        }
+    private GenericData.Fixed wrapFixed(byte[] bytes, AvroPlanNode node, ValueLocation location) {
+        Schema fixedSchema = node.avro();
         int size = fixedSchema.getFixedSize();
         if (bytes.length != size) {
-            throw new IllegalArgumentException(
-                    "FIXED value of " + bytes.length + " bytes does not match fixed(" + size
-                            + ") schema '" + fixedSchema.getFullName() + "'");
+            throw materializationFailure(node, location, bytes,
+                    "required fixed width " + size + " but received " + bytes.length);
         }
         return new GenericData.Fixed(fixedSchema, bytes);
+    }
+
+    private <T> T requireValue(T value, AvroPlanNode node, ValueLocation location) {
+        if (value == null) {
+            throw materializationFailure(node, location, null, "required non-null value");
+        }
+        return value;
+    }
+
+    private <T> T requireValueType(Object value, Class<T> expectedClass, AvroPlanNode node,
+            ValueLocation location) {
+        if (!expectedClass.isInstance(value)) {
+            throw materializationFailure(node, location, value,
+                    "required " + expectedClass.getTypeName());
+        }
+        return expectedClass.cast(value);
+    }
+
+    private IllegalArgumentException materializationFailure(AvroPlanNode node,
+            ValueLocation location, Object value, String detail) {
+        String actualType = value == null ? "null" : value.getClass().getTypeName();
+        return new IllegalArgumentException(filePrefix() + "Cannot materialize " + location.description()
+                + " as " + targetType(node) + ": actual Java value type " + actualType
+                + " (" + detail + ")");
+    }
+
+    /// Name the Avro type a value is being materialized as, adding the plan's kind
+    /// where the two differ. A `UINT_32` column is Avro `LONG` but is read as an
+    /// `Integer` and widened, so naming the Avro type alone makes the required Java
+    /// type look like a contradiction.
+    private static String targetType(AvroPlanNode node) {
+        String avroType = node.avro().getType().name();
+        String kind = node.kind().name();
+        return kind.equals(avroType) ? "Avro " + avroType : "Avro " + avroType + " (" + kind + ")";
+    }
+
+    /// The `[fileName] ` prefix the core readers put on their own exceptions, so a
+    /// failure in a multi-file read names the file the current row came from. Empty
+    /// when the underlying reader cannot name one.
+    private String filePrefix() {
+        return rowReader instanceof FileAwareRowReader fileAware
+                ? ExceptionContext.filePrefix(fileAware.currentFileName())
+                : "";
     }
 }

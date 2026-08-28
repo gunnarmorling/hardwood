@@ -186,6 +186,49 @@ interface PrintCommandContract {
     }
 
     @Test
+    default void rejectsNegativeMaxWidth() {
+        Cli.Result result = Cli.launch("print", "-f", plainFile(), "-w", "-5");
+
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.errorOutput())
+                .isEqualTo("Invalid value for option '-w': expected a positive integer, got '-5'");
+    }
+
+    @Test
+    default void rejectsZeroMaxWidth() {
+        Cli.Result result = Cli.launch("print", "-f", plainFile(), "-w", "0");
+
+        assertThat(result.exitCode()).isNotZero();
+        assertThat(result.errorOutput())
+                .isEqualTo("Invalid value for option '-w': expected a positive integer, got '0'");
+    }
+
+    @Test
+    default void acceptsMaxWidthOfOne() {
+        Cli.Result result = Cli.launch("print", "-f", plainFile(), "-w", "1", "--no-truncate");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo("""
+                +---+---+
+                | i | v |
+                | d | a |
+                |   | l |
+                |   | u |
+                |   | e |
+                +---+---+
+                | 1 | 1 |
+                |   | 0 |
+                |   | 0 |
+                | 2 | 2 |
+                |   | 0 |
+                |   | 0 |
+                | 3 | 3 |
+                |   | 0 |
+                |   | 0 |
+                +---+---+""");
+    }
+
+    @Test
     default void rejectsUnknownColumn() {
         Cli.Result result = Cli.launch("print", "-f", plainFile(), "--columns", "unknown");
 

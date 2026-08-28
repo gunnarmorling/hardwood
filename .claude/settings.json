@@ -1,4 +1,15 @@
 {
+  "extraKnownMarketplaces": {
+    "hardwood-skills": {
+      "source": {
+        "source": "github",
+        "repo": "hardwood-hq/hardwood-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "hardwood@hardwood-skills": true
+  },
   "permissions": {
     "allow": [
       "Bash(./mvnw:*)",

@@ -26,6 +26,7 @@ import dev.hardwood.internal.thrift.ThriftCompactReader;
 import dev.hardwood.jfr.RowGroupScannedEvent;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
+import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.schema.ColumnSchema;
 
@@ -433,7 +434,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
             PageHeader header = parsed.header();
             int headerSize = parsed.headerSize();
 
-            if (header.type() == PageHeader.PageType.DICTIONARY_PAGE) {
+            if (header.type() == PageType.DICTIONARY_PAGE) {
                 int compressedSize = header.compressedPageSize();
                 int numValues = header.dictionaryPageHeader().numValues();
                 if (numValues < 0) {
@@ -489,8 +490,8 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
                 int headerSize = parsed.headerSize();
                 int totalPageSize = headerSize + header.compressedPageSize();
 
-                if (header.type() != PageHeader.PageType.DATA_PAGE
-                        && header.type() != PageHeader.PageType.DATA_PAGE_V2) {
+                if (header.type() != PageType.DATA_PAGE
+                        && header.type() != PageType.DATA_PAGE_V2) {
                     // DICTIONARY_PAGE or INDEX_PAGE — skip without emitting.
                     position += totalPageSize;
                     continue;
@@ -584,7 +585,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
             if (columnSchema.maxRepetitionLevel() == 0) {
                 return numValues;
             }
-            if (header.type() != PageHeader.PageType.DATA_PAGE_V2) {
+            if (header.type() != PageType.DATA_PAGE_V2) {
                 throw new IllegalStateException("Per-page row masking on a nested column requires "
                         + "DATA_PAGE_V2 pages; column '" + columnSchema.name()
                         + "' has a v1 data page. The row-group-wide mask gate should have "
@@ -627,7 +628,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
             return switch (header.type()) {
                 case DATA_PAGE -> header.dataPageHeader().numValues();
                 case DATA_PAGE_V2 -> header.dataPageHeaderV2().numValues();
-                case DICTIONARY_PAGE, INDEX_PAGE -> 0;
+                case DICTIONARY_PAGE, INDEX_PAGE, UNKNOWN -> 0;
             };
         }
 

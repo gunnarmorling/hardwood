@@ -18,7 +18,7 @@
 
 Filter predicates apply at three levels, in this order:
 
-1. **Row group** — entire row groups whose statistics prove no rows can match are skipped. For `eq` and `in` predicates, a column's [Bloom filter](https://parquet.apache.org/docs/file-format/bloomfilter/) (when present) additionally skips a row group whose value range covers the target but which never actually stored it — the case min/max statistics cannot catch.
+1. **Row group** — entire row groups whose statistics prove no rows can match are skipped. For `eq` and `in` predicates, two further sources skip a row group whose value range covers the target but which never actually stored it — the case min/max statistics cannot catch. A column's [Bloom filter](https://parquet.apache.org/docs/file-format/bloomfilter/) does so when present. So does the column chunk's dictionary page, when the chunk's `encoding_stats` show every data page is dictionary-encoded: the dictionary then lists every value the chunk holds, so a target missing from it cannot occur in any row. Both apply automatically; dictionary pages are read only for a row group that statistics and the Bloom filter did not already drop.
 2. **Page** — within surviving row groups, the Column Index (per-page min/max statistics) is used to skip individual pages, avoiding unnecessary decompression and decoding. On remote backends like S3, only the matching pages are fetched, so the same skip also reduces network I/O.
 3. **Record** — `buildRowReader().filter(filter).build()` evaluates the predicate against each decoded row and returns only rows that actually match.
 
@@ -133,6 +133,11 @@ Filters work with all reader types: `RowReader`, `ColumnReader`, `AvroRowReader`
 
 ### Limitations
 
+- **Predicates apply to leaf columns only
+  ([#977](https://github.com/hardwood-hq/hardwood/issues/977)).** A name that denotes a group — a
+  struct, a `LIST`, or a `MAP` — is rejected with `IllegalArgumentException` at reader creation, as
+  is any leaf below a repeated group. Filter on a leaf instead: `isNull("address.city")` rather
+  than `isNull("address")`. Column projection accepts a group name; predicates do not.
 - **Record-level filtering only applies to flat schemas
   ([#222](https://github.com/hardwood-hq/hardwood/issues/222)).** When the schema contains
   nested columns (structs, lists, or maps), record-level filtering is not active. Row-group
@@ -142,8 +147,10 @@ Filters work with all reader types: `RowReader`, `ColumnReader`, `AvroRowReader`
   binary (`BYTE_ARRAY` / `FIXED_LEN_BYTE_ARRAY`) columns that carry a Bloom filter, and to `in`
   predicates on the integer and binary types. It runs automatically during row-group pruning,
   alongside statistics, and skips a row group when the value is provably absent. For `FLOAT` /
-  `DOUBLE`, `eq(-0.0)` and `eq(NaN)` are not pruned by the Bloom filter. Range predicates (`lt`,
-  `gt`, …) and `notEq` are unaffected — a Bloom filter answers only membership.
+  `DOUBLE`, `eq(NaN)` is not pruned by the Bloom filter — raw-bit hashing distinguishes NaN
+  payloads that `Float.compare` / `Double.compare` treat as equal, so a Bloom miss cannot prove a
+  NaN absent; `eq(-0.0)` is pruned normally. Range predicates (`lt`, `gt`, …) and `notEq` are
+  unaffected — a Bloom filter answers only membership.
 - **Dictionary-based filtering is not supported
   ([#196](https://github.com/hardwood-hq/hardwood/issues/196)).** Dictionary-encoded columns
   are not checked for predicate matches before decoding.

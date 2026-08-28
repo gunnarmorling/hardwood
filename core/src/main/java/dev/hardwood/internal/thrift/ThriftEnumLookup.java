@@ -10,6 +10,8 @@ package dev.hardwood.internal.thrift;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.ConvertedType;
 import dev.hardwood.metadata.Encoding;
+import dev.hardwood.metadata.LogicalType;
+import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 
@@ -27,6 +29,14 @@ class ThriftEnumLookup {
             PhysicalType.DOUBLE,                 // 5
             PhysicalType.BYTE_ARRAY,             // 6
             PhysicalType.FIXED_LEN_BYTE_ARRAY    // 7
+    };
+
+    // Indexed by Thrift value (0-3)
+    private static final PageType[] PAGE_TYPES = {
+            PageType.DATA_PAGE,        // 0
+            PageType.INDEX_PAGE,       // 1
+            PageType.DICTIONARY_PAGE,  // 2
+            PageType.DATA_PAGE_V2      // 3
     };
 
     // Indexed by Thrift value (0-2)
@@ -62,20 +72,19 @@ class ThriftEnumLookup {
             ConvertedType.INTERVAL           // 21
     };
 
-    // Indexed by Thrift value (0-9), with gap at index 1
-    private static final Encoding[] ENCODINGS = new Encoding[10];
-
-    static {
-        ENCODINGS[0] = Encoding.PLAIN;
-        ENCODINGS[2] = Encoding.PLAIN_DICTIONARY;
-        ENCODINGS[3] = Encoding.RLE;
-        ENCODINGS[4] = Encoding.BIT_PACKED;
-        ENCODINGS[5] = Encoding.DELTA_BINARY_PACKED;
-        ENCODINGS[6] = Encoding.DELTA_LENGTH_BYTE_ARRAY;
-        ENCODINGS[7] = Encoding.DELTA_BYTE_ARRAY;
-        ENCODINGS[8] = Encoding.RLE_DICTIONARY;
-        ENCODINGS[9] = Encoding.BYTE_STREAM_SPLIT;
-    }
+    // Indexed by Thrift value (0-9); 1 is a hole the format left behind
+    private static final Encoding[] ENCODINGS = {
+            Encoding.PLAIN,                    // 0
+            null,                              // 1 - GROUP_VAR_INT, withdrawn by the format
+            Encoding.PLAIN_DICTIONARY,         // 2
+            Encoding.RLE,                      // 3
+            Encoding.BIT_PACKED,               // 4
+            Encoding.DELTA_BINARY_PACKED,      // 5
+            Encoding.DELTA_LENGTH_BYTE_ARRAY,  // 6
+            Encoding.DELTA_BYTE_ARRAY,         // 7
+            Encoding.RLE_DICTIONARY,           // 8
+            Encoding.BYTE_STREAM_SPLIT         // 9
+    };
 
     // Indexed by Thrift value (0-7)
     private static final CompressionCodec[] COMPRESSION_CODECS = {
@@ -88,6 +97,31 @@ class ThriftEnumLookup {
             CompressionCodec.ZSTD,          // 6
             CompressionCodec.LZ4_RAW        // 7
     };
+
+    // Indexed by Thrift value (0-4)
+    private static final LogicalType.EdgeInterpolationAlgorithm[] EDGE_INTERPOLATION_ALGORITHMS = {
+            LogicalType.EdgeInterpolationAlgorithm.SPHERICAL,  // 0
+            LogicalType.EdgeInterpolationAlgorithm.VINCENTY,   // 1
+            LogicalType.EdgeInterpolationAlgorithm.THOMAS,     // 2
+            LogicalType.EdgeInterpolationAlgorithm.ANDOYER,    // 3
+            LogicalType.EdgeInterpolationAlgorithm.KARNEY      // 4
+    };
+
+    /// Maps a Thrift `EdgeInterpolationAlgorithm` value. `GeographyType.algorithm` is a Thrift
+    /// enum, so it arrives as an `i32` holding one of these values — not as a union whose set
+    /// variant names the algorithm.
+    ///
+    /// A value this release does not recognize yields
+    /// [LogicalType.EdgeInterpolationAlgorithm#UNKNOWN] rather than failing, as
+    /// [#encoding] and [#pageType] do: the algorithm annotates how to interpolate between
+    /// the column's values and does not bear on decoding them, so a file the format has moved
+    /// past stays readable.
+    static LogicalType.EdgeInterpolationAlgorithm edgeInterpolationAlgorithm(int value) {
+        if (value >= 0 && value < EDGE_INTERPOLATION_ALGORITHMS.length) {
+            return EDGE_INTERPOLATION_ALGORITHMS[value];
+        }
+        return LogicalType.EdgeInterpolationAlgorithm.UNKNOWN;
+    }
 
     static PhysicalType physicalType(int value) {
         if (value >= 0 && value < PHYSICAL_TYPES.length) {
@@ -121,6 +155,17 @@ class ThriftEnumLookup {
         return Encoding.UNKNOWN;
     }
 
+    /// Maps a Thrift `PageType` value, yielding [PageType#UNKNOWN] for one this release does not
+    /// recognize. Callers that must decode the page reject `UNKNOWN` themselves; `encoding_stats`
+    /// carries it through, so an unrecognized page type in that optional field does not make the
+    /// file unreadable.
+    static PageType pageType(int value) {
+        if (value >= 0 && value < PAGE_TYPES.length) {
+            return PAGE_TYPES[value];
+        }
+        return PageType.UNKNOWN;
+    }
+
     static CompressionCodec compressionCodec(int value) {
         if (value >= 0 && value < COMPRESSION_CODECS.length) {
             return COMPRESSION_CODECS[value];
@@ -138,6 +183,13 @@ class ThriftEnumLookup {
 
     static int thriftValue(ConvertedType type) {
         return indexOf(CONVERTED_TYPES, type, "converted type");
+    }
+
+    /// @throws IllegalArgumentException for
+    ///         [LogicalType.EdgeInterpolationAlgorithm#UNKNOWN], which stands for an algorithm
+    ///         this release cannot name and so has no Thrift value to write
+    static int thriftValue(LogicalType.EdgeInterpolationAlgorithm algorithm) {
+        return indexOf(EDGE_INTERPOLATION_ALGORITHMS, algorithm, "edge interpolation algorithm");
     }
 
     static int thriftValue(Encoding encoding) {

@@ -39,28 +39,9 @@ public final class RowGroupsScreen {
     public static boolean handle(KeyEvent event, ParquetModel model, NavigationStack stack) {
         ScreenState.RowGroups state = (ScreenState.RowGroups) stack.top();
         int count = model.rowGroupCount();
-        if (Keys.isStepUp(event)) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - 1)));
-            return true;
-        }
-        if (Keys.isStepDown(event)) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + 1)));
-            return true;
-        }
-        if (Keys.isPageDown(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isPageUp(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isJumpTop(event) && count > 0) {
-            stack.replaceTop(moved(state, 0));
-            return true;
-        }
-        if (Keys.isJumpBottom(event) && count > 0) {
-            stack.replaceTop(moved(state, count - 1));
+        int next = CursorPane.select(event, state.selection(), count);
+        if (next != CursorPane.UNHANDLED) {
+            stack.replaceTop(moved(state, next));
             return true;
         }
         if (event.isConfirm() && count > 0) {
@@ -100,21 +81,19 @@ public final class RowGroupsScreen {
                     oiCount++;
                 }
             }
-            double ratio = compressed == 0 ? 0.0 : (double) uncompressed / compressed;
             rows.add(Row.from(
                     String.valueOf(i),
                     formatLong(rg.numRows()),
                     Sizes.format(uncompressed),
                     Sizes.format(compressed),
-                    Fmt.fmt("%.1f×", ratio),
+                    Sizes.compression(compressed, uncompressed, "—"),
                     ciCount + "/" + chunkCount,
                     oiCount + "/" + chunkCount));
         }
-        Row header = Row.from("#", "Rows", "Uncompressed", "Compressed", "Ratio", "CI", "OI")
+        Row header = Row.from("#", "Rows", "Uncompressed", "Compressed", "Compression", "CI", "OI")
                 .style(Theme.accent().bold());
         Block block = Block.builder()
-                .title(" Row groups " + Plurals.rangeOf(state.selection(),
-                        model.rowGroupCount(), Keys.viewportStride()) + " ")
+                .title(" Row groups " + Plurals.rangeOf(window, model.rowGroupCount()) + " ")
                 .borders(Borders.ALL)
                 .borderType(BorderType.ROUNDED)
                 .build();
@@ -125,7 +104,7 @@ public final class RowGroupsScreen {
                         new Constraint.Length(14),
                         new Constraint.Length(14),
                         new Constraint.Length(14),
-                        new Constraint.Length(8),
+                        new Constraint.Length(11),
                         new Constraint.Length(8),
                         new Constraint.Length(8))
                 .columnSpacing(2)
@@ -141,9 +120,7 @@ public final class RowGroupsScreen {
     public static String keybarKeys(ScreenState.RowGroups state, ParquetModel model) {
         int count = model.rowGroupCount();
         return new Keys.Hints()
-                .add(count > 1, "[↑↓] move")
-                .add(count > Keys.viewportStride(), "[PgDn/PgUp or Shift+↓↑] page")
-                .add(count > 1, "[g/G] first/last")
+                .add(true, CursorPane.hints(count))
                 .add(count > 0, "[Enter] open")
                 .add(true, "[Esc] back")
                 .build();

@@ -18,7 +18,7 @@ This design covers (1). The compat shim (issue #130) becomes trivial once the co
 
 ```java
 // Convert Parquet schema to Avro schema
-Schema avroSchema = AvroSchemaConverter.convert(fileReader.getFileSchema());
+Schema avroSchema = AvroReaders.rowReader(fileReader).getSchema();
 
 // Read rows as GenericRecord
 try (AvroRowReader reader = fileReader.createAvroRowReader()) {
@@ -125,11 +125,12 @@ The converter walks the `SchemaElement` tree recursively:
 ```java
 public final class AvroSchemaConverter {
 
-    /** Convert a Hardwood FileSchema to an Avro Schema. */
-    public static Schema convert(FileSchema fileSchema);
-
-    /** Convert a single SchemaElement subtree to an Avro Schema. */
-    static Schema convertElement(SchemaElement element, FileSchema fileSchema);
+    /**
+     * Convert a Hardwood FileSchema to a decode plan: the Avro schema, paired with the
+     * per-value accessor decisions taken from the Parquet schema. `plan(...).avro()` is
+     * the converted schema on its own.
+     */
+    public static AvroPlanNode plan(FileSchema fileSchema, ColumnProjection projection);
 }
 ```
 
@@ -162,16 +163,25 @@ public class AvroRowReader implements AutoCloseable {
 
 ### Materialization strategy
 
+Materialization is driven by the decode plan the converter produces alongside the
+schema — see [AVRO_DECODE_PLAN.md](AVRO_DECODE_PLAN.md). Each value position carries
+the accessor decision taken from the Parquet schema, so no per-value decision is
+re-derived from the converted Avro shape.
+
 On each `next()` call:
 1. Call `rowReader.next()` to advance
-2. Create `new GenericData.Record(avroSchema)`
-3. For each field in the schema:
+2. Create `new GenericData.Record(plan.avro())`
+3. For each field of the record:
    - Check `rowReader.isNull(fieldName)` → put `null` for nullable fields
-   - Read the value using the appropriate typed getter (`getInt`, `getLong`, `getBinary`, etc.)
-   - Convert to the Avro-expected Java type if needed (e.g., `byte[]` → `ByteBuffer` for BYTES)
-   - For nested records: `rowReader.getStruct(fieldName)` → recursively materialize via `PqStruct`
-   - For lists: `rowReader.getList(fieldName)` → materialize `PqList` into `java.util.List`
-   - For maps: `rowReader.getMap(fieldName)` → materialize `PqMap` into `java.util.Map`
+   - Switch on the field's plan `Kind` to pick the typed getter (`getInt`, `getLong`,
+     `getBinary`, `getVariant`, …) and the Avro representation (e.g., `byte[]` →
+     `ByteBuffer` for BYTES)
+   - For nested records: `getStruct(fieldName)` → recursively materialize with the
+     field's plan node
+   - For lists: `getList(fieldName)` → materialize `PqList` into `java.util.List`
+     using the element plan
+   - For maps: `getMap(fieldName)` → materialize `PqMap` into `java.util.Map` using
+     the value plan
 4. Return the populated `GenericRecord`
 
 ### Value conversion details
@@ -191,16 +201,21 @@ On each `next()` call:
 
 ### Nested record materialization
 
+A row and a nested struct are the same traversal: `RowReader` and `PqStruct` are both
+`StructAccessor`, and the plan node supplies what differs between them.
+
 ```java
-private GenericRecord materializeStruct(PqStruct struct, Schema recordSchema) {
+private GenericRecord materializeRecord(StructAccessor accessor, AvroPlanNode node) {
+    Schema recordSchema = node.avro();
     GenericRecord record = new GenericData.Record(recordSchema);
-    for (Schema.Field field : recordSchema.getFields()) {
-        String name = field.name();
-        if (struct.isNull(name)) {
-            record.put(field.pos(), null);
+    List<Schema.Field> fields = recordSchema.getFields();
+    for (int i = 0; i < fields.size(); i++) {
+        String name = fields.get(i).name();
+        if (accessor.isNull(name)) {
+            record.put(i, null);
             continue;
         }
-        record.put(field.pos(), materializeValue(struct, name, field.schema()));
+        record.put(i, materializeField(accessor, name, node.child(i)));
     }
     return record;
 }

@@ -542,6 +542,34 @@ class PredicatePushDownTest {
     }
 
     @Test
+    void testFilterOnMapColumnIsRejected() throws Exception {
+        // A MAP contains a repeated key_value group, so predicates on the MAP
+        // itself are unsupported and must be rejected as repeated.
+        Path mapFile = Paths.get("src/test/resources/map_struct_value_test.parquet");
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(mapFile))) {
+            FilterPredicate filter = FilterPredicate.isNull("people");
+
+            assertThatThrownBy(() -> reader.buildRowReader().filter(filter).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("repeated");
+        }
+    }
+
+    @Test
+    void testFilterOnMapValueGroupIsRejected() throws Exception {
+        // The MAP value group inherits a repetition level from the repeated
+        // key_value group, so filtering on the group must be rejected.
+        Path mapFile = Paths.get("src/test/resources/map_struct_value_test.parquet");
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(mapFile))) {
+            FilterPredicate filter = FilterPredicate.isNull("people.key_value.value");
+
+            assertThatThrownBy(() -> reader.buildRowReader().filter(filter).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("repeated");
+        }
+    }
+
+    @Test
     void testFilterOnFlatColumnFiltersRepeatedColumn() throws Exception {
         // Filter on flat "id" column, read all columns including repeated "scores"
         // id > 6 -> skip RG0 (id 1-3) and RG1 (id 4-6), keep RG2 (id 7-9)
@@ -608,6 +636,18 @@ class PredicatePushDownTest {
             try (RowReader rows = reader.buildRowReader().filter(filter).build()) {
                 assertThat(rows.hasNext()).isFalse();
             }
+        }
+    }
+
+    @Test
+    void testFilterOnGroupColumnIsRejected() throws Exception {
+        // Filtering on a group column should fail instead of resolving to a nested leaf.
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(NESTED_FILE))) {
+            FilterPredicate filter = FilterPredicate.isNull("address");
+
+            assertThatThrownBy(() -> reader.buildRowReader().filter(filter).build())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("group");
         }
     }
 

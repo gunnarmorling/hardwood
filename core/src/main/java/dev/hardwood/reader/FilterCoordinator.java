@@ -7,6 +7,8 @@
  */
 package dev.hardwood.reader;
 
+import dev.hardwood.internal.reader.RecordFilterTally;
+
 /// Drives the filtered column-reader path (#624). It advances every reader of
 /// the augmented projection (payload columns plus the predicate columns) in
 /// lockstep, asks the [SelectionEngine] for the matching records of the aligned
@@ -25,6 +27,9 @@ final class FilterCoordinator {
     /// The exposed subset, compacted to the matching records each batch.
     private final ColumnReader[] payloadReaders;
     private final SelectionEngine engine;
+    /// Per-file record-filter counts for JFR. Every batch this path produces has
+    /// passed through the selection, so the counts are complete for the read.
+    private final RecordFilterTally tally = new RecordFilterTally();
 
     private long generation;
     private boolean hasBatch;
@@ -93,6 +98,8 @@ final class FilterCoordinator {
         }
 
         recordCount = matchCount < 0 ? firstCount : matchCount;
+        tally.switchFile(allReaders[0].currentFileName());
+        tally.recordBatch(firstCount, recordCount);
         hasBatch = true;
         generation++;
         return true;
@@ -103,6 +110,7 @@ final class FilterCoordinator {
             return;
         }
         closed = true;
+        tally.close();
         for (ColumnReader reader : allReaders) {
             reader.rawClose();
         }

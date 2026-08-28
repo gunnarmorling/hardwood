@@ -24,15 +24,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class VariantSchemaTest {
 
     private static SchemaElement primChild(String name, PhysicalType type) {
-        return new SchemaElement(name, type, null, RepetitionType.REQUIRED,
-                null, null, null, null, null, null);
+        return SchemaElement.primitive(name, type, RepetitionType.REQUIRED);
     }
 
     @Test
     void groupNodeRoundTripsVariantAnnotation() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement variant = new SchemaElement("v", null, null, RepetitionType.OPTIONAL, 2,
-                null, null, null, null, new LogicalType.VariantType(1));
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement variant = SchemaElement.group("v", RepetitionType.OPTIONAL, 2, new LogicalType.VariantType(1));
         SchemaElement metadata = primChild("metadata", PhysicalType.BYTE_ARRAY);
         SchemaElement value = primChild("value", PhysicalType.BYTE_ARRAY);
 
@@ -46,13 +44,11 @@ class VariantSchemaTest {
 
     @Test
     void variantGroupWithTypedValueIsAccepted() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement variant = new SchemaElement("v", null, null, RepetitionType.OPTIONAL, 3,
-                null, null, null, null, new LogicalType.VariantType(1));
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement variant = SchemaElement.group("v", RepetitionType.OPTIONAL, 3, new LogicalType.VariantType(1));
         SchemaElement metadata = primChild("metadata", PhysicalType.BYTE_ARRAY);
         SchemaElement value = primChild("value", PhysicalType.BYTE_ARRAY);
-        SchemaElement typedValue = new SchemaElement("typed_value", PhysicalType.INT64, null,
-                RepetitionType.OPTIONAL, null, null, null, null, null, null);
+        SchemaElement typedValue = SchemaElement.primitive("typed_value", PhysicalType.INT64, RepetitionType.OPTIONAL);
 
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, variant, metadata, value, typedValue));
         SchemaNode.GroupNode variantNode = (SchemaNode.GroupNode) schema.getRootNode().children().get(0);
@@ -62,9 +58,8 @@ class VariantSchemaTest {
 
     @Test
     void variantGroupMissingValueChildIsRejected() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement variant = new SchemaElement("v", null, null, RepetitionType.OPTIONAL, 1,
-                null, null, null, null, new LogicalType.VariantType(1));
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement variant = SchemaElement.group("v", RepetitionType.OPTIONAL, 1, new LogicalType.VariantType(1));
         SchemaElement metadata = primChild("metadata", PhysicalType.BYTE_ARRAY);
 
         assertThatThrownBy(() -> FileSchema.fromSchemaElements(List.of(root, variant, metadata)))
@@ -74,9 +69,8 @@ class VariantSchemaTest {
 
     @Test
     void variantGroupWithWrongChildNameIsRejected() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement variant = new SchemaElement("v", null, null, RepetitionType.OPTIONAL, 2,
-                null, null, null, null, new LogicalType.VariantType(1));
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement variant = SchemaElement.group("v", RepetitionType.OPTIONAL, 2, new LogicalType.VariantType(1));
         SchemaElement metadata = primChild("metadata", PhysicalType.BYTE_ARRAY);
         SchemaElement misnamed = primChild("payload", PhysicalType.BYTE_ARRAY);
 
@@ -87,9 +81,8 @@ class VariantSchemaTest {
 
     @Test
     void variantGroupWithWrongPhysicalTypeIsRejected() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement variant = new SchemaElement("v", null, null, RepetitionType.OPTIONAL, 2,
-                null, null, null, null, new LogicalType.VariantType(1));
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement variant = SchemaElement.group("v", RepetitionType.OPTIONAL, 2, new LogicalType.VariantType(1));
         SchemaElement metadata = primChild("metadata", PhysicalType.BYTE_ARRAY);
         SchemaElement wrongType = primChild("value", PhysicalType.INT32);
 
@@ -106,9 +99,8 @@ class VariantSchemaTest {
 
     @Test
     void plainStructUnchangedByNewAnnotation() {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-        SchemaElement addr = new SchemaElement("addr", null, null, RepetitionType.OPTIONAL, 1,
-                null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
+        SchemaElement addr = SchemaElement.group("addr", RepetitionType.OPTIONAL, 1);
         SchemaElement zip = primChild("zip", PhysicalType.INT32);
 
         FileSchema schema = FileSchema.fromSchemaElements(List.of(root, addr, zip));

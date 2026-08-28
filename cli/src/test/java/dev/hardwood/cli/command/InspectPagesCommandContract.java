@@ -22,6 +22,8 @@ interface InspectPagesCommandContract {
 
     String nestedFile();
 
+    String longValueFile();
+
     String nonexistentFile();
 
     @Test
@@ -47,6 +49,39 @@ interface InspectPagesCommandContract {
                 +====+=======+======+==========+===========+============+========+=====+=====+=======+
                 |    | Total |      |          |           |       24 B |      3 |     |     |     0 |
                 +----+-------+------+----------+-----------+------------+--------+-----+-----+-------+""");
+    }
+
+    @Test
+    default void preservesLongPageBounds() {
+        Cli.Result result = Cli.launch("inspect", "pages", "-f", longValueFile(), "--column", "s");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-3")
+                .doesNotContain("the-quick-brown-f...");
+    }
+
+    @Test
+    default void capsPageBoundsAtTheColumnWidth() {
+        Cli.Result result = Cli.launch("inspect", "pages", "-f", longValueFile(), "--column", "s",
+                "-w", "20");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox…")
+                .doesNotContain("the-quick-brown-fox-jumps-over-the-lazy-dog-0");
+    }
+
+    @Test
+    default void noTruncateLiftsTheColumnWidthCapOnPageBounds() {
+        Cli.Result result = Cli.launch("inspect", "pages", "-f", longValueFile(), "--column", "s",
+                "-w", "20", "--no-truncate");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output())
+                .contains("the-quick-brown-fox-jumps-over-the-lazy-dog-0")
+                .doesNotContain("…");
     }
 
     @Test
@@ -109,18 +144,18 @@ interface InspectPagesCommandContract {
                 +----+-------+---------+----------+-----------+------------+--------+------+------+-------+
                 | RG | Page  | Type    | Encoding | First Row | Compressed | Values | Min  | Max  | Nulls |
                 +----+-------+---------+----------+-----------+------------+--------+------+------+-------+
-                |  0 |     0 | DATA_V2 |    PLAIN |         0 |     8.0 KB |   1024 |    0 | 1023 |     0 |
-                |    |     1 | DATA_V2 |    PLAIN |      1024 |     8.0 KB |   1024 | 1024 | 2047 |     0 |
-                |    |     2 | DATA_V2 |    PLAIN |      2048 |     8.0 KB |   1024 | 2048 | 3071 |     0 |
-                |    |     3 | DATA_V2 |    PLAIN |      3072 |     8.0 KB |   1024 | 3072 | 4095 |     0 |
-                |    |     4 | DATA_V2 |    PLAIN |      4096 |     8.0 KB |   1024 | 4096 | 5119 |     0 |
-                |    |     5 | DATA_V2 |    PLAIN |      5120 |     8.0 KB |   1024 | 5120 | 6143 |     0 |
-                |    |     6 | DATA_V2 |    PLAIN |      6144 |     8.0 KB |   1024 | 6144 | 7167 |     0 |
-                |    |     7 | DATA_V2 |    PLAIN |      7168 |     8.0 KB |   1024 | 7168 | 8191 |     0 |
-                |    |     8 | DATA_V2 |    PLAIN |      8192 |     8.0 KB |   1024 | 8192 | 9215 |     0 |
-                |    |     9 | DATA_V2 |    PLAIN |      9216 |     6.1 KB |    784 | 9216 | 9999 |     0 |
+                |  0 |     0 | DATA_V2 |    PLAIN |         0 |    8.0 KiB |   1024 |    0 | 1023 |     0 |
+                |    |     1 | DATA_V2 |    PLAIN |      1024 |    8.0 KiB |   1024 | 1024 | 2047 |     0 |
+                |    |     2 | DATA_V2 |    PLAIN |      2048 |    8.0 KiB |   1024 | 2048 | 3071 |     0 |
+                |    |     3 | DATA_V2 |    PLAIN |      3072 |    8.0 KiB |   1024 | 3072 | 4095 |     0 |
+                |    |     4 | DATA_V2 |    PLAIN |      4096 |    8.0 KiB |   1024 | 4096 | 5119 |     0 |
+                |    |     5 | DATA_V2 |    PLAIN |      5120 |    8.0 KiB |   1024 | 5120 | 6143 |     0 |
+                |    |     6 | DATA_V2 |    PLAIN |      6144 |    8.0 KiB |   1024 | 6144 | 7167 |     0 |
+                |    |     7 | DATA_V2 |    PLAIN |      7168 |    8.0 KiB |   1024 | 7168 | 8191 |     0 |
+                |    |     8 | DATA_V2 |    PLAIN |      8192 |    8.0 KiB |   1024 | 8192 | 9215 |     0 |
+                |    |     9 | DATA_V2 |    PLAIN |      9216 |    6.1 KiB |    784 | 9216 | 9999 |     0 |
                 +====+=======+=========+==========+===========+============+========+======+======+=======+
-                |    | Total |         |          |           |    78.1 KB |  10000 |      |      |     0 |
+                |    | Total |         |          |           |   78.1 KiB |  10000 |      |      |     0 |
                 +----+-------+---------+----------+-----------+------------+--------+------+------+-------+""");
     }
 

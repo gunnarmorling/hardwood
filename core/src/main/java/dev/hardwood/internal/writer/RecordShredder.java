@@ -38,57 +38,117 @@ import dev.hardwood.schema.SchemaNode;
 /// shreds continuously.
 public final class RecordShredder {
 
-    /// Receives one level entry at a time. `present` is true when the leaf value at this
-    /// position exists, in which case `value` is that value; otherwise `value` is ignored.
+    /// Receives one level entry at a time. `valueIndex` is the position of the present leaf
+    /// value in the column's source; a negative `valueIndex` marks an absent slot (a null
+    /// leaf, a null or empty list, or a null struct ancestor), which carries no value. The
+    /// shredder is value-type-agnostic: it emits source positions, and the sink reads the typed
+    /// value itself.
     public interface LevelSink {
-        void accept(int repetitionLevel, int definitionLevel, boolean present, int value);
+        void accept(int repetitionLevel, int definitionLevel, int valueIndex);
     }
+
+    /// Emitted as the `valueIndex` for an absent slot.
+    private static final int ABSENT = -1;
 
     /// A `STRUCT` or `REPEATED` step on a leaf's path, carrying the definition/repetition
     /// contributions and the batch-input key (the group's dotted path).
-    private record Layer(Kind kind, String key, boolean nullable, int presentDefInc,
-                         int contentDefInc, int repLevel) {
+    ///
+    /// One instance is shared by every leaf beneath the group, and its batch inputs are
+    /// resolved once per [#bind] rather than looked up by key while shredding: `emit` runs per
+    /// record per layer per column, so a map lookup there is paid on every value of every
+    /// nested column.
+    private static final class Layer {
+
         enum Kind { STRUCT, REPEATED }
+
+        private final Kind kind;
+        private final String key;
+        private final boolean nullable;
+        private final int presentDefInc;
+        private final int contentDefInc;
+        private final int repLevel;
+
+        /// This layer's per-instance nulls for the bound batch, or `null` when the group is
+        /// `REQUIRED` or the caller supplied none.
+        private Validity validity;
+
+        /// This layer's entry offsets for the bound batch; `null` for a `STRUCT` layer.
+        private int[] offsets;
+
+        Layer(Kind kind, String key, boolean nullable, int presentDefInc, int contentDefInc, int repLevel) {
+            this.kind = kind;
+            this.key = key;
+            this.nullable = nullable;
+            this.presentDefInc = presentDefInc;
+            this.contentDefInc = contentDefInc;
+            this.repLevel = repLevel;
+        }
+
+        Kind kind() {
+            return kind;
+        }
+
+        String key() {
+            return key;
+        }
+
+        boolean nullable() {
+            return nullable;
+        }
+
+        int presentDefInc() {
+            return presentDefInc;
+        }
+
+        int contentDefInc() {
+            return contentDefInc;
+        }
+
+        int repLevel() {
+            return repLevel;
+        }
     }
 
     private final Layer[][] layers;
+
+    /// Every layer once, in no particular order, so a bind resolves each one's batch inputs a
+    /// single time however many leaves sit beneath it.
+    private final Layer[] distinctLayers;
     private final boolean[] leafOptional;
     private final int[] maxDef;
     private final int[] maxRep;
     private final String[] columnNames;
-    private final ValueWindow[] windows;
 
     // Per-batch binding.
     private Validity[] leafValidities;
     private Map<String, Validity> structValidities;
     private Map<String, Validity> listValidities;
     private Map<String, int[]> listOffsets;
-    private IntColumnSource[] sources;
+    private ColumnSource[] sources;
     private int recordCount;
 
     /// @param schema the file schema
-    /// @param valueWindowCapacity the size of each column's leaf-value read window, in values
-    public RecordShredder(FileSchema schema, int valueWindowCapacity) {
+    public RecordShredder(FileSchema schema) {
         int columnCount = schema.getColumnCount();
         this.layers = new Layer[columnCount][];
         this.leafOptional = new boolean[columnCount];
         this.maxDef = new int[columnCount];
         this.maxRep = new int[columnCount];
         this.columnNames = new String[columnCount];
-        this.windows = new ValueWindow[columnCount];
-        walk(schema.getRootNode(), new ArrayList<>(), new ArrayList<>(), false);
+        List<Layer> collected = new ArrayList<>();
+        walk(schema.getRootNode(), new ArrayList<>(), new ArrayList<>(), false, collected);
+        this.distinctLayers = collected.toArray(new Layer[0]);
         for (int c = 0; c < columnCount; c++) {
             ColumnSchema column = schema.getColumn(c);
             maxDef[c] = column.maxDefinitionLevel();
             maxRep[c] = column.maxRepetitionLevel();
             columnNames[c] = column.fieldPath().toString();
-            windows[c] = new ValueWindow(valueWindowCapacity);
         }
     }
 
     /// Classifies each group on the way to a leaf into the layer list the shredder walks.
     private void walk(SchemaNode.GroupNode group, List<String> path, List<Layer> layerStack,
-                      boolean insideRepeatedScaffolding) {
+                      boolean insideRepeatedScaffolding, List<Layer> collected) {
         for (SchemaNode child : group.children()) {
             switch (child) {
                 case SchemaNode.PrimitiveNode leaf -> {
@@ -100,8 +160,9 @@ public final class RecordShredder {
                     Layer added = classify(nested, String.join(".", path), layerStack, insideRepeatedScaffolding);
                     if (added != null) {
                         layerStack.add(added);
+                        collected.add(added);
                     }
-                    walk(nested, path, layerStack, nested.isList() || nested.isMap());
+                    walk(nested, path, layerStack, nested.isList() || nested.isMap(), collected);
                     if (added != null) {
                         layerStack.remove(layerStack.size() - 1);
                     }
@@ -137,7 +198,7 @@ public final class RecordShredder {
 
     /// Binds the shredder to one batch's inputs, validates them, and derives the record
     /// count. Each column's value window is reset to the batch's source.
-    public void bind(IntColumnSource[] sources, Validity[] leafValidities,
+    public void bind(ColumnSource[] sources, Validity[] leafValidities,
                      Map<String, Validity> structValidities, Map<String, Validity> listValidities,
                      Map<String, int[]> listOffsets) {
         this.sources = sources;
@@ -145,10 +206,13 @@ public final class RecordShredder {
         this.structValidities = structValidities;
         this.listValidities = listValidities;
         this.listOffsets = listOffsets;
-        this.recordCount = validateAndDeriveRecordCount();
-        for (int c = 0; c < windows.length; c++) {
-            windows[c].reset(sources[c]);
+        for (Layer layer : distinctLayers) {
+            layer.validity = layer.kind == Layer.Kind.STRUCT
+                    ? structValidities.get(layer.key)
+                    : listValidities.get(layer.key);
+            layer.offsets = layer.kind == Layer.Kind.REPEATED ? listOffsets.get(layer.key) : null;
         }
+        this.recordCount = validateAndDeriveRecordCount();
     }
 
     public int recordCount() {
@@ -158,8 +222,40 @@ public final class RecordShredder {
     /// Shreds records `[from, from + count)` of column `columnIndex`, pushing each level
     /// entry into `sink`. Records must be shredded in order, since the column's value window
     /// advances monotonically across calls.
+    /// The leaf slots records `[from, from + count)` reach in one column, packed as
+    /// `leafFrom << 32 | leafCount`.
+    ///
+    /// Offsets are cumulative, so a record range's leaf range is had by composing one array
+    /// lookup per repeated layer rather than by walking the records. Packed rather than returned
+    /// as a pair because the writer asks this of every column before every slice it appends.
+    public long leafRange(int columnIndex, int from, int count) {
+        int slotFrom = from;
+        int slotTo = from + count;
+        for (Layer layer : layers[columnIndex]) {
+            if (layer.kind() == Layer.Kind.REPEATED) {
+                int[] offsets = layer.offsets;
+                slotFrom = offsets[slotFrom];
+                slotTo = offsets[slotTo];
+            }
+        }
+        return ((long) slotFrom << Integer.SIZE) | Integer.toUnsignedLong(slotTo - slotFrom);
+    }
+
+    /// How many entries beyond its leaf slots one record can add to a column: one for every layer
+    /// that can stand in for absent content — a null struct, a null list, an empty list — each of
+    /// which emits an entry carrying no value.
+    public int phantomLayers(int columnIndex) {
+        int phantoms = 0;
+        for (Layer layer : layers[columnIndex]) {
+            if (layer.kind() == Layer.Kind.REPEATED || layer.nullable()) {
+                phantoms++;
+            }
+        }
+        return phantoms;
+    }
+
     public void shred(int columnIndex, int from, int count, LevelSink sink) {
-        Ctx ctx = new Ctx(columnIndex, layers[columnIndex], maxDef[columnIndex], sink, windows[columnIndex]);
+        Ctx ctx = new Ctx(columnIndex, layers[columnIndex], maxDef[columnIndex], sink);
         int end = from + count;
         for (int r = from; r < end; r++) {
             emit(ctx, 0, r, 0, 0);
@@ -172,17 +268,17 @@ public final class RecordShredder {
     private void emit(Ctx ctx, int layerIndex, int itemIndex, int parentDef, int repToEmit) {
         if (layerIndex == ctx.path.length) {
             if (leafOptional[ctx.columnIndex] && isNull(leafValidities[ctx.columnIndex], itemIndex)) {
-                ctx.sink.accept(repToEmit, parentDef, false, 0);
+                ctx.sink.accept(repToEmit, parentDef, ABSENT);
             }
             else {
-                ctx.sink.accept(repToEmit, ctx.maxDef, true, ctx.window.at(itemIndex));
+                ctx.sink.accept(repToEmit, ctx.maxDef, itemIndex);
             }
             return;
         }
         Layer layer = ctx.path[layerIndex];
         if (layer.kind() == Layer.Kind.STRUCT) {
-            if (layer.nullable() && isNull(structValidities.get(layer.key()), itemIndex)) {
-                ctx.sink.accept(repToEmit, parentDef, false, 0);
+            if (layer.nullable() && isNull(layer.validity, itemIndex)) {
+                ctx.sink.accept(repToEmit, parentDef, ABSENT);
             }
             else {
                 emit(ctx, layerIndex + 1, itemIndex, parentDef + layer.presentDefInc(), repToEmit);
@@ -190,16 +286,16 @@ public final class RecordShredder {
             return;
         }
         // REPEATED (list).
-        if (layer.nullable() && isNull(listValidities.get(layer.key()), itemIndex)) {
-            ctx.sink.accept(repToEmit, parentDef, false, 0); // null list — outer group absent
+        if (layer.nullable() && isNull(layer.validity, itemIndex)) {
+            ctx.sink.accept(repToEmit, parentDef, ABSENT); // null list — outer group absent
             return;
         }
-        int[] offsets = offsetsFor(layer);
+        int[] offsets = layer.offsets;
         int start = offsets[itemIndex];
         int end = offsets[itemIndex + 1];
         int listDef = parentDef + layer.presentDefInc();
         if (start == end) {
-            ctx.sink.accept(repToEmit, listDef, false, 0); // empty list — present but no elements
+            ctx.sink.accept(repToEmit, listDef, ABSENT); // empty list — present but no elements
             return;
         }
         int childDef = listDef + layer.contentDefInc();
@@ -225,25 +321,20 @@ public final class RecordShredder {
 
     /// The record count implied by one column, walking its layers from leaf to root while
     /// validating the offset chain: each `REPEATED` layer replaces the running count with its
-    /// parent count (`offsets.length - 1`), each `STRUCT` layer preserves it. A `STRUCT`
-    /// layer enclosing a repeated field would break this invariant and is rejected, since its
-    /// offset scope would not be the record scope.
+    /// parent count (`offsets.length - 1`); a `STRUCT` layer never remaps its scope, nullable
+    /// or not, so it always preserves the count unchanged. A nullable `STRUCT` layer still
+    /// constrains the offsets beneath it, which [#validateAbsentStructsEmpty] checks.
     private int impliedRecordCount(int columnIndex) {
         Layer[] path = layers[columnIndex];
         int count = sources[columnIndex].size();
-        boolean seenRepeated = false;
         for (int k = path.length - 1; k >= 0; k--) {
             Layer layer = path[k];
             if (layer.kind() == Layer.Kind.REPEATED) {
                 int[] offsets = offsetsFor(layer);
                 validateOffsets(offsets, count, layer.key());
                 validateNullListsEmpty(offsets, layer.key());
+                validateAbsentStructsEmpty(path, k, offsets, layer.key());
                 count = offsets.length - 1;
-                seenRepeated = true;
-            }
-            else if (seenRepeated && layer.nullable()) {
-                throw new IllegalArgumentException("A nullable struct enclosing a repeated field ("
-                        + layer.key() + ") is not yet supported by the writer");
             }
         }
         return count;
@@ -270,22 +361,58 @@ public final class RecordShredder {
 
     /// Rejects a null list whose offsets span elements: a null list is absent, so its
     /// element delta must be zero. Without this the shredder takes the null branch and
-    /// silently drops the stray elements, producing a plausible but wrong file. The
-    /// validity's length is not checked — [Validity] is intentionally length-less — so only
-    /// the null-positions-within-range are verified.
+    /// silently drops the stray elements, producing a plausible but wrong file.
     private void validateNullListsEmpty(int[] offsets, String key) {
-        Validity validity = listValidities.get(key);
+        int i = firstAbsentWithEntries(listValidities.get(key), offsets);
+        if (i != -1) {
+            throw new IllegalArgumentException("List " + key + " is null at index " + i
+                    + " but its offsets span " + (offsets[i + 1] - offsets[i])
+                    + " elements; a null list has none");
+        }
+    }
+
+    /// Rejects offsets that span entries at a record where an enclosing struct is absent.
+    /// [#emit] stops at the absent struct and never descends into the offsets below it, so
+    /// without this the entries they claim are dropped from the file without a word — the
+    /// same silent loss [#validateNullListsEmpty] prevents one layer down, arriving through
+    /// the struct's `Validity` instead of the list's.
+    ///
+    /// Only the `STRUCT` layers between this layer and the next `REPEATED` one above it are
+    /// consulted: a `STRUCT` layer never remaps its scope, so those index exactly the items
+    /// this layer's offsets do, while a struct above the next `REPEATED` layer is checked
+    /// against that layer's own offsets in its turn.
+    ///
+    /// @param path the column's layers, outermost first
+    /// @param repeatedIndex the index in `path` of the `REPEATED` layer `offsets` belong to
+    /// @param offsets that layer's entry offsets
+    /// @param key that layer's dotted path, for the message
+    private void validateAbsentStructsEmpty(Layer[] path, int repeatedIndex, int[] offsets, String key) {
+        for (int k = repeatedIndex - 1; k >= 0 && path[k].kind() != Layer.Kind.REPEATED; k--) {
+            String structKey = path[k].key();
+            int i = firstAbsentWithEntries(structValidities.get(structKey), offsets);
+            if (i != -1) {
+                throw new IllegalArgumentException("Struct " + structKey + " is null at index " + i
+                        + " but " + key + "'s offsets span " + (offsets[i + 1] - offsets[i])
+                        + " entries there; an absent struct encloses none");
+            }
+        }
+    }
+
+    /// The first index at which `offsets` span entries although `validity` marks that item
+    /// absent, or `-1` if there is none. The validity's length is not checked — [Validity] is
+    /// intentionally length-less — so only the null positions within the offsets' range are
+    /// examined.
+    private static int firstAbsentWithEntries(Validity validity, int[] offsets) {
         if (validity == null) {
-            return;
+            return -1;
         }
         int parentCount = offsets.length - 1;
         for (int i = validity.nextNull(0, parentCount); i != -1; i = validity.nextNull(i + 1, parentCount)) {
             if (offsets[i + 1] != offsets[i]) {
-                throw new IllegalArgumentException("List " + key + " is null at index " + i
-                        + " but its offsets span " + (offsets[i + 1] - offsets[i])
-                        + " elements; a null list has none");
+                return i;
             }
         }
+        return -1;
     }
 
     private int[] offsetsFor(Layer layer) {
@@ -306,46 +433,12 @@ public final class RecordShredder {
         final Layer[] path;
         final int maxDef;
         final LevelSink sink;
-        final ValueWindow window;
 
-        Ctx(int columnIndex, Layer[] path, int maxDef, LevelSink sink, ValueWindow window) {
+        Ctx(int columnIndex, Layer[] path, int maxDef, LevelSink sink) {
             this.columnIndex = columnIndex;
             this.path = path;
             this.maxDef = maxDef;
             this.sink = sink;
-            this.window = window;
-        }
-    }
-
-    /// A bounded, forward-only view over a column's leaf source. `at` is called with
-    /// monotonically non-decreasing indices; the window slides forward and refills through a
-    /// single bulk `copyInto`, so a foreign columnar source is read in page-sized chunks
-    /// rather than one value at a time or copied whole.
-    private static final class ValueWindow {
-        private final int[] buffer;
-        private IntColumnSource source;
-        private int size;
-        private int base;
-        private int length;
-
-        ValueWindow(int capacity) {
-            this.buffer = new int[Math.max(1, capacity)];
-        }
-
-        void reset(IntColumnSource source) {
-            this.source = source;
-            this.size = source.size();
-            this.base = 0;
-            this.length = 0;
-        }
-
-        int at(int index) {
-            if (index >= base + length) {
-                base = index;
-                length = Math.min(buffer.length, size - base);
-                source.copyInto(base, buffer, 0, length);
-            }
-            return buffer[index - base];
         }
     }
 }

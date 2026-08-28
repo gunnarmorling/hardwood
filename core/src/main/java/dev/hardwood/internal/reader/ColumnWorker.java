@@ -71,6 +71,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     // === Circular reorder buffer: decode tasks write, drain thread reads ===
     private final AtomicReferenceArray<DecodedPage> reorderBuffer;
 
+    // Level buffers share the lifecycle of their reorder-buffer slot. The
+    // retriever throttle prevents reuse until the drain has consumed the page.
+    private final PageDecoder.LevelScratch[] levelScratchBuffer;
+
     // === File name per reorder-buffer slot (retriever writes, drain reads) ===
     // Visibility: retriever writes fileNameBuffer[slot] before submitting the
     // decode task. The decode task's volatile write to reorderBuffer[slot]
@@ -153,6 +157,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         this.decodeExecutor = decodeExecutor;
         this.maxRows = maxRows;
         this.reorderBuffer = new AtomicReferenceArray<>(MAX_INFLIGHT_PAGES);
+        this.levelScratchBuffer = new PageDecoder.LevelScratch[MAX_INFLIGHT_PAGES];
+        for (int i = 0; i < levelScratchBuffer.length; i++) {
+            levelScratchBuffer[i] = new PageDecoder.LevelScratch();
+        }
         this.fileNameBuffer = new String[MAX_INFLIGHT_PAGES];
         this.filterAlwaysMatchesBuffer = new boolean[MAX_INFLIGHT_PAGES];
     }
@@ -202,6 +210,24 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         exchange.finish();  // signals BatchExchange's timeout loops to exit
         LockSupport.unpark(retrieverThread);
         LockSupport.unpark(drainThread);
+        // `finish()` only sets a flag, and a drain blocked inside the exchange is waiting on a
+        // queue rather than on that flag: it re-reads it when its 10 ms timed queue operation
+        // expires, which close() then inherits through the join below — once per column, since
+        // ColumnReaders closes them one at a time. The interrupt releases it at once. Unparking
+        // is not enough on its own: ArrayBlockingQueue's timed operations go through
+        // AQS.ConditionObject.awaitNanos, which treats a bare unpark as spurious and re-parks
+        // for the remainder of the window. The unpark above is still needed for the drain's
+        // other wait, the LockSupport.park() in runDrain that waits on a decode task.
+        //
+        // Only the drain is interrupted, and only because it does no I/O: every InputFile
+        // access happens on the retriever (via PageSource.next) or on a decode task. That
+        // matters — FileChannel is an InterruptibleChannel, so interrupting a thread inside a
+        // channel operation, or one that enters a channel operation with its interrupt flag
+        // already set, closes the channel for every reader sharing it (see MappedInputFile's
+        // note on its larger-than-2 GB path). Anything that gives the drain thread its own
+        // InputFile access — for instance fetching on demand instead of parking when the
+        // reorder buffer is empty — must drop this interrupt first.
+        drainThread.interrupt();
 
         try {
             retrieverThread.join();
@@ -326,7 +352,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         try {
             Page page = pageInfo.isNullPlaceholder()
                     ? pageDecoder.nullPage(pageInfo.placeholderNumValues())
-                    : pageDecoder.decodePage(pageInfo.pageData(), pageInfo.dictionary());
+                    : pageDecoder.decodePage(pageInfo.pageData(), pageInfo.dictionary(), levelScratchBuffer[slot]);
             reorderBuffer.set(slot, new DecodedPage(page, pageInfo.mask()));
         }
         catch (Throwable t) {

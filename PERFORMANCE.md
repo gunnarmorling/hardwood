@@ -233,6 +233,10 @@ java --add-modules jdk.incubator.vector \
 | `PipelineBenchmark.a_assembleColumns` | Synchronous page decoding + column assembly |
 | `PipelineBenchmark.b_consumeRows` | Full pipeline with row-oriented access |
 | `SimdBenchmark.*` | SIMD operations (countNonNulls, markNulls, dictionary, bit unpacking) |
+| `WideSchemaMetadataBenchmark.decodeFooter` | Thrift footer decode for 10 … 100,000 `FLOAT64` columns, bytes already in memory |
+| `WideSchemaMetadataBenchmark.buildSchema` | `FileSchema` construction from decoded schema elements, same widths |
+| `WideSchemaMetadataBenchmark.openFile` | Full `ParquetFileReader.open()`: mmap, footer read, decode, schema build |
+| `WideSchemaMetadataParquetJavaBenchmark.*` | The same three steps through parquet-java, for comparison |
 
 **JMH options:**
 

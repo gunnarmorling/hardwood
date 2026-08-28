@@ -18,7 +18,9 @@ import jdk.jfr.StackTrace;
 /// to be assembled by the assembly thread.
 ///
 /// This event indicates that the decode/assembly pipeline cannot keep up
-/// with the consumer, causing the consumer to stall.
+/// with the consumer, causing the consumer to stall. The event's duration is
+/// the length of the stall, and it is recorded on the stalled consumer thread.
+/// A read that never outruns its pipeline emits no event at all.
 @Name("dev.hardwood.BatchWait")
 @Label("Batch Wait")
 @Category({"Hardwood", "Pipeline"})

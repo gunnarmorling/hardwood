@@ -8,15 +8,20 @@
 package dev.hardwood.cli.command;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import org.aesh.command.Command;
 import org.aesh.command.CommandDefinition;
 import org.aesh.command.CommandResult;
 import org.aesh.command.invocation.CommandInvocation;
 import org.aesh.command.option.Mixin;
+import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
@@ -25,8 +30,29 @@ import dev.hardwood.reader.ParquetFileReader;
 @CommandDefinition(name = "info", description = "Display high-level file information.", generateHelp = true)
 public class InfoCommand implements Command<CommandInvocation> {
 
+    /// Values wider than this are cut short with a trailing `…` in the key/value
+    /// metadata section — these routinely carry kilobytes of embedded JSON or a
+    /// base64-encoded Arrow schema, which would otherwise bury the rest of the
+    /// command's output.
+    private static final int MAX_VALUE_WIDTH = 60;
+
+    /// Stands in for control characters in a rendered value. Key/value metadata
+    /// is arbitrary writer-supplied content: a raw newline would break the
+    /// column alignment and a raw escape sequence would reprogram the terminal.
+    /// Same glyph as [dev.hardwood.cli.internal.IndexValueFormatter] uses for
+    /// non-printable column values.
+    private static final char NON_PRINTABLE_PLACEHOLDER = '·';
+
+    /// Shown in the size column for an entry whose `value` field is absent
+    /// altogether — `KeyValue.value` is optional in `parquet.thrift`, so that is
+    /// a different thing from a present-but-empty value, which shows `0 B`.
+    private static final String ABSENT_VALUE = "—";
+
     @Mixin
     FileMixin fileMixin;
+
+    @Option(name = "kv-key", description = "Print only the full, untruncated value of this key-value metadata entry.")
+    String kvKey;
 
     @Override
     public CommandResult execute(CommandInvocation ci) {
@@ -37,28 +63,110 @@ public class InfoCommand implements Command<CommandInvocation> {
 
         try (ParquetFileReader reader = ParquetFileReader.open(inputFile)) {
             FileMetaData metadata = reader.getFileMetaData();
-
-            long totalCompressed = 0;
-            long totalUncompressed = 0;
-            for (RowGroup rg : metadata.rowGroups()) {
-                for (ColumnChunk cc : rg.columns()) {
-                    totalCompressed += cc.metaData().totalCompressedSize();
-                    totalUncompressed += cc.metaData().totalUncompressedSize();
-                }
-            }
-
-            System.out.println("Format Version:    " + metadata.version());
-            System.out.println("Created By:        " + (metadata.createdBy() != null ? metadata.createdBy() : "unknown"));
-            System.out.println("Row Groups:        " + metadata.rowGroups().size());
-            System.out.println("Total Rows:        " + metadata.numRows());
-            System.out.println("Uncompressed Size: " + Sizes.format(totalUncompressed));
-            System.out.println("Compressed Size:   " + Sizes.format(totalCompressed));
+            return kvKey != null ? printSingleKeyValue(metadata, kvKey) : printSummary(metadata);
         }
         catch (IOException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }
+    }
 
+    private static CommandResult printSummary(FileMetaData metadata) {
+        long totalCompressed = 0;
+        long totalUncompressed = 0;
+        for (RowGroup rg : metadata.rowGroups()) {
+            for (ColumnChunk cc : rg.columns()) {
+                totalCompressed += cc.metaData().totalCompressedSize();
+                totalUncompressed += cc.metaData().totalUncompressedSize();
+            }
+        }
+
+        System.out.println("Format Version:    " + metadata.version());
+        System.out.println("Created By:        " + (metadata.createdBy() != null ? metadata.createdBy() : "unknown"));
+        System.out.println("Row Groups:        " + metadata.rowGroups().size());
+        System.out.println("Total Rows:        " + metadata.numRows());
+        System.out.println("Uncompressed Size: " + Sizes.format(totalUncompressed));
+        System.out.println("Compressed Size:   " + Sizes.format(totalCompressed));
+
+        Map<String, String> keyValueMetadata = metadata.keyValueMetadata();
+        if (!keyValueMetadata.isEmpty()) {
+            System.out.println();
+            System.out.println("Key/Value Metadata (" + keyValueMetadata.size() + "):");
+            printKeyValueMetadata(keyValueMetadata);
+        }
         return CommandResult.SUCCESS;
+    }
+
+    /// Handles `--kv-key`: prints exactly the named entry's value, untruncated and
+    /// with no substitutions, and no summary block around it, so the output can be
+    /// piped straight into another tool (e.g.
+    /// `hardwood info -f x.parquet --kv-key ARROW:schema | base64 -d`).
+    ///
+    /// An entry that carries no value at all is reported as an error rather than
+    /// printed as an empty line: the caller asked for content that isn't there, and
+    /// a consumer down the pipe cannot tell the difference otherwise.
+    private static CommandResult printSingleKeyValue(FileMetaData metadata, String key) {
+        Map<String, String> keyValueMetadata = metadata.keyValueMetadata();
+        if (!keyValueMetadata.containsKey(key)) {
+            System.err.println("No key-value metadata entry named '" + key + "'.");
+            return CommandResult.FAILURE;
+        }
+        String value = keyValueMetadata.get(key);
+        if (value == null) {
+            System.err.println("Key-value metadata entry '" + key + "' has no value.");
+            return CommandResult.FAILURE;
+        }
+        System.out.println(value);
+        return CommandResult.SUCCESS;
+    }
+
+    /// Prints one aligned line per entry: key left-padded to the widest key in this
+    /// file, byte-length right-aligned to the widest size, then the value truncated
+    /// to [MAX_VALUE_WIDTH]. A value that renders to nothing — the empty string, or
+    /// no value at all — is omitted rather than leaving a trailing gutter of blank
+    /// spaces; the size column still tells the two apart.
+    private static void printKeyValueMetadata(Map<String, String> keyValueMetadata) {
+        int keyWidth = 0;
+        int sizeWidth = 0;
+        for (Map.Entry<String, String> entry : keyValueMetadata.entrySet()) {
+            keyWidth = Math.max(keyWidth, Strings.width(entry.getKey()));
+            sizeWidth = Math.max(sizeWidth, size(entry.getValue()).length());
+        }
+
+        for (Map.Entry<String, String> entry : keyValueMetadata.entrySet()) {
+            String line = "  " + Strings.padRight(entry.getKey(), keyWidth)
+                    + "  " + Fmt.fmt("%" + sizeWidth + "s", size(entry.getValue()));
+            String rendered = render(entry.getValue());
+            System.out.println(rendered.isEmpty() ? line : line + "  " + rendered);
+        }
+    }
+
+    /// The size column for one entry: the value's length in bytes as written to the
+    /// file, or [ABSENT_VALUE] if it carries no value.
+    private static String size(String value) {
+        return value == null ? ABSENT_VALUE : Sizes.format(byteLength(value));
+    }
+
+    /// The value column for one entry: control characters replaced so a writer's
+    /// content cannot break the layout or drive the terminal, then truncated to
+    /// [MAX_VALUE_WIDTH] cells.
+    private static String render(String value) {
+        if (value == null) {
+            return "";
+        }
+        return Strings.truncateRight(printable(value), MAX_VALUE_WIDTH);
+    }
+
+    private static String printable(String value) {
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            sb.append(Character.isISOControl(c) ? NON_PRINTABLE_PLACEHOLDER : c);
+        }
+        return sb.toString();
+    }
+
+    private static int byteLength(String value) {
+        return value.getBytes(StandardCharsets.UTF_8).length;
     }
 }

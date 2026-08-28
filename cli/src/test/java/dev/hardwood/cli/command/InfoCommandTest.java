@@ -23,6 +23,25 @@ class InfoCommandTest implements InfoCommandContract {
         return "nonexistent.parquet";
     }
 
+    @Override
+    public String kvMetadataFile() {
+        return getClass().getResource("/cli_info_kv_metadata_test.parquet").getPath();
+    }
+
+    /// Local-only: the file has no file-level key-value metadata at all (it carries
+    /// *column*-level metadata instead, which `info` does not report), so the whole
+    /// section is left out rather than printed with a count of zero. Nothing about
+    /// the branch depends on how the bytes were fetched, so it doesn't earn a place
+    /// in the shared contract.
+    @Test
+    void omitsKeyValueMetadataSectionWhenAbsent() {
+        Cli.Result result = Cli.launch("info", "-f",
+                getClass().getResource("/column_kv_metadata_test.parquet").getPath());
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).doesNotContain("Key/Value Metadata");
+    }
+
     @Test
     void rejectsRemoteUri() {
         Cli.Result result = Cli.launch("info", "-f", "gs://bucket/data.parquet");

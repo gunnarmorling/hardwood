@@ -20,8 +20,10 @@ import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.BinaryValues;
 import dev.hardwood.cli.internal.IndexValueFormatter;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
@@ -35,6 +37,7 @@ import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.OffsetIndex;
+import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.ParquetFileReader;
@@ -50,6 +53,12 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
     @Option(shortName = 'c', name = "column", description = "Restrict output to a single column.")
     String column;
 
+    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width of a column.")
+    int maxWidth;
+
+    @Option(shortName = 't', name = "truncate", hasValue = false, negatable = true, defaultValue = "true", description = "Should values wider than the column cap be truncated.")
+    Boolean truncate;
+
     @Option(name = "no-stats", hasValue = false, description = "Omit page-index derived columns (First Row, Min, Max, Nulls) even when available.")
     boolean noStats;
 
@@ -57,6 +66,12 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
     public CommandResult execute(CommandInvocation ci) {
         InputFile inputFile = fileMixin.toInputFile();
         if (inputFile == null) {
+            return CommandResult.FAILURE;
+        }
+        // A column has to be at least one cell wide to render anything at all,
+        // so a smaller value has no faithful rendering rather than an ugly one.
+        if (maxWidth < 1) {
+            System.err.println("--max-width must be greater than or equal to 1");
             return CommandResult.FAILURE;
         }
 
@@ -144,7 +159,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             }
 
             boolean trackRowIndex = chunk.metaData().numValues() == rg.numRows();
-            List<PageInfo> pages = collectPageHeaders(chunk.metaData(), inputFile, trackRowIndex);
+            List<PageInfo> pages = collectPageHeaders(chunk, inputFile, trackRowIndex);
 
             boolean rgHasIndex = columnIndex != null && offsetIndex != null;
             boolean rgHasInline = !noStats && hasInlineStats(pages);
@@ -190,7 +205,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                 String rgCell = (j == 0) ? String.valueOf(rd.rgIdx()) : "";
 
                 if (anyIndex) {
-                    IndexCells idx = indexCellsFor(p, dataPageCounter, rd, col);
+                    IndexCells idx = indexCellsFor(p, dataPageCounter, rd, col, cellBudget());
                     rows.add(new String[]{
                             rgCell,
                             p.label(),
@@ -287,7 +302,22 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
         return false;
     }
 
-    private static IndexCells indexCellsFor(PageInfo p, int dataPageCounter, RowGroupData rd, ColumnSchema col) {
+    /// No cell can be wider than the column cap, so hexing a binary payload
+    /// beyond it is waste. An untruncated table shows the value whole, and has
+    /// no cap.
+    private int cellBudget() {
+        return truncate ? maxWidth : BinaryValues.NO_LIMIT;
+    }
+
+    /// Bounds a rendered bound to the column cap and marks the cut, so a value
+    /// the table had to shorten does not read as complete.
+    private static String statCell(byte[] bytes, ColumnSchema col, int budget) {
+        String rendered = IndexValueFormatter.format(bytes, col, true, budget);
+        return budget == BinaryValues.NO_LIMIT ? rendered : Strings.truncateRight(rendered, budget);
+    }
+
+    private static IndexCells indexCellsFor(PageInfo p, int dataPageCounter, RowGroupData rd, ColumnSchema col,
+                                            int budget) {
         if (p.isDictionary()) {
             return IndexCells.DASHES;
         }
@@ -297,34 +327,34 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                 && dataPageCounter < oi.pageLocations().size()
                 && dataPageCounter < ci.minValues().size();
         if (hasColumnIndex) {
-            return fromColumnIndex(p, dataPageCounter, ci, oi, col);
+            return fromColumnIndex(p, dataPageCounter, ci, oi, col, budget);
         }
-        return fromInlineStats(p, col);
+        return fromInlineStats(p, col, budget);
     }
 
     private static IndexCells fromColumnIndex(PageInfo p, int dataPageCounter,
-            ColumnIndex ci, OffsetIndex oi, ColumnSchema col) {
+            ColumnIndex ci, OffsetIndex oi, ColumnSchema col, int budget) {
         String firstRow = String.valueOf(oi.pageLocations().get(dataPageCounter).firstRowIndex());
         String min;
         String max;
-        if (ci.nullPages().get(dataPageCounter)) {
+        if (ci.nullPages()[dataPageCounter]) {
             min = "(null page)";
             max = "(null page)";
         }
         else {
-            min = IndexValueFormatter.format(ci.minValues().get(dataPageCounter), col);
-            max = IndexValueFormatter.format(ci.maxValues().get(dataPageCounter), col);
+            min = statCell(ci.minValues().get(dataPageCounter), col, budget);
+            max = statCell(ci.maxValues().get(dataPageCounter), col, budget);
         }
         long nullCount = -1;
         String nulls = "-";
-        if (ci.nullCounts() != null && dataPageCounter < ci.nullCounts().size()) {
-            nullCount = ci.nullCounts().get(dataPageCounter);
+        if (ci.nullCounts() != null && dataPageCounter < ci.nullCounts().length) {
+            nullCount = ci.nullCounts()[dataPageCounter];
             nulls = String.valueOf(nullCount);
         }
         return new IndexCells(firstRow, min, max, nulls, nullCount);
     }
 
-    private static IndexCells fromInlineStats(PageInfo p, ColumnSchema col) {
+    private static IndexCells fromInlineStats(PageInfo p, ColumnSchema col, int budget) {
         Statistics stats = p.inlineStats();
         String firstRow = p.firstRowIndex() != null ? String.valueOf(p.firstRowIndex()) : "-";
         if (stats == null) {
@@ -337,8 +367,8 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             max = "(deprecated)";
         }
         else {
-            min = stats.minValue() != null ? IndexValueFormatter.format(stats.minValue(), col) : "-";
-            max = stats.maxValue() != null ? IndexValueFormatter.format(stats.maxValue(), col) : "-";
+            min = stats.minValue() != null ? statCell(stats.minValue(), col, budget) : "-";
+            max = stats.maxValue() != null ? statCell(stats.maxValue(), col, budget) : "-";
         }
         long nullCount = stats.nullCount() != null ? stats.nullCount() : -1;
         String nulls = nullCount >= 0 ? String.valueOf(nullCount) : "-";
@@ -386,7 +416,11 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             boolean isDictionary, Long firstRowIndex, Statistics inlineStats) {
     }
 
-    private List<PageInfo> collectPageHeaders(ColumnMetaData cmd, InputFile inputFile, boolean trackRowIndex) throws IOException {
+    private List<PageInfo> collectPageHeaders(ColumnChunk chunk, InputFile inputFile, boolean trackRowIndex) throws IOException {
+        // Under the split-file layout the offsets below address a different file, so scanning
+        // this one at them would print page headers decoded from unrelated bytes.
+        chunk.requireSameFile();
+        ColumnMetaData cmd = chunk.metaData();
         Long dictOffset = cmd.dictionaryPageOffset();
         long chunkStart = (dictOffset != null && dictOffset > 0) ? dictOffset : cmd.dataPageOffset();
         long chunkSize = cmd.totalCompressedSize();
@@ -403,7 +437,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             PageHeader header = PageHeaderReader.read(headerReader);
             int headerSize = headerReader.getBytesRead();
 
-            boolean isDictionary = header.type() == PageHeader.PageType.DICTIONARY_PAGE;
+            boolean isDictionary = header.type() == PageType.DICTIONARY_PAGE;
             String label = isDictionary ? "dict" : String.valueOf(pageIndex);
             Long firstRowIndex = null;
             Statistics inlineStats = null;
@@ -425,7 +459,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                     inlineStats
             ));
 
-            if (header.type() == PageHeader.PageType.DATA_PAGE || header.type() == PageHeader.PageType.DATA_PAGE_V2) {
+            if (header.type() == PageType.DATA_PAGE || header.type() == PageType.DATA_PAGE_V2) {
                 valuesRead += numValues(header);
                 pageIndex++;
                 if (valuesRead >= cmd.numValues()) {
@@ -449,16 +483,19 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
                 DataPageHeaderV2 dp = header.dataPageHeaderV2();
                 yield dp != null ? dp.statistics() : null;
             }
-            case DICTIONARY_PAGE, INDEX_PAGE -> null;
+            // UNKNOWN cannot reach here (PageHeaderReader rejects it) but, like an index page,
+            // carries no inline statistics either way.
+            case DICTIONARY_PAGE, INDEX_PAGE, UNKNOWN -> null;
         };
     }
 
-    private static String shortType(PageHeader.PageType type) {
+    private static String shortType(PageType type) {
         return switch (type) {
             case DATA_PAGE -> "DATA";
             case DATA_PAGE_V2 -> "DATA_V2";
             case DICTIONARY_PAGE -> "DICT";
             case INDEX_PAGE -> "INDEX";
+            case UNKNOWN -> "UNKNOWN";
         };
     }
 
@@ -467,7 +504,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             case DATA_PAGE -> shortEncoding(header.dataPageHeader().encoding().name());
             case DATA_PAGE_V2 -> shortEncoding(header.dataPageHeaderV2().encoding().name());
             case DICTIONARY_PAGE -> shortEncoding(header.dictionaryPageHeader().encoding().name());
-            case INDEX_PAGE -> "N/A";
+            case INDEX_PAGE, UNKNOWN -> "N/A";
         };
     }
 
@@ -484,7 +521,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             case DATA_PAGE -> header.dataPageHeader().numValues();
             case DATA_PAGE_V2 -> header.dataPageHeaderV2().numValues();
             case DICTIONARY_PAGE -> header.dictionaryPageHeader().numValues();
-            case INDEX_PAGE -> 0;
+            case INDEX_PAGE, UNKNOWN -> 0;
         };
     }
 }

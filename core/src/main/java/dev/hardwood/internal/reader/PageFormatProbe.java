@@ -16,6 +16,7 @@ import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
 import dev.hardwood.metadata.ColumnChunk;
+import dev.hardwood.metadata.PageType;
 
 /// Reads just enough of a column chunk to identify its first data page's
 /// format (v1 vs v2). Used by the per-page mask gate in [RowGroupIterator] to
@@ -49,8 +50,8 @@ final class PageFormatProbe {
     /// most one bounded `readRange` from `inputFile` (with growth on EOF for
     /// oversize headers). The dictionary page, if any, is skipped over by
     /// reading at the column's `dataPageOffset` directly.
-    static PageHeader.PageType firstDataPageType(InputFile inputFile,
-                                                  ColumnChunk columnChunk) throws IOException {
+    static PageType firstDataPageType(InputFile inputFile,
+                                      ColumnChunk columnChunk) throws IOException {
         long offset = columnChunk.metaData().dataPageOffset();
         long maxLength = columnChunk.metaData().totalCompressedSize();
         int peek = (int) Math.min(INITIAL_PEEK_SIZE, maxLength);

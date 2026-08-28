@@ -311,6 +311,55 @@ class FilterPredicateResolverTest {
                 .hasMessageContaining("not found");
     }
 
+    @Test
+    void resolveNestedGroupColumnThrows() {
+        FileSchema schema = FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL)))
+                .build();
+
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("company.address"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("group");
+    }
+
+    @Test
+    void resolveGroupWithRepeatedChildIsReportedAsGroup() {
+        // `address` is OPTIONAL and only its child is REPEATED, so the rejection must name the
+        // group rather than claim the column itself is repeated.
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement address = new SchemaElement("address", null, null, RepetitionType.OPTIONAL, 1,
+                null, null, null, null, null);
+        SchemaElement tags = new SchemaElement("tags", PhysicalType.INT32, null, RepetitionType.REPEATED,
+                null, null, null, null, null, null);
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, address, tags));
+
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("address"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("is a group")
+                .hasMessageNotContaining("repeated");
+    }
+
+    @Test
+    void resolveRepeatedGroupIsReportedAsRepeated() {
+        // A REPEATED group carries no LIST or MAP annotation, so it is caught by its own
+        // repetition level rather than by the annotation checks.
+        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement addresses = new SchemaElement("addresses", null, null, RepetitionType.REPEATED, 1,
+                null, null, null, null, null);
+        SchemaElement city = new SchemaElement("city", PhysicalType.BYTE_ARRAY, null,
+                RepetitionType.OPTIONAL, null, null, null, null, null, null);
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, addresses, city));
+
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("addresses"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("repeated");
+    }
+
     // ==================== Type validation ====================
 
     @Test
@@ -472,7 +521,7 @@ class FilterPredicateResolverTest {
 
     private static FileSchema schemaWithLogicalType(String columnName, PhysicalType type,
             Integer typeLength, LogicalType logicalType) {
-        SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", 1);
         SchemaElement col = new SchemaElement(columnName, type, typeLength, RepetitionType.REQUIRED,
                 null, null, null, null, null, logicalType);
         return FileSchema.fromSchemaElements(List.of(root, col));

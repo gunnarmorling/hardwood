@@ -21,8 +21,13 @@ public sealed interface ScreenState {
     /// is the line offset into the modal contents — used when the formatted
     /// value (e.g. an Arrow hex dump) overflows the modal viewport.
     record Overview(Pane focus, int menuSelection, int kvSelection,
-                    boolean kvModalOpen, int kvModalScroll)
+                    boolean kvModalOpen, int kvModalScroll, int factsTop)
             implements ScreenState {
+        public Overview(Pane focus, int menuSelection, int kvSelection,
+                        boolean kvModalOpen, int kvModalScroll) {
+            this(focus, menuSelection, kvSelection, kvModalOpen, kvModalScroll, 0);
+        }
+
         public enum Pane { FACTS, MENU }
 
         /// Default state: menu pane focused, selection at 0, no KV interaction.
@@ -31,7 +36,8 @@ public sealed interface ScreenState {
         }
     }
 
-    /// Expandable tree of schema nodes. `selection` is the visible-row index;
+    /// Expandable tree of schema nodes. `selection` is the visible-row index
+    /// and `scrollTop` the absolute index of the first row on screen;
     /// `expanded` tracks which group paths are currently expanded. `filter` is
     /// the live search substring (empty = show the tree); `searching` toggles
     /// inline filter-edit mode via `/`.
@@ -39,13 +45,19 @@ public sealed interface ScreenState {
             int selection,
             java.util.Set<String> expanded,
             String filter,
-            boolean searching) implements ScreenState {
+            boolean searching,
+            int scrollTop) implements ScreenState {
         public Schema {
             expanded = java.util.Set.copyOf(expanded);
         }
 
+        public Schema(int selection, java.util.Set<String> expanded, String filter,
+                      boolean searching) {
+            this(selection, expanded, filter, searching, 0);
+        }
+
         public static Schema initial() {
-            return new Schema(0, java.util.Set.of(), "", false);
+            return new Schema(0, java.util.Set.of(), "", false, 0);
         }
     }
 
@@ -61,8 +73,17 @@ public sealed interface ScreenState {
 
     /// Two-pane overview of one row group: facts (left) + drill menu (right)
     /// leading to Column chunks and Indexes-for-this-RG.
-    record RowGroupDetail(int rowGroupIndex, Pane focus, int menuSelection)
+    record RowGroupDetail(int rowGroupIndex, Pane focus, int menuSelection, int scrollTop,
+                          int factsTop)
             implements ScreenState {
+        public RowGroupDetail(int rowGroupIndex, Pane focus, int menuSelection) {
+            this(rowGroupIndex, focus, menuSelection, 0, 0);
+        }
+
+        public RowGroupDetail(int rowGroupIndex, Pane focus, int menuSelection, int scrollTop) {
+            this(rowGroupIndex, focus, menuSelection, scrollTop, 0);
+        }
+
         public enum Pane { FACTS, MENU }
     }
 
@@ -85,9 +106,26 @@ public sealed interface ScreenState {
     /// the facts pane and the drill-into menu. `logicalTypes` controls whether
     /// the chunk-level Min / Max in the facts pane render via the column's
     /// logical type (default) or the raw physical-type form — toggled with `t`.
+    /// `levels` controls whether the repetition- and definition-level
+    /// histograms are appended to the facts pane — toggled with `l`. Off by
+    /// default: the derived rows above them summarise the same data in a few
+    /// lines, so the raw buckets are a deliberate step.
+    /// `scrollTop` is the first facts-pane line rendered. The pane runs past
+    /// the bottom of an ordinary terminal on a nested column, so it scrolls
+    /// with the facts pane focused rather than dropping the tail.
     record ColumnChunkDetail(int rowGroupIndex, int columnIndex, Pane focus, int menuSelection,
-                              boolean logicalTypes)
+                              boolean logicalTypes, boolean levels, int scrollTop, int factsTop)
             implements ScreenState {
+        public ColumnChunkDetail(int rowGroupIndex, int columnIndex, Pane focus, int menuSelection,
+                                 boolean logicalTypes, boolean levels) {
+            this(rowGroupIndex, columnIndex, focus, menuSelection, logicalTypes, levels, 0, 0);
+        }
+
+        public ColumnChunkDetail(int rowGroupIndex, int columnIndex, Pane focus, int menuSelection,
+                                 boolean logicalTypes, boolean levels, int scrollTop) {
+            this(rowGroupIndex, columnIndex, focus, menuSelection, logicalTypes, levels, scrollTop, 0);
+        }
+
         public enum Pane { FACTS, MENU }
     }
 
@@ -95,11 +133,16 @@ public sealed interface ScreenState {
     /// `logicalTypes` controls whether stats columns render via logical type
     /// (default) or raw physical-type form — toggled with `t`.
     record Pages(int rowGroupIndex, int columnIndex, int selection, boolean modalOpen,
-                 boolean logicalTypes, int scrollTop)
+                 boolean logicalTypes, int scrollTop, int modalScroll)
             implements ScreenState {
         public Pages(int rowGroupIndex, int columnIndex, int selection, boolean modalOpen,
                      boolean logicalTypes) {
-            this(rowGroupIndex, columnIndex, selection, modalOpen, logicalTypes, 0);
+            this(rowGroupIndex, columnIndex, selection, modalOpen, logicalTypes, 0, 0);
+        }
+
+        public Pages(int rowGroupIndex, int columnIndex, int selection, boolean modalOpen,
+                     boolean logicalTypes, int scrollTop) {
+            this(rowGroupIndex, columnIndex, selection, modalOpen, logicalTypes, scrollTop, 0);
         }
     }
 
@@ -118,11 +161,19 @@ public sealed interface ScreenState {
             boolean searching,
             boolean logicalTypes,
             boolean modalOpen,
-            int scrollTop) implements ScreenState {
+            int scrollTop,
+            int modalScroll) implements ScreenState {
         public ColumnIndexView(int rowGroupIndex, int columnIndex, int selection,
                                 String filter, boolean searching, boolean logicalTypes,
                                 boolean modalOpen) {
-            this(rowGroupIndex, columnIndex, selection, filter, searching, logicalTypes, modalOpen, 0);
+            this(rowGroupIndex, columnIndex, selection, filter, searching, logicalTypes, modalOpen, 0, 0);
+        }
+
+        public ColumnIndexView(int rowGroupIndex, int columnIndex, int selection,
+                                String filter, boolean searching, boolean logicalTypes,
+                                boolean modalOpen, int scrollTop) {
+            this(rowGroupIndex, columnIndex, selection, filter, searching, logicalTypes,
+                    modalOpen, scrollTop, 0);
         }
     }
 
@@ -139,11 +190,20 @@ public sealed interface ScreenState {
     /// `Anchor#OFFSET`, `Anchor#DICTIONARY` — so ↑/↓ cycle between them
     /// and Enter always drills. Body content is scrolled separately with
     /// `PgDn` / `PgUp`; `scroll` is the line offset into the body content.
-    record Footer(Anchor cursor, int scroll) implements ScreenState {
-        public enum Anchor { COLUMN, OFFSET, DICTIONARY }
+    /// The footer body is a document with a few drillable anchors in it.
+    /// `cursorRow` indexes the rows the cursor stops on — the facts, not the
+    /// section headings and blanks between them. The window is derived from
+    /// it, so there is no scroll offset to keep.
+    record Footer(int cursorRow, int windowTop) implements ScreenState {
+        public Footer(int cursorRow) {
+            this(cursorRow, 0);
+        }
 
+        /// Where the cursor starts before the file is consulted. Screens open
+        /// this through `FooterScreen.initialState`, which puts it on the
+        /// first anchor the file actually has.
         public static Footer initial() {
-            return new Footer(Anchor.COLUMN, 0);
+            return new Footer(0, 0);
         }
     }
 
@@ -186,12 +246,20 @@ public sealed interface ScreenState {
             boolean searching,
             boolean loadConfirmed,
             boolean logicalTypes,
-            int scrollTop) implements ScreenState {
+            int scrollTop,
+            int modalScroll) implements ScreenState {
         public DictionaryView(int rowGroupIndex, int columnIndex, int selection,
                               boolean modalOpen, String filter, boolean searching,
                               boolean loadConfirmed, boolean logicalTypes) {
             this(rowGroupIndex, columnIndex, selection, modalOpen, filter, searching,
-                    loadConfirmed, logicalTypes, 0);
+                    loadConfirmed, logicalTypes, 0, 0);
+        }
+
+        public DictionaryView(int rowGroupIndex, int columnIndex, int selection,
+                              boolean modalOpen, String filter, boolean searching,
+                              boolean loadConfirmed, boolean logicalTypes, int scrollTop) {
+            this(rowGroupIndex, columnIndex, selection, modalOpen, filter, searching,
+                    loadConfirmed, logicalTypes, scrollTop, 0);
         }
     }
 
@@ -204,8 +272,10 @@ public sealed interface ScreenState {
     /// modal is currently open (-1 when closed). `logicalTypes` controls
     /// whether values render via their logical type (default) or the raw
     /// physical-type form — toggled with `t`. Inside the record modal,
-    /// `modalCursorLine` is the per-line cursor (collapsed fields = 1 line,
-    /// expanded fields = N lines); `expandedColumns` is the set of fields
+    /// `modalCursorLine` is the line of the field the cursor sits on and
+    /// `modalScroll` is the first body line the modal shows; the two move
+    /// independently because `↑`/`↓` step between expandable fields while
+    /// `PgDn`/`PgUp` scroll the body. `expandedColumns` is the set of fields
     /// whose pretty-printed value is rendered inline (multi-line, no
     /// element caps). `expandedRows` is parallel to `rows` and holds the
     /// multi-line pretty-printed form of each cell, populated by
@@ -221,13 +291,23 @@ public sealed interface ScreenState {
             int modalRow,
             boolean logicalTypes,
             java.util.Set<Integer> expandedColumns,
-            int modalCursorLine)
+            int modalCursorLine,
+            int modalScroll)
             implements ScreenState {
         public DataPreview {
             columnNames = java.util.List.copyOf(columnNames);
             rows = java.util.List.copyOf(rows);
             expandedRows = java.util.List.copyOf(expandedRows);
             expandedColumns = java.util.Set.copyOf(expandedColumns);
+        }
+
+        public DataPreview(long firstRow, int pageSize, java.util.List<String> columnNames,
+                           java.util.List<java.util.List<String>> rows,
+                           java.util.List<java.util.List<String>> expandedRows,
+                           int columnScroll, int selectedRow, int modalRow, boolean logicalTypes,
+                           java.util.Set<Integer> expandedColumns, int modalCursorLine) {
+            this(firstRow, pageSize, columnNames, rows, expandedRows, columnScroll, selectedRow,
+                    modalRow, logicalTypes, expandedColumns, modalCursorLine, 0);
         }
     }
 }

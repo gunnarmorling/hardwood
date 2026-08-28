@@ -7,21 +7,26 @@
  */
 package dev.hardwood.internal.encoding;
 
+import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
 /// Encoder for RLE/Bit-Packing Hybrid encoding, the inverse of
 /// [RleBitPackingHybridDecoder]. Used for definition/repetition levels (via
-/// [LevelEncoder]) and, later, dictionary indices.
+/// [LevelEncoder]) and for a data page's dictionary index stream.
 ///
 /// Values that repeat at least eight times in a row are emitted as an RLE run; shorter
 /// stretches are bit-packed in groups of eight. Emitting a single RLE run for a constant
 /// stream is what lets the reader take its all-present fast path on a fully-populated
 /// optional column. The bit-packed byte layout is little-endian bit order, matching the
 /// decoder: value `i` of a group occupies bits `[i·bitWidth, (i+1)·bitWidth)`.
+///
+/// A zero-bit stream — the dictionary indices of a chunk whose dictionary holds a single
+/// entry — is one RLE run whose values occupy no bytes, so only the run header is written.
+/// The header cannot be skipped even though it carries no value: a decoder reads the run
+/// length from the stream rather than from the page's value count.
 public final class RleBitPackingHybridEncoder {
 
-    private final int bitWidth;
-    private final long mask;
+    private int bitWidth;
 
     private byte[] buffer = new byte[64];
     private int length;
@@ -43,11 +48,14 @@ public final class RleBitPackingHybridEncoder {
 
     /// @param bitWidth number of bits per value, 0–32
     public RleBitPackingHybridEncoder(int bitWidth) {
+        requireValidBitWidth(bitWidth);
+        this.bitWidth = bitWidth;
+    }
+
+    private static void requireValidBitWidth(int bitWidth) {
         if (bitWidth < 0 || bitWidth > 32) {
             throw new IllegalArgumentException("Invalid RLE bit width: " + bitWidth + ". Must be between 0 and 32");
         }
-        this.bitWidth = bitWidth;
-        this.mask = bitWidth == 0 ? 0 : (bitWidth == 32 ? 0xFFFFFFFFL : (1L << bitWidth) - 1);
     }
 
     /// Appends `count` values starting at `offset`.
@@ -63,8 +71,11 @@ public final class RleBitPackingHybridEncoder {
             throw new IllegalStateException("Encoder already finished");
         }
         if (bitWidth == 0) {
-            // A 0-bit stream carries no information — the decoder reads nothing — so there
-            // is nothing to buffer or emit.
+            // Zero bits leave only one representable value, so the whole stream is one RLE
+            // run and the value itself needs no bytes. The run header is still required: a
+            // decoder takes the run length from the stream rather than from the page's value
+            // count, and reads past the end without it.
+            repeatCount++;
             return;
         }
         if (value == previousValue) {
@@ -91,21 +102,68 @@ public final class RleBitPackingHybridEncoder {
     /// Finishes the stream and returns the encoded bytes. The encoder must not be written
     /// to afterwards.
     public byte[] toByteArray() {
-        if (!finished) {
-            if (repeatCount >= 8) {
+        finish();
+        return Arrays.copyOf(buffer, length);
+    }
+
+    /// Finishes the stream and returns how many bytes it occupies; [#buffer] then holds them,
+    /// starting at zero.
+    ///
+    /// The bytes are lent rather than written into a sink of the caller's, so that the one sink
+    /// on this path — the page body under construction — needs no particular type and can be a
+    /// plain growable array rather than a synchronized [ByteArrayOutputStream]. The encoder must
+    /// not be written to afterwards.
+    public int finished() {
+        finish();
+        return length;
+    }
+
+    /// The backing array [#finished] reports the length of. Valid until the next reset.
+    ///
+    /// Call [#finished] **first and into a local**: finishing may replace this array, and
+    /// `write(buffer(), 0, finished())` evaluates the array reference before the call that
+    /// replaces it.
+    public byte[] buffer() {
+        return buffer;
+    }
+
+    /// Empties the encoder for another stream at `bitWidth`, keeping the buffer it grew. One
+    /// encoder can then serve every page of a column chunk — each page's index stream is its
+    /// own, at its own bit width — instead of one being allocated and regrown per page.
+    public void reset(int bitWidth) {
+        requireValidBitWidth(bitWidth);
+        this.bitWidth = bitWidth;
+        length = 0;
+        numBufferedValues = 0;
+        previousValue = 0;
+        repeatCount = 0;
+        bitPackedRunHeaderIndex = -1;
+        bitPackedGroupCount = 0;
+        finished = false;
+    }
+
+    /// Closes whichever run is open, after which [#length] bytes of [#buffer] are the stream.
+    private void finish() {
+        if (finished) {
+            return;
+        }
+        if (bitWidth == 0) {
+            if (repeatCount > 0) {
                 writeRleRun();
             }
-            else if (numBufferedValues > 0) {
-                Arrays.fill(bufferedValues, numBufferedValues, 8, 0);
-                writeOrAppendBitPackedRun();
-                endPreviousBitPackedRun();
-            }
-            else {
-                endPreviousBitPackedRun();
-            }
-            finished = true;
         }
-        return Arrays.copyOf(buffer, length);
+        else if (repeatCount >= 8) {
+            writeRleRun();
+        }
+        else if (numBufferedValues > 0) {
+            Arrays.fill(bufferedValues, numBufferedValues, 8, 0);
+            writeOrAppendBitPackedRun();
+            endPreviousBitPackedRun();
+        }
+        else {
+            endPreviousBitPackedRun();
+        }
+        finished = true;
     }
 
     private void writeOrAppendBitPackedRun() {
@@ -149,20 +207,12 @@ public final class RleBitPackingHybridEncoder {
     }
 
     /// Packs the eight buffered values into `bitWidth` bytes, LSB-first, matching the
-    /// decoder's little-endian bit order.
+    /// decoder's little-endian bit order. The layout is [BitPacker]'s, shared with
+    /// DELTA_BINARY_PACKED's 32-value miniblocks.
     private void packGroup() {
-        long acc = 0;
-        int bits = 0;
-        for (int i = 0; i < 8; i++) {
-            acc |= (bufferedValues[i] & mask) << bits;
-            bits += bitWidth;
-            while (bits >= 8) {
-                write((int) (acc & 0xFF));
-                acc >>>= 8;
-                bits -= 8;
-            }
-        }
-        // 8·bitWidth is a whole number of bytes, so no partial byte remains.
+        int packed = BitPacker.packedLength(8, bitWidth);
+        ensureCapacity(packed);
+        length += BitPacker.pack(bufferedValues, 0, 8, bitWidth, buffer, length);
     }
 
     private void writeUnsignedVarInt(int value) {
@@ -175,9 +225,13 @@ public final class RleBitPackingHybridEncoder {
     }
 
     private void write(int b) {
-        if (length == buffer.length) {
-            buffer = Arrays.copyOf(buffer, buffer.length * 2);
-        }
+        ensureCapacity(1);
         buffer[length++] = (byte) b;
+    }
+
+    private void ensureCapacity(int extra) {
+        if (length + extra > buffer.length) {
+            buffer = Arrays.copyOf(buffer, Math.max(length + extra, buffer.length * 2));
+        }
     }
 }

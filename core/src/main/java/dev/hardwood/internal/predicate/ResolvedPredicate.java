@@ -8,6 +8,7 @@
 package dev.hardwood.internal.predicate;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 
 import dev.hardwood.reader.FilterPredicate;
@@ -115,6 +116,95 @@ public sealed interface ResolvedPredicate {
 
     record GeospatialPredicate(int columnIndex, double xmin, double ymin,
                                double xmax, double ymax) implements ResolvedPredicate {}
+
+    /// The column index a leaf predicate tests, or `-1` for the compound [And] and
+    /// [Or] nodes, which test no column of their own.
+    static int leafColumnIndex(ResolvedPredicate predicate) {
+        return switch (predicate) {
+            case IntPredicate p -> p.columnIndex();
+            case LongPredicate p -> p.columnIndex();
+            case FloatPredicate p -> p.columnIndex();
+            case Float16Predicate p -> p.columnIndex();
+            case DoublePredicate p -> p.columnIndex();
+            case BooleanPredicate p -> p.columnIndex();
+            case BinaryPredicate p -> p.columnIndex();
+            case IntInPredicate p -> p.columnIndex();
+            case LongInPredicate p -> p.columnIndex();
+            case BinaryInPredicate p -> p.columnIndex();
+            case IsNullPredicate p -> p.columnIndex();
+            case IsNotNullPredicate p -> p.columnIndex();
+            case GeospatialPredicate p -> p.columnIndex();
+            case And ignored -> -1;
+            case Or ignored -> -1;
+        };
+    }
+
+    /// Adds every column index the tree tests to `columns`.
+    static void collectColumnIndices(ResolvedPredicate predicate, BitSet columns) {
+        int leafColumn = leafColumnIndex(predicate);
+        if (leafColumn >= 0) {
+            columns.set(leafColumn);
+            return;
+        }
+        List<ResolvedPredicate> children = (predicate instanceof And a) ? a.children() : ((Or) predicate).children();
+        for (ResolvedPredicate child : children) {
+            collectColumnIndices(child, columns);
+        }
+    }
+
+    /// Rewrites every leaf's `columnIndex` through `columnMapping`, which maps a
+    /// column index in the schema the predicate was resolved against onto the
+    /// corresponding index in another schema.
+    ///
+    /// Used by the multi-file read path: predicates are resolved once against the
+    /// first file's schema, but metadata pruning indexes into each file's own
+    /// `RowGroup.columns` list, whose order is a property of that file.
+    ///
+    /// @param predicate the predicate to rewrite
+    /// @param columnMapping target index per source index; `-1` marks a column
+    ///        absent from the target schema
+    /// @throws IllegalArgumentException if a leaf references a column mapped to `-1`
+    static ResolvedPredicate remapColumns(ResolvedPredicate predicate, int[] columnMapping) {
+        return switch (predicate) {
+            case IntPredicate p -> new IntPredicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value());
+            case LongPredicate p -> new LongPredicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value());
+            case FloatPredicate p -> new FloatPredicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value(),
+                    p.ieee754TotalOrder());
+            case Float16Predicate p -> new Float16Predicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value(),
+                    p.ieee754TotalOrder());
+            case DoublePredicate p -> new DoublePredicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value(),
+                    p.ieee754TotalOrder());
+            case BooleanPredicate p -> new BooleanPredicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value());
+            case BinaryPredicate p -> new BinaryPredicate(mapped(p.columnIndex(), columnMapping), p.op(), p.value(),
+                    p.signed());
+            case IntInPredicate p -> new IntInPredicate(mapped(p.columnIndex(), columnMapping), p.values());
+            case LongInPredicate p -> new LongInPredicate(mapped(p.columnIndex(), columnMapping), p.values());
+            case BinaryInPredicate p -> new BinaryInPredicate(mapped(p.columnIndex(), columnMapping), p.values());
+            case IsNullPredicate p -> new IsNullPredicate(mapped(p.columnIndex(), columnMapping));
+            case IsNotNullPredicate p -> new IsNotNullPredicate(mapped(p.columnIndex(), columnMapping));
+            case GeospatialPredicate p -> new GeospatialPredicate(mapped(p.columnIndex(), columnMapping),
+                    p.xmin(), p.ymin(), p.xmax(), p.ymax());
+            case And a -> new And(remapChildren(a.children(), columnMapping));
+            case Or o -> new Or(remapChildren(o.children(), columnMapping));
+        };
+    }
+
+    private static List<ResolvedPredicate> remapChildren(List<ResolvedPredicate> children, int[] columnMapping) {
+        List<ResolvedPredicate> remapped = new ArrayList<>(children.size());
+        for (ResolvedPredicate child : children) {
+            remapped.add(remapColumns(child, columnMapping));
+        }
+        return remapped;
+    }
+
+    private static int mapped(int columnIndex, int[] columnMapping) {
+        int target = columnMapping[columnIndex];
+        if (target < 0) {
+            throw new IllegalArgumentException(
+                    "Predicate column index " + columnIndex + " has no counterpart in the target schema");
+        }
+        return target;
+    }
 
     /// Negates a predicate. For leaf predicates, the operator is inverted (e.g. GT → LT_EQ).
     /// For compound predicates, De Morgan's laws are applied:

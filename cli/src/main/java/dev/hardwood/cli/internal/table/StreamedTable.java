@@ -34,20 +34,24 @@ public class StreamedTable {
 
         // compute column widths based on headers + sample rows
         int[] widths = new int[n];
+        int[] minWidths = new int[n];
         for (int i = 0; i < n; i++) {
-            widths[i] = headers[i].length();
+            widths[i] = RowTable.displayWidth(headers[i]);
+            minWidths[i] = mandatoryGlyph(headers[i], truncate);
         }
         for (String[] rowFunc : sampleRows) {
             for (int i = 0; i < n; i++) {
                 String cell = rowFunc[i];
                 if (cell != null) {
-                    widths[i] = Math.max(widths[i], cell.length());
+                    widths[i] = Math.max(widths[i], RowTable.displayWidth(cell));
+                    minWidths[i] = Math.max(minWidths[i], mandatoryGlyph(cell, truncate));
                 }
             }
         }
 
         for (int i = 0; i < n; i++) {
-            widths[i] = Math.min(widths[i], maxWidth);
+            widths[i] = Math.max(Math.min(widths[i], maxWidth),
+                    minColumnWidth(minWidths[i], widths[i], truncate));
         }
 
         String sep = makeSeparator(widths);
@@ -56,9 +60,12 @@ public class StreamedTable {
         printRow(out, i -> headers[i], widths, truncate);
         out.println(sep);
 
+        boolean emittedDataRow = false;
+
         // catch up the sampled rows
         for (String[] rowFunc : sampleRows) {
             printRow(out, i -> rowFunc[i], widths, truncate);
+            emittedDataRow = true;
             if (rowDelimiter) {
                 out.println(sep);
             }
@@ -68,16 +75,41 @@ public class StreamedTable {
         while (iterator.hasNext()) {
             IntFunction<String> rowFunc = iterator.next();
             printRow(out, rowFunc, widths, truncate);
+            emittedDataRow = true;
             if (rowDelimiter) {
                 out.println(sep);
             }
         }
 
-        if (!rowDelimiter && !sampleRows.isEmpty()) {
+        if (!rowDelimiter && emittedDataRow) {
             out.println(sep);
         }
 
         out.flush();
+    }
+
+    /// The glyph of `value` the column is obliged to render, in cells.
+    ///
+    /// Wrapping owes every glyph a line, so it is the widest one anywhere in the value.
+    /// Truncating owes only the first: everything after it is a candidate for being cut,
+    /// and sizing the column to a glyph that the ellipsis may well replace pads it out
+    /// with space no render can reach.
+    private static int mandatoryGlyph(String value, boolean truncate) {
+        return truncate ? RowTable.firstGlyph(value) : RowTable.widestGlyph(value);
+    }
+
+    /// The narrowest a column can be and still render its content faithfully.
+    ///
+    /// Wrapping needs room for the glyph itself, since nothing splits a glyph across
+    /// lines. Truncating needs one cell more, for the ellipsis that sits next to it —
+    /// without that cell the ellipsis crowds out the character entirely and the column
+    /// shows a marker and no content. A column whose values all fit is never truncated,
+    /// so it keeps the plain glyph floor.
+    private static int minColumnWidth(int mandatoryGlyph, int naturalWidth, boolean truncate) {
+        if (!truncate || naturalWidth <= mandatoryGlyph) {
+            return mandatoryGlyph;
+        }
+        return mandatoryGlyph + 1;
     }
 
     private String makeSeparator(int[] widths) {
@@ -97,10 +129,11 @@ public class StreamedTable {
                 if (cell == null) {
                     cell = "";
                 }
-                if (cell.length() > widths[i]) {
-                    cell = cell.substring(0, widths[i] - 1) + "\u2026";
+                if (RowTable.displayWidth(cell) > widths[i]) {
+                    int end = displayPrefixEnd(cell, 0, widths[i] - 1);
+                    cell = cell.substring(0, end) + "\u2026";
                 }
-                out.printf(" %-" + widths[i] + "s |", cell);
+                printCell(out, cell, widths[i]);
             }
             out.println();
             return;
@@ -115,9 +148,16 @@ public class StreamedTable {
                 cell = "";
             }
             List<String> lines = new ArrayList<>();
-            for (int start = 0; start < cell.length(); start += widths[i]) {
-                int end = Math.min(start + widths[i], cell.length());
+            if (cell.isEmpty()) {
+                lines.add("");
+            }
+            for (int start = 0; start < cell.length();) {
+                int end = displayPrefixEnd(cell, start, widths[i]);
+                if (end == start) {
+                    end += Character.charCount(cell.codePointAt(start));
+                }
                 lines.add(cell.substring(start, end));
+                start = end;
             }
             maxLines = Math.max(maxLines, lines.size());
             wrappedCells.add(lines.toArray(new String[0]));
@@ -128,9 +168,32 @@ public class StreamedTable {
             for (int i = 0; i < n; i++) {
                 String[] lines = wrappedCells.get(i);
                 String content = (line < lines.length) ? lines[line] : "";
-                out.printf(" %-" + widths[i] + "s |", content);
+                printCell(out, content, widths[i]);
             }
             out.println();
         }
+    }
+
+    private void printCell(PrintWriter out, String content, int width) {
+        out.print(" ");
+        out.print(content);
+        out.print(" ".repeat(Math.max(0, width - RowTable.displayWidth(content))));
+        out.print(" |");
+    }
+
+    private static int displayPrefixEnd(String value, int start, int maxWidth) {
+        int width = 0;
+        int end = start;
+        while (end < value.length()) {
+            int codePoint = value.codePointAt(end);
+            int next = end + Character.charCount(codePoint);
+            int codePointWidth = RowTable.charWidth(codePoint);
+            if (width + codePointWidth > maxWidth) {
+                break;
+            }
+            width += codePointWidth;
+            end = next;
+        }
+        return end;
     }
 }

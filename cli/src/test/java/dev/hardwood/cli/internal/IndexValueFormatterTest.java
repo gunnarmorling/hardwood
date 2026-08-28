@@ -10,6 +10,7 @@ package dev.hardwood.cli.internal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.HexFormat;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,11 +37,10 @@ class IndexValueFormatterTest {
     }
 
     @Test
-    void truncatesLongString() {
+    void rendersLongStringInFull() {
         String longValue = "abcdefghijklmnopqrstuvwxyz";
         assertThat(IndexValueFormatter.format(longValue.getBytes(StandardCharsets.UTF_8), stringColumn()))
-                .hasSize(20)
-                .endsWith("...");
+                .isEqualTo(longValue);
     }
 
     @Test
@@ -54,7 +54,7 @@ class IndexValueFormatterTest {
     void rendersAllControlBytesAsHex() {
         byte[] allNull = new byte[19];
         String result = IndexValueFormatter.format(allNull, stringColumn());
-        assertThat(result).startsWith("0x").hasSize(20);
+        assertThat(result).isEqualTo("0x" + "00".repeat(19));
     }
 
     @Test
@@ -124,8 +124,57 @@ class IndexValueFormatterTest {
         bb.putInt(1);
         bb.putInt(15);
         bb.putInt(3_600_000);
-        assertThat(IndexValueFormatter.format(bytes, col, false, false))
-                .isEqualTo(java.util.HexFormat.of().formatHex(bytes));
+        assertThat(IndexValueFormatter.format(bytes, col, false))
+                .isEqualTo("0x" + HexFormat.of().formatHex(bytes));
+    }
+
+    /// GeoParquet 1.x predates the `GEOMETRY` logical type and stores WKB in a
+    /// bare `BYTE_ARRAY`, so the writer's min/max are opaque bytes. Rendering
+    /// them as lenient UTF-8 turned every bound into mojibake.
+    @Test
+    void unannotatedBinaryBoundsDoNotRenderAsText() {
+        ColumnSchema col = bareByteArrayColumn();
+
+        assertThat(IndexValueFormatter.format(WKB_POINT, col, true))
+                .isEqualTo("0x010100000000000000005366c0f71622f0fa1955c0");
+    }
+
+    /// A capped cell shows a marked prefix of the hex, the same treatment a
+    /// long string gets — enough to tell two bounds apart.
+    @Test
+    void unannotatedBinaryBoundsHonourAnExplicitBudget() {
+        assertThat(IndexValueFormatter.format(WKB_POINT, bareByteArrayColumn(), true, 20))
+                .isEqualTo("0x01010000000000000000");
+    }
+
+    @Test
+    void distinctLongStringsRenderDistinctly() {
+        String first = "the-quick-brown-fox-jumps-over-the-lazy-dog-0";
+        String second = "the-quick-brown-fox-jumps-over-the-lazy-dog-1";
+
+        assertThat(IndexValueFormatter.format(first.getBytes(StandardCharsets.UTF_8), stringColumn()))
+                .isEqualTo(first);
+        assertThat(IndexValueFormatter.format(second.getBytes(StandardCharsets.UTF_8), stringColumn()))
+                .isEqualTo(second);
+    }
+
+    /// A column annotated as text stays text: the placeholder keeps a stray
+    /// control character from breaking the table it is rendered into.
+    @Test
+    void annotatedStringBoundsKeepRenderingAsText() {
+        byte[] bytes = {'a', 0x00, 'b'};
+
+        assertThat(IndexValueFormatter.format(bytes, stringColumn())).isEqualTo("a\u00B7b");
+    }
+
+    /// A WKB `Point` — the payload GeoParquet 1.x stores in an unannotated
+    /// `BYTE_ARRAY` geometry column.
+    private static final byte[] WKB_POINT =
+            HexFormat.of().parseHex("010100000000000000005366c0f71622f0fa1955c0");
+
+    private static ColumnSchema bareByteArrayColumn() {
+        return new ColumnSchema(FieldPath.of("geometry"), PhysicalType.BYTE_ARRAY,
+                RepetitionType.OPTIONAL, null, 0, 1, 0, null);
     }
 
     private static ColumnSchema stringColumn() {

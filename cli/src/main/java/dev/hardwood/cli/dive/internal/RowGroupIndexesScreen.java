@@ -68,28 +68,9 @@ public final class RowGroupIndexesScreen {
         ScreenState.RowGroupIndexes state = (ScreenState.RowGroupIndexes) stack.top();
         List<Entry> entries = entries(model.rowGroup(state.rowGroupIndex()));
         int count = entries.size();
-        if (Keys.isStepUp(event)) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - 1)));
-            return true;
-        }
-        if (Keys.isStepDown(event)) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + 1)));
-            return true;
-        }
-        if (Keys.isPageDown(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isPageUp(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isJumpTop(event) && count > 0) {
-            stack.replaceTop(moved(state, 0));
-            return true;
-        }
-        if (Keys.isJumpBottom(event) && count > 0) {
-            stack.replaceTop(moved(state, count - 1));
+        int next = CursorPane.select(event, state.selection(), count);
+        if (next != CursorPane.UNHANDLED) {
+            stack.replaceTop(moved(state, next));
             return true;
         }
         if (event.isConfirm() && count > 0) {
@@ -141,8 +122,7 @@ public final class RowGroupIndexesScreen {
                 .style(Theme.accent().bold());
         Block block = Block.builder()
                 .title(" RG #" + state.rowGroupIndex() + " index regions "
-                        + Plurals.rangeOf(state.selection(), entries.size(),
-                                Keys.viewportStride()) + " ")
+                        + Plurals.rangeOf(window, entries.size()) + " ")
                 .borders(Borders.ALL)
                 .borderType(BorderType.ROUNDED)
                 .build();
@@ -168,9 +148,7 @@ public final class RowGroupIndexesScreen {
     public static String keybarKeys(ScreenState.RowGroupIndexes state, ParquetModel model) {
         int count = entries(model.rowGroup(state.rowGroupIndex())).size();
         return new Keys.Hints()
-                .add(count > 1, "[↑↓] move")
-                .add(count > Keys.viewportStride(), "[PgDn/PgUp or Shift+↓↑] page")
-                .add(count > 1, "[g/G] first/last")
+                .add(true, CursorPane.hints(count))
                 .add(count > 0, "[Enter] open")
                 .add(true, "[Esc] back")
                 .build();

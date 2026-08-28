@@ -58,8 +58,8 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
                 }
                 yield typeLength;
             }
-            default -> throw new UnsupportedOperationException(
-                    "BYTE_STREAM_SPLIT not supported for type: " + type);
+            default -> throw new IllegalArgumentException(
+                    "BYTE_STREAM_SPLIT is not defined over " + type);
         };
     }
 

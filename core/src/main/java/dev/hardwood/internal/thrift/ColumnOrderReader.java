@@ -26,14 +26,14 @@ public class ColumnOrderReader {
         short saved = reader.pushFieldIdContext();
         try {
             ColumnOrder order = ColumnOrder.UNKNOWN;
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            while (header != null) {
-                order = switch (header.fieldId()) {
+            int header = reader.readFieldHeader();
+            while (header != ThriftCompactReader.STOP_FIELD) {
+                order = switch (ThriftCompactReader.fieldId(header)) {
                     case TYPE_ORDER -> ColumnOrder.TYPE_DEFINED_ORDER;
                     case IEEE_754_TOTAL_ORDER -> ColumnOrder.IEEE754_TOTAL_ORDER;
                     default -> ColumnOrder.UNKNOWN;
                 };
-                reader.skipField(header.type());
+                reader.skipField(ThriftCompactReader.fieldType(header));
                 header = reader.readFieldHeader();
             }
             return order;

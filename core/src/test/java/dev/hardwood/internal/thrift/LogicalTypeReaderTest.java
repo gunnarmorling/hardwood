@@ -57,8 +57,8 @@ class LogicalTypeReaderTest {
         ThriftCompactReader reader = new ThriftCompactReader(ByteBuffer.wrap(writer.toByteArray()));
         assertThat(LogicalTypeReader.read(reader)).isNull();
 
-        ThriftCompactReader.FieldHeader sentinel = reader.readFieldHeader();
-        assertThat(sentinel.fieldId()).isEqualTo((short) 1);
+        int sentinel = reader.readFieldHeader();
+        assertThat(ThriftCompactReader.fieldId(sentinel)).isEqualTo((short) 1);
         assertThat(reader.readI32()).isEqualTo(7);
     }
 

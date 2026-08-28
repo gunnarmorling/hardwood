@@ -43,28 +43,9 @@ public final class OffsetIndexScreen {
         ScreenState.OffsetIndexView state = (ScreenState.OffsetIndexView) stack.top();
         OffsetIndex oi = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
         int count = oi != null ? oi.pageLocations().size() : 0;
-        if (Keys.isStepUp(event)) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - 1)));
-            return true;
-        }
-        if (Keys.isStepDown(event)) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + 1)));
-            return true;
-        }
-        if (Keys.isPageDown(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isPageUp(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isJumpTop(event) && count > 0) {
-            stack.replaceTop(moved(state, 0));
-            return true;
-        }
-        if (Keys.isJumpBottom(event) && count > 0) {
-            stack.replaceTop(moved(state, count - 1));
+        int next = CursorPane.select(event, state.selection(), count);
+        if (next != CursorPane.UNHANDLED) {
+            stack.replaceTop(moved(state, next));
             return true;
         }
         return false;
@@ -110,7 +91,7 @@ public final class OffsetIndexScreen {
         Row header = Row.from("#", "Offset", "Size", "First row").style(Theme.accent().bold());
         Block block = Block.builder()
                 .title(" Offset index "
-                        + Plurals.rangeOf(state.selection(), locations.size(), Keys.viewportStride())
+                        + Plurals.rangeOf(window, locations.size())
                         + " ")
                 .borders(Borders.ALL)
                 .borderType(BorderType.ROUNDED)
@@ -138,9 +119,7 @@ public final class OffsetIndexScreen {
         OffsetIndex oi = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
         int count = oi != null ? oi.pageLocations().size() : 0;
         return new Keys.Hints()
-                .add(count > 1, "[↑↓] move")
-                .add(count > Keys.viewportStride(), "[PgDn/PgUp or Shift+↓↑] page")
-                .add(count > 1, "[g/G] first/last")
+                .add(true, CursorPane.hints(count))
                 .add(true, "[Esc] back")
                 .build();
     }

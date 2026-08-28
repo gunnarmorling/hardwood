@@ -25,6 +25,11 @@ class InspectPagesS3CommandTest extends AbstractS3CommandTest implements Inspect
     }
 
     @Override
+    public String longValueFile() {
+        return S3_LONG_VALUE_FILE;
+    }
+
+    @Override
     public String nestedFile() {
         return S3_LIST_FILE;
     }

@@ -63,6 +63,14 @@ public final class DictionaryEncoder {
         return index;
     }
 
+    /// Empties the dictionary for a new column chunk, keeping the hash table and value array
+    /// it has grown to. Only the slots are cleared: entries past the new size are unreachable
+    /// until they are overwritten, since every lookup goes through the table.
+    public void clear() {
+        Arrays.fill(slotIndex, EMPTY);
+        size = 0;
+    }
+
     /// The number of distinct values assigned so far.
     public int size() {
         return size;
@@ -109,5 +117,14 @@ public final class DictionaryEncoder {
     /// Fibonacci hashing spreads sequential and clustered `INT32` keys across the table.
     private static int hash(int value) {
         return value * 0x9E3779B1;
+    }
+
+    /// The bytes this dictionary retains: the distinct values, and the open-addressing table that
+    /// finds them. The table is charged from [#size] rather than from its allocated length so that
+    /// a cleared dictionary charges nothing, the writer's memory measure being what a chunk holds
+    /// rather than what its buffers have grown to. A slot is an `int` value beside an `int` index,
+    /// and the table resizes at a 75% load, so two slots per entry bounds it.
+    public long retainedBytes() {
+        return (long) size * (Integer.BYTES + 2 * (Integer.BYTES + Integer.BYTES));
     }
 }

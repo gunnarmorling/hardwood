@@ -18,4 +18,9 @@ class InfoS3CommandTest extends AbstractS3CommandTest implements InfoCommandCont
     public String nonexistentFile() {
         return S3_NONEXISTENT_FILE;
     }
+
+    @Override
+    public String kvMetadataFile() {
+        return S3_KV_METADATA_FILE;
+    }
 }

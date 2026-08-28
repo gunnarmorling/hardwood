@@ -45,7 +45,7 @@ import dev.hardwood.schema.FileSchema;
 /// giving the JIT a single concrete class with monomorphic call sites. Supports all
 /// primitive types, logical type conversions (date, time, timestamp, decimal, UUID,
 /// string), and both name-based and index-based access.
-public final class FlatRowReader implements RowReader {
+public final class FlatRowReader implements FileAwareRowReader {
 
     /// Sentinel for "every leaf in the batch is present" — replaces the
     /// nullable validity reference on the hot path so the per-row check
@@ -135,10 +135,16 @@ public final class FlatRowReader implements RowReader {
     // File name from the current batch — used for exception enrichment
     private String currentFileName;
 
+    /// Per-file record-filter counts for JFR, or `null` when the read has no
+    /// filter and nothing evaluates records.
+    private final RecordFilterTally tally;
+
     public FlatRowReader(BatchExchange<BatchExchange.Batch>[] exchanges, FlatColumnWorker[] columnWorkers,
                          FileSchema fileSchema, ProjectedSchema projectedSchema,
-                         boolean drainSide, int wordsLen, MergePlan mergePlan, long maxMatchedRows) {
+                         boolean drainSide, int wordsLen, MergePlan mergePlan, long maxMatchedRows,
+                         RecordFilterTally tally) {
         this.maxMatchedRows = maxMatchedRows;
+        this.tally = tally;
         this.exchanges = exchanges;
         this.columnWorkers = columnWorkers;
         this.columnCount = exchanges.length;
@@ -296,8 +302,12 @@ public final class FlatRowReader implements RowReader {
         // matched rows. On the FilteredRowReader path the wrapper caps; on the
         // no-filter path the worker already capped scanned == matched rows.
         long readerMatchLimit = drainSide ? maxRows : ColumnWorker.UNLIMITED;
+        // The tally spans both filtered paths: the drain-side reader feeds it whole
+        // batches, the wrapper feeds it single records, and either way the reader
+        // marks the file boundaries as it loads batches.
+        RecordFilterTally tally = filter != null ? new RecordFilterTally() : null;
         FlatRowReader reader = new FlatRowReader(buffers, workers, schema, projectedSchema,
-                drainSide, wordsLen, mergePlan, readerMatchLimit);
+                drainSide, wordsLen, mergePlan, readerMatchLimit, tally);
         reader.initialize();
 
         if (drainSide) {
@@ -310,7 +320,7 @@ public final class FlatRowReader implements RowReader {
             // a top-level field, and the reader's `getInt(int)` etc. take a
             // projected leaf-column index. Map directly through the projection.
             RowMatcher matcher = RecordFilterCompiler.compile(filter, schema, projectedSchema::toProjectedIndex);
-            return new FilteredRowReader(reader, matcher, maxRows);
+            return new FilteredRowReader(reader, matcher, maxRows, tally);
         }
         return reader;
     }
@@ -705,6 +715,11 @@ public final class FlatRowReader implements RowReader {
     }
 
     @Override
+    public String currentFileName() {
+        return currentFileName;
+    }
+
+    @Override
     public PqInterval getInterval(int columnIndex) {
         if (isNull(columnIndex)) {
             return null;
@@ -848,6 +863,17 @@ public final class FlatRowReader implements RowReader {
             // field's default -1.
             runEndExclusive = 0;
         }
+        if (tally != null) {
+            // Ahead of any record of this batch being counted, so the counts land
+            // on the file the batch came from. Batches never straddle files.
+            tally.switchFile(currentFileName);
+            if (drainSide) {
+                // The whole batch was decided on the drain thread — count it here
+                // rather than as rows are yielded, so an early exit does not leave
+                // the batch reported as all-skipped.
+                tally.recordBatch(batchSize, countMatches(combinedWords, batchSize));
+            }
+        }
         return true;
     }
 
@@ -879,6 +905,22 @@ public final class FlatRowReader implements RowReader {
         }
         int activeWords = (batchSize + 63) >>> 6;
         mergeEvaluator.eval(mergePlan, combinedWords, activeWords, perColumnMatches);
+    }
+
+    /// Counts the set bits of `words` below `limit`. The words past `limit` hold
+    /// stale bits from an earlier, longer batch (see [#intersectMatches]), so the
+    /// partial tail word is masked rather than counted whole.
+    private static int countMatches(long[] words, int limit) {
+        int fullWords = limit >>> 6;
+        int count = 0;
+        for (int i = 0; i < fullWords; i++) {
+            count += Long.bitCount(words[i]);
+        }
+        int tailBits = limit & 63;
+        if (tailBits != 0) {
+            count += Long.bitCount(words[fullWords] & (~0L >>> (64 - tailBits)));
+        }
+        return count;
     }
 
     /// Collects the projected column indices referenced by `plan`, so
@@ -922,6 +964,9 @@ public final class FlatRowReader implements RowReader {
             return;
         }
         closed = true;
+        if (tally != null) {
+            tally.close();
+        }
         if (columnWorkers != null) {
             for (FlatColumnWorker worker : columnWorkers) {
                 worker.close();

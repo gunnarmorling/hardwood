@@ -10,22 +10,19 @@ package dev.hardwood.cli.internal.table;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.CharsetDecoder;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
+import dev.hardwood.cli.internal.BinaryValues;
 import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.RowValueFormatter;
 import dev.hardwood.internal.conversion.LogicalTypeConverter;
 import dev.hardwood.metadata.LogicalType;
-import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqList;
 import dev.hardwood.row.PqMap;
@@ -64,11 +61,20 @@ public final class RowTable {
     }
 
     public static String renderField(RowReader rowReader, int fieldIndex, SchemaNode fieldSchema) {
+        return renderField(rowReader, fieldIndex, fieldSchema, BinaryValues.NO_LIMIT);
+    }
+
+    /// Renders a field, holding a binary payload to what a caller displaying
+    /// `maxChars` characters can use. A width-limited table passes its column
+    /// cap; `convert`, which writes the value out rather than displaying it,
+    /// passes [BinaryValues#NO_LIMIT].
+    public static String renderField(RowReader rowReader, int fieldIndex, SchemaNode fieldSchema,
+                                     int maxChars) {
         if (isAnnotatedStringField(fieldSchema)) {
             String s = rowReader.getString(fieldIndex);
             return s != null ? s : "null";
         }
-        return renderValue(rowReader.getValue(fieldIndex), fieldSchema);
+        return renderValue(rowReader.getValue(fieldIndex), fieldSchema, maxChars);
     }
 
     private static boolean isAnnotatedStringField(SchemaNode node) {
@@ -76,47 +82,36 @@ public final class RowTable {
             return false;
         }
         LogicalType lt = pn.logicalType();
-        return lt instanceof LogicalType.StringType
+        return lt instanceof LogicalType.BsonType
+                || lt instanceof LogicalType.StringType
                 || lt instanceof LogicalType.EnumType
                 || lt instanceof LogicalType.JsonType;
     }
 
-    private static boolean isBareByteArray(SchemaNode node) {
-        return node instanceof SchemaNode.PrimitiveNode pn
-                && pn.type() == PhysicalType.BYTE_ARRAY
-                && pn.logicalType() == null;
-    }
-
-    private static boolean isValidUtf8(byte[] bytes) {
-        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
-        try {
-            decoder.decode(ByteBuffer.wrap(bytes));
-            return true;
-        } catch (CharacterCodingException e) {
-            return false;
-        }
-    }
-
     public static String renderValue(Object value, SchemaNode schema) {
+        return renderValue(value, schema, BinaryValues.NO_LIMIT);
+    }
+
+    /// See [#renderField(RowReader, int, SchemaNode, int)] for what `maxChars`
+    /// bounds.
+    public static String renderValue(Object value, SchemaNode schema, int maxChars) {
         if (value == null) {
             return "null";
         }
         if (value instanceof PqVariant variant) {
-            return renderVariant(variant);
+            return renderVariant(variant, maxChars);
         }
         if (value instanceof byte[] bytes) {
-            return renderBytes(bytes, schema);
+            return renderBytes(bytes, schema, maxChars);
         }
         if (value instanceof PqStruct struct) {
-            return renderStruct(struct, schema instanceof SchemaNode.GroupNode g ? g : null);
+            return renderStruct(struct, schema instanceof SchemaNode.GroupNode g ? g : null, maxChars);
         }
         if (value instanceof PqList list) {
-            return renderList(list, schema instanceof SchemaNode.GroupNode g ? g : null);
+            return renderList(list, schema instanceof SchemaNode.GroupNode g ? g : null, maxChars);
         }
         if (value instanceof PqMap map) {
-            return renderMap(map, schema instanceof SchemaNode.GroupNode g ? g : null);
+            return renderMap(map, schema instanceof SchemaNode.GroupNode g ? g : null, maxChars);
         }
 
         if (schema instanceof SchemaNode.PrimitiveNode pn && pn.logicalType() instanceof LogicalType.IntType it
@@ -132,21 +127,12 @@ public final class RowTable {
         return String.valueOf(value);
     }
 
-    private static String renderBytes(byte[] bytes, SchemaNode schema) {
+    private static String renderBytes(byte[] bytes, SchemaNode schema, int maxChars) {
         if (isAnnotatedStringField(schema)) {
             return new String(bytes, StandardCharsets.UTF_8);
         }
-        if (isBareByteArray(schema)) {
-            // Schema omits the STRING annotation, so we can't trust the column to
-            // be text. Opportunistically decode when the bytes are valid UTF-8 (the
-            // common case for older writers) and summarise otherwise, so binary
-            // payloads aren't silently rendered with U+FFFD replacement characters.
-            return isValidUtf8(bytes)
-                    ? new String(bytes, StandardCharsets.UTF_8)
-                    : "<" + bytes.length + " bytes>";
-        }
         if (!(schema instanceof SchemaNode.PrimitiveNode pn)) {
-            return "<" + bytes.length + " bytes>";
+            return BinaryValues.render(bytes, maxChars);
         }
         LogicalType lt = pn.logicalType();
         if (lt instanceof LogicalType.UuidType) {
@@ -161,8 +147,7 @@ public final class RowTable {
         }
         return switch (pn.type()) {
             case INT96 -> decodeInt96Timestamp(bytes);
-            case FIXED_LEN_BYTE_ARRAY -> HexFormat.of().formatHex(bytes);
-            default -> "<" + bytes.length + " bytes>";
+            default -> BinaryValues.render(bytes, maxChars);
         };
     }
 
@@ -170,7 +155,7 @@ public final class RowTable {
         return LogicalTypeConverter.int96ToInstant(bytes).toString();
     }
 
-    private static String renderStruct(PqStruct struct, SchemaNode.GroupNode schemaNode) {
+    private static String renderStruct(PqStruct struct, SchemaNode.GroupNode schemaNode, int maxChars) {
         StringBuilder sb = new StringBuilder("{ ");
         int fieldCount = struct.getFieldCount();
         for (int i = 0; i < fieldCount; i++) {
@@ -179,12 +164,13 @@ public final class RowTable {
             }
             String name = struct.getFieldName(i);
             SchemaNode childSchema = findChildSchema(schemaNode, name);
-            sb.append(name).append(" : ").append(renderValue(struct.getValue(name), childSchema));
+            sb.append(name).append(" : ")
+                    .append(renderValue(struct.getValue(name), childSchema, maxChars));
         }
         return sb.append(" }").toString();
     }
 
-    private static String renderList(PqList list, SchemaNode.GroupNode schemaNode) {
+    private static String renderList(PqList list, SchemaNode.GroupNode schemaNode, int maxChars) {
         SchemaNode elementSchema = schemaNode != null ? schemaNode.getListElement() : null;
         StringBuilder sb = new StringBuilder("[");
         int size = list.size();
@@ -192,7 +178,7 @@ public final class RowTable {
             if (i > 0) {
                 sb.append(", ");
             }
-            sb.append(renderValue(list.get(i), elementSchema));
+            sb.append(renderValue(list.get(i), elementSchema, maxChars));
         }
         return sb.append("]").toString();
     }
@@ -202,15 +188,21 @@ public final class RowTable {
     /// as `{"k": v, ...}`, arrays as `[v, ...]`, scalars as their JSON form, and
     /// the Variant `NULL` type as the literal `null`.
     public static String renderVariant(PqVariant variant) {
+        return renderVariant(variant, BinaryValues.NO_LIMIT);
+    }
+
+    /// See [#renderField(RowReader, int, SchemaNode, int)] for what `maxChars`
+    /// bounds.
+    public static String renderVariant(PqVariant variant, int maxChars) {
         if (variant == null) {
             return "null";
         }
         StringBuilder sb = new StringBuilder();
-        appendVariant(sb, variant);
+        appendVariant(sb, variant, maxChars);
         return sb.toString();
     }
 
-    private static void appendVariant(StringBuilder sb, PqVariant variant) {
+    private static void appendVariant(StringBuilder sb, PqVariant variant, int maxChars) {
         switch (variant.type()) {
             case NULL -> sb.append("null");
             case BOOLEAN_TRUE -> sb.append("true");
@@ -221,18 +213,18 @@ public final class RowTable {
             case DOUBLE -> sb.append(variant.asDouble());
             case DECIMAL4, DECIMAL8, DECIMAL16 -> sb.append(variant.asDecimal().toPlainString());
             case STRING -> appendJsonString(sb, variant.asString());
-            case BINARY -> appendJsonString(sb, HexFormat.of().formatHex(variant.asBinary()));
+            case BINARY -> appendJsonString(sb, BinaryValues.render(variant.asBinary(), maxChars));
             case DATE -> appendJsonString(sb, variant.asDate().toString());
             case TIME_NTZ -> appendJsonString(sb, variant.asTime().toString());
             case TIMESTAMP, TIMESTAMP_NTZ, TIMESTAMP_NANOS, TIMESTAMP_NTZ_NANOS ->
                 appendJsonString(sb, variant.asTimestamp().toString());
             case UUID -> appendJsonString(sb, variant.asUuid().toString());
-            case OBJECT -> appendVariantObject(sb, variant.asObject());
-            case ARRAY -> appendVariantArray(sb, variant.asArray());
+            case OBJECT -> appendVariantObject(sb, variant.asObject(), maxChars);
+            case ARRAY -> appendVariantArray(sb, variant.asArray(), maxChars);
         }
     }
 
-    private static void appendVariantObject(StringBuilder sb, PqVariantObject object) {
+    private static void appendVariantObject(StringBuilder sb, PqVariantObject object, int maxChars) {
         sb.append('{');
         int fieldCount = object.getFieldCount();
         for (int i = 0; i < fieldCount; i++) {
@@ -247,13 +239,13 @@ public final class RowTable {
                 sb.append("null");
             }
             else {
-                appendVariant(sb, fieldValue);
+                appendVariant(sb, fieldValue, maxChars);
             }
         }
         sb.append('}');
     }
 
-    private static void appendVariantArray(StringBuilder sb, PqVariantArray array) {
+    private static void appendVariantArray(StringBuilder sb, PqVariantArray array, int maxChars) {
         sb.append('[');
         int size = array.size();
         for (int i = 0; i < size; i++) {
@@ -265,7 +257,7 @@ public final class RowTable {
                 sb.append("null");
             }
             else {
-                appendVariant(sb, element);
+                appendVariant(sb, element, maxChars);
             }
         }
         sb.append(']');
@@ -296,7 +288,7 @@ public final class RowTable {
         sb.append('"');
     }
 
-    private static String renderMap(PqMap map, SchemaNode.GroupNode schemaNode) {
+    private static String renderMap(PqMap map, SchemaNode.GroupNode schemaNode, int maxChars) {
         SchemaNode keySchema = null;
         SchemaNode valueSchema = null;
         if (schemaNode != null && !schemaNode.children().isEmpty()) {
@@ -313,7 +305,9 @@ public final class RowTable {
                 sb.append(", ");
             }
             first = false;
-            sb.append(renderValue(entry.getKey(), keySchema)).append(" : ").append(renderValue(entry.getValue(), valueSchema));
+            sb.append(renderValue(entry.getKey(), keySchema, maxChars))
+                    .append(" : ")
+                    .append(renderValue(entry.getValue(), valueSchema, maxChars));
         }
         return sb.append(" }").toString();
     }
@@ -331,7 +325,12 @@ public final class RowTable {
     }
 
     public static String renderTable(String[] headers, List<String[]> rows) {
-        return renderTable(headers, rows, Collections.emptyList(), Collections.emptyList());
+        return renderTable(headers, rows, Collections.emptyList(), Collections.emptyList(), false);
+    }
+
+    public static String renderTransposedTable(String[] headers, List<String[]> rows) {
+        List<Integer> separatorsBefore = IntStream.range(1, rows.size()).boxed().toList();
+        return renderTable(headers, rows, separatorsBefore, Collections.emptyList(), true);
     }
 
     /// Renders a table like [renderTable(String[], List)], but inserts a horizontal
@@ -346,6 +345,13 @@ public final class RowTable {
     public static String renderTable(String[] headers, List<String[]> rows,
                                      List<Integer> separatorsBefore,
                                      List<Integer> heavySeparatorsBefore) {
+        return renderTable(headers, rows, separatorsBefore, heavySeparatorsBefore, false);
+    }
+
+    private static String renderTable(String[] headers, List<String[]> rows,
+                                      List<Integer> separatorsBefore,
+                                      List<Integer> heavySeparatorsBefore,
+                                      boolean rightAlignHeaders) {
         int cols = headers.length;
         int[] widths = new int[cols];
         for (int i = 0; i < cols; i++) {
@@ -364,7 +370,7 @@ public final class RowTable {
 
         StringBuilder sb = new StringBuilder();
         sb.append(lightBorder).append('\n');
-        sb.append(renderCells(headers, widths, false)).append('\n');
+        sb.append(renderCells(headers, widths, rightAlignHeaders)).append('\n');
         sb.append(lightBorder).append('\n');
         for (int r = 0; r < rows.size(); r++) {
             if (heavySet.contains(r)) {
@@ -427,10 +433,38 @@ public final class RowTable {
         int len = s.length();
         while (i < len) {
             int cp = s.codePointAt(i);
-            width += isWideCodePoint(cp) ? 2 : 1;
+            width += charWidth(cp);
             i += Character.charCount(cp);
         }
         return width;
+    }
+
+    /// Returns the min-content width of the string: the number of terminal cells taken
+    /// by its widest single code point, i.e. the narrowest column the string can be
+    /// wrapped into without a glyph overflowing. Empty strings have a width of 1.
+    static int widestGlyph(String s) {
+        int widest = 1;
+        int i = 0;
+        int len = s.length();
+        while (i < len) {
+            int cp = s.codePointAt(i);
+            widest = Math.max(widest, charWidth(cp));
+            i += Character.charCount(cp);
+        }
+        return widest;
+    }
+
+    /// Returns the number of terminal cells taken by the string's first code point,
+    /// i.e. the narrowest column that can render any of the string at all. Empty
+    /// strings have a width of 1.
+    static int firstGlyph(String s) {
+        return s.isEmpty() ? 1 : charWidth(s.codePointAt(0));
+    }
+
+    /// Returns the number of terminal cells a single code point occupies: 2 for East
+    /// Asian wide characters (CJK ideographs, Hangul, Kana, Fullwidth forms), 1 otherwise.
+    static int charWidth(int cp) {
+        return isWideCodePoint(cp) ? 2 : 1;
     }
 
     private static boolean isWideCodePoint(int cp) {

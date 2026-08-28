@@ -14,6 +14,7 @@ The tape drives key presses through the `dive` screens and captures:
 - `docs/content/assets/cli/03-2-rg-detail.svg`
 - `docs/content/assets/cli/03-3-rg-column-chunks.svg`
 - `docs/content/assets/cli/03-4-rg-column-chunk-detail.svg`
+- `docs/content/assets/cli/03-5-rg-column-chunk-levels.svg`
 - `docs/content/assets/cli/04-pages-header-modal.svg`
 - `docs/content/assets/cli/05-dict-search.svg`
 - `docs/content/assets/cli/06-data-scrolled-right.svg`
@@ -33,16 +34,25 @@ source .docker-venv/bin/activate && python tools/simple-datagen.py
 Run:
 
 ```bash
-./mvnw -pl cli -am -Pscreenshots package -Dquick
+script -qec "./mvnw -pl cli -am -Pscreenshots package -Dquick" /dev/null
 ```
 
 Override fixture path:
 
 ```bash
-./mvnw -pl cli -am -Pscreenshots package -Dquick -Dscreenshots.parquetFile=/absolute/path/to/file.parquet
+script -qec "./mvnw -pl cli -am -Pscreenshots package -Dquick -Dscreenshots.parquetFile=/absolute/path/to/file.parquet" /dev/null
 ```
+
+The profile drives `dive` through `exec:java`, and `dive` refuses to start
+unless stdout is a TTY. `script` (from `util-linux-script`, installed in the dev
+container) runs the build attached to a pseudo-terminal; `-q` drops its banner,
+`-e` propagates the build's exit status, and the typescript goes to `/dev/null`
+because only the terminal is wanted. On a normal interactive shell the bare
+`./mvnw …` command works too.
 
 Notes:
 - Existing screenshots are overwritten in place.
+- The profile sets `-Dhardwood.dive.truecolor=true`, so the captured SVGs carry
+  the Solarized palette regardless of the recording terminal's `$COLORTERM`.
 - The fixture parquet file must already exist before running the profile.
 - When `-Dscreenshots.parquetFile=...` is provided, that fixture is used directly.

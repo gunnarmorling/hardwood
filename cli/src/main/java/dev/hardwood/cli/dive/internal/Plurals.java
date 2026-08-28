@@ -23,27 +23,18 @@ public final class Plurals {
         return Fmt.fmt("%,d", count) + " " + (count == 1 ? singular : plural);
     }
 
-    /// Renders an approximate "X-Y of Z" range string for a list-shaped
-    /// screen that paints into a bounded viewport. Mirrors how Data
-    /// preview shows "rows N-M of total" so other list screens can do
-    /// the same. The visible window is bottom-pinned to the cursor:
-    /// `end = max(viewport, selection + 1)`; `start = end - viewport + 1`.
-    /// This matches what tamboui's TableState does on first
-    /// scroll-past-viewport (selection ends up at the bottom row), so
-    /// for the common downward-navigation case the displayed range
-    /// matches what's actually visible.
-    public static String rangeOf(int selection, int total, int viewport) {
+    /// "12-31 of 4,096" for the rows a window actually shows, or "0" when
+    /// there are none. `window` is the same slice the body renders, so the
+    /// title cannot report a range the reader is not looking at.
+    public static String rangeOf(RowWindow window, int total) {
         if (total <= 0) {
             return "0";
         }
-        int v = Math.max(1, viewport);
-        if (total <= v) {
-            return total == 1 ? "1 of 1"
-                    : "1-" + Fmt.fmt("%,d", total) + " of " + Fmt.fmt("%,d", total);
+        int start = window.start() + 1;
+        int end = Math.min(total, window.end());
+        if (start == end) {
+            return Fmt.fmt("%,d of %,d", start, total);
         }
-        int sel = Math.max(0, Math.min(selection, total - 1));
-        int end = Math.min(total, Math.max(v, sel + 1));
-        int start = Math.max(1, end - v + 1);
         return Fmt.fmt("%,d-%,d of %,d", start, end, total);
     }
 }

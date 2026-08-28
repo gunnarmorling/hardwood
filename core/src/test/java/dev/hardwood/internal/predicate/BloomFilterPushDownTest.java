@@ -128,13 +128,15 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void negativeZeroFloatIsNeverPrunedByBloom() {
-        // `price` stores +0.0; a query for -0.0f must still match it (-0.0f == +0.0f) even though the
-        // two have different IEEE-754 bits and therefore different bloom hashes. The ±0 carve-out
-        // keeps the row group rather than pruning on the raw-bit hash.
-        FilterPredicate negZero = FilterPredicate.eq("price", -0.0f);
-        assertThat(statisticsDrop(negZero)).isFalse();
-        assertThat(bloomDrop(negZero)).isFalse();
+    void oppositeSignedZerosArePrunedByBloom() {
+        // The fixture stores +0.0. Matchers and bloom hashes both distinguish its sign from -0.0.
+        FilterPredicate negativeFloatZero = FilterPredicate.eq("price", -0.0f);
+        assertThat(statisticsDrop(negativeFloatZero)).isFalse();
+        assertThat(bloomDrop(negativeFloatZero)).isTrue();
+
+        FilterPredicate negativeDoubleZero = FilterPredicate.eq("ratio", -0.0);
+        assertThat(statisticsDrop(negativeDoubleZero)).isFalse();
+        assertThat(bloomDrop(negativeDoubleZero)).isTrue();
     }
 
     @Test
@@ -237,9 +239,9 @@ class BloomFilterPushDownTest {
                 md.type(), md.encodings(), md.pathInSchema(), md.codec(),
                 md.numValues(), md.totalUncompressedSize(), md.totalCompressedSize(),
                 md.keyValueMetadata(), md.dataPageOffset(), md.dictionaryPageOffset(),
-                md.statistics(), md.geospatialStatistics(), md.bloomFilterOffset(), null);
+                md.statistics(), md.geospatialStatistics(), md.bloomFilterOffset(), null, md.encodingStats(), md.sizeStatistics());
         ColumnChunk patched = new ColumnChunk(withoutLength, original.offsetIndexOffset(),
-                original.offsetIndexLength(), original.columnIndexOffset(), original.columnIndexLength());
+                original.offsetIndexLength(), original.columnIndexOffset(), original.columnIndexLength(), "");
 
         List<ColumnChunk> columns = new ArrayList<>(rowGroup.columns());
         columns.set(NAME_COLUMN, patched);
@@ -335,9 +337,9 @@ class BloomFilterPushDownTest {
                 md.type(), md.encodings(), md.pathInSchema(), md.codec(),
                 md.numValues(), md.totalUncompressedSize(), md.totalCompressedSize(),
                 md.keyValueMetadata(), md.dataPageOffset(), md.dictionaryPageOffset(),
-                md.statistics(), md.geospatialStatistics(), bloomOffset, null);
+                md.statistics(), md.geospatialStatistics(), bloomOffset, null, md.encodingStats(), md.sizeStatistics());
         ColumnChunk chunk = new ColumnChunk(withBloom, template.offsetIndexOffset(),
-                template.offsetIndexLength(), template.columnIndexOffset(), template.columnIndexLength());
+                template.offsetIndexLength(), template.columnIndexOffset(), template.columnIndexLength(), "");
         return new RowGroup(List.of(chunk), rowGroup.totalByteSize(), rowGroup.numRows());
     }
 }

@@ -14,8 +14,6 @@ import dev.hardwood.metadata.SchemaElement;
 public class SchemaElementWriter {
 
     public static void write(ThriftCompactWriter writer, SchemaElement element) {
-        rejectUnsupported(element);
-
         short saved = writer.pushFieldIdContext();
         try {
             if (element.type() != null) {
@@ -41,23 +39,26 @@ public class SchemaElementWriter {
                 writer.writeFieldBegin(6, ThriftCompactConstants.FieldType.I32);
                 writer.writeI32(ThriftEnumLookup.thriftValue(element.convertedType()));
             }
+            if (element.scale() != null) {
+                writer.writeFieldBegin(7, ThriftCompactConstants.FieldType.I32);
+                writer.writeI32(element.scale());
+            }
+            if (element.precision() != null) {
+                writer.writeFieldBegin(8, ThriftCompactConstants.FieldType.I32);
+                writer.writeI32(element.precision());
+            }
+            if (element.fieldId() != null) {
+                writer.writeFieldBegin(9, ThriftCompactConstants.FieldType.I32);
+                writer.writeI32(element.fieldId());
+            }
+            if (element.logicalType() != null) {
+                writer.writeFieldBegin(10, ThriftCompactConstants.FieldType.STRUCT);
+                LogicalTypeWriter.write(writer, element.logicalType());
+            }
             writer.writeFieldStop();
         }
         finally {
             writer.popFieldIdContext(saved);
-        }
-    }
-
-    /// Fail fast on annotations the writer cannot yet serialize, rather than
-    /// silently dropping them and producing a schema that does not round-trip. The
-    /// `converted_type` is serialized (field 6), so only the modern logical-type union,
-    /// the decimal scale/precision, and field ids remain unsupported.
-    private static void rejectUnsupported(SchemaElement element) {
-        if (element.logicalType() != null || element.scale() != null
-                || element.precision() != null || element.fieldId() != null) {
-            throw new UnsupportedOperationException(
-                    "Writer does not yet support logical types, decimal scale/precision, or field ids: "
-                            + element.name());
         }
     }
 }

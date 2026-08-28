@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.internal.FetchReason;
 
 /// An [InputFile] wrapper that delegates to another `InputFile` and counts both the number of
 /// [#readRange] calls and the total bytes read. Useful in tests that need to assert on I/O patterns
@@ -20,7 +21,9 @@ import dev.hardwood.InputFile;
 public class CountingInputFile implements InputFile {
 
     private final InputFile delegate;
+    private final AtomicInteger closeCount = new AtomicInteger();
     private final AtomicInteger readRangeCount = new AtomicInteger();
+    private final AtomicInteger footerReadCount = new AtomicInteger();
     private final AtomicLong bytesRead = new AtomicLong();
 
     public CountingInputFile(InputFile delegate) {
@@ -40,6 +43,14 @@ public class CountingInputFile implements InputFile {
         return bytesRead.get();
     }
 
+    public int closeCount() {
+        return closeCount.get();
+    }
+
+    public int footerReadCount() {
+        return footerReadCount.get();
+    }
+
     @Override
     public void open() throws IOException {
         delegate.open();
@@ -48,6 +59,9 @@ public class CountingInputFile implements InputFile {
     @Override
     public ByteBuffer readRange(long offset, int length) throws IOException {
         readRangeCount.incrementAndGet();
+        if (FetchReason.current().startsWith("footer-")) {
+            footerReadCount.incrementAndGet();
+        }
         bytesRead.addAndGet(length);
         return delegate.readRange(offset, length);
     }
@@ -64,6 +78,7 @@ public class CountingInputFile implements InputFile {
 
     @Override
     public void close() throws IOException {
+        closeCount.incrementAndGet();
         delegate.close();
     }
 }

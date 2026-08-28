@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.predicate;
 
-import java.util.List;
-
 import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.Statistics;
 
@@ -67,8 +65,8 @@ interface MinMaxStats {
 
             @Override
             public Long nullCount() {
-                List<Long> nullCounts = columnIndex.nullCounts();
-                return nullCounts != null ? nullCounts.get(pageIndex) : null;
+                long[] nullCounts = columnIndex.nullCounts();
+                return nullCounts != null ? Long.valueOf(nullCounts[pageIndex]) : null;
             }
         };
     }

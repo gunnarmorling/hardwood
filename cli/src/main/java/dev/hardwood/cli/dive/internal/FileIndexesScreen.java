@@ -49,28 +49,9 @@ public final class FileIndexesScreen {
         ScreenState.FileIndexes state = (ScreenState.FileIndexes) stack.top();
         List<Entry> entries = entries(model, state.kind());
         int count = entries.size();
-        if (Keys.isStepUp(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - 1)));
-            return true;
-        }
-        if (Keys.isStepDown(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + 1)));
-            return true;
-        }
-        if (Keys.isPageDown(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.min(count - 1, state.selection() + Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isPageUp(event) && count > 0) {
-            stack.replaceTop(moved(state, Math.max(0, state.selection() - Keys.viewportStride())));
-            return true;
-        }
-        if (Keys.isJumpTop(event) && count > 0) {
-            stack.replaceTop(moved(state, 0));
-            return true;
-        }
-        if (Keys.isJumpBottom(event) && count > 0) {
-            stack.replaceTop(moved(state, count - 1));
+        int next = CursorPane.select(event, state.selection(), count);
+        if (next != CursorPane.UNHANDLED) {
+            stack.replaceTop(moved(state, next));
             return true;
         }
         if (event.isConfirm() && count > 0) {
@@ -168,7 +149,7 @@ public final class FileIndexesScreen {
                     new Constraint.Length(14),
                     new Constraint.Length(10));
         };
-        String range = Plurals.rangeOf(state.selection(), entries.size(), Keys.viewportStride());
+        String range = Plurals.rangeOf(window, entries.size());
         String title = switch (state.kind()) {
             case COLUMN -> " All column indexes " + range + " ";
             case OFFSET -> " All offset indexes " + range + " ";
@@ -198,9 +179,7 @@ public final class FileIndexesScreen {
     public static String keybarKeys(ScreenState.FileIndexes state, ParquetModel model) {
         int count = entries(model, state.kind()).size();
         return new Keys.Hints()
-                .add(count > 1, "[↑↓] move")
-                .add(count > Keys.viewportStride(), "[PgDn/PgUp or Shift+↓↑] page")
-                .add(count > 1, "[g/G] first/last")
+                .add(true, CursorPane.hints(count))
                 .add(count > 0, "[Enter] open")
                 .add(true, "[Esc] back")
                 .build();

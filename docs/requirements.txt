@@ -6,5 +6,12 @@
 #  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
 #
 
-mkdocs-material>=9.5
+mkdocs==1.6.1
+mkdocs-material==9.7.7
 mike==2.1.4
+
+# Transitive dependency of mkdocs, which constrains it to `click>=7.0` only.
+# click 8.3.0 through 8.3.3 resolve `mkdocs serve`'s paired
+# `--livereload` / `--no-livereload` options to False, so the server starts
+# without a file watcher and never rebuilds. Fixed in 8.4.0.
+click>=8.4

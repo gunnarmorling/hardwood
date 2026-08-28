@@ -27,52 +27,38 @@ class PluralsTest {
 
     @Test
     void rangeOfHandlesZeroTotal() {
-        assertThat(Plurals.rangeOf(0, 0, 10)).isEqualTo("0");
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 0, 0, 10), 0)).isEqualTo("0");
     }
 
     @Test
     void rangeOfShowsSingleElementWhenTotalIsOne() {
-        assertThat(Plurals.rangeOf(0, 1, 10)).isEqualTo("1 of 1");
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 0, 1, 10), 1)).isEqualTo("1 of 1");
     }
 
     @Test
     void rangeOfShowsFullRangeWhenTotalFitsViewport() {
-        assertThat(Plurals.rangeOf(2, 5, 10)).isEqualTo("1-5 of 5");
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 2, 5, 10), 5)).isEqualTo("1-5 of 5");
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 0, 10, 10), 10)).isEqualTo("1-10 of 10");
     }
 
     @Test
-    void rangeOfShowsFullRangeWhenTotalEqualsViewport() {
-        assertThat(Plurals.rangeOf(0, 10, 10)).isEqualTo("1-10 of 10");
+    void rangeOfReportsTheWindowTheBodyIsShowing() {
+        // Whatever slice the renderer took, the title says the same one —
+        // scrolled up, scrolled down, or freshly entered.
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 0, 100, 10), 100)).isEqualTo("1-10 of 100");
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 10, 100, 10), 100)).isEqualTo("2-11 of 100");
+        assertThat(Plurals.rangeOf(RowWindow.from(50, 55, 100, 10), 100)).isEqualTo("51-60 of 100");
+        assertThat(Plurals.rangeOf(RowWindow.from(90, 99, 100, 10), 100)).isEqualTo("91-100 of 100");
     }
 
     @Test
-    void rangeOfPinsToTopWhenSelectionWithinFirstViewport() {
-        // selection 0..viewport-1 → window stays 1..viewport
-        assertThat(Plurals.rangeOf(0, 100, 10)).isEqualTo("1-10 of 100");
-        assertThat(Plurals.rangeOf(9, 100, 10)).isEqualTo("1-10 of 100");
-    }
-
-    @Test
-    void rangeOfBottomPinsWhenSelectionPastFirstViewport() {
-        // sel=10 → end=11, start=2 → "2-11 of 100"
-        assertThat(Plurals.rangeOf(10, 100, 10)).isEqualTo("2-11 of 100");
-        assertThat(Plurals.rangeOf(99, 100, 10)).isEqualTo("91-100 of 100");
-    }
-
-    @Test
-    void rangeOfClampsSelectionPastTotal() {
-        assertThat(Plurals.rangeOf(500, 100, 10)).isEqualTo("91-100 of 100");
-    }
-
-    @Test
-    void rangeOfTreatsZeroOrNegativeViewportAsOne() {
-        // viewport=0 collapses to 1: a single-row sliding window
-        assertThat(Plurals.rangeOf(5, 100, 0)).isEqualTo("6-6 of 100");
-        assertThat(Plurals.rangeOf(5, 100, -3)).isEqualTo("6-6 of 100");
+    void rangeOfShowsASingleRowWithoutARange() {
+        assertThat(Plurals.rangeOf(RowWindow.from(5, 5, 100, 1), 100)).isEqualTo("6 of 100");
     }
 
     @Test
     void rangeOfFormatsLargeTotalsWithComma() {
-        assertThat(Plurals.rangeOf(0, 12_400_000, 20)).isEqualTo("1-20 of 12,400,000");
+        assertThat(Plurals.rangeOf(RowWindow.from(0, 0, 12_400_000, 20), 12_400_000))
+                .isEqualTo("1-20 of 12,400,000");
     }
 }

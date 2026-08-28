@@ -17,27 +17,43 @@ the decision tree authors should follow when adding new content.
 
 | # | Tier | Method | Visual |
 |---|---|---|---|
+| 0 | Validation error | `Theme.error()` | red |
 | 1 | Selection | `Theme.selection()` | bold yellow |
 | 2 | Structural caption | `Theme.accent().bold()` | bold blue |
 | 3 | Label / "you-are-here" | `Theme.primary()` | bold default fg |
 | 4 | Body content | `Style.EMPTY` (no method call) | terminal default fg |
 | 5 | Persistent chrome | `Theme.dim()` | faint default fg |
 
-Concrete styling on the four `Theme` methods:
+Tier 0 sits outside the hierarchy rather than at the top of it: it
+marks content as wrong, where every other tier marks what a piece of
+content *is*. It is numbered 0 so the five structural tiers keep the
+numbers they have always had.
+
+Concrete styling on the five `Theme` methods:
 
 | Method | Truecolor terminals | Named-ANSI terminals |
 |---|---|---|
 | `primary()` | `Style.EMPTY.bold()` | (same) |
+| `error()` | `Style.EMPTY.fg(rgb(220, 50, 47))` | `Style.EMPTY.fg(Color.RED)` |
 | `accent()` | `Style.EMPTY.fg(rgb(38, 139, 210))` | `Style.EMPTY.fg(Color.BLUE)` |
 | `selection()` | `Style.EMPTY.bold().fg(rgb(181, 137, 0))` | `Style.EMPTY.bold().fg(Color.YELLOW)` |
 | `dim()` | `Style.EMPTY.dim()` | (same — uses ANSI faint attribute) |
 
-Truecolor support is detected once at class-load via `$COLORTERM`
-(`truecolor` or `24bit`). The boolean is fixed for the JVM lifetime;
-`Theme` is otherwise stateless.
+Truecolor support is probed on every `accent()` / `selection()` /
+`error()` call via `$COLORTERM` (`truecolor` or `24bit`); `Theme` is
+otherwise stateless. The probe is not cached in a `static final` field
+because a native-image build can run the static initialiser at build
+time and freeze the result to the build runner's environment (#394).
 
-`accent()` and `selection()` use truecolor RGB pinned to Solarized's
-accent slots when available so that iTerm2's "Use bright colors for
+Setting the `hardwood.dive.truecolor` system property forces the
+truecolor branch on regardless of `$COLORTERM`. The `screenshots`
+Maven profile sets it so the checked-in SVGs under
+`docs/content/assets/cli/` always carry the Solarized palette; a
+recording made from a terminal without `$COLORTERM` would otherwise
+rewrite every asset to the named-ANSI fallback.
+
+`accent()`, `selection()` and `error()` use truecolor RGB pinned to
+Solarized's accent slots when available so that iTerm2's "Use bright colors for
 bold text" setting cannot remap them. `Color.BLUE` and `Color.YELLOW`
 serve as the fallback when truecolor is unavailable; on those
 terminals the bold-bright remap either does not occur or maps to
@@ -53,6 +69,12 @@ attribute render the text at default fg unchanged.
 
 When adding new content to a dive screen, walk these in order. The
 first match wins.
+
+0. **Is it a validation error?** (a declared-vs-actual mismatch
+   between metadata fields, rendered so the reader treats it as a
+   defect in the file rather than as data.) → `Theme.error()`. Checked
+   first so a mismatch stays legible even when it is the row under the
+   cursor.
 
 1. **Is it the active row in a navigable list?** (table-row highlight,
    selected drill-into menu row, selected schema name, footer active
@@ -196,21 +218,25 @@ public final class Theme {
     public static Style accent();
     public static Style selection();
     public static Style dim();
+    public static Style error();
 }
 ```
 
-All four return `Style`. Selection sites compose `.bold()` onto
+All five return `Style`. Selection sites compose `.bold()` onto
 `accent()` directly. The rare site that needs a `Color` (currently
 none) extracts it via `.fg().orElseThrow()`.
 
 There is no `init()` and no `--theme` flag. The truecolor probe runs
-in a static initialiser; the values are immutable for the JVM's
-lifetime.
+per call; `hardwood.dive.truecolor` is the only override, and it
+exists for reproducible screenshot capture rather than for end users.
 
 ## Testing
 
 - `ThemeTest` pins each tone's structure (modifier presence, fg
   colour identity) so an accidental retargeting shows up in review.
+  `error()` is pinned the same way as `accent()`, branching on the
+  `$COLORTERM` probe so the assertion holds on both truecolor and
+  named-ANSI build runners.
 - Manual verification on at least: iTerm2 + Solarized Dark, iTerm2
   + Solarized Light, macOS Terminal, one generic xterm-style
   terminal. Truecolor / named-ANSI behaviour is exercised by

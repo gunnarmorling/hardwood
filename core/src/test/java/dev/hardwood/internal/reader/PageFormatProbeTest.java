@@ -13,8 +13,8 @@ import java.nio.file.Paths;
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.InputFile;
-import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.metadata.FileMetaData;
+import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.RowGroup;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,11 +41,10 @@ class PageFormatProbeTest {
             FileMetaData meta = ParquetMetadataReader.readMetadata(file);
             RowGroup rg = meta.rowGroups().get(0);
             for (int c = 0; c < rg.columns().size(); c++) {
-                PageHeader.PageType type =
-                        PageFormatProbe.firstDataPageType(file, rg.columns().get(c));
+                PageType type = PageFormatProbe.firstDataPageType(file, rg.columns().get(c));
                 assertThat(type)
                         .as("column %d (path=%s)", c, rg.columns().get(c).metaData().pathInSchema())
-                        .isEqualTo(PageHeader.PageType.DATA_PAGE);
+                        .isEqualTo(PageType.DATA_PAGE);
             }
         }
     }
@@ -57,11 +56,10 @@ class PageFormatProbeTest {
             FileMetaData meta = ParquetMetadataReader.readMetadata(file);
             RowGroup rg = meta.rowGroups().get(0);
             for (int c = 0; c < rg.columns().size(); c++) {
-                PageHeader.PageType type =
-                        PageFormatProbe.firstDataPageType(file, rg.columns().get(c));
+                PageType type = PageFormatProbe.firstDataPageType(file, rg.columns().get(c));
                 assertThat(type)
                         .as("column %d (path=%s)", c, rg.columns().get(c).metaData().pathInSchema())
-                        .isEqualTo(PageHeader.PageType.DATA_PAGE_V2);
+                        .isEqualTo(PageType.DATA_PAGE_V2);
             }
         }
     }

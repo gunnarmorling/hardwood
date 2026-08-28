@@ -24,6 +24,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SchemaCompatibilityTest {
 
     @Test
+    void metadataAccessDoesNotValidateSchemaCompatibility() throws Exception {
+        Path micros = Paths.get("src/test/resources/compat_ts_micros.parquet");
+        Path millis = Paths.get("src/test/resources/compat_ts_millis.parquet");
+
+        try (Hardwood hardwood = Hardwood.create();
+             ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(micros, millis))) {
+            assertThat(parquet.getFileMetaData(1).numRows()).isEqualTo(2);
+            assertThatThrownBy(parquet::rowReader)
+                    .isInstanceOf(SchemaIncompatibleException.class);
+        }
+    }
+
+    @Test
     void rejectTimestampUnitMismatch() {
         Path micros = Paths.get("src/test/resources/compat_ts_micros.parquet");
         Path millis = Paths.get("src/test/resources/compat_ts_millis.parquet");
@@ -98,6 +111,93 @@ class SchemaCompatibilityTest {
             }).isInstanceOf(SchemaIncompatibleException.class)
                     .hasMessage("[compat_plain_int64.parquet] Column 'ts' has incompatible logical type:" +
                             " expected TIMESTAMP(MICROS, UTC) but found null");
+        }
+    }
+
+    @Test
+    void rejectFixedLenByteArrayWidthMismatch() {
+        Path flba4 = Paths.get("src/test/resources/compat_flba_4.parquet");
+        Path flba8 = Paths.get("src/test/resources/compat_flba_8.parquet");
+
+        try (Hardwood hardwood = Hardwood.create()) {
+            assertThatThrownBy(() -> {
+                try (ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(flba4, flba8));
+                     RowReader reader = parquet.rowReader()) {
+                    while (reader.hasNext()) {
+                        reader.next();
+                    }
+                }
+            }).isInstanceOf(SchemaIncompatibleException.class)
+                    .hasMessage("[compat_flba_8.parquet] Column 'v' has incompatible type length:" +
+                            " expected 4 but found 8");
+        }
+    }
+
+    /// The leaf `g.v` is REQUIRED in both files; only its ancestor group's
+    /// repetition type differs, which changes the maximum definition level and
+    /// therefore how nulls are read.
+    @Test
+    void rejectAncestorNullabilityMismatch() {
+        Path required = Paths.get("src/test/resources/compat_nested_req_group.parquet");
+        Path optional = Paths.get("src/test/resources/compat_nested_opt_group.parquet");
+
+        try (Hardwood hardwood = Hardwood.create()) {
+            assertThatThrownBy(() -> {
+                try (ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(required, optional));
+                     RowReader reader = parquet.rowReader()) {
+                    while (reader.hasNext()) {
+                        reader.next();
+                    }
+                }
+            }).isInstanceOf(SchemaIncompatibleException.class)
+                    .hasMessage("[compat_nested_opt_group.parquet] Column 'g.v'" +
+                            " has incompatible maximum definition level: expected 0 but found 1");
+        }
+    }
+
+    /// The leaf `g.list.element` is OPTIONAL in both files and carries the same
+    /// maximum definition level (three nullable ancestors either way); only the
+    /// middle group's repeatedness differs, which changes where record boundaries
+    /// fall. Read by ordinal alone this pair silently loses rows: the leaf's own
+    /// repetition type, physical type and definition levels all agree.
+    @Test
+    void rejectAncestorRepeatednessMismatch() {
+        Path repeated = Paths.get("src/test/resources/compat_maxrep_list.parquet");
+        Path nonRepeated = Paths.get("src/test/resources/compat_maxrep_struct.parquet");
+
+        try (Hardwood hardwood = Hardwood.create()) {
+            assertThatThrownBy(() -> {
+                try (ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(repeated, nonRepeated));
+                     RowReader reader = parquet.rowReader()) {
+                    while (reader.hasNext()) {
+                        reader.next();
+                    }
+                }
+            }).isInstanceOf(SchemaIncompatibleException.class)
+                    .hasMessage("[compat_maxrep_struct.parquet] Column 'g.list.element'" +
+                            " has incompatible maximum repetition level: expected 1 but found 0");
+        }
+    }
+
+    /// The reverse order of [#rejectAncestorRepeatednessMismatch]: with the
+    /// non-repeated file as the reference the mismatch produced no exception at
+    /// all, only extra rows whose values had silently vanished.
+    @Test
+    void rejectAncestorRepeatednessMismatchInEitherOrder() {
+        Path repeated = Paths.get("src/test/resources/compat_maxrep_list.parquet");
+        Path nonRepeated = Paths.get("src/test/resources/compat_maxrep_struct.parquet");
+
+        try (Hardwood hardwood = Hardwood.create()) {
+            assertThatThrownBy(() -> {
+                try (ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(nonRepeated, repeated));
+                     RowReader reader = parquet.rowReader()) {
+                    while (reader.hasNext()) {
+                        reader.next();
+                    }
+                }
+            }).isInstanceOf(SchemaIncompatibleException.class)
+                    .hasMessage("[compat_maxrep_list.parquet] Column 'g.list.element'" +
+                            " has incompatible maximum repetition level: expected 0 but found 1");
         }
     }
 

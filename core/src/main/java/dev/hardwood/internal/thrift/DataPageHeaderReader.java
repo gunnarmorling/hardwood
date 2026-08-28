@@ -10,6 +10,7 @@ package dev.hardwood.internal.thrift;
 import java.io.IOException;
 
 import dev.hardwood.internal.metadata.DataPageHeader;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.Statistics;
 
@@ -29,63 +30,55 @@ public class DataPageHeaderReader {
     private static DataPageHeader readInternal(ThriftCompactReader reader) throws IOException {
         int numValues = 0;
         Encoding encoding = null;
+        int encodingValue = -1;
         Encoding definitionLevelEncoding = null;
         Encoding repetitionLevelEncoding = null;
         Statistics statistics = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // num_values
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         numValues = reader.readNonNegativeI32("DataPageHeader.num_values");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 2: // encoding
-                    if (header.type() == 0x05) {
-                        encoding = ThriftEnumLookup.encoding(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        encodingValue = reader.readI32();
+                        encoding = ThriftEnumLookup.encoding(encodingValue);
                     }
                     break;
                 case 3: // definition_level_encoding
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         definitionLevelEncoding = ThriftEnumLookup.encoding(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 4: // repetition_level_encoding
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         repetitionLevelEncoding = ThriftEnumLookup.encoding(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 5: // statistics
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         statistics = StatisticsReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }
 
-        return new DataPageHeader(numValues, encoding, definitionLevelEncoding, repetitionLevelEncoding, statistics);
+        if (encoding == null) {
+            throw new IOException("DataPageHeader missing required field: encoding");
+        }
+
+        return new DataPageHeader(numValues, encoding, encodingValue,
+                definitionLevelEncoding, repetitionLevelEncoding, statistics);
     }
 }

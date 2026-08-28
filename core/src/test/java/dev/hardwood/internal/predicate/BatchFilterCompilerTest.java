@@ -35,8 +35,7 @@ class BatchFilterCompilerTest {
     }
 
     private static FileSchema schema(SchemaElement... columns) {
-        SchemaElement root = new SchemaElement("root", null, null, null, columns.length,
-                null, null, null, null, null);
+        SchemaElement root = SchemaElement.root("root", columns.length);
         SchemaElement[] elements = new SchemaElement[columns.length + 1];
         elements[0] = root;
         System.arraycopy(columns, 0, elements, 1, columns.length);
@@ -44,7 +43,7 @@ class BatchFilterCompilerTest {
     }
 
     private static SchemaElement leaf(String name, PhysicalType type) {
-        return new SchemaElement(name, type, null, RepetitionType.OPTIONAL, null, null, null, null, null, null);
+        return SchemaElement.primitive(name, type, RepetitionType.OPTIONAL);
     }
 
     private static FileSchema longDoubleSchema() {
@@ -167,11 +166,9 @@ class BatchFilterCompilerTest {
         void leafOnNonTopLevelPath_returnsNull() {
             // A nested struct: root -> nest (group, 1 child) -> id (INT64).
             // The leaf column has fieldPath ["nest", "id"] — not top-level.
-            SchemaElement root = new SchemaElement("root", null, null, null, 1, null, null, null, null, null);
-            SchemaElement nest = new SchemaElement("nest", null, null, RepetitionType.OPTIONAL, 1,
-                    null, null, null, null, null);
-            SchemaElement id = new SchemaElement("id", PhysicalType.INT64, null, RepetitionType.OPTIONAL,
-                    null, null, null, null, null, null);
+            SchemaElement root = SchemaElement.root("root", 1);
+            SchemaElement nest = SchemaElement.group("nest", RepetitionType.OPTIONAL, 1);
+            SchemaElement id = SchemaElement.primitive("id", PhysicalType.INT64, RepetitionType.OPTIONAL);
             FileSchema schema = FileSchema.fromSchemaElements(List.of(root, nest, id));
             ResolvedPredicate predicate = new ResolvedPredicate.LongPredicate(0, Operator.GT, 5L);
             assertNull(BatchFilterCompiler.tryCompile(predicate, schema, IntUnaryOperator.identity()));

@@ -7,6 +7,11 @@
  */
 package dev.hardwood.cli;
 
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+
 import org.aesh.AeshRuntimeRunner;
 import org.aesh.command.CommandResult;
 
@@ -25,6 +30,7 @@ public class Main {
     /// JVM itself, so [main] maps the result here. Split out from [main] so
     /// tests can assert the exit code without terminating the test JVM.
     public static int run(String[] args) {
+        forceUtf8Output();
         NativeLibraryLoader.loadZstd();
         NativeLibraryLoader.loadLz4();
         NativeLibraryLoader.loadSnappy();
@@ -34,5 +40,23 @@ public class Main {
                 .args(args)
                 .execute();
         return result.getExitCode();
+    }
+
+    /// Writes output as UTF-8 whatever the platform encoding says. Several
+    /// commands emit non-ASCII — the eighth-block bars of the level
+    /// histograms, the `—` placeholders, the `⚠` of the consistency check —
+    /// and on a host with no UTF-8 locale the default stream encodes them as
+    /// `?`. A native image is the worse case: its default charset is fixed
+    /// when the image is built, so setting `LANG` at runtime does not reach
+    /// it. Both are avoided by naming the charset here rather than inheriting
+    /// one.
+    private static void forceUtf8Output() {
+        if (StandardCharsets.UTF_8.equals(System.out.charset())) {
+            return;
+        }
+        System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out),
+                true, StandardCharsets.UTF_8));
+        System.setErr(new PrintStream(new FileOutputStream(FileDescriptor.err),
+                true, StandardCharsets.UTF_8));
     }
 }

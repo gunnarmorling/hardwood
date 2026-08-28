@@ -29,6 +29,11 @@ class InspectPagesCommandTest implements InspectPagesCommandContract {
     }
 
     @Override
+    public String longValueFile() {
+        return getClass().getResource("/cli_long_value_test.parquet").getPath();
+    }
+
+    @Override
     public String nestedFile() {
         return getClass().getResource("/list_basic_test.parquet").getPath();
     }

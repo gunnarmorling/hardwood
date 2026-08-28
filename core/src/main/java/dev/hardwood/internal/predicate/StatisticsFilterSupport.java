@@ -78,25 +78,25 @@ final class StatisticsFilterSupport {
     }
 
     /// Evaluates a resolved leaf predicate against [MinMaxStats] as a three-valued
-    /// [StatsDecision].
+    /// [FilterDecision].
     ///
-    /// [StatsDecision#ALWAYS_MATCHES] requires the whole `[min, max]` interval to satisfy
+    /// [FilterDecision#ALWAYS_MATCHES] requires the whole `[min, max]` interval to satisfy
     /// the predicate **and** a proven-zero null count — a null row satisfies no value
     /// predicate, so without it a fully-matching range still cannot promise every row.
     /// Truncated (inexact) bounds are safe by construction: they only widen the interval,
     /// and a predicate satisfied by the widened interval is satisfied by the actual values.
-    static StatsDecision decideLeaf(ResolvedPredicate leaf, MinMaxStats stats) {
+    static FilterDecision decideLeaf(ResolvedPredicate leaf, MinMaxStats stats) {
         // IS NOT NULL is decided by the null count alone; min/max are irrelevant.
         if (leaf instanceof ResolvedPredicate.IsNotNullPredicate) {
-            return isNullFree(stats) ? StatsDecision.ALWAYS_MATCHES : StatsDecision.MIGHT_MATCH;
+            return isNullFree(stats) ? FilterDecision.ALWAYS_MATCHES : FilterDecision.MIGHT_MATCH;
         }
         if (canDropLeaf(leaf, stats)) {
-            return StatsDecision.CANNOT_MATCH;
+            return FilterDecision.CANNOT_MATCH;
         }
         if (!isNullFree(stats) || stats.minValue() == null || stats.maxValue() == null) {
-            return StatsDecision.MIGHT_MATCH;
+            return FilterDecision.MIGHT_MATCH;
         }
-        return alwaysMatchesLeaf(leaf, stats) ? StatsDecision.ALWAYS_MATCHES : StatsDecision.MIGHT_MATCH;
+        return alwaysMatchesLeaf(leaf, stats) ? FilterDecision.ALWAYS_MATCHES : FilterDecision.MIGHT_MATCH;
     }
 
     private static boolean isNullFree(MinMaxStats stats) {

@@ -26,9 +26,8 @@ import org.aesh.command.invocation.CommandInvocation;
 import org.aesh.command.option.Mixin;
 import org.aesh.command.option.Option;
 
-import com.github.freva.asciitable.AsciiTable;
-
 import dev.hardwood.InputFile;
+import dev.hardwood.cli.internal.BinaryValues;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.cli.internal.table.StreamedTable;
 import dev.hardwood.reader.ParquetFileReader;
@@ -46,7 +45,7 @@ public class PrintCommand implements Command<CommandInvocation> {
     @Option(shortName = 's', name = "sample-size", defaultValue = "10", description = "Max number of lines used to auto-adjust the column width.")
     int sampleSize;
 
-    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width in characters of a column.")
+    @Option(shortName = 'w', name = "max-width", defaultValue = "50", description = "Max width of a column.")
     int maxWidth;
 
     @Option(shortName = 't', name = "truncate", hasValue = false, negatable = true, defaultValue = "true", description = "Should rows be truncated instead of wrapping on next line when too long.")
@@ -75,6 +74,7 @@ public class PrintCommand implements Command<CommandInvocation> {
         }
 
         try (ParquetFileReader reader = ParquetFileReader.open(inputFile)) {
+            validateMaxWidth();
             int rowLimit = RowLimits.parse(n);
             ColumnProjection projection = parseColumnProjection();
             FileSchema fileSchema = reader.getFileSchema();
@@ -102,28 +102,44 @@ public class PrintCommand implements Command<CommandInvocation> {
         return CommandResult.SUCCESS;
     }
 
+    /// Rejects widths below one cell. A column has to be at least one cell wide to
+    /// render anything at all, so a smaller value has no faithful rendering rather
+    /// than merely an ugly one.
+    private void validateMaxWidth() {
+        if (maxWidth < 1) {
+            throw new IllegalArgumentException(
+                    "Invalid value for option '-w': expected a positive integer, got '" + maxWidth + "'");
+        }
+    }
+
     private void printTransposed(Stream<Object[]> stream, String[] headers, List<SchemaNode> fields, AtomicLong rowIndex) {
         stream.forEach(r -> {
-            Stream<Object[]> data = IntStream.range(0, headers.length)
-                    .mapToObj(i -> new Object[]{headers[i], RowTable.renderValue(r[i], fields.get(i))});
-            System.out.println(
-                    AsciiTable.builder()
-                            .data((rowIndex != null ?
-                                    Stream.concat(
-                                            Stream.of(new Object[][]{new Object[]{"rowIndex", Long.toString(rowIndex.getAndIncrement())}}), data) : data)
-                                    .toArray(Object[][]::new))
-                            .asString());
+            Stream<String[]> data = IntStream.range(0, headers.length)
+                    .mapToObj(i -> new String[]{headers[i], RowTable.renderValue(r[i], fields.get(i), cellBudget())});
+            List<String[]> tableRows = (rowIndex != null ?
+                    Stream.concat(
+                            Stream.<String[]>of(new String[]{"rowIndex", Long.toString(rowIndex.getAndIncrement())}), data) : data)
+                    .toList();
+            System.out.println(RowTable.renderTransposedTable(
+                    tableRows.get(0), tableRows.subList(1, tableRows.size())));
         });
     }
 
+    /// No cell can be wider than the column cap, so hexing a binary payload
+    /// beyond it is waste. Wrapped rows show the value whole, and have no cap.
+    private int cellBudget() {
+        return truncate ? maxWidth : BinaryValues.NO_LIMIT;
+    }
+
     private void printTable(Stream<Object[]> stream, String[] headers, List<SchemaNode> fields, AtomicLong rowIndex) {
+        int budget = cellBudget();
         new StreamedTable().print(
                 new PrintWriter(System.out, true),
                 addRowIndex ? Stream.concat(Stream.of("rowIndex"), Stream.of(headers)).toArray(String[]::new) : headers,
                 stream
                         .map(r -> rowIndex == null ?
-                                (IntFunction<String>) i -> RowTable.renderValue(r[i], fields.get(i)) :
-                                ((IntFunction<String>) i -> i == 0 ? Long.toString(rowIndex.getAndIncrement()) : RowTable.renderValue(r[i - 1], fields.get(i - 1))))
+                                (IntFunction<String>) i -> RowTable.renderValue(r[i], fields.get(i), budget) :
+                                ((IntFunction<String>) i -> i == 0 ? Long.toString(rowIndex.getAndIncrement()) : RowTable.renderValue(r[i - 1], fields.get(i - 1), budget)))
                         .iterator(),
                 sampleSize,
                 maxWidth,

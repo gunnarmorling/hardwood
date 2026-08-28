@@ -84,7 +84,7 @@ Added an overloaded constructor accepting an optional `RowRanges matchingRows` p
 In `scanPagesFromIndex()`, after parsing the Offset Index and before slicing pages, a `filterPageLocations()` method filters the page locations:
 - If `matchingRows` is null or `isAll()`, all pages pass through unchanged
 - Otherwise, each page's row range is checked via `overlapsPage()`. The last page uses `Long.MAX_VALUE` as its end sentinel to avoid needing the row group row count.
-- A `PageFilterEvent` is emitted when pages are actually skipped
+- Page selection is reported by a `PageFilterEvent`, emitted from `RowGroupIterator.computeFetchPlans` once the surviving page count for a column chunk is known (see Step 5)
 
 The sequential scan path (`scanPagesSequential`) is unaffected — it has no per-page statistics.
 
@@ -125,7 +125,7 @@ In `scanAllProjectedColumns()`, computes `RowRanges` per row group using the exi
 
 ### New file: `jfr/PageFilterEvent.java`
 
-Emitted once per column per row group when pages are actually skipped (not emitted when all pages pass through). Reports file, rowGroupIndex, column, totalPages, pagesKept, pagesSkipped.
+Emitted from `RowGroupIterator.computeFetchPlans`, once per column chunk whose pages a predicate narrowed — including when the predicate kept every one of them, so that a `pagesSkipped` of 0 stays distinguishable from no page filtering at all. Nothing is emitted when no predicate narrowed the row group's pages: a read with no filter, a column chunk with no Column Index, a row group whose per-page mask gate is closed, or a `tail(N)` whose synthesized row range is the only thing dropping pages. Reports file, rowGroupIndex, column, totalPages, pagesKept, pagesSkipped.
 
 **Files:**
 - `core/src/main/java/dev/hardwood/jfr/PageFilterEvent.java` (new)
@@ -169,9 +169,9 @@ End-to-end benchmark that lazily generates a 50M-row synthetic Parquet file (via
 |------|------|--------|
 | New | `internal/reader/RowRanges.java` | Row range interval set with intersection/union |
 | New | `internal/reader/PageFilterEvaluator.java` | Per-page predicate evaluation → RowRanges |
-| New | `jfr/PageFilterEvent.java` | JFR event for page-level filtering |
+| New | `jfr/PageFilterEvent.java` | JFR event for page-level filtering, emitted from `RowGroupIterator.computeFetchPlans` |
 | Modify | `internal/reader/RowGroupFilterEvaluator.java` | Widened shared comparison and column resolution helpers |
-| Modify | `internal/reader/PageScanner.java` | Accept RowRanges, filter page locations, emit JFR event |
+| Modify | `internal/reader/PageScanner.java` | Accept RowRanges, filter page locations |
 | Modify | `reader/ParquetFileReader.java` | Pass filter to ColumnReader/RowReader |
 | Modify | `reader/SingleFileRowReader.java` | Accept filter, compute RowRanges per row group |
 | Modify | `reader/ColumnReader.java` | Accept filter in factory methods |
@@ -220,7 +220,7 @@ Each call site attempts page-range I/O per column when filtering is active. Fall
 | New | `internal/reader/RowRanges.java` | Row range interval set with intersection/union |
 | New | `internal/reader/PageFilterEvaluator.java` | Per-page predicate evaluation → RowRanges |
 | New | `internal/reader/PageRangeData.java` | Fetched page-range buffers with page/dictionary slicing |
-| New | `jfr/PageFilterEvent.java` | JFR event for page-level filtering |
+| New | `jfr/PageFilterEvent.java` | JFR event for page-level filtering, emitted from `RowGroupIterator.computeFetchPlans` |
 | Modify | `internal/reader/PageRange.java` | Added `forColumn()` factory for page-range computation |
 | Modify | `internal/reader/RowGroupFilterEvaluator.java` | Widened shared comparison and column resolution helpers |
 | Modify | `internal/reader/PageScanner.java` | Accept RowRanges and PageRangeData, bifurcated page slicing |

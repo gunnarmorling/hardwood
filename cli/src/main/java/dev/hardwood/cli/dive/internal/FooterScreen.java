@@ -18,6 +18,7 @@ import dev.hardwood.cli.dive.ParquetModel;
 import dev.hardwood.cli.dive.ScreenState;
 import dev.hardwood.cli.internal.Fmt;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.CompressionCodec;
@@ -44,70 +45,31 @@ public final class FooterScreen {
     private FooterScreen() {
     }
 
+    /// The state to push when opening the screen: the cursor on the first
+    /// anchor that goes somewhere, so a file missing the section we would
+    /// otherwise land on does not start on a dead line.
+    ///
+    /// Chosen here rather than corrected on each keypress — a screen that
+    /// re-snapped the cursor every event would drag it back to an anchor the
+    /// moment the reader moved off one.
+    public static ScreenState.Footer initialState(ParquetModel model) {
+        FooterBody body = bodyAndAnchors(model);
+        int row = Math.max(0, body.document().rowAtLine(firstEnabledAnchorLine(body)));
+        return new ScreenState.Footer(row);
+    }
+
     public static boolean handle(KeyEvent event, ParquetModel model, NavigationStack stack) {
         ScreenState.Footer state = (ScreenState.Footer) stack.top();
         FooterBody body = bodyAndAnchors(model);
-        // Snap an out-of-place cursor to the first enabled anchor so a file
-        // missing the section we entered on (e.g. no column indexes) doesn't
-        // sit on a dead anchor.
-        if (!isEnabled(state.cursor(), body)) {
-            ScreenState.Footer.Anchor first = firstEnabledAnchor(body);
-            if (first != null && first != state.cursor()) {
-                state = new ScreenState.Footer(first, state.scroll());
-                stack.replaceTop(state);
-            }
-        }
-        int total = body.lines().size();
-        int viewport = Keys.viewportStride();
-        int maxScroll = Math.max(0, total - viewport);
-        // ↑/↓ cycle the cursor through the drillable anchors that are
-        // actually populated. Anchors whose count is zero (e.g. a file
-        // without dictionaries) are skipped so the cursor doesn't land on
-        // a non-actionable line. PgDn / PgUp scroll the body for reading
-        // other sections.
-        if (Keys.isStepUp(event)) {
-            ScreenState.Footer.Anchor prev = previousEnabledAnchor(state.cursor(), body);
-            if (prev == null) {
-                return false;
-            }
-            stack.replaceTop(new ScreenState.Footer(prev, state.scroll()));
-            return true;
-        }
-        if (Keys.isStepDown(event)) {
-            ScreenState.Footer.Anchor next = nextEnabledAnchor(state.cursor(), body);
-            if (next == null) {
-                return false;
-            }
-            stack.replaceTop(new ScreenState.Footer(next, state.scroll()));
-            return true;
-        }
-        if (Keys.isPageDown(event)) {
-            stack.replaceTop(new ScreenState.Footer(state.cursor(),
-                    Math.min(maxScroll, state.scroll() + viewport)));
-            return true;
-        }
-        if (Keys.isPageUp(event)) {
-            stack.replaceTop(new ScreenState.Footer(state.cursor(),
-                    Math.max(0, state.scroll() - viewport)));
-            return true;
-        }
-        if (Keys.isJumpTop(event)) {
-            stack.replaceTop(new ScreenState.Footer(state.cursor(), 0));
-            return true;
-        }
-        if (Keys.isJumpBottom(event)) {
-            stack.replaceTop(new ScreenState.Footer(state.cursor(), maxScroll));
+        int selected = body.document().select(event, state.cursorRow(), Keys.viewportStride());
+        if (selected != CursorPane.UNHANDLED) {
+            stack.replaceTop(new ScreenState.Footer(selected,
+                    body.document().windowTopAfterMove(state.windowTop(), state.cursorRow(),
+                            selected, Keys.viewportStride())));
             return true;
         }
         if (event.isConfirm()) {
-            ScreenState.FileIndexes.Kind kind = switch (state.cursor()) {
-                case COLUMN -> body.columnIndexCount() > 0
-                        ? ScreenState.FileIndexes.Kind.COLUMN : null;
-                case OFFSET -> body.offsetIndexCount() > 0
-                        ? ScreenState.FileIndexes.Kind.OFFSET : null;
-                case DICTIONARY -> body.dictionaryCount() > 0
-                        ? ScreenState.FileIndexes.Kind.DICTIONARY : null;
-            };
+            ScreenState.FileIndexes.Kind kind = kindAt(cursorLine(state, body), body);
             if (kind != null) {
                 stack.push(new ScreenState.FileIndexes(kind, 0));
                 return true;
@@ -116,56 +78,79 @@ public final class FooterScreen {
         return false;
     }
 
+    /// The body line the cursor is on. The state holds a row index; the
+    /// rows are the lines `↑`/`↓` stop on, which excludes the section
+    /// headings and the blanks between them.
+    private static int cursorLine(ScreenState.Footer state, FooterBody body) {
+        return Math.max(0, body.document().lineOfRow(state.cursorRow()));
+    }
+
+    /// The screen `Enter` opens from `line`, or null when the line is not an
+    /// anchor or its section is empty.
+    private static ScreenState.FileIndexes.Kind kindAt(int line, FooterBody body) {
+        if (line == body.columnIndexLine() && body.columnIndexCount() > 0) {
+            return ScreenState.FileIndexes.Kind.COLUMN;
+        }
+        if (line == body.offsetIndexLine() && body.offsetIndexCount() > 0) {
+            return ScreenState.FileIndexes.Kind.OFFSET;
+        }
+        if (line == body.dictionaryLine() && body.dictionaryCount() > 0) {
+            return ScreenState.FileIndexes.Kind.DICTIONARY;
+        }
+        return null;
+    }
+
+    private static boolean isAnchorLine(int line, FooterBody body) {
+        return kindAt(line, body) != null;
+    }
+
+    private static int firstEnabledAnchorLine(FooterBody body) {
+        int best = -1;
+        for (int line : anchorLines(body)) {
+            if (line >= 0 && (best < 0 || line < best)) {
+                best = line;
+            }
+        }
+        return best;
+    }
+
+    /// Body lines carrying an anchor `Enter` can act on, `-1` where the file
+    /// has none of that kind.
+    private static int[] anchorLines(FooterBody body) {
+        return new int[] {
+            body.columnIndexCount() > 0 ? body.columnIndexLine() : -1,
+            body.offsetIndexCount() > 0 ? body.offsetIndexLine() : -1,
+            body.dictionaryCount() > 0 ? body.dictionaryLine() : -1,
+        };
+    }
+
     public static void render(Buffer buffer, Rect area, ParquetModel model, ScreenState.Footer state) {
         // Block borders only — the in-body scroll hint was dropped earlier
         // in favor of the keybar carrying that information, so the body
         // chrome is just 2 rows (top + bottom border).
         Keys.observeViewport(area.height() - 2);
         FooterBody body = bodyAndAnchors(model);
-        // On the first render after entering the screen, state.cursor() may
-        // point to an anchor the file doesn't actually have (the initial
-        // value is COLUMN). Snap the rendered cursor to the first enabled
-        // anchor so the marker shows up immediately; handle() will fix up
-        // state on the next event.
-        ScreenState.Footer.Anchor effective = state.cursor();
-        if (!isEnabled(effective, body)) {
-            ScreenState.Footer.Anchor first = firstEnabledAnchor(body);
-            if (first != null) {
-                effective = first;
-            }
-        }
+        int cursorLine = cursorLine(state, body);
         List<Line> all = body.lines();
         int viewport = Math.max(1, area.height() - 2);
-        int total = all.size();
-        int maxScroll = Math.max(0, total - viewport);
-        int cursorLine = switch (effective) {
-            case COLUMN -> body.columnIndexLine();
-            case OFFSET -> body.offsetIndexLine();
-            case DICTIONARY -> body.dictionaryLine();
-        };
-        int scroll = Math.max(0, Math.min(maxScroll, state.scroll()));
-        // Auto-scroll to keep the cursor anchor visible.
-        if (cursorLine >= 0) {
-            if (cursorLine < scroll) {
-                scroll = cursorLine;
-            }
-            else if (cursorLine >= scroll + viewport) {
-                scroll = Math.max(0, cursorLine - viewport + 1);
-            }
-        }
-        int end = Math.min(total, scroll + viewport);
+        RowWindow window = RowWindow.from(
+                body.document().windowTop(state.windowTop(), state.cursorRow(), viewport),
+                cursorLine, all.size(), viewport);
+        int scroll = window.start();
 
-        // Always paint both anchors with the ▶ marker so they're discoverable
-        // without hovering. The currently-selected one renders in accent
-        // colour; the inactive one is bold-only.
-        List<Line> lines = new ArrayList<>(all.subList(scroll, end));
+        // Every anchor Enter can act on is marked, so they are discoverable
+        // without arrowing onto each one; the cursor is the coloured line.
+        List<Line> lines = new ArrayList<>(all.subList(scroll, window.end()));
         styleAnchor(lines, all, scroll, body.columnIndexLine(),
-                effective == ScreenState.Footer.Anchor.COLUMN, body.columnIndexCount() > 0);
+                cursorLine == body.columnIndexLine(), body.columnIndexCount() > 0);
         styleAnchor(lines, all, scroll, body.offsetIndexLine(),
-                effective == ScreenState.Footer.Anchor.OFFSET, body.offsetIndexCount() > 0);
+                cursorLine == body.offsetIndexLine(), body.offsetIndexCount() > 0);
         styleAnchor(lines, all, scroll, body.dictionaryLine(),
-                effective == ScreenState.Footer.Anchor.DICTIONARY, body.dictionaryCount() > 0);
-
+                cursorLine == body.dictionaryLine(), body.dictionaryCount() > 0);
+        // The cursor is coloured wherever it is, not only on the anchors:
+        // painting it on three of thirty lines left it invisible everywhere
+        // else, so the reader could not see what the arrows were moving.
+        styleCursor(lines, all, scroll, cursorLine, kindAt(cursorLine, body) == null);
 
         Block block = Block.builder()
                 .title(" Footer & indexes ")
@@ -175,9 +160,26 @@ public final class FooterScreen {
         Paragraph.builder().block(block).text(Text.from(lines)).left().build().render(area, buffer);
     }
 
+    /// Paints the cursor on a line the anchors did not already claim: the
+    /// selection colour, and no marker, since `Enter` does nothing here.
+    private static void styleCursor(List<Line> visible, List<Line> all, int scroll,
+                                    int cursorLine, boolean paint) {
+        if (!paint || cursorLine < 0) {
+            return;
+        }
+        int offset = cursorLine - scroll;
+        if (offset < 0 || offset >= visible.size()) {
+            return;
+        }
+        visible.set(offset, Line.from(
+                new Span(renderLine(all.get(cursorLine)), Theme.selection())));
+    }
+
+    /// Paints one anchor line: `▶` when `Enter` can act on it, and the
+    /// selection colour when it is the line the cursor is on.
     private static void styleAnchor(List<Line> visible, List<Line> all, int scroll,
-                                    int absoluteLine, boolean active, boolean enabled) {
-        if (absoluteLine < 0 || !active) {
+                                    int absoluteLine, boolean cursor, boolean enabled) {
+        if (absoluteLine < 0) {
             return;
         }
         int offset = absoluteLine - scroll;
@@ -185,12 +187,10 @@ public final class FooterScreen {
             return;
         }
         String text = renderLine(all.get(absoluteLine));
+        // The body indents its rows by one cell, which the marker takes over.
         String marker = enabled ? "▶" : " ";
         String shown = text.startsWith(" ") ? marker + text.substring(1) : marker + text;
-        Style style = enabled
-                ? Theme.selection()
-                : Theme.primary();
-        visible.set(offset, Line.from(new Span(shown, style)));
+        visible.set(offset, Line.from(new Span(shown, cursor ? Theme.selection() : Theme.primary())));
     }
 
     private static String renderLine(Line line) {
@@ -204,59 +204,22 @@ public final class FooterScreen {
     /// Body content plus indices of the drill-target lines so Enter can
     /// be context-aware without recomputing the layout.
     private record FooterBody(
-            List<Line> lines,
+            Document document,
             int columnIndexLine,
             int columnIndexCount,
             int offsetIndexLine,
             int offsetIndexCount,
             int dictionaryLine,
             int dictionaryCount) {
-    }
 
-    private static boolean isEnabled(ScreenState.Footer.Anchor anchor, FooterBody body) {
-        return switch (anchor) {
-            case COLUMN -> body.columnIndexCount() > 0;
-            case OFFSET -> body.offsetIndexCount() > 0;
-            case DICTIONARY -> body.dictionaryCount() > 0;
-        };
-    }
-
-    private static ScreenState.Footer.Anchor nextEnabledAnchor(
-            ScreenState.Footer.Anchor from, FooterBody body) {
-        ScreenState.Footer.Anchor[] all = ScreenState.Footer.Anchor.values();
-        for (int i = from.ordinal() + 1; i < all.length; i++) {
-            if (isEnabled(all[i], body)) {
-                return all[i];
-            }
+        List<Line> lines() {
+            return document.lines();
         }
-        return null;
-    }
-
-    private static ScreenState.Footer.Anchor previousEnabledAnchor(
-            ScreenState.Footer.Anchor from, FooterBody body) {
-        ScreenState.Footer.Anchor[] all = ScreenState.Footer.Anchor.values();
-        for (int i = from.ordinal() - 1; i >= 0; i--) {
-            if (isEnabled(all[i], body)) {
-                return all[i];
-            }
-        }
-        return null;
-    }
-
-    /// First enabled anchor, or null if no anchor is drillable on this file.
-    /// Used to choose a sensible cursor on entry so the screen doesn't open
-    /// pointing at an unavailable section.
-    private static ScreenState.Footer.Anchor firstEnabledAnchor(FooterBody body) {
-        for (ScreenState.Footer.Anchor a : ScreenState.Footer.Anchor.values()) {
-            if (isEnabled(a, body)) {
-                return a;
-            }
-        }
-        return null;
     }
 
     private static FooterBody bodyAndAnchors(ParquetModel model) {
-        List<Line> lines = bodyLines(model);
+        Document body = bodyLines(model);
+        List<Line> lines = body.lines();
         FooterStats stats = computeStats(model);
         int columnIndexLine = -1;
         int offsetIndexLine = -1;
@@ -273,100 +236,84 @@ public final class FooterScreen {
                 dictionaryLine = i;
             }
         }
-        return new FooterBody(lines, columnIndexLine, stats.columnIndexCount(),
+        return new FooterBody(body, columnIndexLine, stats.columnIndexCount(),
                 offsetIndexLine, stats.offsetIndexCount(),
                 dictionaryLine, stats.dictionaryCount());
     }
 
-    private static List<Line> bodyLines(ParquetModel model) {
+    private static Document bodyLines(ParquetModel model) {
         FooterStats stats = computeStats(model);
         long fileSize = model.fileSizeBytes();
         long footerTrailerOffset = fileSize - FOOTER_TRAILER_BYTES;
 
-        List<Line> lines = new ArrayList<>();
+        Document.Builder lines = Document.builder();
 
-        lines.add(Line.from(new Span(" File layout ", Theme.accent().bold())));
-        lines.add(fact("  File size", Sizes.dualFormat(fileSize)));
-        lines.add(fact("  Format version", String.valueOf(model.metadata().version())));
-        lines.add(fact("  Created by",
+        lines.decoration(Line.from(new Span(" File layout ", Theme.accent().bold())));
+        lines.row(fact("  File size", Sizes.dualFormat(fileSize)));
+        lines.row(fact("  Format version", String.valueOf(model.metadata().version())));
+        lines.row(fact("  Created by",
                 model.facts().createdBy() != null ? model.facts().createdBy() : "unknown"));
-        lines.add(fact("  Footer trailer offset", Fmt.fmt("%,d", footerTrailerOffset)));
-        lines.add(fact("  Trailer bytes", String.valueOf(FOOTER_TRAILER_BYTES)));
+        lines.row(fact("  Footer trailer offset", Fmt.fmt("%,d", footerTrailerOffset)));
+        lines.row(fact("  Trailer bytes", String.valueOf(FOOTER_TRAILER_BYTES)));
         if (stats.minDataOffset() < Long.MAX_VALUE) {
-            lines.add(fact("  Data region",
+            lines.row(fact("  Data region",
                     Fmt.fmt("%,d .. %,d  (%s)",
                             stats.minDataOffset(), stats.maxDataEnd(),
                             Sizes.format(stats.maxDataEnd() - stats.minDataOffset()))));
-            lines.add(fact("  Footer + indexes",
+            lines.row(fact("  Footer + indexes",
                     Sizes.dualFormat(footerAndIndexBytes(model))));
         }
 
-        lines.add(Line.empty());
-        lines.add(Line.from(new Span(" Encodings ", Theme.accent().bold())));
+        lines.blank();
+        lines.decoration(Line.from(new Span(" Encodings ", Theme.accent().bold())));
         for (Map.Entry<Encoding, Integer> e : stats.encodingHistogram().entrySet()) {
-            lines.add(fact("  " + e.getKey().name(),
+            lines.row(fact("  " + e.getKey().name(),
                     Plurals.format(e.getValue(), "chunk", "chunks")));
         }
 
-        lines.add(Line.empty());
-        lines.add(Line.from(new Span(" Codecs ", Theme.accent().bold())));
+        lines.blank();
+        lines.decoration(Line.from(new Span(" Codecs ", Theme.accent().bold())));
         for (Map.Entry<CompressionCodec, Integer> e : stats.codecHistogram().entrySet()) {
             int pct = stats.totalChunks() == 0 ? 0
                     : (int) Math.round(100.0 * e.getValue() / stats.totalChunks());
-            lines.add(fact("  " + e.getKey().name(),
+            lines.row(fact("  " + e.getKey().name(),
                     Plurals.format(e.getValue(), "chunk", "chunks") + "  (" + pct + "%)"));
         }
 
-        lines.add(Line.empty());
-        lines.add(Line.from(new Span(" Page indexes ", Theme.accent().bold())));
-        lines.add(fact("  Column indexes",
+        lines.blank();
+        lines.decoration(Line.from(new Span(" Page indexes ", Theme.accent().bold())));
+        lines.row(fact("  Column indexes",
                 Sizes.dualFormat(stats.columnIndexBytes()) + "  ("
                         + coverage(stats.columnIndexCount(), stats.totalChunks()) + ")"));
-        lines.add(fact("  Offset indexes",
+        lines.row(fact("  Offset indexes",
                 Sizes.dualFormat(stats.offsetIndexBytes()) + "  ("
                         + coverage(stats.offsetIndexCount(), stats.totalChunks()) + ")"));
 
-        lines.add(Line.empty());
-        lines.add(Line.from(new Span(" Bloom filters ", Theme.accent().bold())));
-        lines.add(fact("  Bloom filters",
+        lines.blank();
+        lines.decoration(Line.from(new Span(" Bloom filters ", Theme.accent().bold())));
+        lines.row(fact("  Bloom filters",
                 Sizes.dualFormat(stats.bloomFilterBytes()) + "  ("
                         + coverage(stats.bloomFilterCount(), stats.totalChunks()) + ")"));
 
-        lines.add(Line.empty());
-        lines.add(Line.from(new Span(" Dictionary ", Theme.accent().bold())));
-        lines.add(fact("  With dictionary",
+        lines.blank();
+        lines.decoration(Line.from(new Span(" Dictionary ", Theme.accent().bold())));
+        lines.row(fact("  With dictionary",
                 coverage(stats.dictionaryCount(), stats.totalChunks())));
 
-        lines.add(Line.empty());
-        lines.add(Line.from(new Span(" Aggregate ", Theme.accent().bold())));
-        lines.add(fact("  Compressed data", Sizes.dualFormat(model.facts().compressedBytes())));
-        lines.add(fact("  Uncompressed data", Sizes.dualFormat(model.facts().uncompressedBytes())));
-        lines.add(fact("  Compression ratio",
-                Fmt.fmt("%.2f×", model.facts().compressionRatio())));
-        return lines;
+        lines.blank();
+        lines.decoration(Line.from(new Span(" Aggregate ", Theme.accent().bold())));
+        lines.row(fact("  Compressed data", Sizes.dualFormat(model.facts().compressedBytes())));
+        lines.row(fact("  Uncompressed data", Sizes.dualFormat(model.facts().uncompressedBytes())));
+        lines.row(fact("  Compression", Sizes.compression(model.facts().compressedBytes(),
+                model.facts().uncompressedBytes(), "—")));
+        return lines.build();
     }
 
     public static String keybarKeys(ScreenState.Footer state, ParquetModel model) {
         FooterBody body = bodyAndAnchors(model);
-        int enabledAnchors = 0;
-        for (ScreenState.Footer.Anchor a : ScreenState.Footer.Anchor.values()) {
-            if (isEnabled(a, body)) {
-                enabledAnchors++;
-            }
-        }
-        // The render path auto-snaps the visible cursor to the first enabled
-        // anchor when state.cursor() points at a disabled section, and so
-        // does handle() on the next event. The keybar should mirror that:
-        // [Enter] open is available whenever ANY anchor is drillable, not
-        // only when state.cursor() (which may be the stale default COLUMN)
-        // happens to land on an enabled section.
-        int total = body.lines().size();
-        boolean overflows = total > Keys.viewportStride();
         return new Keys.Hints()
-                .add(enabledAnchors > 1, "[↑↓] pick anchor")
-                .add(enabledAnchors > 0, "[Enter] open")
-                .add(overflows, "[PgDn/PgUp or Shift+↓↑] scroll")
-                .add(overflows, "[g/G] top/bottom")
+                .add(true, body.document().hints(Keys.viewportStride()))
+                .add(kindAt(cursorLine(state, body), body) != null, "[Enter] open")
                 .add(true, "[Esc] back")
                 .build();
     }

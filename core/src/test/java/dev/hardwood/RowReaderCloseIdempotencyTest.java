@@ -7,13 +7,11 @@
  */
 package dev.hardwood;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.file.Paths;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.reader.CountingInputFile;
 import dev.hardwood.reader.ColumnReader;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.RowReader;
@@ -26,68 +24,48 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 ///
 /// The decode-pipeline rework in v1.0.0.Beta2 turned `close()` from a single
 /// boolean write into a per-column worker quiesce (virtual-thread joins,
-/// in-flight decode draining) plus, on the column path, an [InputFile] close.
+/// in-flight decode draining) plus, on the column path, iterator-local cache
+/// teardown.
 /// Without an idempotency guard every redundant `close()` re-ran that work
 /// (issue #659).
 class RowReaderCloseIdempotencyTest {
 
-    /// Counts how often the wrapped [InputFile] is closed.
-    private static final class CountingInputFile implements InputFile {
-
-        private final InputFile delegate;
-        private final AtomicInteger closeCount = new AtomicInteger();
-
-        CountingInputFile(InputFile delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public void open() throws IOException {
-            delegate.open();
-        }
-
-        @Override
-        public ByteBuffer readRange(long offset, int length) throws IOException {
-            return delegate.readRange(offset, length);
-        }
-
-        @Override
-        public long length() throws IOException {
-            return delegate.length();
-        }
-
-        @Override
-        public String name() {
-            return delegate.name();
-        }
-
-        @Override
-        public void close() throws IOException {
-            closeCount.incrementAndGet();
-            delegate.close();
-        }
-    }
-
     @Test
-    void columnReaderClosesUnderlyingFileExactlyOnce() throws Exception {
+    void columnReaderLeavesInputLifecycleToParent() throws Exception {
         CountingInputFile file = new CountingInputFile(
                 InputFile.of(Paths.get("src/test/resources/page_index_test.parquet")));
 
         ParquetFileReader fileReader = ParquetFileReader.open(file);
-        ColumnReader columnReader = fileReader.columnReader(0);
-        while (columnReader.nextBatch()) {
-            // drain
+        try {
+            ColumnReader columnReader = fileReader.columnReader(0);
+            // Drain first: the teardown #659 is about — quiescing started
+            // per-column workers — only exists once decoding has run.
+            while (columnReader.nextBatch()) {
+                // drain
+            }
+            assertThatCode(() -> {
+                for (int i = 0; i < 5; i++) {
+                    columnReader.close();
+                }
+            }).doesNotThrowAnyException();
+
+            assertThat(file.closeCount())
+                    .as("ColumnReader.close() must leave the parent-owned input open")
+                    .isZero();
+
+            try (RowReader rowReader = fileReader.rowReader()) {
+                assertThat(rowReader.hasNext()).isTrue();
+                rowReader.next();
+            }
+            assertThat(file.closeCount()).isZero();
+        }
+        finally {
+            fileReader.close();
         }
 
-        for (int i = 0; i < 5; i++) {
-            columnReader.close();
-        }
-
-        assertThat(file.closeCount.get())
-                .as("redundant ColumnReader.close() must not re-close the input file")
+        assertThat(file.closeCount())
+                .as("ParquetFileReader.close() must close its input exactly once")
                 .isEqualTo(1);
-
-        fileReader.close();
     }
 
     @Test

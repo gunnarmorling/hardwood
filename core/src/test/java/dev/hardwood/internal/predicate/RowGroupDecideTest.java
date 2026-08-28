@@ -24,14 +24,14 @@ import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.FilterPredicate;
 
-import static dev.hardwood.internal.predicate.StatsDecision.ALWAYS_MATCHES;
-import static dev.hardwood.internal.predicate.StatsDecision.CANNOT_MATCH;
-import static dev.hardwood.internal.predicate.StatsDecision.MIGHT_MATCH;
+import static dev.hardwood.internal.predicate.FilterDecision.ALWAYS_MATCHES;
+import static dev.hardwood.internal.predicate.FilterDecision.CANNOT_MATCH;
+import static dev.hardwood.internal.predicate.FilterDecision.MIGHT_MATCH;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// [RowGroupFilterEvaluator#decideRowGroup] behavior over whole row groups: leaf decisions
 /// with row-group [Statistics], `AND`/`OR` composition, null predicates, and the
-/// equivalence of `canDropRowGroup` with the [StatsDecision#CANNOT_MATCH] decision.
+/// equivalence of `canDropRowGroup` with the [FilterDecision#CANNOT_MATCH] decision.
 class RowGroupDecideTest {
 
     private static final int COL = 0;
@@ -118,7 +118,7 @@ class RowGroupDecideTest {
 
     // ==================== Fixtures ====================
 
-    private static StatsDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
+    private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
         return RowGroupFilterEvaluator.decideRowGroup(predicate, rowGroup, null);
     }
 
@@ -155,8 +155,8 @@ class RowGroupDecideTest {
         ColumnMetaData cmd = new ColumnMetaData(
                 type, List.of(Encoding.PLAIN), FieldPath.of("col"),
                 CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats,
-                null, null, null);
-        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null);
+                null, null, null, List.of(), null);
+        ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null, "");
         return new RowGroup(List.of(chunk), 1000, numRows);
     }
 

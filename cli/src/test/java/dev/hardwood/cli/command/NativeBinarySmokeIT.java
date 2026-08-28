@@ -10,8 +10,11 @@ package dev.hardwood.cli.command;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
+
+import dev.hardwood.cli.internal.Version;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,6 +23,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// produces expected output. Per-command behavioural coverage lives in the
 /// JVM `*CommandTest` classes.
 class NativeBinarySmokeIT {
+
+    /// `hardwood <project-version> (<revision>)`, the same grammar `HardwoodCommandTest` pins
+    /// for the JVM. The project version must be semver-shaped, since Maven always supplies it;
+    /// the revision is left open because it comes from `git` and legitimately reads `unknown`
+    /// in a build outside a checkout.
+    private static final Pattern VERSION_LINE = Pattern.compile("hardwood \\d+\\.\\d+\\.\\d+\\S* \\(\\S+\\)");
 
     private final String nativeBinary = System.getProperty("native.image.path");
     private final String plainFile = getClass().getResource("/plain_uncompressed.parquet").getPath();
@@ -30,6 +39,27 @@ class NativeBinarySmokeIT {
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.stdout()).contains("message schema");
+    }
+
+    /// The build identity lives in a resource, which is the one part of the JVM build that a
+    /// native image can silently drop: unless it is registered in `resource-config.json`, the
+    /// binary starts fine and reports `unknown` instead. Comparing the binary against the JVM
+    /// it was compiled from catches that, where a smoke test that only checks the exit code or
+    /// the `hardwood` prefix does not. Covers the TUI too — its help overlay renders this same
+    /// [Version] value.
+    ///
+    /// The comparison alone would not be enough. If the resource never reached the core
+    /// artifact at all, both sides read the same degraded value and agree, and the test would
+    /// pass on a build that has no identity. The binary's own output is therefore pinned to a
+    /// resolved shape first, which holds regardless of what the JVM side resolved; the
+    /// comparison then adds that it is the *same* build.
+    @Test
+    void reportsTheSameBuildVersionAsTheJvm() throws IOException, InterruptedException {
+        NativeResult result = exec(nativeBinary, "--version");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.stdout()).matches(VERSION_LINE);
+        assertThat(result.stdout()).isEqualTo("hardwood " + Version.getVersion());
     }
 
     @Test

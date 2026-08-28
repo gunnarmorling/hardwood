@@ -20,7 +20,7 @@ A Parquet file is organized as follows:
 
 - **FileMetaData** — top-level: row count, schema, key-value metadata (e.g. Spark schema, pandas metadata), the writer that produced the file (`createdBy`), and the per-column statistics ordering (`columnOrders`)
 - **RowGroup** — a horizontal partition of the data; each row group contains all columns for a subset of rows
-- **ColumnChunk** — one column within a row group; holds compression codec, byte sizes, and optional statistics (min/max values, null count) used for predicate pushdown. Per-chunk byte ranges for the column index and offset index (when present in the file) are exposed via `columnIndexOffset`/`columnIndexLength` and `offsetIndexOffset`/`offsetIndexLength` on `ColumnChunk`. The bloom-filter byte range (`bloomFilterOffset`/`bloomFilterLength`) is exposed on `ColumnMetaData`, matching its position in the Parquet Thrift schema.
+- **ColumnChunk** — one column within a row group; holds compression codec, byte sizes, and optional statistics (min/max values, null count) used for predicate pushdown. Per-chunk byte ranges for the column index and offset index (when present in the file) are exposed via `columnIndexOffset`/`columnIndexLength` and `offsetIndexOffset`/`offsetIndexLength` on `ColumnChunk`. The bloom-filter byte range (`bloomFilterOffset`/`bloomFilterLength`) is exposed on `ColumnMetaData`, matching its position in the Parquet Thrift schema. `ColumnMetaData.encodingStats()` returns the chunk's page counts per (page type, encoding) pair as a list of `PageEncodingStats`, empty when the file omits the field. A page type this version does not recognize is reported as `PageType.UNKNOWN`. An encoding this version does not recognize is reported as `Encoding.UNKNOWN`, in both `ColumnMetaData.encodings()` and `encodingStats()`; the metadata reads normally, and reading a page that uses such an encoding throws an `UnsupportedOperationException` naming the raw Thrift encoding value. `ColumnChunk.filePath()` is the file holding the chunk's data under the legacy split-file layout, and the empty string — never `null` — when the data sits in the file being read; `requireSameFile()` throws an `IOException` for the former, which is what reading such a chunk does.
 
 ```java
 import dev.hardwood.metadata.ColumnChunk;
@@ -28,6 +28,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.ColumnSchema;
@@ -88,3 +89,50 @@ try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
 }
 ```
 
+The map `keyValueMetadata()` returns can be handed to `ParquetFileWriter.keyValueMetadata(Map)` to stamp the same entries on a file being written; see [File Metadata](../reference/writer.md#file-metadata).
+
+## Metadata for multiple files
+
+For a multi-file reader, use `getFileCount()` and `getFileMetaData(int)` to inspect each
+physical input file in order. The first file's footer is read when the reader is opened.
+Later footers are read when indexed metadata access or data-reader prefetch first needs them.
+In-progress, successful, and failed loads are cached for the lifetime of the parent reader, so
+metadata, row, and column access all reuse the same parsed footer.
+
+```java
+try (Hardwood hardwood = Hardwood.create();
+     ParquetFileReader reader = hardwood.openAll(files)) {
+    long totalRows = 0;
+    for (int fileIndex = 0; fileIndex < reader.getFileCount(); fileIndex++) {
+        totalRows = Math.addExact(
+            totalRows,
+            reader.getFileMetaData(fileIndex).numRows());
+    }
+}
+```
+
+Indexed metadata access reports the physical file's footer; it does not validate that file against
+the first file for a particular projection or filter. Cross-file schema validation happens when a
+row or column reader is planned. Keep every input file unchanged until the parent reader is closed.
+Close and reopen the parent reader to retry a failed footer load or inspect a changed file.
+
+## Size statistics and level histograms
+
+`ColumnMetaData.sizeStatistics()` reports how much data a column chunk holds, without reading any of it:
+
+- `unencodedByteArrayDataBytes()` — the size the chunk's `BYTE_ARRAY` values would occupy unencoded and uncompressed, which the on-disk sizes do not tell you
+- `definitionLevelHistogram()` — how many values sit at each definition level, `0` through the column's maximum. The entry at the maximum counts the non-null values; each lower entry counts the values that stop being present at that level — a null, or, on a repeated column, an empty list
+- `repetitionLevelHistogram()` — how many values sit at each repetition level, `0` through the column's maximum. Entry `0` counts the values that start a new row, so it is the number of rows in the chunk; each higher entry counts the values that continue a repeated field at that level
+
+Every field is optional. A writer that omits one reports `null`, which is distinct from a value the writer recorded as empty or zero:
+
+```java
+SizeStatistics sizeStats = col.sizeStatistics();
+if (sizeStats != null && sizeStats.definitionLevelHistogram() != null) {
+    long[] histogram = sizeStats.definitionLevelHistogram();
+    long nonNull = histogram[histogram.length - 1];
+    System.out.println("    non-null values: " + nonNull);
+}
+```
+
+`Statistics.nanCount()` reports how many NaN values a `FLOAT`, `DOUBLE` or `FLOAT16` chunk holds. NaN sits outside the ordering of `minValue()`/`maxValue()`, so those bounds say nothing about it. A `null` count means the writer recorded none; only a recorded `0` establishes that a chunk holds no NaN.

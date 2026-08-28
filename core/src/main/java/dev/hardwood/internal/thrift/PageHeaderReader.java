@@ -13,6 +13,8 @@ import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
 import dev.hardwood.internal.metadata.DictionaryPageHeader;
 import dev.hardwood.internal.metadata.PageHeader;
+import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
+import dev.hardwood.metadata.PageType;
 
 /// Reader for PageHeader from Thrift Compact Protocol.
 public class PageHeaderReader {
@@ -28,7 +30,7 @@ public class PageHeaderReader {
     }
 
     private static PageHeader readInternal(ThriftCompactReader reader) throws IOException {
-        PageHeader.PageType type = null;
+        PageType type = null;
         int uncompressedPageSize = 0;
         int compressedPageSize = 0;
         Integer crc = null;
@@ -37,73 +39,57 @@ public class PageHeaderReader {
         DictionaryPageHeader dictionaryPageHeader = null;
 
         while (true) {
-            ThriftCompactReader.FieldHeader header = reader.readFieldHeader();
-            if (header == null) {
+            int header = reader.readFieldHeader();
+            if (header == ThriftCompactReader.STOP_FIELD) {
                 break;
             }
 
-            switch (header.fieldId()) {
+            switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // type
-                    if (header.type() == 0x05) {
-                        type = PageHeader.PageType.fromThriftValue(reader.readI32());
-                    }
-                    else {
-                        reader.skipField(header.type());
+                    if (reader.acceptField(header, Codes.I32)) {
+                        int rawType = reader.readI32();
+                        type = ThriftEnumLookup.pageType(rawType);
+                        // A page whose header declares a type we do not know cannot be decoded.
+                        if (type == PageType.UNKNOWN) {
+                            throw new IOException("PageHeader has unknown page type: " + rawType);
+                        }
                     }
                     break;
                 case 2: // uncompressed_page_size
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         uncompressedPageSize = reader.readNonNegativeI32("PageHeader.uncompressed_page_size");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 3: // compressed_page_size
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         compressedPageSize = reader.readNonNegativeI32("PageHeader.compressed_page_size");
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 4: // crc
-                    if (header.type() == 0x05) {
+                    if (reader.acceptField(header, Codes.I32)) {
                         crc = reader.readI32();
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 5: // data_page_header
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         dataPageHeader = DataPageHeaderReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 6: // index_page_header (optional) - skipped for now
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
                 case 7: // dictionary_page_header
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         dictionaryPageHeader = DictionaryPageHeaderReader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 case 8: // data_page_header_v2
-                    if (header.type() == 0x0C) {
+                    if (reader.acceptField(header, Codes.STRUCT)) {
                         dataPageHeaderV2 = DataPageHeaderV2Reader.read(reader);
-                    }
-                    else {
-                        reader.skipField(header.type());
                     }
                     break;
                 default:
-                    reader.skipField(header.type());
+                    reader.skipField(ThriftCompactReader.fieldType(header));
                     break;
             }
         }

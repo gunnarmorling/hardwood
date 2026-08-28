@@ -1,10 +1,10 @@
 # Design: whole-file range backing for `S3InputFile`
 
-**Status: Proposed.** Tracking issue: #373.
+**Status: Completed.** Tracking issues: #373, #560, #853.
 
 ## Goal
 
-Cache fetched byte ranges inside `S3InputFile` so repeat reads of the
+Cache byte ranges fetched by an `S3InputFile` so repeat reads of the
 same offsets hit local memory instead of re-issuing HTTP GETs to S3.
 The motivating workflow is dive's Data preview path: flip-flopping
 between top and bottom of a remote file (`g`, `G`, `g`, …) currently
@@ -14,45 +14,29 @@ This sits one layer below the cross-column coalescing already
 introduced in #374. Coalesced regions become coarser cache units —
 one cached entry per region covers many columns at once.
 
-## Approach: whole-file backing, not LRU
+## Approach: whole-file backing
 
 `MappedInputFile.open()` calls `channel.map(READ_ONLY, 0, fileSize)`,
 reserves the full file as virtual address space, and lets the OS
 lazy-fault pages on `slice` calls. There is no cache structure
 because the mapping *is* the cache.
 
-The remote analogue:
+The remote analogue is a cache layer wrapping the network path:
 
-- On `S3InputFile.open()`, allocate a buffer of `fileSize` bytes and
-  track which byte ranges have been populated.
+- On `open()`, allocate a buffer of `fileSize` bytes and track which
+  byte ranges have been populated.
 - On `readRange(offset, length)`: if the range is fully within the
   populated set, return a slice of the buffer — zero-copy, no
-  network I/O. If not, fetch the missing sub-range(s) from S3, write
-  them into the buffer at their offsets, mark the ranges populated,
-  and return the slice.
+  network I/O. If not, fetch the missing sub-range(s) through the
+  wrapped file, write them into the buffer at their offsets, mark the
+  ranges populated, and return the slice.
 - On `close()`, release the buffer.
 
-No eviction. The buffer's lifetime is the `S3InputFile`'s lifetime;
-its size is the file's size. This is structurally symmetric with the
+No eviction. The buffer's lifetime is the open file's lifetime; its
+size is the file's size. This is structurally symmetric with the
 local mmap path — both expose "a buffer of size `fileSize` you can
 slice into," and the rest of the pipeline doesn't know which is
 which.
-
-### Why not LRU
-
-LRU was the obvious starting point but pays for capacity it doesn't
-need given how the rest of the pipeline already shapes I/O:
-
-- **Coalescing already produces stable request shapes.** A refill
-  against a given window always re-issues the same
-  `readRange(offset, length)` for the same `SharedRegion`. Exact-match
-  caching catches ~all the wins; replacement policy is unused work.
-- **Eviction race risk.** With an LRU of off-heap entries, eviction
-  needs to deterministically free the buffer (`Arena.close()` or
-  similar). Any concurrent slice still in use would crash. Whole-file
-  backing has one buffer for the file's lifetime, no per-entry release.
-- **"What's the right budget?" is unanswerable in the abstract.**
-  The whole-file model doesn't ask the user to pick.
 
 The trade-off is footprint: whole-file backing reserves `fileSize` of
 *virtual* address space up front, regardless of how much of the file
@@ -62,39 +46,32 @@ the dive workflow against typical analytics files.
 
 ## Implementation: sparse temp file + mmap
 
-The naive form of "allocate a buffer of `fileSize`" is
-`Arena.allocate(fileSize)` — but FFM requires zero-fill on
-allocation, which eagerly commits the full size. For a 622 MB
-Overture file that's ~600 ms of zeroing on first open and 622 MB
-resident from then on, even if the session only paged through 80 MB.
-
-Backing the buffer with a **sparse temp file** instead lets the OS
-handle lazy commit:
+The buffer is backed by a **sparse temp file**, which lets the OS
+handle lazy commit rather than committing `fileSize` up front:
 
 ```
 open():
-    create a temp file in `java.io.tmpdir` (or configurable);
-    sparse-truncate to `fileSize` (`RandomAccessFile.setLength` /
-        `FileChannel.truncate`, which on Linux/macOS / NTFS leaves a
-        file with holes);
-    mmap it READ_WRITE for the writer side, READ_ONLY for slice
-        consumers;
-    discover `fileSize` and pre-fetch the tail (`open-tail`,
-        unchanged from today) — write those bytes into the mmap at
-        their absolute offsets.
+    open the wrapped fetcher (which discovers `fileSize` and
+        pre-fetches the tail);
+    create a temp file in the configured temp dir;
+    sparse-truncate to `fileSize` (`FileChannel.truncate`, which on
+        Linux/macOS / NTFS leaves a file with holes);
+    mmap it READ_WRITE.
 
 readRange(off, len):
     if filled.contains([off, off + len)):
         return mapping.slice((int) off, len)        // zero-copy
     else:
-        fetch missing sub-ranges from S3;
+        fetch the missing sub-ranges from the wrapped fetcher;
         write each into the mapping at its absolute offset;
         filled.add(those ranges);
         return mapping.slice((int) off, len)
 
 close():
-    unmap;
-    delete temp file
+    drop the mapping reference (the unmap itself is GC-driven);
+    delete the temp file, deferring to JVM exit on platforms that
+        refuse to unlink a file that still carries a mapping;
+    close the wrapped fetcher
 ```
 
 The OS commits pages only when written; never-touched holes occupy
@@ -102,26 +79,49 @@ neither RAM nor disk on filesystems that support sparse files (ext4,
 xfs, apfs, ntfs). Logical address space = `fileSize`, real footprint
 = touched bytes.
 
-**Comparison vs in-memory variants:**
-
-| Variant                             | Up-front cost          | Real footprint    | Lazy commit            |
-|-------------------------------------|-----------------------|-------------------|------------------------|
-| `Arena.allocate(fileSize)`          | zero whole file (~1 GB/s) | full `fileSize` | no                     |
-| `Unsafe.allocateMemory(fileSize)`   | depends on glibc       | varies            | sometimes              |
-| **Sparse temp file + mmap**         | sparse-truncate (instant) | touched bytes only | yes (kernel-managed) |
-
-The third variant is the recommended implementation. The cost: an
+The cost: an
 extra disk write per fetched range (S3 → mmap'd file). On a
 `tmpfs`-backed temp dir this stays in RAM (Linux default for
 `/tmp` on many distros). On a disk-backed temp dir it incurs disk
 I/O proportional to bytes fetched — typically a fraction of the S3
 RTT savings, so net positive.
 
+### Class layout
+
+Three classes, each with one job:
+
+- **`RangeBackedInputFile`** (`dev.hardwood.internal.reader`) — the
+  sparse-tempfile cache. An `InputFile` decorator over another
+  `InputFile`; it knows nothing about S3 and is reusable over any
+  remote backend. Holds the mapping and the `RangeSet`.
+- **`S3Fetcher`** (package-private in `dev.hardwood.s3`) — the S3
+  network path. Owns the `S3Api` handle, the bucket/key, the
+  `open()` suffix-range tail fetch and its retained tail buffer, and
+  the two network counters. Knows nothing about range caching.
+- **`S3InputFile`** (public) — a facade over a single `InputFile`
+  chosen in the constructor: the `S3Fetcher` under
+  `RangeBacking.NONE`, or a `RangeBackedInputFile` wrapping it under
+  `RangeBacking.SPARSE_TEMPFILE`. `open()`, `readRange()` and
+  `close()` delegate to it unconditionally, so the read path carries
+  no per-call branch on the backing mode.
+
+Every `InputFile` method delegates to the chosen backing, including
+`length()` and `name()`. `S3InputFile` keeps a direct reference to the
+`S3Fetcher` for one purpose: `networkRequestCount()` /
+`networkBytesFetched()` report network traffic only, and under
+`SPARSE_TEMPFILE` a cache hit is served from the mapping and never
+reaches the fetcher, so it cannot be counted.
+
+The facade exists because `S3Source.inputFile(...)` returns
+`S3InputFile`, not `InputFile`: callers reach the counters without a
+cast, `ParquetModel#netStats()` can `instanceof S3InputFile`, and the
+internal `RangeBackedInputFile` type never appears in public API.
+
 ## API surface
 
 `S3InputFile` exposes the same `InputFile` contract; the
-implementation change is internal. New configuration on `S3Source`
-(or `S3InputFile.Builder`):
+range cache is an internal implementation detail and does not change
+the returned type. Configuration lives on `S3Source`:
 
 ```java
 S3Source.builder()
@@ -198,9 +198,13 @@ file), so absolute cost is negligible.
 
 ## Composition with existing layers
 
-- **Tail cache.** Already exists; populates the same buffer at
-  `[fileLength - TAIL_SIZE, fileLength)` during `open()`. Becomes a
-  trivial special case of the general flow — no separate code path.
+- **Tail cache.** Lives in `S3Fetcher`, one layer *below* the range
+  cache: the `open()` suffix-range GET fetches
+  `[fileLength - TAIL_SIZE, fileLength)` and the fetcher serves any
+  read fully inside that window from it without a network call. Under
+  `SPARSE_TEMPFILE` a footer read therefore populates the mapping from
+  the tail buffer rather than from the network, and neither layer
+  counts it as network traffic.
 - **`SharedRegion.data`** (#374). Per-RG cache that lives until
   `releaseWorkItem` evicts the workitem. Stacks above this layer:
   `SharedRegion.fetchData` calls `inputFile.readRange(...)`, which
@@ -212,8 +216,8 @@ file), so absolute cost is negligible.
   `readRange(off, len)` shape after coalescing. Repeat dive
   refills against the same window become single-region cache hits.
 - **Local files.** Unchanged. `MappedInputFile` already does the
-  whole-file backing; the new `S3InputFile` shape just brings the
-  remote path into structural alignment.
+  whole-file backing; the `S3InputFile` shape brings the remote path
+  into structural alignment.
 
 ## Limits
 
@@ -237,44 +241,54 @@ file), so absolute cost is negligible.
   with enough free space for worst-case touched bytes per file.
   `/tmp` typically suffices; environments with read-only or tiny
   `/tmp` (some container images) need `tempDir` configured.
+  `S3Source.Builder#build()` rejects a missing or read-only `tempDir`
+  when `SPARSE_TEMPFILE` is selected, so the misconfiguration surfaces
+  at configuration time rather than at the first `open()`.
+- **Deferred reclamation.** `close()` deletes the backing file, but
+  the unmap is GC-driven: the address space, and on Windows the file
+  itself, are reclaimed at the next collection or at JVM exit rather
+  than at `close()`. Java offers no portable forced unmap at the
+  language level the project targets.
 
 ## Concurrency
 
 `S3InputFile.readRange` is called from many threads (column workers,
 prefetch). The cache must be thread-safe:
 
-- `RangeSet` operations under a single object monitor (or
-  `ReentrantReadWriteLock` if profiling shows contention).
-- Per-range fetch deduplication: when two threads simultaneously
-  request the same missing range, exactly one issues the HTTP GET
-  and the other waits. Implemented via a
-  `ConcurrentHashMap<Range, CompletableFuture<Void>>` of in-flight
-  fetches. Lookup and removal happen under the `RangeSet` lock to
-  avoid a ABA window.
+- `open()`, `readRange()` and `close()` on `RangeBackedInputFile`
+  hold the instance monitor, which guards both the mapping and the
+  `RangeSet`.
+- Holding that monitor across the refill also deduplicates fetches:
+  two threads requesting the same missing range serialize, and the
+  second finds the range populated and issues no HTTP GET. Readers
+  never observe a partially written range.
 - Slices into the mmap are zero-copy `MappedByteBuffer.slice(int,
   int)` views; consumers can hold them across threads, the
   underlying mapping is alive until `close()`.
 
 ## Testing
 
-- **`S3RangeCacheHitTest`** — open a `CountingS3Api` wrapper,
-  read the same range twice, assert exactly one HTTP GET.
-- **`S3RangeCachePartialHitTest`** — read `[0, 1000)`, then read
-  `[100, 200)`. Assert the second read does not issue a network
-  call (covered by the populated set).
-- **`S3RangeCacheGapFetchTest`** — populate `[0, 100)` and
-  `[200, 300)`, then read `[0, 300)`. Assert exactly one HTTP GET
-  is issued for `[100, 200)` (the gap), the other ranges are
-  served from the buffer.
-- **`S3RangeCacheConcurrentFetchTest`** — two threads request the
-  same uncached range simultaneously. Assert exactly one HTTP GET
-  is issued.
-- **`S3RangeCacheCloseTest`** — close the file, verify the temp
-  file is deleted and the mapping is released.
-- **`S3RangeCacheCrossRgFlipFlopTest`** — end-to-end: open a
-  fixture against `LocalStack`, walk through dive's preview
-  pattern (open → page-down × N → jump-to-end → jump-to-start),
-  assert the second jump-to-start issues zero new HTTP GETs.
+- **`RangeSetTest`** (core) — the interval set in isolation:
+  `contains` / `add` merging of overlapping and touching ranges, and
+  the gaps returned by `missing`.
+- **`RangeBackedInputFileTest`** (core) — the decorator over a
+  counting in-memory `InputFile`: exact-match and enclosed-range
+  repeat reads hit the mapping, a read spanning a hole fetches only
+  the gap, and `close()` deletes the temp file.
+- **`S3RangeBackingTest`** (s3) — end-to-end against an S3 proxy
+  container with `RangeBacking.SPARSE_TEMPFILE`: an exact repeat
+  `readRange` issues no new GET, and a second full pass with
+  `ColumnReader` / `RowReader` over the same `S3InputFile` issues
+  strictly fewer GETs and fetches strictly fewer bytes than the
+  first. The counters carry the assertions, which is what pins the
+  cache to network-only accounting.
+- **`S3InputFileTest`** (s3) — the same file under the default
+  `RangeBacking.NONE`, including that the counters cover the
+  `open()` tail fetch and every network `readRange` but not
+  tail-cache hits.
+- **`S3SourceTempDirValidationTest`** (s3) — `build()` rejects a
+  missing `tempDir` under `SPARSE_TEMPFILE`, accepts an existing one,
+  and ignores the setting under `NONE`.
 
 ## Out of scope
 
@@ -289,10 +303,3 @@ prefetch). The cache must be thread-safe:
   Reasonable for dive sessions; would need revisiting for
   long-lived readers (hours+).
 - **Multi-region mmap for files > 2 GB.** Tracked as #75.
-
-## Estimated effort
-
-~150 lines of production code (RangeSet ~40, S3InputFile changes
-~70, S3Source config ~20, lifecycle plumbing ~20) + tests.
-Roughly half a day end-to-end including the dive verification run
-against the Overture fixture.

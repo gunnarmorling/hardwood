@@ -33,7 +33,7 @@ All accessors are available in two forms — name-based (`getInt("column_name")`
 | `getFloat` | FLOAT, or FIXED_LEN_BYTE_ARRAY(2) | FLOAT16 (optional) | `float` |
 | `getDouble` | DOUBLE | | `double` |
 | `getBinary` | BYTE_ARRAY | BSON (optional) | `byte[]` |
-| `getString` | BYTE_ARRAY | STRING or JSON | `String` |
+| `getString` | BYTE_ARRAY | STRING, ENUM, or JSON | `String` |
 | `getDate` | INT32 | DATE | `LocalDate` |
 | `getTime` | INT32 or INT64 | TIME | `LocalTime` |
 | `getTimestamp` | INT64, or legacy INT96 | TIMESTAMP (`isAdjustedToUTC = true`) | `Instant` |
@@ -88,6 +88,13 @@ original NaN bit pattern is preserved (the Parquet spec does not canonicalize Na
 `Float.isNaN(value)` for NaN checks rather than equality. As with all primitive accessors,
 `isNull()` must be checked before `getFloat()` since FLOAT16 columns can be optional.
 
+## ENUM columns
+
+`getString` accepts ENUM columns (`BYTE_ARRAY` annotated with the `ENUM` logical type) and decodes
+the UTF-8 payload to the symbol name, exactly as for a STRING column. The generic `getValue`
+accessor and the `PqList` / `PqStruct` / `PqMap` flyweights return the same `String`, at the top
+level and in every nested position. `getBinary` still yields the undecoded bytes.
+
 ## Legacy INT96 timestamps
 
 Parquet files written by older versions of Apache Spark and Hive store timestamps in the deprecated
@@ -105,7 +112,8 @@ caller-side opt-in:
 |------------------|----------|-----------|
 | `UTF8` | `getString` | `String` |
 | `JSON` | `getString` | `String` |
-| `ENUM`, `BSON` | `getBinary` | `byte[]` |
+| `ENUM` | `getString` | `String` |
+| `BSON` | `getBinary` | `byte[]` |
 | `DATE` | `getDate` | `LocalDate` |
 | `DECIMAL` | `getDecimal` | `BigDecimal` |
 | `TIME_MILLIS`, `TIME_MICROS` | `getTime` | `LocalTime` |

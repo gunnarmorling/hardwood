@@ -65,7 +65,7 @@ public interface FieldAccessor {
 
     // ==================== Object Types ====================
 
-    /// Get a STRING field value by name.
+    /// Get a STRING, ENUM or JSON field value by name, decoded from UTF-8.
     ///
     /// @param name the field name
     /// @return the string value, or null if the field is null
@@ -150,7 +150,7 @@ public interface FieldAccessor {
     ///
     /// Returns the value in the same form as the typed accessors above:
     /// `Integer` / `Long` / `Float` / `Double` / `Boolean` for primitives,
-    /// `String` for STRING, [LocalDate] for DATE, [LocalTime] for TIME,
+    /// `String` for STRING / ENUM / JSON, [LocalDate] for DATE, [LocalTime] for TIME,
     /// [Instant] for UTC-adjusted TIMESTAMP, [LocalDateTime] for local-wall-clock
     /// TIMESTAMP, [BigDecimal] for DECIMAL, [UUID] for UUID, [PqInterval] for
     /// INTERVAL, [PqVariant] for VARIANT, and `byte[]` for BYTE_ARRAY /
