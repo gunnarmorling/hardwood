@@ -370,8 +370,8 @@ knows it only at runtime and otherwise has to switch on `PhysicalType` to pick a
   writer rather than on this layer, planned as stage 35 of `_designs/WRITER_SUPPORT.md`.
 - **`INT96`.** Not writable at all.
 - **Shapes the columnar path rejects.** The layer produces `ColumnBatch` inputs, so it inherits
-  every limitation of the core: a `REPEATED` leaf, a legacy two-level list, which the shredder
-  cannot level.
+  every limitation of the core: repetition no `LIST` or `MAP` annotation accounts for, which the
+  shredder cannot level.
 
 ## Validation
 

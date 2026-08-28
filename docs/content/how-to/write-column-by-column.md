@@ -138,7 +138,7 @@ columns.writeBatch(batch -> batch
         .ints("phones.list.element", elements, elementNulls));
 ```
 
-An empty list and an absent list are different values: the empty list carries a zero delta, the absent one is marked in the list's `Validity` and must carry a zero delta as well.
+An empty list and an absent list are different values: the empty list carries a zero delta, the absent one is marked in the list's `Validity` and must carry a zero delta as well. The same holds one level up: where an enclosing struct is marked absent, a list or map beneath it has no entries, so its offsets must carry a zero delta at that row.
 
 **Maps** work the same way — `map(...)` sets one offsets array shared by the two leaves under `key_value`:
 

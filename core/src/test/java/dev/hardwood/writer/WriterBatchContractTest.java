@@ -254,6 +254,48 @@ class WriterBatchContractTest {
     }
 
     @Test
+    void rejectsAbsentStructWithNonEmptyListOffsetsBelowIt() throws Exception {
+        // An absent struct encloses nothing, so a list beneath it has no entries at that
+        // record. The shredder stops at the absent struct and never descends into the
+        // offsets, so a non-zero span there would silently drop the elements it covers.
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .list("phones", RepetitionType.REQUIRED,
+                                el -> el.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
+                .build();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            // record 0's s is absent yet its offsets span two elements (10, 20); record 1 is [30].
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
+                    .struct("s", Validity.ofNulls(new boolean[] { true, false }))
+                    .list("s.phones", new int[] { 0, 2, 3 })
+                    .ints("s.phones.list.element", new int[] { 10, 20, 30 })))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("s")
+                    .hasMessageContaining("s.phones");
+        }
+    }
+
+    @Test
+    void rejectsAbsentStructWithNonEmptyMapOffsetsBelowIt() throws Exception {
+        // The same rule reaches a MAP through the same layer: its entries are as absent as a
+        // list's where an enclosing struct is.
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .map("props", RepetitionType.REQUIRED, PhysicalType.INT32,
+                                v -> v.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
+                .build();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), schema)) {
+            assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch
+                    .struct("s", Validity.ofNulls(new boolean[] { true, false }))
+                    .map("s.props", new int[] { 0, 1, 2 })
+                    .ints("s.props.key_value.key", new int[] { 1, 2 })
+                    .ints("s.props.key_value.value", new int[] { 10, 20 })))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("s.props");
+        }
+    }
+
+    @Test
     void rejectsColumnsImplyingDifferentRecordCounts() throws Exception {
         FileSchema schema = FileSchema.builder("schema")
                 .addColumn("r", PhysicalType.INT32, RepetitionType.REQUIRED)

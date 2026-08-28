@@ -467,21 +467,21 @@ writer grew after 17 — encoding, cardinality, nesting and schema width — bec
 size refinements after it are throughput and size claims that cannot be argued without one.
 22 then adds the object-store backend and 23 optimizes the encode underneath it with
 parallel column encoding. Together, increments 1–23 constitute the write-support milestone
-(#9). 32, 33 and 36 lead what follows it, because together they are what stands between a
-file the reader accepts and a file the writer can produce from it. 32 and 33 are where the
-round trip costs something: a `byte[][]` re-materialization per value on the API whose
-reason for existing is that it does not allocate per value, and a caller-side
-reimplementation of the reader's layer rule whose errors misalign validity against groups
-rather than failing. A caller bridging the two APIs pays the first on any binary column and
-the second on any nested one, and `ColumnarNestedCopyTest` is the standing evidence that
-bridging them is a real use case. 36 is where the round trip is not available at all: an
-`OPTIONAL` struct enclosing a repeated field is what Arrow-based writers produce for a
-nullable struct holding a list, this repository reads its own
-`nested_list_struct_test.parquet` fixture carrying it, and no input form closes that — the
-refusal is the shredder's. 24–25 follow, adding the optional index structures (page indexes
-and Bloom filters, with the per-page statistics that make page-level pruning possible) on
-the settled surface: capability that costs a caller nothing until it is asked for, which is
-what puts it behind 32, 33 and 36. Increments 26–30 follow too, as refinements of what the
+(#9). 32 and 33 lead what follows it, because together they are what stands between a file
+the reader accepts and a file the writer can produce from it. They are where the round trip
+costs something: a `byte[][]` re-materialization per value on the API whose reason for
+existing is that it does not allocate per value, and a caller-side reimplementation of the
+reader's layer rule whose errors misalign validity against groups rather than failing. A
+caller bridging the two APIs pays the first on any binary column and the second on any
+nested one, and `ColumnarNestedCopyTest` is the standing evidence that bridging them is a
+real use case. 36 was the third of them and is settled: an `OPTIONAL` struct enclosing a
+repeated field is what Arrow-based writers produce for a nullable struct holding a list and
+this repository reads its own `nested_list_struct_test.parquet` fixture carrying it, so the
+round trip was not available at all for that shape until the shredder levelled it. 24–25
+follow, adding the optional index structures (page indexes and Bloom filters, with the
+per-page statistics that make page-level pruning possible) on the settled surface:
+capability that costs a caller nothing until it is asked for, which is what puts it behind
+32 and 33. Increments 26–30 follow too, as refinements of what the
 milestone settles rather than steps that depend on one another: 26 stops the dictionary
 analysis being an encoding verdict — 26a declining a dictionary the prefix already shows is
 losing, 26b rescuing one the cap cut short — 27 gives a row group a size a reader can plan

@@ -39,10 +39,13 @@ import dev.hardwood.schema.SchemaNode;
 /// schema disagree — a second repetition with no layer behind it, or a layer over a field
 /// that repeats not at all.
 ///
-/// A nullable struct enclosing a `LIST` or `MAP` is producible: [RecordShredder]'s leaf-to-root
-/// walk and [RowStructNode] / [RowRepeatedNode]'s scope machinery both already carry an absent
-/// ancestor's state through to the repeated field beneath it without remapping, so a `STRUCT`
-/// layer preserves the record count whether or not it sits above a `REPEATED` one.
+/// A nullable struct enclosing a `LIST` or `MAP` is producible, so it is not a rule here. A
+/// `STRUCT` layer never remaps its item scope, so [RecordShredder]'s leaf-to-root walk levels
+/// the repeated field beneath one exactly as it levels one at the record root, and
+/// [RowStructNode] / [RowRepeatedNode] cascade the scope the same way. What the shape adds is a
+/// rule about the *batch* rather than the schema — a repeated field beneath an absent struct
+/// carries no entries, so its offsets must not span any — which [RecordShredder] enforces per
+/// batch, where the masks that decide it exist.
 ///
 /// Rules about *addressing* a shape rather than producing it belong to [RowPlan] alone, since
 /// the columnar API addresses by index and dotted path and is unharmed by them: two sibling

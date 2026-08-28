@@ -290,7 +290,8 @@ public final class RecordShredder {
     /// The record count implied by one column, walking its layers from leaf to root while
     /// validating the offset chain: each `REPEATED` layer replaces the running count with its
     /// parent count (`offsets.length - 1`); a `STRUCT` layer never remaps its scope, nullable
-    /// or not, so it always preserves the count unchanged.
+    /// or not, so it always preserves the count unchanged. A nullable `STRUCT` layer still
+    /// constrains the offsets beneath it, which [#validateAbsentStructsEmpty] checks.
     private int impliedRecordCount(int columnIndex) {
         Layer[] path = layers[columnIndex];
         int count = sources[columnIndex].size();
@@ -300,6 +301,7 @@ public final class RecordShredder {
                 int[] offsets = offsetsFor(layer);
                 validateOffsets(offsets, count, layer.key());
                 validateNullListsEmpty(offsets, layer.key());
+                validateAbsentStructsEmpty(path, k, offsets, layer.key());
                 count = offsets.length - 1;
             }
         }
@@ -327,22 +329,58 @@ public final class RecordShredder {
 
     /// Rejects a null list whose offsets span elements: a null list is absent, so its
     /// element delta must be zero. Without this the shredder takes the null branch and
-    /// silently drops the stray elements, producing a plausible but wrong file. The
-    /// validity's length is not checked — [Validity] is intentionally length-less — so only
-    /// the null-positions-within-range are verified.
+    /// silently drops the stray elements, producing a plausible but wrong file.
     private void validateNullListsEmpty(int[] offsets, String key) {
-        Validity validity = listValidities.get(key);
+        int i = firstAbsentWithEntries(listValidities.get(key), offsets);
+        if (i != -1) {
+            throw new IllegalArgumentException("List " + key + " is null at index " + i
+                    + " but its offsets span " + (offsets[i + 1] - offsets[i])
+                    + " elements; a null list has none");
+        }
+    }
+
+    /// Rejects offsets that span entries at a record where an enclosing struct is absent.
+    /// [#emit] stops at the absent struct and never descends into the offsets below it, so
+    /// without this the entries they claim are dropped from the file without a word — the
+    /// same silent loss [#validateNullListsEmpty] prevents one layer down, arriving through
+    /// the struct's `Validity` instead of the list's.
+    ///
+    /// Only the `STRUCT` layers between this layer and the next `REPEATED` one above it are
+    /// consulted: a `STRUCT` layer never remaps its scope, so those index exactly the items
+    /// this layer's offsets do, while a struct above the next `REPEATED` layer is checked
+    /// against that layer's own offsets in its turn.
+    ///
+    /// @param path the column's layers, outermost first
+    /// @param repeatedIndex the index in `path` of the `REPEATED` layer `offsets` belong to
+    /// @param offsets that layer's entry offsets
+    /// @param key that layer's dotted path, for the message
+    private void validateAbsentStructsEmpty(Layer[] path, int repeatedIndex, int[] offsets, String key) {
+        for (int k = repeatedIndex - 1; k >= 0 && path[k].kind() != Layer.Kind.REPEATED; k--) {
+            String structKey = path[k].key();
+            int i = firstAbsentWithEntries(structValidities.get(structKey), offsets);
+            if (i != -1) {
+                throw new IllegalArgumentException("Struct " + structKey + " is null at index " + i
+                        + " but " + key + "'s offsets span " + (offsets[i + 1] - offsets[i])
+                        + " entries there; an absent struct encloses none");
+            }
+        }
+    }
+
+    /// The first index at which `offsets` span entries although `validity` marks that item
+    /// absent, or `-1` if there is none. The validity's length is not checked — [Validity] is
+    /// intentionally length-less — so only the null positions within the offsets' range are
+    /// examined.
+    private static int firstAbsentWithEntries(Validity validity, int[] offsets) {
         if (validity == null) {
-            return;
+            return -1;
         }
         int parentCount = offsets.length - 1;
         for (int i = validity.nextNull(0, parentCount); i != -1; i = validity.nextNull(i + 1, parentCount)) {
             if (offsets[i + 1] != offsets[i]) {
-                throw new IllegalArgumentException("List " + key + " is null at index " + i
-                        + " but its offsets span " + (offsets[i + 1] - offsets[i])
-                        + " elements; a null list has none");
+                return i;
             }
         }
+        return -1;
     }
 
     private int[] offsetsFor(Layer layer) {

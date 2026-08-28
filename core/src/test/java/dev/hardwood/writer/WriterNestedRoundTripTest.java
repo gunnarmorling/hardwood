@@ -524,6 +524,60 @@ class WriterNestedRoundTripTest {
     }
 
     @Test
+    void writesAndReadsBackOptionalStructEnclosingRequiredList() throws Exception {
+        // optional group s { required group phones (LIST) { repeated group list { required int32 element } } }
+        // A REQUIRED list contributes no definition level of its own, so an absent struct and an
+        // empty list differ by one level rather than two, and the struct's Validity is the only
+        // input saying a record has no entries — the list has no mask to say it.
+        // record 0: s null; 1: s present, phones empty; 2: phones = [7, 8].
+        FileSchema schema = FileSchema.builder("schema")
+                .struct("s", RepetitionType.OPTIONAL, s -> s
+                        .list("phones", RepetitionType.REQUIRED,
+                                el -> el.primitive(PhysicalType.INT32, RepetitionType.REQUIRED)))
+                .build();
+
+        Validity sNulls = Validity.ofNulls(new boolean[] { true, false, false });
+        int[] offsets = { 0, 0, 0, 2 };
+        int[] elements = { 7, 8 };
+
+        ByteBufferOutputFile out = new ByteBufferOutputFile();
+        try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+            writer.columnWriter().writeBatch(batch -> batch
+                    .struct("s", sNulls)
+                    .list("s.phones", offsets)
+                    .ints("s.phones.list.element", elements));
+        }
+
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(out.toByteArray())));
+                ColumnReader column = reader.columnReader(
+                        reader.getFileSchema().getColumn("s.phones.list.element").columnIndex())) {
+            assertThat(reader.getFileSchema().getColumn("s.phones.list.element").maxDefinitionLevel()).isEqualTo(2);
+            assertThat(column.nextBatch()).isTrue();
+            assertThat(column.getLayerCount()).isEqualTo(2);
+            assertThat(column.getLayerKind(0)).isEqualTo(LayerKind.STRUCT);
+            assertThat(column.getLayerKind(1)).isEqualTo(LayerKind.REPEATED);
+
+            Validity structV = column.getLayerValidity(0);
+            int[] listOffsets = column.getLayerOffsets(1);
+            int[] values = column.getInts();
+
+            List<List<Integer>> actual = new ArrayList<>();
+            for (int r = 0; r < column.getRecordCount(); r++) {
+                if (structV.isNull(r)) {
+                    actual.add(null);
+                    continue;
+                }
+                List<Integer> list = new ArrayList<>();
+                for (int e = listOffsets[r]; e < listOffsets[r + 1]; e++) {
+                    list.add(values[e]);
+                }
+                actual.add(list);
+            }
+            assertThat(actual).containsExactly(null, List.of(), List.of(7, 8));
+        }
+    }
+
+    @Test
     void writesAndReadsBackOptionalStructEnclosingOptionalListNestedInsideAList() throws Exception {
         // optional group chapters (LIST) { repeated group list { optional group element {
         //   optional group sections (LIST) { repeated group list { required int32 element } } } } }

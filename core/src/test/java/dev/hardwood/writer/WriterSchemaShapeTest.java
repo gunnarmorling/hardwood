@@ -286,10 +286,12 @@ class WriterSchemaShapeTest {
         }
     }
 
-    /// A nullable struct directly enclosing a `LIST` or `MAP` is producible (#1026): the leaf's
-    /// nulls are validated against the ancestor masks that decide whether a slot is encoded at
-    /// all, not against the leaf's own repetition in isolation. Kept here, alongside the shapes
-    /// this class refuses, as a regression guard for the rule this class states.
+    /// A nullable struct directly enclosing a `LIST` or `MAP` is producible (#1026): a `STRUCT`
+    /// layer never remaps its item scope, so the shredder levels the repeated field beneath one
+    /// exactly as it levels one at the record root. Kept here, alongside the shapes this class
+    /// refuses, as a regression guard for the rule this class states; the levels themselves are
+    /// asserted in `WriterNestedRoundTripTest` and the batch rule the shape adds in
+    /// `WriterBatchContractTest`.
     @Test
     void acceptsANullableStructEnclosingARepeatedField() throws Exception {
         FileSchema schema = FileSchema.builder("schema")
