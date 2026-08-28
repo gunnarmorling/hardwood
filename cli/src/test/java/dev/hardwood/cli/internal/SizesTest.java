@@ -87,15 +87,16 @@ class SizesTest {
     /// the factor it divided by — the one form every surface renders.
     @Test
     void compressionIsThePercentageOfTheUncompressedSize() {
+        assertThat(Sizes.compression(0, 10)).isEqualTo("0.0%");
         assertThat(Sizes.compression(1_000, 10_000)).isEqualTo("10.0%");
         assertThat(Sizes.compression(500, 500)).isEqualTo("100.0%");
     }
 
-    /// An uncompressed size of zero is nothing to divide by. Every surface uses
-    /// the same absent-value marker.
+    /// An uncompressed size at or below zero is nothing to divide by. Every
+    /// surface uses the same absent-value marker.
     @Test
     void compressionRendersTheSharedPlaceholderWithNothingToDivideBy() {
         assertThat(Sizes.compression(0, 0)).isEqualTo("—");
-        assertThat(Sizes.compression(10, 0)).isEqualTo("—");
+        assertThat(Sizes.compression(10, -1)).isEqualTo("—");
     }
 }

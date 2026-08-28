@@ -73,6 +73,7 @@ class EncodingsTest {
 
         assertThat(Encodings.dataPages(chunk)).isEmpty();
         assertThat(Encodings.label(Encodings.dataPages(chunk))).isEqualTo("—");
+        assertThat(Encodings.label(Encodings.dataPages(chunk), 3, 10)).isEqualTo("—");
     }
 
     /// A page type the writer recorded but never wrote contributes nothing.
