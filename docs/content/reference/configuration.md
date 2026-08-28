@@ -96,15 +96,14 @@ Or attach dynamically via `jcmd <pid> JFR.start`.
 | `dev.hardwood.PageDecoded` | Decode | Single data page decoded. Fields: column, compressedSize, uncompressedSize |
 | `dev.hardwood.RowGroupFilter` | Filter | Row groups dropped by statistics/bloom predicate pushdown. Fields: file, totalRowGroups, rowGroupsKept, rowGroupsSkipped, rowGroupsFullyMatching |
 | `dev.hardwood.RowGroupByteRangeFilter` | Filter | Row groups selected by a byte-range split predicate (split-aware reading). Fields: file, totalRowGroups, rowGroupsKept, rowGroupsSkipped |
-| `dev.hardwood.PageFilter` | Filter | Pages filtered by Column Index predicate pushdown. Fields: file, rowGroupIndex, column, totalPages, pagesKept, pagesSkipped |
-| `dev.hardwood.RecordFilter` | Filter | Records filtered by record-level predicate evaluation. Fields: totalRecords, recordsKept, recordsSkipped |
-| `dev.hardwood.BatchWait` | Pipeline | Consumer blocked waiting for the assembly pipeline. Fields: column |
-| `dev.hardwood.PrefetchMiss` | Pipeline | Prefetch queue miss requiring synchronous decode. Fields: file, column, newDepth, queueEmpty |
+| `dev.hardwood.PageFilter` | Filter | Pages filtered by Column Index predicate pushdown, one event per column chunk considered. Fields: file, rowGroupIndex, column, totalPages, pagesKept, pagesSkipped |
+| `dev.hardwood.RecordFilter` | Filter | Records filtered by record-level predicate evaluation, one event per file read. Fields: file, totalRecords, recordsKept, recordsSkipped |
+| `dev.hardwood.BatchWait` | Pipeline | Consumer blocked waiting for the assembly pipeline; the event's duration is the stall. Fields: column |
 
 Events appear under the **Hardwood** category in JDK Mission Control (JMC) or any JFR analysis tool. Use them to identify:
 
-- **I/O bottlenecks** — large `FileMapping` durations or frequent `PrefetchMiss` events
-- **Filter effectiveness** — `RowGroupFilter` shows how many row groups were dropped by statistics/bloom pushdown and `RowGroupByteRangeFilter` how many were excluded by split selection; `PageFilter` shows how many pages were skipped within surviving row groups; `RecordFilter` shows how many individual records were filtered out
+- **I/O bottlenecks** — large `FileMapping` durations
+- **Filter effectiveness** — `RowGroupFilter` shows how many row groups were dropped by statistics/bloom pushdown and `RowGroupByteRangeFilter` how many were excluded by split selection; `PageFilter` shows how many of a column chunk's pages survived the Column Index within a row group that was kept, with no event for a column chunk the Column Index did not narrow — including a chunk that has no Column Index, whose pages are instead dropped from page-header statistics and are not reported; `RecordFilter` shows how many individual records the predicate decided on per file once that pruning is done
 - **Decode hotspots** — `PageDecoded` events with large uncompressed sizes or high frequency
 - **Pipeline stalls** — `BatchWait` events indicate the reader is waiting for decoded data
 

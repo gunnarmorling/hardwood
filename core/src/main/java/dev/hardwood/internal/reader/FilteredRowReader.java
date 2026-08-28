@@ -33,14 +33,18 @@ public final class FilteredRowReader implements FileAwareRowReader {
     /// Cap on matching rows returned (SQL LIMIT over the filtered relation).
     /// [ColumnWorker#UNLIMITED] means no cap.
     private final long maxMatches;
+    /// Counts each evaluation for the JFR record-filter event. The delegate owns
+    /// it: the delegate marks the file boundaries and closes it out.
+    private final RecordFilterTally tally;
 
     private boolean hasMatch;
     private long matchesReturned;
 
-    FilteredRowReader(RowReader delegate, RowMatcher matcher, long maxMatches) {
+    FilteredRowReader(RowReader delegate, RowMatcher matcher, long maxMatches, RecordFilterTally tally) {
         this.delegate = delegate;
         this.matcher = matcher;
         this.maxMatches = maxMatches;
+        this.tally = tally;
     }
 
     @Override
@@ -53,7 +57,9 @@ public final class FilteredRowReader implements FileAwareRowReader {
         }
         while (delegate.hasNext()) {
             delegate.next();
-            if (matcher.test(delegate)) {
+            boolean matched = matcher.test(delegate);
+            tally.record(matched);
+            if (matched) {
                 hasMatch = true;
                 return true;
             }

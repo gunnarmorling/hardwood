@@ -49,6 +49,9 @@ public final class NestedRowReader implements FileAwareRowReader {
     private final ProjectedSchema projectedSchema;
     private final NestedBatchDataView dataView;
     private final ColumnSchema[] columnSchemas;
+    /// Per-file record-filter counts for JFR, or `null` when the read has no
+    /// filter and nothing evaluates records.
+    private final RecordFilterTally tally;
 
     // Iteration state
     private NestedBatch[] previousBatches;
@@ -61,7 +64,8 @@ public final class NestedRowReader implements FileAwareRowReader {
 
 
     NestedRowReader(BatchExchange<NestedBatch>[] exchanges, NestedColumnWorker[] columnWorkers,
-                    FileSchema fileSchema, ProjectedSchema projectedSchema) {
+                    FileSchema fileSchema, ProjectedSchema projectedSchema, RecordFilterTally tally) {
+        this.tally = tally;
         this.exchanges = exchanges;
         this.columnWorkers = columnWorkers;
         this.columnCount = exchanges.length;
@@ -154,7 +158,8 @@ public final class NestedRowReader implements FileAwareRowReader {
             worker.start();
         }
 
-        NestedRowReader reader = new NestedRowReader(buffers, workers, schema, projectedSchema);
+        RecordFilterTally tally = filter != null ? new RecordFilterTally() : null;
+        NestedRowReader reader = new NestedRowReader(buffers, workers, schema, projectedSchema, tally);
         reader.initialize();
         if (filter != null) {
             // Indexed compile path: for nested schemas, the reader's
@@ -164,7 +169,7 @@ public final class NestedRowReader implements FileAwareRowReader {
             // (or `-1` for nested-leaf columns and unprojected fields).
             int[] topLevelLookup = buildTopLevelFieldIndexLookup(schema, projectedSchema);
             RowMatcher matcher = RecordFilterCompiler.compile(filter, schema, col -> topLevelLookup[col]);
-            return new FilteredRowReader(reader, matcher, maxRows);
+            return new FilteredRowReader(reader, matcher, maxRows, tally);
         }
         return reader;
     }
@@ -277,6 +282,11 @@ public final class NestedRowReader implements FileAwareRowReader {
 
         // Index structures are pre-computed by the drain — just assemble the view
         currentFileName = batches[0].fileName;
+        if (tally != null) {
+            // Ahead of any record of this batch being counted, so the counts land
+            // on the file the batch came from. Batches never straddle files.
+            tally.switchFile(currentFileName);
+        }
         dataView.setBatchData(batches, columnSchemas, currentFileName);
         rowIndex = -1;
         return true;
@@ -354,6 +364,9 @@ public final class NestedRowReader implements FileAwareRowReader {
             return;
         }
         closed = true;
+        if (tally != null) {
+            tally.close();
+        }
         if (columnWorkers != null) {
             for (NestedColumnWorker worker : columnWorkers) {
                 worker.close();

@@ -91,7 +91,7 @@ Two consumption modes:
 - **Recycling mode** (`BatchExchange.recycling()`): Pre-allocates 3 batch holders (`READY_QUEUE_CAPACITY + 1`) that cycle between drain and consumer. No per-batch allocation. Used by `FlatRowReader` and `NestedRowReader`.
 - **Detaching mode** (`BatchExchange.detaching()`): Allocates a fresh batch via a factory each time the drain needs one. The consumer keeps ownership of each batch permanently. Back-pressure comes from the bounded `readyQueue` only. Used by `ColumnReader` where the caller retains arrays between batches.
 
-**Consumer polling:** `BatchExchange.poll()` encapsulates the consumer-side protocol. A non-blocking poll is attempted first; if the queue is empty, a timed poll loop follows. The `finished` flag is only checked after a timed poll returns null, guaranteeing that any batch published before `finish()` is visible. A JFR `BatchWaitEvent` is emitted when the consumer enters the timed poll loop (deferred past the first 10ms to avoid allocation on the fast path).
+**Consumer polling:** `BatchExchange.poll()` encapsulates the consumer-side protocol. A non-blocking poll is attempted first; if the queue is empty, a timed poll loop follows. The `finished` flag is only checked after a timed poll returns null, guaranteeing that any batch published before `finish()` is visible. A JFR `BatchWaitEvent` spans the timed poll loop, so its duration is the stall the consumer paid. The two returns above the loop keep it off the fast path: a batch already on the ready queue, and a finished and drained exchange, both return before the event exists.
 
 Two batch types:
 

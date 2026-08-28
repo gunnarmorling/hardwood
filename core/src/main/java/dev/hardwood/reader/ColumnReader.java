@@ -688,6 +688,12 @@ public class ColumnReader implements AutoCloseable {
 
     // ==================== Internal ====================
 
+    /// The file the current batch was read from, for the sibling readers of the
+    /// same projection to attribute their per-batch work to.
+    String currentFileName() {
+        return currentFileName;
+    }
+
     private String prefix() {
         return ExceptionContext.filePrefix(currentFileName);
     }

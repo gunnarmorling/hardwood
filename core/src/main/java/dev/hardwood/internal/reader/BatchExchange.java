@@ -11,6 +11,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+import dev.hardwood.jfr.BatchWaitEvent;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.schema.ColumnSchema;
 
@@ -191,13 +192,24 @@ public class BatchExchange<B> {
         if (finished) {
             return readyQueue.poll();
         }
-        while ((batch = readyQueue.poll(10, TimeUnit.MILLISECONDS)) == null) {
-            if (finished) {
-                return readyQueue.poll();
+        // Past this point the consumer is stalled on the pipeline: the ready
+        // queue is empty and the drain has not finished. The event's duration
+        // is the stall, so it spans every exit from the timed poll loop.
+        BatchWaitEvent event = new BatchWaitEvent();
+        event.begin();
+        try {
+            while ((batch = readyQueue.poll(10, TimeUnit.MILLISECONDS)) == null) {
+                if (finished) {
+                    return readyQueue.poll();
+                }
+                checkError();
             }
-            checkError();
+            return batch;
         }
-        return batch;
+        finally {
+            event.column = columnName;
+            event.commit();
+        }
     }
 
     /// Returns a consumed batch to the free pool so it can be refilled by the drain.
