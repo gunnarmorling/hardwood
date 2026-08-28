@@ -1,8 +1,13 @@
 # Row-group and page sizing (#9, stage 27)
 
-**Status: Complete.** Tracking issues: #980 (row groups), #981 (pages). Delivery stages 27 and
-28 (Layer) of [WRITER_SUPPORT.md](WRITER_SUPPORT.md). The successor described near the end — a
-control that means bytes on disk — is not implemented and has no stage of its own.
+**Status: Complete.** Tracking issue: #981 (pages). Delivery stages 27 and 28 (Layer) of
+[WRITER_SUPPORT.md](WRITER_SUPPORT.md).
+
+#980 asks for row groups of about N MB *on disk*, which this does not provide and argues against
+providing the way it was asked for — see *Why a byte target cannot mean bytes on disk* below, and
+*Successor: on-disk targeting* for what taking it would cost. What it takes from #980 is the
+complaint underneath: that the one byte knob answered neither question a caller has. It now
+answers one of them exactly, and a row target answers the other.
 
 ## What a row-group control has to do
 
