@@ -20,19 +20,17 @@ Build the native binary for the `cli` module and its dependencies:
 
 The resulting binary is at `cli/target/hardwood-cli`. Run it directly (e.g. `cli/target/hardwood-cli --help`); see the [CLI reference](docs/content/reference/cli.md) for command usage.
 
-### Linux binary without a local GraalVM (containerized)
+### Building a Linux binary
 
-To build a Linux binary on a non-Linux host — e.g. for a Docker image on macOS — use Quarkus' containerized native build, which runs GraalVM inside the Mandrel builder container:
+`native-maven-plugin` always targets the host platform, so a Linux ELF binary requires a Linux host with a GraalVM JDK. On macOS the same command produces a Mach-O binary, which a Linux container cannot execute (`exec format error`).
 
-```bash
-./mvnw -Dnative -Dquarkus.native.container-build=true package -pl cli -am
-```
+There is no cross-compilation step in the build. The per-platform binaries published with a release are produced by the `package` job in [.github/workflows/release-cli.yml](.github/workflows/release-cli.yml), which runs the build once per runner OS in a matrix.
 
-This requires Docker to be running. The build always produces a Linux ELF binary; running it directly on macOS fails with `exec format error`.
+To obtain a Linux binary from a non-Linux host, either run the build on a Linux machine (a container with a GraalVM JDK will do — the repository's own dev container ships Temurin, which cannot build native images), or download the Linux dist from a release.
 
 ### Building the Docker image
 
-`cli/build-cli-docker.sh` builds the container image. It produces (or reuses) the full native dist — the Linux binary, completion script, and codec libraries — building it in a container so it targets Linux regardless of the host OS, then builds the image:
+`cli/build-cli-docker.sh` builds the container image. It produces (or reuses) the full native dist — the Linux binary, completion script, and codec libraries — then builds the image from it. Since the dist has to be a Linux one, the script runs on Linux only and refuses to start elsewhere:
 
 ```bash
 cd cli
@@ -59,7 +57,7 @@ Build that module alongside the CLI:
 
 ## How the native build works
 
-The CLI module uses [Quarkus](https://quarkus.io/) with `quarkus-picocli` and GraalVM/Mandrel native image. Several non-obvious pieces are required to make all compression codecs work correctly in a native binary.
+The CLI module uses the [aesh](https://aeshell.github.io/) command framework and GraalVM/Mandrel native image. Several non-obvious pieces are required to make all compression codecs work correctly in a native binary.
 
 ### Compression codec native libraries
 
@@ -67,7 +65,7 @@ All compression codecs (Snappy, ZSTD, LZ4, Brotli) ship their native code as JNI
 
 The solution differs by codec:
 
-- **ZSTD, Snappy, LZ4** — Native libraries are unpacked from their JARs during the Maven `prepare-package` phase (`maven-dependency-plugin`) and bundled in a `lib/` directory alongside the binary. At startup, `NativeImageStartup` fires a Quarkus `StartupEvent` which calls `NativeLibraryLoader` to load each library via `System.load(absolutePath)` before any decompression occurs. For ZSTD, `zstd-jni`'s `Native.assumeLoaded()` is also called to prevent the library's own loader from attempting a duplicate load. Snappy is handled the same way — its loader may have already run at image build time (and failed), so directly calling `System.load()` at runtime bypasses its cached failure state entirely.
+- **ZSTD, Snappy, LZ4** — Native libraries are unpacked from their JARs during the Maven `prepare-package` phase (`maven-dependency-plugin`) and bundled in a `lib/` directory alongside the binary. At startup, `Main.run()` calls `NativeLibraryLoader` to load each library via `System.load(absolutePath)` before dispatching the command, so every library is in place before any decompression occurs. For ZSTD, `zstd-jni`'s `Native.assumeLoaded()` is also called to prevent the library's own loader from attempting a duplicate load. Snappy is handled the same way — its loader may have already run at image build time (and failed), so directly calling `System.load()` at runtime bypasses its cached failure state entirely.
 
 - **Brotli** — `brotli4j`'s loader (`Brotli4jLoader.ensureAvailability()`) is invoked explicitly at decompression time rather than in a static initializer, so it never runs at build time. Its loading strategy — extracting a classpath resource to a temp file and loading that — works in native images provided the resource is embedded in the binary. The `resource-config.json` under `cli/src/main/resources/META-INF/native-image/` instructs GraalVM to embed the brotli native libraries as image resources.
 
@@ -88,6 +86,6 @@ The solution differs by codec:
 
 ## Testing the native binary
 
-Automated coverage of the native binary is provided by the Quarkus integration-test infrastructure; see [_designs/NATIVE_INTEGRATION_TESTS.md](_designs/NATIVE_INTEGRATION_TESTS.md). The ITs run against the compiled native executable during `./mvnw -Pnative -pl cli verify`.
+Automated coverage of the native binary is provided by Failsafe integration tests that spawn the compiled executable as a subprocess; see [_designs/NATIVE_INTEGRATION_TESTS.md](_designs/NATIVE_INTEGRATION_TESTS.md). They run during `./mvnw -Dnative -pl cli verify`.
 
 For ad-hoc manual testing of the native binary against S3, see the [Manual S3 testing](TESTING.md#manual-s3-testing) recipe in [TESTING.md](TESTING.md).

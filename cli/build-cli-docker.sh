@@ -11,8 +11,9 @@ set -e
 
 # Build the CLI Docker image. Produces (or reuses) the native dist — the Linux
 # hardwood binary, the completion script, and the codec native libraries — then
-# builds the image from it. The dist is built in a container so it targets Linux
-# regardless of the host OS, which means the image can be built and used on macOS.
+# builds the image from it. The native build targets the host platform, so this
+# script has to run on Linux; see NATIVE_BUILD.md for how a Linux binary is
+# obtained from another host.
 # Use -f/--force to rebuild the dist even if one already exists.
 #
 # Usage: cd cli && ./build-cli-docker.sh [options] [image-tag]
@@ -60,19 +61,18 @@ dist_ready() {
   is_linux_elf "$BINARY" && [ -f "$COMPLETION" ] && ls "$LIBS_DIR"/*.so >/dev/null 2>&1
 }
 
-# Build the full native dist (binary + codec libraries) targeting Linux, in a
-# container, so the result works regardless of the host OS:
-#   - container-build compiles the native binary inside the Mandrel Linux builder;
+# Build the full native dist (binary + codec libraries) for the image:
 #   - the codec libraries are prebuilt platform binaries shipped inside the
-#     dependency JARs, so force the Linux variants to match the Linux binary on any
-#     host (the os-* Maven profiles otherwise pick the host's, e.g. macOS .dylib);
-#   - native integration tests would exec the Linux binary on the host, so skip them.
+#     dependency JARs, so pin the Linux variants explicitly rather than letting the
+#     os-* Maven profiles pick by host;
+#   - native integration tests are skipped: this build feeds the image, and the
+#     native profile's ITs run in their own CI job.
 build_dist() {
-  echo "Building the native dist (Linux binary + codec libraries) in a container..."
-  echo "This requires Docker to be running and may take several minutes."
+  echo "Building the native dist (Linux binary + codec libraries)..."
+  echo "This may take several minutes."
   echo ""
   cd "$REPO_ROOT"
-  ./mvnw -Dnative -Dquarkus.native.container-build=true package \
+  ./mvnw -Dnative package \
     -pl cli,error-prone-checks -am \
     -DskipTests -DskipITs \
     -Ddist.os=linux -Ddist.lib.extension='*.so' \
@@ -80,6 +80,16 @@ build_dist() {
   cd "$REPO_ROOT/cli"
   echo ""
 }
+
+# Checked up front rather than left to the ELF check below: the native build
+# targets the host, so on a non-Linux host the script would spend several
+# minutes producing a binary the image cannot run before saying so.
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "Error: the image needs a Linux hardwood binary, and the native build targets the"
+  echo "host platform ($(uname -s) detected), so this script has to run on Linux."
+  echo "See NATIVE_BUILD.md, 'Building a Linux binary'."
+  exit 1
+fi
 
 echo "Building Docker image for hardwood CLI: $IMAGE_NAME"
 echo ""

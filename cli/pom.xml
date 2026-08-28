@@ -668,8 +668,8 @@
 
       <!-- Run native integration tests during the integration-test phase.
            Skipped by default; enabled when the native profile sets skipITs=false.
-           native.image.path tells the Quarkus integration-test extension where
-           to find the compiled native binary. -->
+           native.image.path tells the native ITs where to find the compiled
+           binary. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>

@@ -255,7 +255,7 @@ Dive lives in the existing `cli` module:
 ```
 cli/src/main/java/dev/hardwood/cli/
 ├── command/
-│   └── DiveCommand.java          (picocli entry point on HardwoodCommand)
+│   └── DiveCommand.java          (aesh entry point on HardwoodCommand)
 └── dive/
     ├── DiveApp.java              (TuiRunner wiring; dispatchKey / render)
     ├── NavigationStack.java      (push / pop / replaceTop / clearToRoot)

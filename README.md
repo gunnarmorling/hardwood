@@ -170,7 +170,7 @@ Then build the `cli` module and its dependencies:
 
 The resulting binary is at `cli/target/hardwood-cli`.
 
-See [NATIVE_BUILD.md](NATIVE_BUILD.md) for the full build guide — containerized Linux builds, the Docker image, and how the native build works (codec handling, build arguments).
+See [NATIVE_BUILD.md](NATIVE_BUILD.md) for the full build guide — obtaining a Linux binary, the Docker image, and how the native build works (codec handling, build arguments).
 
 ### Building the Documentation
 

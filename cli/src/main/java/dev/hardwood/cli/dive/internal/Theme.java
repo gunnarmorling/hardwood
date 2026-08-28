@@ -134,12 +134,12 @@ public final class Theme {
     /// released in the last decade that support truecolor.
     ///
     /// Probed on every call rather than cached in a `static final`
-    /// field. In a Quarkus / Mandrel native image the static
-    /// initializer of a reachable class can run at build time,
-    /// which would freeze `System.getenv("COLORTERM")` to whatever
-    /// the build runner saw (typically unset) and disable truecolor
-    /// for every user. Reading on each call sidesteps the class-init
-    /// timing question entirely. See #394.
+    /// field. In a Mandrel native image the static initializer of a
+    /// reachable class can run at build time, which would freeze
+    /// `System.getenv("COLORTERM")` to whatever the build runner saw
+    /// (typically unset) and disable truecolor for every user.
+    /// Reading on each call sidesteps the class-init timing question
+    /// entirely. See #394.
     static boolean supportsTruecolor(String colorterm) {
         return "truecolor".equals(colorterm) || "24bit".equals(colorterm);
     }

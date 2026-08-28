@@ -4,74 +4,63 @@
 
 ## Overview
 
-The CLI native binary is smoke-tested via the Quarkus integration-test infrastructure using
-`@QuarkusMainIntegrationTest`. When the `native` Maven profile is active, these tests run
-the compiled native executable as a subprocess and assert on its exit code and output.
+The CLI native binary is smoke-tested by Failsafe integration tests that spawn the compiled
+executable as a subprocess and assert on its exit code and output. When the `native` Maven
+profile is active (`-Dnative`), these tests run during the `integration-test` phase.
 
 ## Test Layers
 
-### JVM tests (`@QuarkusMainTest`)
+### JVM tests
 
 All `*CommandTest` classes run during the `test` phase against the JVM build of the
 application and provide the primary behavioural coverage for every CLI command. They
 remain the fast feedback loop during development and are unaffected by the native
 integration layer.
 
-### Native smoke tests (`@QuarkusMainIntegrationTest`)
+### Native smoke tests
 
-Two `*SmokeIT` classes run during the `integration-test` phase via the Maven Failsafe
-plugin and exercise the native binary end-to-end:
+Three `*IT` classes run during the `integration-test` phase via the Maven Failsafe plugin
+and exercise the native binary end-to-end:
 
-- `NativeBinarySmokeIT` runs the native binary against a local Parquet file on disk.
+- `NativeBinarySmokeIT` runs the native binary against a local Parquet file on disk, and
+  pins its reported build version against the JVM it was compiled from.
 - `NativeBinaryS3SmokeIT` runs the native binary against a Parquet file served by an
-  S3Mock container.
+  S3 proxy container.
+- `NativeCompressionCodecIT` reads one fixture per supported compression codec, covering
+  `LZ4` and `LZ4_RAW` as separate cases because they use different decompressors.
 
 These tests exist to catch native-image-specific regressions — missing reflection
-registrations, unreachable classpath resources, broken AWS SDK wiring — rather than to
-re-verify per-command behaviour. Per-command assertions live once, in the JVM layer.
+registrations, unreachable classpath resources, broken AWS SDK wiring, codec native
+libraries that fail to load — rather than to re-verify per-command behaviour. Per-command
+assertions live once, in the JVM layer.
 
-The IT class itself runs in the JVM and uses `QuarkusMainLauncher` to spawn the native
-executable as a subprocess. File path arguments are resolved as classpath resources in
-the JVM test process and passed as absolute paths, so they are accessible to the native
-subprocess via the local filesystem.
+## Locating and Configuring the Binary
 
-## Test Resources
+The Failsafe execution in `cli/pom.xml` passes `native.image.path` as a system property,
+pointing at `${project.build.directory}/hardwood-cli`. Each IT reads that property to find
+the executable.
 
-Properties returned by a `QuarkusTestResourceLifecycleManager.start()` are passed by
-Quarkus as `-D` system-property flags on the native binary command line. This is the only
-mechanism for injecting configuration into the native subprocess from the test layer.
+The IT classes themselves run in the JVM and use `ProcessBuilder` to spawn the binary.
+File path arguments are resolved as classpath resources in the JVM test process and passed
+as absolute paths, so they are reachable by the subprocess through the local filesystem.
 
-### `QuietLoggingTestResource`
+Configuration reaches the subprocess as environment variables set on the `ProcessBuilder`.
+`NativeBinaryS3SmokeIT` uses this to pass `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_PATH_STYLE`, `AWS_CONFIG_FILE` and
+`AWS_SHARED_CREDENTIALS_FILE`; the AWS SDK embedded in the native image reads them at
+runtime, so no code changes are required in the CLI itself.
 
-The Quarkus integration-test extension unconditionally adds
-`-Dquarkus.log.category."io.quarkus".level=INFO` to the native binary command, which
-overrides the `%prod.quarkus.log.level=ERROR` setting baked into the binary and causes
-startup/shutdown messages to appear in captured stdout. `QuietLoggingTestResource` returns
-`quarkus.log.console.enable=false`, disabling the console log handler at the handler level
-so no log output reaches stdout regardless of category levels.
-
-### `S3MockTestResource`
-
-`S3MockTestResource` launches an S3Mock container, uploads a single test Parquet file
-(`plain_uncompressed.parquet`), and returns a `Map<String, String>` containing
-`quarkus.log.console.enable=false` (for the same reason as above) plus the AWS connection
-properties: `aws.accessKeyId`, `aws.secretAccessKey`, `aws.region`, `aws.endpointUrl`,
-`aws.pathStyle`, `aws.configFile`, and `aws.sharedCredentialsFile`. The AWS SDK embedded
-in the native image reads them at runtime, so no code changes are required in the CLI
-itself.
-
-The JVM S3 tests continue to use `AbstractS3CommandTest`, which configures AWS via
-`System.setProperty()` in a static initializer. That mechanism only works because
-`@QuarkusMainTest` runs the CLI in the same JVM as the test — for the native subprocess,
-configuration has to arrive as `-D` flags on the command line, which is what
-`S3MockTestResource` does.
+The JVM S3 tests instead use `AbstractS3CommandTest`, which configures AWS via
+`System.setProperty()`. That mechanism only works because those tests run the CLI in the
+same JVM as the test — for the native subprocess, configuration has to arrive from the
+outside, which is what the environment variables do.
 
 ## Build Changes
 
-The Maven Failsafe plugin is added to the `cli` module's main `<build>` section with the
-`integration-test` and `verify` goals. Integration tests are skipped by default
-(`skipITs=true`). The `native` profile sets `skipITs=false`, enabling the smoke tests
-only during a native build.
+The Maven Failsafe plugin is configured in the `cli` module's main `<build>` section with
+the `integration-test` and `verify` goals. Integration tests are skipped by default
+(`skipITs=true`). The `native` profile sets `skipITs=false`, enabling the smoke tests only
+during a native build.
 
 ## Running the Native Build Check Locally
 

@@ -38,7 +38,14 @@ git fetch <https-url> <head-ref>:pr-<N>
 git checkout pr-<N>
 ```
 
-The HTTPS-fetched branch does not track the fork's upstream, which is actually safer here — there is no way to accidentally `git push` back to the contributor's fork. Note this in the hand-back summary so the user knows.
+The HTTPS-fetched branch has no upstream, which is safer for a fork PR — there is no way to accidentally `git push` back to the contributor's fork. The local branch name (`pr-<N>`) also differs from the head ref, so any later push needs an explicit refspec.
+
+Add `isCrossRepository` to that `gh pr view` call, because it decides where a push would go — and most Hardwood PRs are the maintainer's own same-repo branches, not forks:
+
+- `isCrossRepository: false` → `origin` is already `hardwood-hq/hardwood`; the push is `git push origin pr-<N>:<head-ref>`. No remote needs adding.
+- `isCrossRepository: true` → the fork is not a configured remote; see the push-target section of the `hardwood-pr-git` skill.
+
+Never assert a remote is missing without checking `git remote -v` first.
 
 After checkout, confirm you're on the PR branch with `git branch --show-current` so a later git command can't accidentally commit to `main`.
 
@@ -118,7 +125,7 @@ Report:
 - The commit SHA.
 - A 3-bullet summary: decisions picked, findings addressed, anything skipped or contested.
 - If any findings were flagged as wrong-by-reviewer, list them so the user can adjudicate.
-- A reminder: "Not pushed. `git push` from here when you're ready."
+- A reminder that nothing was pushed, giving the exact command from step 3 rather than a generic `git push` — e.g. "Not pushed. `git push origin pr-1054:686-stale-quarkus-references` when you're ready."
 
 ## When NOT to use this skill
 
