@@ -29,9 +29,11 @@ interface InspectColumnsCommandContract {
                 +------+--------+-------+--------------+------------+-------+-------------+----------+-----------+---------+
                 | Rank | Column | Type  | Codec        | Compressed | Share | Compression | Encoding | Unencoded | # Pages |
                 +------+--------+-------+--------------+------------+-------+-------------+----------+-----------+---------+
-                |    1 |     id | INT64 | UNCOMPRESSED |       87 B | 50.0% |      100.0% |    PLAIN |      24 B |       - |
-                |    2 |  value | INT64 | UNCOMPRESSED |       87 B | 50.0% |      100.0% |    PLAIN |      24 B |       - |
+                |    1 |     id | INT64 | UNCOMPRESSED |       87 B | 50.0% |      100.0% |    PLAIN |      24 B |       — |
+                |    2 |  value | INT64 | UNCOMPRESSED |       87 B | 50.0% |      100.0% |    PLAIN |      24 B |       — |
                 +------+--------+-------+--------------+------------+-------+-------------+----------+-----------+---------+""");
+
+        assertThat(result.output()).doesNotContain(" - ");
     }
 
     @Test
