@@ -17,6 +17,7 @@ RUN microdnf install -y --nodocs \
       unzip \
       tar \
       diffutils \
+      ShellCheck \
       binutils \
       gcc \
       glibc-devel \

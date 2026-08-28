@@ -4,6 +4,18 @@ Avoid "not my department" thinking; if, for instance, there are build failures y
 Never add Claude (or any Anthropic identity) as a Co-Authored-By trailer on commit messages. Human co-authors are fine.
 When a CLI tool is missing from the dev container (e.g. `cmp: command not found`), surface it to the user and propose adding the providing package to the `Dockerfile`'s `microdnf install` list — unless there is an obvious one-line alternative (e.g. `command -v` for `which`) or a Python equivalent that is just as terse. Do not silently work around it.
 
+# Multiple Sessions
+
+Several Claude sessions may be running against this repository at once. Git allows one HEAD per working tree, so two sessions sharing a checkout also share HEAD, the index and the files: a `git checkout` in one silently relocates the other, and work gets committed to the wrong branch.
+
+Before any branch work, move into your own worktree. Treat `/workspace` as a reference checkout that stays on `main` — it is where every session lands by default, which is exactly why it must not be where any session commits. Name the worktree directory after its branch, so `git worktree list` reads as a registry of what is in flight.
+
+Stage explicit paths. Never `git add -A` or `git commit -a`: another session's uncommitted files may be sitting in the tree, and a catch-all stage sweeps them into your commit.
+
+Verify before committing, not after. Check that `git rev-parse --abbrev-ref HEAD` is the branch you expect and that `git status` lists only files you touched. A commit on the wrong branch is recoverable through the reflog; one that has been pushed or amended over is not always.
+
+Worktrees live under `.claude/worktrees/`, which `.gitignore` excludes. They must stay inside the repository, because `docker-compose.yaml` bind-mounts the repo root and anything outside it is invisible to an IDE on the host.
+
 # Maven
 
 To run Maven, always run ./mvnw (Maven wrapper).
