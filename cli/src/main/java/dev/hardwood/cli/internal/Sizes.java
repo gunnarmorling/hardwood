@@ -45,7 +45,7 @@ public class Sizes {
     /// survived the codec rather than the factor it divided by.
     public static String compression(long compressed, long uncompressed) {
         if (uncompressed <= 0) {
-            return "—";
+            return Strings.ABSENT_VALUE;
         }
         return Fmt.fmt("%.1f%%", 100.0 * compressed / uncompressed);
     }

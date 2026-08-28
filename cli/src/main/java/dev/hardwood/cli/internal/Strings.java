@@ -21,6 +21,9 @@ public final class Strings {
     /// here so changes propagate to every screen at once.
     public static final char ELLIPSIS = '…';
 
+    /// The marker used when a value is absent rather than empty.
+    public static final String ABSENT_VALUE = "—";
+
     private Strings() {
     }
 

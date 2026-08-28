@@ -14,6 +14,7 @@ import dev.hardwood.cli.dive.NavigationStack;
 import dev.hardwood.cli.dive.ParquetModel;
 import dev.hardwood.cli.dive.ScreenState;
 import dev.hardwood.cli.internal.Sizes;
+import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.RowGroup;
@@ -71,7 +72,7 @@ public final class ColumnChunksScreen {
                     String.valueOf(i),
                     Sizes.columnPath(cmd),
                     cmd.type().name(),
-                    logical != null ? logical.toString() : "—",
+                    logical != null ? logical.toString() : Strings.ABSENT_VALUE,
                     cmd.codec().name(),
                     Sizes.format(cmd.totalCompressedSize()),
                     Sizes.compression(cmd.totalCompressedSize(), cmd.totalUncompressedSize()),

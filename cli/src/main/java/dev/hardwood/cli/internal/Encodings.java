@@ -103,7 +103,7 @@ public final class Encodings {
     /// compares between two invocations.
     public static String label(Collection<Encoding> encodings) {
         if (encodings.isEmpty()) {
-            return "—";
+            return Strings.ABSENT_VALUE;
         }
         StringBuilder label = new StringBuilder();
         for (Encoding encoding : new TreeSet<>(encodings)) {

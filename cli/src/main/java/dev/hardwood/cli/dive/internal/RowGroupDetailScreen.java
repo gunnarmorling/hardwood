@@ -257,7 +257,7 @@ public final class RowGroupDetailScreen {
 
     private static String mix(Map<String, Integer> counts) {
         if (counts.isEmpty()) {
-            return "—";
+            return Strings.ABSENT_VALUE;
         }
         return counts.entrySet().stream()
                 .map(e -> e.getKey() + " (" + e.getValue() + ")")
