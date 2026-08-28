@@ -589,7 +589,7 @@ class AvroSchemaConverterTest {
                 .isEqualTo("address2.address");
         assertThat(AvroSchemaConverter.plan(repeatedAddressSchema(), ColumnProjection.all()).avro()
                 .getField("work").schema().getTypes().get(1).getField("address").schema().getTypes().get(1)
-                .getFullName()).isEqualTo("address");
+                .getFullName()).isEqualTo("root.work.address");
     }
 
     @Test

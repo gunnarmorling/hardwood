@@ -152,8 +152,9 @@ public final class AvroSchemaConverter {
             fields.add(field);
             children.add(childNode);
         }
-        return AvroPlanNode.record(
-                Schema.createRecord(name.name(), null, name.namespace(), false, fields), group, children);
+        Schema record = Schema.createRecord(name.name(), null, name.namespace(), false, fields);
+        applyParquetName(record, group);
+        return AvroPlanNode.record(record, group, children);
     }
 
     /// The dotted path a converted node is reported under when conversion rejects
@@ -355,9 +356,9 @@ public final class AvroSchemaConverter {
             case LogicalType.DecimalType d -> convertDecimalType(physicalType, d, prim);
             case LogicalType.IntType i -> convertIntType(i, prim);
             case LogicalType.IntervalType iv -> AvroPlanNode.leaf(
-                    fixed(prim.name(), "interval", 12), Kind.FIXED, prim);
+                    fixed(prim.name(), new AvroNames.TypeName("interval", null), 12), Kind.FIXED, prim);
             case LogicalType.Float16Type f -> AvroPlanNode.leaf(
-                    fixed(prim.name(), "float16", 2), Kind.FIXED, prim);
+                    fixed(prim.name(), new AvroNames.TypeName("float16", null), 2), Kind.FIXED, prim);
             case LogicalType.ListType l -> convertPhysicalType(physicalType, prim);
             case LogicalType.MapType m -> convertPhysicalType(physicalType, prim);
             case LogicalType.VariantType v -> throw new IllegalStateException(
@@ -411,7 +412,7 @@ public final class AvroSchemaConverter {
         org.apache.avro.LogicalType decimal = LogicalTypes.decimal(d.precision(), d.scale());
         if (physicalType == PhysicalType.FIXED_LEN_BYTE_ARRAY) {
             return AvroPlanNode.leaf(decimal.addToSchema(
-                    fixed(prim.name(), fixedByteLength(prim))), Kind.FIXED, prim);
+                    fixed(prim, fixedByteLength(prim))), Kind.FIXED, prim);
         }
         return AvroPlanNode.leaf(decimal.addToSchema(Schema.create(Schema.Type.BYTES)), Kind.DECIMAL, prim);
     }
@@ -454,12 +455,15 @@ public final class AvroSchemaConverter {
         }
         return AvroPlanNode.leaf(fixed(prim, 12), Kind.FIXED, prim);
     }
-
     private Schema fixed(SchemaNode.PrimitiveNode prim, int size) {
-        NamedType name = naming.resolve(prim.name(), names.typeName(prim));
-        Schema schema = Schema.createFixed(name.name(), null, name.namespace(), size);
+        Schema schema = fixed(prim.name(), names.typeName(prim), size);
         applyParquetName(schema, prim);
         return schema;
+    }
+
+    private Schema fixed(String sourceName, AvroNames.TypeName nativeType, int size) {
+        NamedType name = naming.resolve(sourceName, nativeType);
+        return Schema.createFixed(name.name(), null, name.namespace(), size);
     }
 
     private void applyParquetName(Schema schema, SchemaNode node) {
