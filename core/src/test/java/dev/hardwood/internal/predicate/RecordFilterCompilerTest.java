@@ -251,9 +251,41 @@ class RecordFilterCompilerTest {
     }
 
     @Test
+    void testGroupIsNullDistinguishesNullGroupFromNullChild() {
+        FileSchema schema = FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn(
+                                        "street",
+                                        PhysicalType.BYTE_ARRAY,
+                                        RepetitionType.OPTIONAL)))
+                .build();
+
+        ResolvedPredicate isNull = new ResolvedPredicate.IsNullPredicate(0, 2);
+
+        // address exists, but street itself is null
+        PqStruct addressWithNullStreet = new StructStub("street", true, null);
+
+        PqStruct companyWithAddress = new StructStub("address", false, addressWithNullStreet);
+
+        StructAccessor rowWithPresentAddress = new StructStub("company", false, companyWithAddress);
+
+        // address itself is null
+        PqStruct companyWithNullAddress = new StructStub("address", true, null);
+
+        StructAccessor rowWithNullAddress = new StructStub("company", false, companyWithNullAddress);
+
+        StructAccessor rowWithNullCompany = new StructStub("company", true, null);
+
+        assertFalse(matchesRow(isNull, rowWithPresentAddress, schema));
+        assertTrue(matchesRow(isNull, rowWithNullAddress, schema));
+        assertTrue(matchesRow(isNull, rowWithNullCompany, schema));
+    }
+
+    @Test
     void testIsNullMatchesNullRows() {
         FileSchema schema = intSchema("col");
-        ResolvedPredicate isNull = new ResolvedPredicate.IsNullPredicate(0);
+        ResolvedPredicate isNull = new ResolvedPredicate.IsNullPredicate(0, 1);
         assertTrue(matchesRow(isNull, stub("col", 0, true), schema));
         assertFalse(matchesRow(isNull, stub("col", 10, false), schema));
     }
@@ -261,9 +293,38 @@ class RecordFilterCompilerTest {
     @Test
     void testIsNotNullMatchesNonNullRows() {
         FileSchema schema = intSchema("col");
-        ResolvedPredicate isNotNull = new ResolvedPredicate.IsNotNullPredicate(0);
+        ResolvedPredicate isNotNull = new ResolvedPredicate.IsNotNullPredicate(0, 1);
         assertFalse(matchesRow(isNotNull, stub("col", 0, true), schema));
         assertTrue(matchesRow(isNotNull, stub("col", 10, false), schema));
+    }
+
+    @Test
+    void testGroupIsNotNullDistinguishesNullGroupFromNullChild() {
+        FileSchema schema = FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn(
+                                        "street",
+                                        PhysicalType.BYTE_ARRAY,
+                                        RepetitionType.OPTIONAL)))
+                .build();
+
+        ResolvedPredicate isNotNull = new ResolvedPredicate.IsNotNullPredicate(0, 2);
+
+        // address exists, but street is null
+        PqStruct addressWithNullStreet = new StructStub("street", true, null);
+
+        PqStruct companyWithAddress = new StructStub("address", false, addressWithNullStreet);
+
+        StructAccessor rowWithPresentAddress = new StructStub("company", false, companyWithAddress);
+
+        // address itself is null
+        PqStruct companyWithNullAddress = new StructStub("address", true, null);
+
+        StructAccessor rowWithNullAddress = new StructStub("company", false, companyWithNullAddress);
+
+        assertTrue(matchesRow(isNotNull, rowWithPresentAddress, schema));
+        assertFalse(matchesRow(isNotNull, rowWithNullAddress, schema));
     }
 
     // ==================== AND / OR ====================
@@ -497,5 +558,20 @@ class RecordFilterCompilerTest {
         @Override public Object getValue(int i) { throw new UnsupportedOperationException(); }
         @Override public Object getRawValue(int i) { throw new UnsupportedOperationException(); }
         @Override public boolean isNull(int i) { throw new UnsupportedOperationException(); }
+    }
+
+    private static final class StructStub extends SingleFieldStub implements PqStruct {
+
+        private final PqStruct nestedStruct;
+
+        StructStub(String fieldName, boolean isNull, PqStruct nestedStruct) {
+            super(fieldName, isNull);
+            this.nestedStruct = nestedStruct;
+        }
+
+        @Override
+        public PqStruct getStruct(String name) {
+            return nestedStruct;
+        }
     }
 }

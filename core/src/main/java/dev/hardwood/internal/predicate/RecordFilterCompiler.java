@@ -15,6 +15,7 @@ import dev.hardwood.reader.FilterPredicate.Operator;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.StructAccessor;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.schema.SchemaNode;
 
 /// Compiles a [ResolvedPredicate] into a [RowMatcher] tree once per reader.
 ///
@@ -104,16 +105,26 @@ public final class RecordFilterCompiler {
             case ResolvedPredicate.BinaryInPredicate p ->
                     binaryInLeaf(pathSegments(schema, p.columnIndex()), leafName(schema, p.columnIndex()), p.values());
             case ResolvedPredicate.IsNullPredicate p -> {
-                int idx = indexedTopLevel(schema, p.columnIndex(), topLevelFieldIndex);
-                yield idx >= 0
-                        ? indexedIsNullLeaf(idx)
-                        : isNullLeaf(pathSegments(schema, p.columnIndex()), leafName(schema, p.columnIndex()));
+                if (p.definitionLevel() == schema.getColumn(p.columnIndex()).maxDefinitionLevel()) {
+                    int idx = indexedTopLevel(schema, p.columnIndex(), topLevelFieldIndex);
+                    yield idx >= 0
+                            ? indexedIsNullLeaf(idx)
+                            : isNullLeaf(pathSegments(schema, p.columnIndex()), leafName(schema, p.columnIndex()));
+                }
+
+                NullFieldTarget target = nullFieldTarget(schema, p.columnIndex(), p.definitionLevel());
+                yield isNullLeaf(target.path(), target.name());
             }
             case ResolvedPredicate.IsNotNullPredicate p -> {
-                int idx = indexedTopLevel(schema, p.columnIndex(), topLevelFieldIndex);
-                yield idx >= 0
-                        ? indexedIsNotNullLeaf(idx)
-                        : isNotNullLeaf(pathSegments(schema, p.columnIndex()), leafName(schema, p.columnIndex()));
+                if (p.definitionLevel() == schema.getColumn(p.columnIndex()).maxDefinitionLevel()) {
+                    int idx = indexedTopLevel(schema, p.columnIndex(), topLevelFieldIndex);
+                    yield idx >= 0
+                            ? indexedIsNotNullLeaf(idx)
+                            : isNotNullLeaf(pathSegments(schema, p.columnIndex()), leafName(schema, p.columnIndex()));
+                }
+
+                NullFieldTarget target = nullFieldTarget(schema, p.columnIndex(), p.definitionLevel());
+                yield isNotNullLeaf(target.path(), target.name());
             }
             case ResolvedPredicate.And and -> compileAnd(and.children(), schema, topLevelFieldIndex);
             case ResolvedPredicate.Or or -> compileOr(or.children(), schema, topLevelFieldIndex);
@@ -531,6 +542,60 @@ public final class RecordFilterCompiler {
     }
 
     // ==================== Path resolution ====================
+
+    private record NullFieldTarget(String[] path, String name) {
+    }
+
+    private static NullFieldTarget nullFieldTarget(FileSchema schema, int columnIndex, int definitionLevel) {
+        List<String> elements = schema.getColumn(columnIndex).fieldPath().elements();
+
+        SchemaNode current = schema.getRootNode();
+        int targetIndex = -1;
+
+        for (int i = 0; i < elements.size(); i++) {
+            if (!(current instanceof SchemaNode.GroupNode group)) {
+                break;
+            }
+
+            current = child(group, elements.get(i));
+            if (current == null) {
+                break;
+            }
+
+            if (current.maxDefinitionLevel() == definitionLevel) {
+                targetIndex = i;
+            }
+            else if (current.maxDefinitionLevel() > definitionLevel) {
+                break;
+            }
+        }
+
+        if (targetIndex < 0) {
+            throw new IllegalStateException(
+                    "Cannot resolve definition level "
+                            + definitionLevel
+                            + " for column "
+                            + columnIndex);
+        }
+
+        String[] path = new String[targetIndex];
+
+        for (int i = 0; i < targetIndex; i++) {
+            path[i] = elements.get(i);
+        }
+
+        return new NullFieldTarget(path, elements.get(targetIndex));
+    }
+
+    private static SchemaNode child(SchemaNode.GroupNode group, String name) {
+        for (SchemaNode child : group.children()) {
+            if (child.name().equals(name)) {
+                return child;
+            }
+        }
+
+        return null;
+    }
 
     /// Walks the row through the captured intermediate struct path.
     /// Returns null if any intermediate struct is null. For top-level

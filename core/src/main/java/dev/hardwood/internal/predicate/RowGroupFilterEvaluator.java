@@ -14,8 +14,10 @@ import dev.hardwood.metadata.BoundingBox;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.GeospatialStatistics;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.FilterPredicate;
+import dev.hardwood.schema.FileSchema;
 
 /// Evaluates filter predicates against row group statistics and bloom filters to determine
 /// whether a row group can be skipped — or read without per-row filtering.
@@ -75,6 +77,11 @@ public class RowGroupFilterEvaluator {
         return decideRowGroup(predicate, rowGroup, bloomFilters, null);
     }
 
+    public static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
+            BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries) {
+        return decideRowGroup(predicate, rowGroup, bloomFilters, dictionaries, null);
+    }
+
     /// Evaluates the predicate against the row group's statistics, bloom filters and dictionaries
     /// as a three-valued [FilterDecision].
     ///
@@ -90,7 +97,7 @@ public class RowGroupFilterEvaluator {
     ///        checks
     /// @return the statistics decision for the row group
     public static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
-            BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries) {
+            BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries, FileSchema schema) {
         return switch (predicate) {
             case ResolvedPredicate.IntPredicate p -> {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
@@ -184,36 +191,18 @@ public class RowGroupFilterEvaluator {
                 }
                 yield decision;
             }
-            case ResolvedPredicate.IsNullPredicate p -> {
-                Statistics stats = getStatistics(p.columnIndex(), rowGroup);
-                // Can drop IS NULL if nullCount is known to be 0 (no nulls exist).
-                // The always-matching dual (every row null) is deliberately not derived:
-                // for nested columns the null count tallies leaf values, not rows, so
-                // nullCount == numRows does not prove every row's leaf is null.
-                yield stats != null && stats.nullCount() != null && stats.nullCount() == 0
-                        ? FilterDecision.CANNOT_MATCH
-                        : FilterDecision.MIGHT_MATCH;
-            }
-            case ResolvedPredicate.IsNotNullPredicate p -> {
-                Statistics stats = getStatistics(p.columnIndex(), rowGroup);
-                if (stats == null || stats.nullCount() == null) {
-                    yield FilterDecision.MIGHT_MATCH;
-                }
-                // Can drop IS NOT NULL if all values are null (nullCount == numRows)
-                if (stats.nullCount() == rowGroup.numRows()) {
-                    yield FilterDecision.CANNOT_MATCH;
-                }
-                yield stats.nullCount() == 0
-                        ? FilterDecision.ALWAYS_MATCHES
-                        : FilterDecision.MIGHT_MATCH;
-            }
+            case ResolvedPredicate.IsNullPredicate p ->
+                    nullDecision(p.columnIndex(), p.definitionLevel(), true, rowGroup, schema);
+            case ResolvedPredicate.IsNotNullPredicate p ->
+                    nullDecision(p.columnIndex(), p.definitionLevel(), false, rowGroup, schema);
             case ResolvedPredicate.And a -> {
                 if (a.children().isEmpty()) {
                     yield FilterDecision.MIGHT_MATCH;
                 }
                 FilterDecision result = FilterDecision.ALWAYS_MATCHES;
                 for (ResolvedPredicate child : a.children()) {
-                    result = FilterDecision.and(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
+                    result = FilterDecision.and(result,
+                            decideRowGroup(child, rowGroup, bloomFilters, dictionaries, schema));
                     if (result == FilterDecision.CANNOT_MATCH) {
                         break;
                     }
@@ -226,7 +215,8 @@ public class RowGroupFilterEvaluator {
                 }
                 FilterDecision result = FilterDecision.CANNOT_MATCH;
                 for (ResolvedPredicate child : o.children()) {
-                    result = FilterDecision.or(result, decideRowGroup(child, rowGroup, bloomFilters, dictionaries));
+                    result = FilterDecision.or(result,
+                            decideRowGroup(child, rowGroup, bloomFilters, dictionaries, schema));
                     if (result == FilterDecision.ALWAYS_MATCHES) {
                         break;
                     }
@@ -258,6 +248,85 @@ public class RowGroupFilterEvaluator {
                 ? FilterDecision.MIGHT_MATCH
                 : StatisticsFilterSupport.decideLeaf(leaf, MinMaxStats.of(stats));
     }
+    private static FilterDecision nullDecision(int columnIndex, int definitionLevel, boolean seekingNulls,
+            RowGroup rowGroup, FileSchema schema) {
+        boolean groupPredicate = schema != null
+                && definitionLevel < schema.getColumn(columnIndex).maxDefinitionLevel();
+
+        if (groupPredicate) {
+            long[] histogram = getDefinitionLevelHistogram(columnIndex, rowGroup);
+            int expectedHistogramLength = schema.getColumn(columnIndex).maxDefinitionLevel() + 1;
+
+            if (histogram == null
+                    || histogram.length != expectedHistogramLength
+                    || definitionLevel < 0
+                    || definitionLevel >= histogram.length) {
+                return FilterDecision.MIGHT_MATCH;
+            }
+
+            long absentCount = 0;
+            for (int i = 0; i < definitionLevel; i++) {
+                absentCount += histogram[i];
+            }
+
+            long presentCount = 0;
+            for (int i = definitionLevel; i < histogram.length; i++) {
+                presentCount += histogram[i];
+            }
+
+            if (seekingNulls) {
+                return absentCount == 0
+                        ? FilterDecision.CANNOT_MATCH
+                        : FilterDecision.MIGHT_MATCH;
+            }
+
+            return presentCount == 0
+                    ? FilterDecision.CANNOT_MATCH
+                    : FilterDecision.MIGHT_MATCH;
+        }
+
+        Statistics stats = getStatistics(columnIndex, rowGroup);
+
+        if (seekingNulls) {
+            return stats != null
+                    && stats.nullCount() != null
+                    && stats.nullCount() == 0
+                    ? FilterDecision.CANNOT_MATCH
+                    : FilterDecision.MIGHT_MATCH;
+        }
+
+        if (stats == null || stats.nullCount() == null) {
+            return FilterDecision.MIGHT_MATCH;
+        }
+
+        if (stats.nullCount() == rowGroup.numRows()) {
+            return FilterDecision.CANNOT_MATCH;
+        }
+
+        return stats.nullCount() == 0
+                ? FilterDecision.ALWAYS_MATCHES
+                : FilterDecision.MIGHT_MATCH;
+    }
+
+    private static long[] getDefinitionLevelHistogram(int columnIndex, RowGroup rowGroup) {
+        if (columnIndex < 0 || columnIndex >= rowGroup.columns().size()) {
+            return null;
+        }
+
+        ColumnMetaData metadata = rowGroup.columns().get(columnIndex).metaData();
+        if (metadata == null) {
+            return null;
+        }
+
+        SizeStatistics sizeStatistics = metadata.sizeStatistics();
+
+        if (sizeStatistics == null) {
+            return null;
+        }
+
+        return sizeStatistics.definitionLevelHistogram();
+    }
+
 
     /// Gets statistics for a column by its pre-resolved index.
     /// Returns null if the column index is out of bounds or statistics are absent.

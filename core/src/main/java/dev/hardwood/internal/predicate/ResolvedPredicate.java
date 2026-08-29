@@ -65,8 +65,8 @@ public sealed interface ResolvedPredicate {
     record LongInPredicate(int columnIndex, long[] values) implements ResolvedPredicate {}
     record BinaryInPredicate(int columnIndex, byte[][] values) implements ResolvedPredicate {}
 
-    record IsNullPredicate(int columnIndex) implements ResolvedPredicate {}
-    record IsNotNullPredicate(int columnIndex) implements ResolvedPredicate {}
+    record IsNullPredicate(int columnIndex, int definitionLevel) implements ResolvedPredicate {}
+    record IsNotNullPredicate(int columnIndex, int definitionLevel) implements ResolvedPredicate {}
 
     /// Conjunction of child predicates. Nested `And` children are flattened at
     /// construction time so consumers can rely on a single flat level.
@@ -180,8 +180,10 @@ public sealed interface ResolvedPredicate {
             case IntInPredicate p -> new IntInPredicate(mapped(p.columnIndex(), columnMapping), p.values());
             case LongInPredicate p -> new LongInPredicate(mapped(p.columnIndex(), columnMapping), p.values());
             case BinaryInPredicate p -> new BinaryInPredicate(mapped(p.columnIndex(), columnMapping), p.values());
-            case IsNullPredicate p -> new IsNullPredicate(mapped(p.columnIndex(), columnMapping));
-            case IsNotNullPredicate p -> new IsNotNullPredicate(mapped(p.columnIndex(), columnMapping));
+            case IsNullPredicate p -> new IsNullPredicate(
+                    mapped(p.columnIndex(), columnMapping), p.definitionLevel());
+            case IsNotNullPredicate p -> new IsNotNullPredicate(
+                    mapped(p.columnIndex(), columnMapping), p.definitionLevel());
             case GeospatialPredicate p -> new GeospatialPredicate(mapped(p.columnIndex(), columnMapping),
                     p.xmin(), p.ymin(), p.xmax(), p.ymax());
             case And a -> new And(remapChildren(a.children(), columnMapping));
@@ -222,8 +224,8 @@ public sealed interface ResolvedPredicate {
                     p.ieee754TotalOrder());
             case BooleanPredicate p -> new BooleanPredicate(p.columnIndex(), p.op().invert(), p.value());
             case BinaryPredicate p -> new BinaryPredicate(p.columnIndex(), p.op().invert(), p.value(), p.signed());
-            case IsNullPredicate p -> new IsNotNullPredicate(p.columnIndex());
-            case IsNotNullPredicate p -> new IsNullPredicate(p.columnIndex());
+            case IsNullPredicate p -> new IsNotNullPredicate(p.columnIndex(), p.definitionLevel());
+            case IsNotNullPredicate p -> new IsNullPredicate(p.columnIndex(), p.definitionLevel());
             case And a -> new Or(a.children().stream()
                     .map(ResolvedPredicate::negate).toList());
             case Or o -> new And(o.children().stream()

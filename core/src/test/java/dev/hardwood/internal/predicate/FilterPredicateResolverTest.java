@@ -312,17 +312,18 @@ class FilterPredicateResolverTest {
     }
 
     @Test
-    void resolveNestedGroupColumnThrows() {
+    void resolveNestedGroupNullPredicate() {
         FileSchema schema = FileSchema.builder("root")
                 .struct("company", RepetitionType.OPTIONAL, company -> company
                         .struct("address", RepetitionType.OPTIONAL, address -> address
                                 .addColumn("street", PhysicalType.BYTE_ARRAY, RepetitionType.OPTIONAL)))
                 .build();
 
-        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
-                FilterPredicate.isNull("company.address"), schema))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("group");
+        ResolvedPredicate resolved = FilterPredicateResolver.resolve(
+                FilterPredicate.isNull("company.address"), schema);
+
+        assertThat(resolved)
+                .isEqualTo(new ResolvedPredicate.IsNullPredicate(0, 2));
     }
 
     @Test
@@ -341,6 +342,24 @@ class FilterPredicateResolverTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("is a group")
                 .hasMessageNotContaining("repeated");
+    }
+
+    @Test
+    void resolveNestedGroupNotNullPredicate() {
+        FileSchema schema = FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn(
+                                        "street",
+                                        PhysicalType.BYTE_ARRAY,
+                                        RepetitionType.OPTIONAL)))
+                .build();
+
+        ResolvedPredicate resolved = FilterPredicateResolver.resolve(
+                FilterPredicate.isNotNull("company.address"), schema);
+
+        assertThat(resolved)
+                .isEqualTo(new ResolvedPredicate.IsNotNullPredicate(0, 2));
     }
 
     @Test

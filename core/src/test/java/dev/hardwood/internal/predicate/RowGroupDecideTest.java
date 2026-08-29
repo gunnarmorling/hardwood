@@ -20,9 +20,12 @@ import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.FieldPath;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.FilterPredicate;
+import dev.hardwood.schema.FileSchema;
 
 import static dev.hardwood.internal.predicate.FilterDecision.ALWAYS_MATCHES;
 import static dev.hardwood.internal.predicate.FilterDecision.CANNOT_MATCH;
@@ -116,6 +119,106 @@ class RowGroupDecideTest {
         assertThat(decide(intGt(5), rg)).isEqualTo(MIGHT_MATCH);
     }
 
+    @Test
+    void groupIsNullUsesDefinitionLevelHistogram() {
+        SizeStatistics sizeStatistics = new SizeStatistics(
+                null,
+                null,
+                new long[]{ 0, 0, 100, 0 });
+
+        RowGroup rg = rowGroup(
+                PhysicalType.INT32,
+                new Statistics(null, null, 100L, null, false),
+                sizeStatistics,
+                100);
+
+        ResolvedPredicate predicate =
+                new ResolvedPredicate.IsNullPredicate(COL, 2);
+
+        assertThat(decide(predicate, rg, nestedGroupSchema()))
+                .isEqualTo(CANNOT_MATCH);
+    }
+    @Test
+    void groupIsNotNullDoesNotUseLeafNullCountToDrop() {
+        SizeStatistics sizeStatistics = new SizeStatistics(
+                null,
+                null,
+                new long[]{ 0, 0, 100, 0 });
+
+        RowGroup rg = rowGroup(
+                PhysicalType.INT32,
+                new Statistics(null, null, 100L, null, false),
+                sizeStatistics,
+                100);
+
+        ResolvedPredicate predicate =
+                new ResolvedPredicate.IsNotNullPredicate(COL, 2);
+
+        assertThat(decide(predicate, rg, nestedGroupSchema()))
+                .isNotEqualTo(CANNOT_MATCH);
+    }
+
+    @Test
+    void groupIsNotNullDropsWhenHistogramShowsGroupAlwaysAbsent() {
+        SizeStatistics sizeStatistics = new SizeStatistics(
+                null,
+                null,
+                new long[]{ 0, 100, 0, 0 });
+
+        RowGroup rg = rowGroup(
+                PhysicalType.INT32,
+                new Statistics(null, null, 100L, null, false),
+                sizeStatistics,
+                100);
+
+        ResolvedPredicate predicate =
+                new ResolvedPredicate.IsNotNullPredicate(COL, 2);
+
+        assertThat(decide(predicate, rg, nestedGroupSchema()))
+                .isEqualTo(CANNOT_MATCH);
+    }
+    @Test
+    void groupNullPredicateWithoutHistogramFallsBackToMightMatch() {
+        RowGroup rg = rowGroup(
+                PhysicalType.INT32,
+                new Statistics(null, null, 100L, null, false),
+                null,
+                100);
+
+        ResolvedPredicate isNull =
+                new ResolvedPredicate.IsNullPredicate(COL, 2);
+
+        ResolvedPredicate isNotNull =
+                new ResolvedPredicate.IsNotNullPredicate(COL, 2);
+
+        FileSchema schema = nestedGroupSchema();
+
+        assertThat(decide(isNull, rg, schema))
+                .isEqualTo(MIGHT_MATCH);
+
+        assertThat(decide(isNotNull, rg, schema))
+                .isEqualTo(MIGHT_MATCH);
+    }
+
+    @Test
+    void groupNullPredicateIgnoresWrongHistogramLength() {
+        SizeStatistics sizeStatistics = new SizeStatistics(
+                null,
+                null,
+                new long[]{ 0, 100, 0 });
+
+        RowGroup rg = rowGroup(
+                PhysicalType.INT32,
+                new Statistics(null, null, 100L, null, false),
+                sizeStatistics,
+                100);
+
+        ResolvedPredicate predicate =
+                new ResolvedPredicate.IsNotNullPredicate(COL, 2);
+
+        assertThat(decide(predicate, rg, nestedGroupSchema()))
+                .isEqualTo(MIGHT_MATCH);
+    }
     // ==================== Fixtures ====================
 
     private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
@@ -131,11 +234,11 @@ class RowGroupDecideTest {
     }
 
     private static ResolvedPredicate isNull() {
-        return new ResolvedPredicate.IsNullPredicate(COL);
+        return new ResolvedPredicate.IsNullPredicate(COL, 1);
     }
 
     private static ResolvedPredicate isNotNull() {
-        return new ResolvedPredicate.IsNotNullPredicate(COL);
+        return new ResolvedPredicate.IsNotNullPredicate(COL, 1);
     }
 
     private static ResolvedPredicate and(ResolvedPredicate... children) {
@@ -151,11 +254,31 @@ class RowGroupDecideTest {
                 new Statistics(intBytes(min), intBytes(max), nullCount, null, false), 100);
     }
 
+    private static FileSchema nestedGroupSchema() {
+        return FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn(
+                                        "street",
+                                        PhysicalType.INT32,
+                                        RepetitionType.OPTIONAL)))
+                .build();
+    }
+
+    private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup, FileSchema schema) {
+        return RowGroupFilterEvaluator.decideRowGroup(predicate, rowGroup, null, null, schema);
+    }
+
     private static RowGroup rowGroup(PhysicalType type, Statistics stats, long numRows) {
+        return rowGroup(type, stats, null, numRows);
+    }
+
+    private static RowGroup rowGroup(PhysicalType type, Statistics stats,
+            SizeStatistics sizeStatistics, long numRows) {
         ColumnMetaData cmd = new ColumnMetaData(
                 type, List.of(Encoding.PLAIN), FieldPath.of("col"),
                 CompressionCodec.UNCOMPRESSED, 100, 1000, 1000, Map.of(), 0, null, stats,
-                null, null, null, List.of(), null);
+                null, null, null, List.of(), sizeStatistics);
         ColumnChunk chunk = new ColumnChunk(cmd, null, null, null, null, "");
         return new RowGroup(List.of(chunk), 1000, numRows);
     }
