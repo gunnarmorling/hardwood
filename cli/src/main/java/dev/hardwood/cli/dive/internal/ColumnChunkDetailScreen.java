@@ -567,9 +567,9 @@ public final class ColumnChunkDetailScreen {
                 OffsetIndex oi = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
                 yield oi != null ? Plurals.format(oi.pageLocations().size(), "page", "pages") : Strings.ABSENT_VALUE;
             }
-            case COLUMN_INDEX -> chunk.columnIndexOffset() != null ? "present" : "n/a";
-            case OFFSET_INDEX -> chunk.offsetIndexOffset() != null ? "present" : "n/a";
-            case DICTIONARY -> chunk.metaData().dictionaryPageOffset() != null ? "present" : "n/a";
+            case COLUMN_INDEX -> chunk.columnIndexOffset() != null ? "present" : Strings.ABSENT_VALUE;
+            case OFFSET_INDEX -> chunk.offsetIndexOffset() != null ? "present" : Strings.ABSENT_VALUE;
+            case DICTIONARY -> chunk.metaData().dictionaryPageOffset() != null ? "present" : Strings.ABSENT_VALUE;
         };
     }
 

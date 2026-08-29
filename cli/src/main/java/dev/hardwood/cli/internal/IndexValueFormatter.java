@@ -56,7 +56,7 @@ public final class IndexValueFormatter {
     public static String format(byte[] bytes, ColumnSchema col,
                                 boolean useLogicalType, int maxChars) {
         if (bytes == null) {
-            return "-";
+            return Strings.ABSENT_VALUE;
         }
         if (bytes.length == 0) {
             return isByteBacked(col.type()) ? "\"\"" : "";
