@@ -35,17 +35,6 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     private static final VarHandle LONG_LE =
             MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.LITTLE_ENDIAN);
 
-
-    /// The stream header, which every bound in this class comes from.
-    ///
-    /// Its constructor is where the header is checked, so a `Header` that exists is one the rest of
-    /// the decoder can trust: `header.valuesPerMiniblock()` divides, the counts are positive, and nothing has
-    /// to re-establish that further down.
-    ///
-    /// @param header.blockSize() values per block, a whole number of miniblocks
-    /// @param header.miniblockCount() miniblocks per block
-    /// @param header.totalValueCount() values the stream holds, padding aside
-    /// @param header.firstValue() the value the header carries outside any block
     /// The stream header, which every bound in this class comes from.
     ///
     /// [#of] is where the header is checked, so a `Header` that exists is one the rest of the
@@ -60,10 +49,24 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     private record Header(int blockSize, int miniblockCount, int totalValueCount, long firstValue,
             int valuesPerMiniblock) {
 
+        /// The largest block a header may declare.
+        ///
+        /// A block is decoded whole, so the block size is what the decode buffer is sized from — and
+        /// nothing in the page bounds it. A block whose miniblocks are all declared at width 0
+        /// occupies one byte of minimum delta plus one byte per miniblock and yields `blockSize`
+        /// values, so however few bytes a page has, a header declaring 2^30 values per block asks
+        /// for an 8 GiB `long[]`. Writers emit 128; this is three orders of magnitude of headroom
+        /// over that and bounds the buffer at 512 KiB.
+        private static final int MAX_BLOCK_SIZE = 1 << 16;
+
         /// Checks the four fields the stream carries and derives the fifth.
         static Header of(int blockSize, int miniblockCount, int totalValueCount, long firstValue) {
             if (blockSize <= 0) {
                 throw new IllegalArgumentException("Invalid block size: " + blockSize);
+            }
+            if (blockSize > MAX_BLOCK_SIZE) {
+                throw new IllegalArgumentException(
+                        "Block size " + blockSize + " exceeds the maximum of " + MAX_BLOCK_SIZE);
             }
             // Negative counts reach here from a ULEB128 wide enough to overflow the int, and a
             // negative divisor still divides evenly (128 % -1 == 0), so the divisibility check below
@@ -113,9 +116,10 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         this.pos = offset;
         this.header = readHeader();
         this.bitWidths = new int[header.miniblockCount()];
-        // The header is file-controlled, so the buffer is sized to what can actually be drained from
-        // it rather than to the declared block: no block ever yields more than the declared total,
-        // and a block size of 1<<30 would otherwise ask for an 8 GiB array.
+        // Both fields are file-controlled and neither bounds the buffer on its own, so both bound it:
+        // the declared total can be Integer.MAX_VALUE on a five-byte page, and the block size is
+        // capped by Header rather than by anything the page has to make good on. The cap is also
+        // what keeps `blockSize + 1` from overflowing into a negative array size.
         this.buffer = new long[Math.min(header.blockSize() + 1, header.totalValueCount())];
         this.lastValue = header.firstValue();
     }
@@ -224,9 +228,10 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     ///
     /// @return how many values were written
     private int fillInto(long[] dest, int destOffset) throws IOException {
+        checkNotExhausted();
         int produced = startBlock(dest, destOffset);
         if (valuesProduced >= header.totalValueCount()) {
-            return finishEmptyBlock(produced);
+            return produced;
         }
         readBlockHeader();
         for (int miniblock = 0; miniblock < header.miniblockCount() && valuesProduced < header.totalValueCount(); miniblock++) {
@@ -241,9 +246,10 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// The `int[]` form of [#fillInto(long[],int)], so an INT32 column is written once rather than
     /// staged through a `long[]` and narrowed by a second pass over it.
     private int fillInto(int[] dest, int destOffset) throws IOException {
+        checkNotExhausted();
         int produced = startBlock(dest, destOffset);
         if (valuesProduced >= header.totalValueCount()) {
-            return finishEmptyBlock(produced);
+            return produced;
         }
         readBlockHeader();
         for (int miniblock = 0; miniblock < header.miniblockCount() && valuesProduced < header.totalValueCount(); miniblock++) {
@@ -255,6 +261,17 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         return produced;
     }
 
+    /// Refuses a read past the declared value count, before anything has been written.
+    ///
+    /// It runs ahead of [#startBlock(long[],int)] rather than after it, because the header's first
+    /// value is not exempt from the count: a stream declaring no values at all — which is what
+    /// writers emit for an empty one — has no first value to hand out either, and the buffer sized
+    /// from that count has no room to hold one.
+    private void checkNotExhausted() throws IOException {
+        if (valuesProduced >= header.totalValueCount()) {
+            throw new IOException("No more values to read");
+        }
+    }
 
     /// The header carries the first value outside any block. Emitting it as the first value of the
     /// first block is what spares every reader a special case for it.
@@ -274,13 +291,6 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         dest[destOffset] = (int) header.firstValue();
         valuesProduced = 1;
         return 1;
-    }
-
-    private int finishEmptyBlock(int produced) throws IOException {
-        if (produced == 0) {
-            throw new IOException("No more values to read");
-        }
-        return produced;
     }
 
     /// Reads and checks the header the stream opens with.
@@ -316,7 +326,6 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
             bitWidths[i] = bw;
         }
     }
-
 
     /// Decode one miniblock onto the end of the buffer.
     ///
@@ -440,7 +449,6 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         Arrays.fill(tailBytes, available, tailBytes.length, (byte) 0);
         return tailBytes;
     }
-
 
     private int readUleb128() throws IOException {
         int result = 0;
