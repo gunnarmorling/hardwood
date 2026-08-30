@@ -8,6 +8,7 @@
 package dev.hardwood.internal.reader;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Timeout;
 import dev.hardwood.InputFile;
 import dev.hardwood.internal.schema.ProjectedSchema;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.metadata.SchemaElement;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
@@ -242,6 +245,29 @@ class ColumnWorkerTest {
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Simulated pipeline error");
         }
+    }
+
+    /// A FIXED_LEN_BYTE_ARRAY with no type length must fail with a controlled reader error.
+    @Test
+    void allocateArrayRejectsFixedWithoutTypeLength() {
+        SchemaElement root = new SchemaElement("schema", null, null, null,
+                1, null, null, null,
+                null, null);
+        SchemaElement parent = new SchemaElement(
+                "parent", null, null, RepetitionType.REQUIRED,
+                1, null, null, null,
+                null, null);
+        SchemaElement digest = new SchemaElement("digest", PhysicalType.FIXED_LEN_BYTE_ARRAY, null,
+                RepetitionType.REQUIRED, null, null, null, null,
+                null, null);
+
+        FileSchema schema = FileSchema.fromSchemaElements(List.of(root, parent, digest));
+        ColumnSchema column = schema.getColumn("parent.digest");
+
+        assertThat(column.typeLength()).isNull();
+        assertThatThrownBy(() -> BatchExchange.allocateArray(column, 1024))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("FIXED_LEN_BYTE_ARRAY column parent.digest has no type length");
     }
 
     /// Nested pipeline delivers all rows with pre-computed index structures.

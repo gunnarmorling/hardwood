@@ -282,7 +282,11 @@ public class BatchExchange<B> {
                 yield bbv;
             }
             case FIXED_LEN_BYTE_ARRAY -> {
-                int width = column.typeLength();
+                Integer width = column.typeLength();
+                if (width == null) {
+                    throw new IllegalArgumentException(
+                            "FIXED_LEN_BYTE_ARRAY column " + column.fieldPath() + " has no type length");
+                }
                 byte[] bytes = new byte[Math.multiplyExact(width, capacity)];
                 int[] offsets = new int[capacity + 1];
                 for (int i = 0; i <= capacity; i++) {

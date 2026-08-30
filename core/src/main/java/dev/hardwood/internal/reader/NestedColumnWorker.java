@@ -769,7 +769,11 @@ public class NestedColumnWorker extends ColumnWorker<NestedBatch> {
         }
         int[] newOffsets = Arrays.copyOf(bbv.offsets, newCapacity + 1);
         if (physicalType == PhysicalType.FIXED_LEN_BYTE_ARRAY) {
-            int width = column.typeLength();
+            Integer width = column.typeLength();
+            if (width == null) {
+                throw new IllegalArgumentException(
+                        "FIXED_LEN_BYTE_ARRAY column " + column.fieldPath() + " has no type length");
+            }
             for (int i = oldCapacity + 1; i <= newCapacity; i++) {
                 newOffsets[i] = Math.multiplyExact(i, width);
             }
