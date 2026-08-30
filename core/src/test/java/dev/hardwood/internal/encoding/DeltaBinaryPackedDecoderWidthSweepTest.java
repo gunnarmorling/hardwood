@@ -23,9 +23,12 @@ import org.junit.jupiter.params.provider.MethodSource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Sweeps every bit width — 0–32 for INT32, 0–64 for INT64 — across the decoder's width-specialised
-/// unpack paths (0, 1–8, 9–56, 57–64) and across both ways of draining it, in bulk and one value at
-/// a time.
+/// Sweeps every bit width — 0–32 for INT32, 0–64 for INT64 — and both ways of draining the decoder,
+/// in bulk and one value at a time.
+///
+/// One loop unpacks every width, so there is no band of widths a sweep can afford to sample rather
+/// than walk: nothing about width 21 follows from width 20 working. Only width 0 branches, and it
+/// branches away from the loop entirely.
 ///
 /// parquet-java writes the bytes. A round trip against Hardwood's own encoder cannot see the two
 /// implementations agreeing on a bit layout that the format does not have, and the layout is what
@@ -196,6 +199,39 @@ class DeltaBinaryPackedDecoderWidthSweepTest {
         assertThat(decoder.getPos()).as("%d values at width %d", count, w).isEqualTo(encoded.length);
     }
 
+    /// Layouts other than the 128/4 every writer emits.
+    ///
+    /// The block and miniblock sizes are declared per stream, not fixed by the format, and the
+    /// decoder derives from them the size of its buffer, the bytes a miniblock occupies and where a
+    /// partial last miniblock stops — so a decoder that is only ever handed 32 values per miniblock
+    /// has only ever had one set of those bounds exercised.
+    @ParameterizedTest(name = "{0}/{1}, {2} values, width {3}")
+    @MethodSource("layouts")
+    void decodesEveryBlockAndMiniblockLayout(int blockSize, int miniblockCount, int count, int w)
+            throws IOException {
+        long[] values = valuesOfWidth(count, w);
+        byte[] encoded = encode(values, blockSize, miniblockCount);
+
+        DeltaBinaryPackedDecoder decoder = new DeltaBinaryPackedDecoder(encoded, 0);
+        long[] decoded = new long[count];
+        decoder.readLongs(decoded, null, 0);
+
+        assertThat(decoded).as("%d/%d, %d values at width %d", blockSize, miniblockCount, count, w)
+                .containsExactly(values);
+        assertThat(decoder.getPos()).as("position after %d/%d", blockSize, miniblockCount)
+                .isEqualTo(encoded.length);
+    }
+
+    /// Miniblocks of 16 through 128 values, at counts that stop inside the first miniblock, inside a
+    /// later one, and past the end of the first block.
+    static Stream<Arguments> layouts() {
+        return Stream.of(new int[] { 128, 8 }, new int[] { 128, 4 }, new int[] { 128, 1 },
+                new int[] { 256, 4 }, new int[] { 1024, 8 })
+                .flatMap(layout -> Stream.of(10, 200, 1500)
+                        .flatMap(count -> Stream.of(3, 33, 64)
+                                .map(w -> Arguments.of(layout[0], layout[1], count, w))));
+    }
+
     @Test
     void refusesToReadPastTheDeclaredValueCount() throws IOException {
         byte[] encoded = encode(valuesOfWidth(VALUE_COUNT, 11));
@@ -240,8 +276,12 @@ class DeltaBinaryPackedDecoderWidthSweepTest {
     }
 
     private static byte[] encode(long[] values) throws IOException {
+        return encode(values, BLOCK_SIZE, MINIBLOCK_COUNT);
+    }
+
+    private static byte[] encode(long[] values, int blockSize, int miniblockCount) throws IOException {
         try (DeltaBinaryPackingValuesWriterForLong writer = new DeltaBinaryPackingValuesWriterForLong(
-                BLOCK_SIZE, MINIBLOCK_COUNT, 1024, 4096, HeapByteBufferAllocator.getInstance())) {
+                blockSize, miniblockCount, 1024, 4096, HeapByteBufferAllocator.getInstance())) {
             for (long value : values) {
                 writer.writeLong(value);
             }
