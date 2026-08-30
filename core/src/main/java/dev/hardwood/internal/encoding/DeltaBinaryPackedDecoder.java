@@ -199,8 +199,15 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         if (blockSize <= 0) {
             throw new IOException("Invalid block size: " + blockSize);
         }
-        if (miniblockCount == 0) {
-            throw new IOException("Invalid miniblock count: 0");
+        // Negative counts reach here from a ULEB128 wide enough to overflow the int, and a negative
+        // divisor still divides evenly (128 % -1 == 0), so the divisibility check below does not
+        // catch them either. Left unchecked they surface as NegativeArraySizeException rather than
+        // as the IOException every other malformed-header path in this class throws.
+        if (miniblockCount <= 0) {
+            throw new IOException("Invalid miniblock count: " + miniblockCount);
+        }
+        if (totalValueCount < 0) {
+            throw new IOException("Invalid total value count: " + totalValueCount);
         }
         if (blockSize % miniblockCount != 0) {
             throw new IOException("Block size " + blockSize + " is not divisible by miniblock count " + miniblockCount);
@@ -208,7 +215,10 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
 
         valuesPerMiniblock = blockSize / miniblockCount;
         bitWidths = new int[miniblockCount];
-        miniblockBuffer = new long[valuesPerMiniblock];
+        // The header is file-controlled, so the buffer is sized to what can actually be drained
+        // from it rather than to the declared miniblock: no miniblock ever yields more than the
+        // declared total, and a block size of 1<<30 would otherwise ask for an 8 GiB array.
+        miniblockBuffer = new long[Math.min(valuesPerMiniblock, totalValueCount)];
         bufferPos = 0;
         bufferFill = 0;
         lastValue = firstValue;
@@ -251,13 +261,15 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
             }
         }
         else {
-            int bytesNeeded = (valuesPerMiniblock * bitWidth + 7) / 8;
-            if (pos + bytesNeeded > data.length) {
+            // Taken as a long: a file-controlled block size makes valuesPerMiniblock * bitWidth
+            // overflow an int, and a negative byte count would pass the bounds check below.
+            long bytesNeeded = ((long) valuesPerMiniblock * bitWidth + 7) / 8;
+            if (bytesNeeded > data.length - pos) {
                 throw new IOException("Unexpected EOF reading miniblock data: expected " + bytesNeeded
                         + " bytes, got " + (data.length - pos));
             }
             unpackAndPrefixSum(bitWidth, validValues);
-            pos += bytesNeeded;
+            pos += (int) bytesNeeded;
         }
 
         bufferPos = 0;
