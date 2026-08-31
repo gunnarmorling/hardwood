@@ -43,6 +43,9 @@ public class Sizes {
     /// renders compression this way, so a figure read on one screen carries the
     /// same meaning on the next: lower is better, and the number is what
     /// survived the codec rather than the factor it divided by.
+    ///
+    /// @return the percentage, or [Strings#ABSENT_VALUE] when `uncompressed`
+    ///         is not positive and there is nothing to divide by
     public static String compression(long compressed, long uncompressed) {
         if (uncompressed <= 0) {
             return Strings.ABSENT_VALUE;

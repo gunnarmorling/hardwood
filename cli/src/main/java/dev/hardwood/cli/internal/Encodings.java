@@ -91,7 +91,8 @@ public final class Encodings {
         }
         catch (IOException | RuntimeException e) {
             // Unknown, not zero: the surfaces drop the annotation rather than
-            // claim a cardinality, the same way `# Pages` renders `-`.
+            // claim a cardinality, the same way `# Pages` renders the
+            // shared absent-value marker.
             return -1;
         }
     }
@@ -101,6 +102,10 @@ public final class Encodings {
     /// reads the same however the set reached here — a `Set.of` iterates in an
     /// order that varies between JVM runs, and this string is what a reader
     /// compares between two invocations.
+    ///
+    /// @return the label, or [Strings#ABSENT_VALUE] for an empty set — a chunk
+    ///         declaring nothing but the level encodings has no data-page
+    ///         encoding to name
     public static String label(Collection<Encoding> encodings) {
         if (encodings.isEmpty()) {
             return Strings.ABSENT_VALUE;
@@ -118,7 +123,7 @@ public final class Encodings {
     /// The encoding label with the dictionary's cardinality appended, as the
     /// share of the values it holds an entry for.
     ///
-    /// `DICT` alone cannot separate a dictionary that pays for itself and one
+    /// `DICT` alone cannot separate a dictionary that pays for itself from one
     /// that is a verbatim second copy of the column: both read the same. At
     /// 100% every value is distinct, so the values are stored once in the
     /// dictionary page and once more as a stream of distinct indices, and no
