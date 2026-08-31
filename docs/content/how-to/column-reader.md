@@ -56,7 +56,7 @@ A filtered column reader returns **only** the matching rows — exact, with no c
 
 ### Reading Multiple Columns
 
-For reading multiple columns together, use `columnReaders(projection)` which returns a `ColumnReaders` collection. Drive every reader in lockstep with `ColumnReaders.nextBatch()`. Open the columns together rather than building one `ColumnReader` per column: separately built readers batch at different row boundaries, so pairing them by index reads different rows from each (see [RowReader vs. ColumnReader](../concepts/reader-models.md#several-columns-means-one-columnreaders-not-several-columnreaders)).
+For reading multiple columns together, use `columnReaders(projection)` which returns a `ColumnReaders` collection. Drive every reader in lockstep with `ColumnReaders.nextBatch()`. Open the columns together rather than building one `ColumnReader` per column: separately built readers batch at different row boundaries, so pairing their values by position reads different rows from each (see [RowReader vs. ColumnReader](../concepts/reader-models.md#several-columns-means-one-columnreaders-not-several-columnreaders)).
 
 ```java
 import dev.hardwood.Hardwood;
