@@ -37,7 +37,7 @@ import dev.hardwood.schema.FileSchema;
 ///
 ///     while (columns.nextBatch()) {
 ///         int count = columns.getRecordCount();
-///         double[] v0 = columns.getColumnReader(0).getDoubles();
+///         double[] v0 = columns.getColumnReader(0).getInts();
 ///         double[] v1 = columns.getColumnReader(1).getDoubles();
 ///         double[] v2 = columns.getColumnReader(2).getDoubles();
 ///         // ...
