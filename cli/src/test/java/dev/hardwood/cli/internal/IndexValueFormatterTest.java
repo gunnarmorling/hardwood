@@ -69,6 +69,11 @@ class IndexValueFormatterTest {
     }
 
     @Test
+    void rendersAbsentValueWithTheSharedMarker() {
+        assertThat(IndexValueFormatter.format(null, stringColumn())).isEqualTo(Strings.ABSENT_VALUE);
+    }
+
+    @Test
     void rendersTimestampMicrosLogically() {
         ColumnSchema col = timestampColumn(true, LogicalType.TimeUnit.MICROS);
         // 2025-01-01T00:00:00Z = 1735689600 seconds = 1735689600_000_000 micros, little-endian INT64

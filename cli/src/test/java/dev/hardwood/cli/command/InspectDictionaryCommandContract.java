@@ -36,6 +36,7 @@ interface InspectDictionaryCommandContract {
                 |    |     1 |      1 |     B |
                 |    |     2 |      1 |     C |
                 +----+-------+--------+-------+""");
+        assertThat(result.output()).doesNotContain(" - ");
     }
 
     @Test
