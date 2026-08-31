@@ -196,9 +196,10 @@ public class ColumnReaders implements AutoCloseable {
     /// happen — the guard exists to detect future regressions in the per-column drain
     /// workers, not to be triggered in production.
     ///
-    /// Single-column consumers, or consumers that need fine-grained control over the
-    /// per-reader cadence, can still call [ColumnReader#nextBatch()] directly on the
-    /// readers returned by [#getColumnReader(int)] / [#getColumnReader(String)].
+    /// This method is how these readers are advanced. [ColumnReader#nextBatch()] on one of
+    /// them moves that reader alone and leaves its siblings on the batch they already hold;
+    /// the counts still match, so the guard above stays silent and every later batch pairs
+    /// values from different rows.
     ///
     /// @return true if a new aligned batch is available across all readers, false if exhausted
     /// @throws IllegalStateException if the readers report mismatched record counts
