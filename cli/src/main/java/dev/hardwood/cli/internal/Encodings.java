@@ -101,12 +101,9 @@ public final class Encodings {
     /// reads the same however the set reached here — a `Set.of` iterates in an
     /// order that varies between JVM runs, and this string is what a reader
     /// compares between two invocations.
-    ///
-    /// @param absent what to render for an empty set, which differs between the
-    ///        tables and `dive`
-    public static String label(Collection<Encoding> encodings, String absent) {
+    public static String label(Collection<Encoding> encodings) {
         if (encodings.isEmpty()) {
-            return absent;
+            return Strings.ABSENT_VALUE;
         }
         StringBuilder label = new StringBuilder();
         for (Encoding encoding : new TreeSet<>(encodings)) {
@@ -121,7 +118,7 @@ public final class Encodings {
     /// The encoding label with the dictionary's cardinality appended, as the
     /// share of the values it holds an entry for.
     ///
-    /// `DICT` alone cannot separate a dictionary that pays for itself from one
+    /// `DICT` alone cannot separate a dictionary that pays for itself and one
     /// that is a verbatim second copy of the column: both read the same. At
     /// 100% every value is distinct, so the values are stored once in the
     /// dictionary page and once more as a stream of distinct indices, and no
@@ -132,9 +129,8 @@ public final class Encodings {
     /// @param entries distinct values the dictionary holds, or -1 when unknown
     /// @param values values it could hold an entry for — the present-value
     ///        count where that is known, since nulls never reach a dictionary
-    public static String label(Collection<Encoding> encodings, long entries, long values,
-                               String absent) {
-        String label = label(encodings, absent);
+    public static String label(Collection<Encoding> encodings, long entries, long values) {
+        String label = label(encodings);
         if (entries < 0 || values <= 0 || !usesDictionary(encodings)) {
             return label;
         }

@@ -43,12 +43,9 @@ public class Sizes {
     /// renders compression this way, so a figure read on one screen carries the
     /// same meaning on the next: lower is better, and the number is what
     /// survived the codec rather than the factor it divided by.
-    ///
-    /// @param absent what to render when there is no uncompressed size to
-    ///        divide by, which differs between the tables and `dive`
-    public static String compression(long compressed, long uncompressed, String absent) {
+    public static String compression(long compressed, long uncompressed) {
         if (uncompressed <= 0) {
-            return absent;
+            return Strings.ABSENT_VALUE;
         }
         return Fmt.fmt("%.1f%%", 100.0 * compressed / uncompressed);
     }

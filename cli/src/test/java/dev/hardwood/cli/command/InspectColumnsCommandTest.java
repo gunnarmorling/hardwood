@@ -247,8 +247,8 @@ class InspectColumnsCommandTest implements InspectColumnsCommandContract {
     /// drilled into one column wants.
     @Test
     void columnDetailCarriesStorageAndContentTogether() {
-        Cli.Result result = Cli.launch("inspect", "columns", "-f", sizeStatisticsFile(),
-                "--column", "name");
+        Cli.Result result = Cli.launch("inspect", "columns", "-f", plainFile(),
+                "--column", "id");
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).contains(
@@ -256,7 +256,7 @@ class InspectColumnsCommandTest implements InspectColumnsCommandContract {
                 "Compressed", "Compression", "Encoding", "Unencoded");
         // Page-index coverage belongs to dive, where it says whether drilling
         // in is worth a keystroke. Here there is nothing to drill into.
-        assertThat(result.output()).doesNotContain("Size stats");
+        assertThat(result.output()).doesNotContain(" - ", " n/a ");
     }
 
     @Test
