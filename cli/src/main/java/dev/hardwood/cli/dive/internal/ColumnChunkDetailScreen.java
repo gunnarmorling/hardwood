@@ -560,6 +560,11 @@ public final class ColumnChunkDetailScreen {
         Paragraph.builder().block(block).text(Text.from(lines)).left().build().render(area, buffer);
     }
 
+    /// What the reader gets for a keystroke on this item. `Pages` is a count,
+    /// so a chunk with no offset index has none to show and the hint is the
+    /// absent-value marker. The other three answer whether the structure is in
+    /// the file at all, which is a yes or a no rather than a missing value —
+    /// a word on both sides, so the pane does not read one half as a quantity.
     private static String menuHint(MenuItem item, ParquetModel model, ScreenState.ColumnChunkDetail state) {
         ColumnChunk chunk = model.chunk(state.rowGroupIndex(), state.columnIndex());
         return switch (item) {
@@ -567,10 +572,14 @@ public final class ColumnChunkDetailScreen {
                 OffsetIndex oi = model.offsetIndex(state.rowGroupIndex(), state.columnIndex());
                 yield oi != null ? Plurals.format(oi.pageLocations().size(), "page", "pages") : Strings.ABSENT_VALUE;
             }
-            case COLUMN_INDEX -> chunk.columnIndexOffset() != null ? "present" : Strings.ABSENT_VALUE;
-            case OFFSET_INDEX -> chunk.offsetIndexOffset() != null ? "present" : Strings.ABSENT_VALUE;
-            case DICTIONARY -> chunk.metaData().dictionaryPageOffset() != null ? "present" : Strings.ABSENT_VALUE;
+            case COLUMN_INDEX -> presence(chunk.columnIndexOffset() != null);
+            case OFFSET_INDEX -> presence(chunk.offsetIndexOffset() != null);
+            case DICTIONARY -> presence(chunk.metaData().dictionaryPageOffset() != null);
         };
+    }
+
+    private static String presence(boolean present) {
+        return present ? "present" : "absent";
     }
 
     /// Says whether an index carries the per-page size statistics, so the

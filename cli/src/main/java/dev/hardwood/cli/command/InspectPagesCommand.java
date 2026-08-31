@@ -505,6 +505,8 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             case DATA_PAGE -> shortEncoding(header.dataPageHeader().encoding().name());
             case DATA_PAGE_V2 -> shortEncoding(header.dataPageHeaderV2().encoding().name());
             case DICTIONARY_PAGE -> shortEncoding(header.dictionaryPageHeader().encoding().name());
+            // Not the absent-value marker: an index page has no data encoding
+            // for a writer to have recorded, so there is nothing missing here.
             case INDEX_PAGE, UNKNOWN -> "N/A";
         };
     }

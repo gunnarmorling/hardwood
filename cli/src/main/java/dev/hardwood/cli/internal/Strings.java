@@ -21,7 +21,11 @@ public final class Strings {
     /// here so changes propagate to every screen at once.
     public static final char ELLIPSIS = '…';
 
-    /// The marker used when a value is absent rather than empty.
+    /// Stands in for a value the file does not carry, on every command and
+    /// every `dive` screen. Absent is not the same as empty: a `0 B` size or an
+    /// empty-string bound is something the writer recorded, this marker says it
+    /// recorded nothing. Centralised here so the two surfaces cannot drift back
+    /// into spelling absence differently.
     public static final String ABSENT_VALUE = "—";
 
     private Strings() {
