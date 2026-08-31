@@ -189,28 +189,83 @@ public class ParquetFileReader implements AutoCloseable {
         return openAll(List.of(inputFile), context, readerConfig);
     }
 
+    /// Open a single Parquet file with a shared context, reusing metadata the
+    /// caller has already parsed.
+    ///
+    /// Equivalent to [#open(InputFile,HardwoodContext)] except that the footer is
+    /// not read or parsed: the supplied [FileMetaData] is used as-is, and the
+    /// [FileSchema] is derived from it exactly as the other `open` methods derive
+    /// it from the footer they read. Reading and parsing the footer is most of the
+    /// cost of opening a reader on a warm file - three `readRange` calls and a
+    /// Thrift parse, linear in footer size - so a caller that opens many readers
+    /// over one unchanging file can hoist it out of the request. The intended
+    /// shape is: open once, keep the metadata, open per read from it. Deriving the
+    /// [FileSchema] is the part that is *not* avoided, and it grows with the
+    /// number of columns rather than with footer size.
+    ///
+    /// The metadata comes from [#getFileMetaData()], which stays usable after its
+    /// reader is closed, so acquiring it needs no separate entry point:
+    ///
+    /// ```java
+    /// FileMetaData metaData;
+    /// try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path), context)) {
+    ///     metaData = reader.getFileMetaData();
+    /// }
+    /// ```
+    ///
+    /// The metadata is treated as read-only by the reader, so one instance may
+    /// back any number of concurrent readers. It is not deeply immutable -
+    /// `Statistics` holds `byte[]` bounds - so a shared instance must not be
+    /// mutated once it has been handed over.
+    ///
+    /// **The caller is responsible for the metadata describing exactly these
+    /// bytes.** Every chunk offset and page index the reader uses comes from it,
+    /// so metadata from a different version of the file reads unrelated bytes
+    /// rather than failing cleanly. The reader's existing requirement that input
+    /// files are not modified while it is open therefore extends backwards to
+    /// whenever this metadata was read. A cache of parsed footers must key on a
+    /// content identity - an ETag or generation number, or [InputFile#length()]
+    /// paired with a modification time - and not on a path alone, because an
+    /// object store may replace the content behind one.
+    ///
+    /// [#getFileMetaData()] on a multi-file reader returns only the *first*
+    /// file's footer; reusing it for any other file of that reader is a misread,
+    /// not an error.
+    ///
+    /// @param fileMetaData the footer of `inputFile`, already parsed; must not be `null`
+    public static ParquetFileReader open(InputFile inputFile, HardwoodContext context,
+                                         FileMetaData fileMetaData) throws IOException {
+        if (fileMetaData == null) {
+            throw new IllegalArgumentException("fileMetaData must not be null");
+        }
+        return openInternal(List.of(inputFile), (HardwoodContextImpl) context, ReaderConfig.defaults(), false,
+                fileMetaData);
+    }
+
     /// Open multiple Parquet files with a dedicated context. The schema
     /// is read from the first file and is assumed to be common across all
     /// files. Files are opened on demand by the iterator; the first file is
     /// opened eagerly so any I/O or metadata error surfaces immediately.
     public static ParquetFileReader openAll(List<? extends InputFile> inputFiles) throws IOException {
-        return openInternal(inputFiles, HardwoodContextImpl.create(), ReaderConfig.defaults(), true);
+        return openInternal(inputFiles, HardwoodContextImpl.create(), ReaderConfig.defaults(), true, null);
     }
 
     /// Open multiple Parquet files with a shared context.
     public static ParquetFileReader openAll(List<? extends InputFile> inputFiles, HardwoodContext context) throws IOException {
-        return openInternal(inputFiles, (HardwoodContextImpl) context, ReaderConfig.defaults(), false);
+        return openInternal(inputFiles, (HardwoodContextImpl) context, ReaderConfig.defaults(), false, null);
     }
 
     /// Open multiple Parquet files with a shared context and an explicit
     /// [ReaderConfig].
     public static ParquetFileReader openAll(List<? extends InputFile> inputFiles, HardwoodContext context,
                                             ReaderConfig readerConfig) throws IOException {
-        return openInternal(inputFiles, (HardwoodContextImpl) context, readerConfig, false);
+        return openInternal(inputFiles, (HardwoodContextImpl) context, readerConfig, false, null);
     }
 
+    /// @param preParsedMetaData the first file's footer, already parsed, or `null` to read it
     private static ParquetFileReader openInternal(List<? extends InputFile> inputFiles, HardwoodContextImpl context,
-                                                   ReaderConfig readerConfig, boolean ownsContext) throws IOException {
+                                                   ReaderConfig readerConfig, boolean ownsContext,
+                                                   FileMetaData preParsedMetaData) throws IOException {
         if (inputFiles == null || inputFiles.isEmpty()) {
             throw new IllegalArgumentException("At least one file must be provided");
         }
@@ -222,14 +277,19 @@ public class ParquetFileReader implements AutoCloseable {
         first.open();
         try {
             FileMetaData firstFileMetaData;
-            try {
-                firstFileMetaData = ParquetMetadataReader.readMetadata(first);
+            if (preParsedMetaData != null) {
+                firstFileMetaData = preParsedMetaData;
             }
-            catch (RuntimeException e) {
-                // Thrift parsing throws RuntimeExceptions (e.g. ThriftEnumLookup for
-                // corrupt enum values) that escape the IOException-only contract of
-                // readMetadata — enrich them with file context so they're attributable.
-                throw ExceptionContext.addFileContext(first.name(), e);
+            else {
+                try {
+                    firstFileMetaData = ParquetMetadataReader.readMetadata(first);
+                }
+                catch (RuntimeException e) {
+                    // Thrift parsing throws RuntimeExceptions (e.g. ThriftEnumLookup for
+                    // corrupt enum values) that escape the IOException-only contract of
+                    // readMetadata — enrich them with file context so they're attributable.
+                    throw ExceptionContext.addFileContext(first.name(), e);
+                }
             }
             FileSchema schema = FileSchema.fromSchemaElements(firstFileMetaData.schema());
 

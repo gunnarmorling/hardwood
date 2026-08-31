@@ -91,6 +91,39 @@ try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
 
 The map `keyValueMetadata()` returns can be handed to `ParquetFileWriter.keyValueMetadata(Map)` to stamp the same entries on a file being written; see [File Metadata](../reference/writer.md#file-metadata).
 
+## Reuse a parsed footer across readers
+
+Opening a reader reads and parses the file's footer. For a file that does not change, parse it once and
+hand it to every reader opened over it afterwards:
+
+```java
+FileMetaData metaData;
+try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path), context)) {
+    metaData = reader.getFileMetaData();
+}
+
+try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path), context, metaData)) {
+    // reads as usual, without reading the footer again
+}
+```
+
+`getFileMetaData()` stays usable after its reader is closed, so the footer outlives both the reader and the
+input file it was read from — one reader is all it takes to acquire it. `open(InputFile, HardwoodContext,
+FileMetaData)` opens and closes its own file like every other `open`, and derives the `FileSchema` from the
+metadata just as the other `open` methods derive it from the footer they read.
+
+!!! warning "The metadata must be the footer of exactly the bytes being read"
+
+    Chunk offsets and page locations come from the metadata, so metadata read from a different version of
+    the file reads unrelated bytes rather than failing. If the metadata is cached, **the cache key must
+    carry a content identity** (an ETag or generation number, or `(length, modification time)`) — a path
+    alone is not enough, because object stores replace content at the same path. The reader's existing
+    requirement that input files are not modified while it is open extends backwards to whenever the
+    metadata was read.
+
+    On a multi-file reader, `getFileMetaData()` returns only the *first* file's footer. Reusing it for any
+    other file of that reader is a misread, not an error.
+
 ## Metadata for multiple files
 
 For a multi-file reader, use `getFileCount()` and `getFileMetaData(int)` to inspect each

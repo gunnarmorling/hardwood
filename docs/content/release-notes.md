@@ -15,6 +15,7 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
 
 ## 1.1.0-SNAPSHOT
 
+- `ParquetFileReader.open(InputFile, HardwoodContext, FileMetaData)` opens a reader from a footer the caller has already parsed, so opening a reader over an unchanging file no longer has to re-read and re-parse its footer. The footer comes from `getFileMetaData()`, which stays usable after its reader is closed.
 - Physical `skip(N)` on multi-file row readers is now a true global offset over the concatenated input files; skipped files have their footers read for row counts, but their data pages are not decoded.
 - The `hardwood` CLI is now built on the aesh command framework instead of picocli/Quarkus; removing the Quarkus/CDI bootstrap makes the CLI start faster
 - `hardwood help <command>` is removed — use `hardwood <command> --help` (or `-h`)
