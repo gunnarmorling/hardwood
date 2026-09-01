@@ -21,7 +21,7 @@ Highlights of this release:
 
 - Parquet files can be written — `RowWriter` a record at a time, `ColumnWriter` in aligned batches of primitive arrays — over the full type system, nested structs, lists and maps included
     - Every encoding and compression codec the format defines, bar the deprecated `LZ4` framing and `LZO`
-    - Statistics, `nan_count`, the column and offset indexes and `SizeStatistics` are written; DuckDB and parquet-java read the files back in CI
+    - Statistics and `nan_count` are written, page indexes and `SizeStatistics` are not
     - Footer key-value metadata and the `created_by` identifier are set on `ParquetFileWriter`, at any point until `close()` writes the footer
 - Two push-down sources for skipping non-matching row groups
     - A column's Bloom filter, for `eq` and `in` predicates
