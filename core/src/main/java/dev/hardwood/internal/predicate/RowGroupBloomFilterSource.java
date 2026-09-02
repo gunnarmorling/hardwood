@@ -97,13 +97,20 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
                     + "; keeping the row group (statistics still apply)");
             return null;
         }
+        Integer length = metaData.bloomFilterLength();
         if (prefetch != null) {
             BloomFilterPrefetch.PrefetchedBloom prefetched = prefetch.lookup(offset);
             if (prefetched != null) {
                 return BloomFilterProbe.parseComplete(prefetched.data());
             }
+            if (length == null) {
+                BloomFilterPrefetch.PrefetchedProbe probe = prefetch.lookupProbe(offset);
+                if (probe != null) {
+                    return readFilter(offset, probe.filterLength());
+                }
+            }
         }
-        return readFilter(offset, metaData.bloomFilterLength());
+        return readFilter(offset, length);
     }
 
     /// Reads the filter at `offset`. When `length` is known the whole region is read in one call;
