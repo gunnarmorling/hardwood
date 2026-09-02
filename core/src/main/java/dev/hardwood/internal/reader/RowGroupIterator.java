@@ -389,7 +389,8 @@ public class RowGroupIterator {
                     matchingRows = PageFilterEvaluator.computeMatchingRows(
                             workItem.columnOrdinals().filter(), workItem.rowGroup(), indexBuffers,
                             new PageFilterEvaluator.IndexLocation(
-                                    workItem.inputFile().name(), workItem.rowGroupIndex()));
+                                    workItem.inputFile().name(), workItem.rowGroupIndex()),
+                            workItem.fileSchema());
                 }
 
                 MaskCapability maskCapability = masksApplicableForRowGroup(
@@ -1211,7 +1212,8 @@ public class RowGroupIterator {
         for (RowGroup rg : rowGroups) {
             FilterDecision decision = RowGroupFilterEvaluator.decideRowGroup(columnOrdinals.filter(), rg,
                     new RowGroupBloomFilterSource(inputFile, rg),
-                    new RowGroupDictionaryFilterSource(inputFile, rg, fileSchema, context));
+                    new RowGroupDictionaryFilterSource(inputFile, rg, fileSchema, context),
+                    fileSchema);
             if (decision == FilterDecision.CANNOT_MATCH) {
                 continue;
             }

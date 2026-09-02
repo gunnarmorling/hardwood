@@ -43,6 +43,7 @@ class PredicatePushDownTest {
     /// (per-page pruning + `truncateToMaxRows`) as opposed to the sequential
     /// inline-stats path of [#INLINE_STATS_FILE].
     private static final Path COLUMN_INDEX_FILE = Paths.get("src/test/resources/column_index_pushdown.parquet");
+    private static final Path GROUP_NULL_FILE = Paths.get("src/test/resources/group_null_predicate.parquet");
 
     // ==================== ColumnReader with Filter ====================
 
@@ -386,6 +387,38 @@ class PredicatePushDownTest {
         }
     }
 
+    @Test
+    void testGroupIsNullPredicate() throws Exception {
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(GROUP_NULL_FILE))) {
+            FilterPredicate filter = FilterPredicate.isNull("address");
+            try (RowReader rows = reader.buildRowReader().filter(filter).build()) {
+                List<Integer> ids = new ArrayList<>();
+                while (rows.hasNext()) {
+                    rows.next();
+                    ids.add(rows.getInt("id"));
+                }
+
+                assertThat(ids).containsExactly(4);
+            }
+        }
+    }
+
+    @Test
+    void testGroupIsNotNullPredicate() throws Exception {
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(GROUP_NULL_FILE))) {
+            FilterPredicate filter = FilterPredicate.isNotNull("address");
+            try (RowReader rows = reader.buildRowReader().filter(filter).build()) {
+                List<Integer> ids = new ArrayList<>();
+                while (rows.hasNext()) {
+                    rows.next();
+                    ids.add(rows.getInt("id"));
+                }
+
+                assertThat(ids).containsExactly(1, 2, 3);
+            }
+        }
+    }
+
     // ==================== Mixed Type Filters ====================
 
     @Test
@@ -640,11 +673,9 @@ class PredicatePushDownTest {
     }
 
     @Test
-    void testFilterOnGroupColumnIsRejected() throws Exception {
-        // Filtering on a group column should fail instead of resolving to a nested leaf.
+    void testComparisonPredicateOnGroupColumnIsRejected() throws Exception {
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(NESTED_FILE))) {
-            FilterPredicate filter = FilterPredicate.isNull("address");
-
+            FilterPredicate filter = FilterPredicate.eq("address", "value");
             assertThatThrownBy(() -> reader.buildRowReader().filter(filter).build())
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("group");

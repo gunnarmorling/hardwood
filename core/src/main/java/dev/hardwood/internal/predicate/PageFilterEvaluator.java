@@ -22,6 +22,7 @@ import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.schema.FileSchema;
 
 /// Evaluates a [ResolvedPredicate] against per-page statistics from the Column Index
 /// to produce [RowRanges] representing rows that might match.
@@ -51,30 +52,37 @@ public class PageFilterEvaluator {
     /// @return row ranges that might contain matching rows
     public static RowRanges computeMatchingRows(ResolvedPredicate predicate, RowGroup rowGroup,
             RowGroupIndexBuffers indexBuffers, IndexLocation location) {
+        return computeMatchingRows(predicate, rowGroup, indexBuffers, location, null);
+    }
+
+    public static RowRanges computeMatchingRows(ResolvedPredicate predicate, RowGroup rowGroup,
+            RowGroupIndexBuffers indexBuffers, IndexLocation location, FileSchema schema) {
         long rowCount = rowGroup.numRows();
-        return evaluate(predicate, rowGroup, indexBuffers, rowCount, location);
+        return evaluate(predicate, rowGroup, indexBuffers, rowCount, location, schema);
     }
 
     private static RowRanges evaluate(ResolvedPredicate predicate, RowGroup rowGroup,
-            RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location) {
+            RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location, FileSchema schema) {
         return switch (predicate) {
             case ResolvedPredicate.And a -> {
                 RowRanges result = RowRanges.all(rowCount);
                 for (ResolvedPredicate child : a.children()) {
-                    result = result.intersect(evaluate(child, rowGroup, indexBuffers, rowCount, location));
+                    result = result.intersect(evaluate(child, rowGroup, indexBuffers, rowCount, location, schema));
                 }
                 yield result;
             }
             case ResolvedPredicate.Or o -> {
                 RowRanges result = null;
                 for (ResolvedPredicate child : o.children()) {
-                    RowRanges childRanges = evaluate(child, rowGroup, indexBuffers, rowCount, location);
+                    RowRanges childRanges = evaluate(child, rowGroup, indexBuffers, rowCount, location, schema);
                     result = (result == null) ? childRanges : result.union(childRanges);
                 }
                 yield (result != null) ? result : RowRanges.all(rowCount);
             }
-            case ResolvedPredicate.IsNullPredicate p -> evaluateNullPages(p.columnIndex(), true, rowGroup, indexBuffers, rowCount, location);
-            case ResolvedPredicate.IsNotNullPredicate p -> evaluateNullPages(p.columnIndex(), false, rowGroup, indexBuffers, rowCount, location);
+            case ResolvedPredicate.IsNullPredicate p -> evaluateNullPages(p.columnIndex(),
+                    p.definitionLevel(), true, rowGroup, indexBuffers, rowCount, location, schema);
+            case ResolvedPredicate.IsNotNullPredicate p -> evaluateNullPages(p.columnIndex(),
+                    p.definitionLevel(), false, rowGroup, indexBuffers, rowCount, location, schema);
             // Parquet has no per-page geospatial statistics (GeospatialStatistics lives only on
             // ColumnMetaData, applied during row-group filtering), so no page-level pruning is possible.
             case ResolvedPredicate.GeospatialPredicate ignored -> RowRanges.all(rowCount);
@@ -126,9 +134,9 @@ public class PageFilterEvaluator {
     /// @param rowCount     total rows in the row group
     /// @param location     file and row group being filtered, for error attribution
     /// @return row ranges that might contain matching rows
-    private static RowRanges evaluateNullPages(int columnIndex, boolean seekingNulls,
-            RowGroup rowGroup, RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location) {
-
+    private static RowRanges evaluateNullPages(int columnIndex, int definitionLevel, boolean seekingNulls,
+            RowGroup rowGroup, RowGroupIndexBuffers indexBuffers, long rowCount, IndexLocation location,
+            FileSchema schema) {
         if (columnIndex < 0 || columnIndex >= rowGroup.columns().size()) {
             return RowRanges.all(rowCount);
         }
@@ -142,9 +150,45 @@ public class PageFilterEvaluator {
         ColumnIndex columnIdx = indexPair.columnIndex;
         OffsetIndex offsetIdx = indexPair.offsetIndex;
 
+        boolean groupPredicate = schema != null
+                && definitionLevel < schema.getColumn(columnIndex).maxDefinitionLevel();
+
         List<PageLocation> pages = offsetIdx.pageLocations();
         int pageCount = pages.size();
         boolean[] keep = new boolean[pageCount];
+
+        if (groupPredicate) {
+            int expectedHistogramLength = schema.getColumn(columnIndex).maxDefinitionLevel() + 1;
+
+            for (int i = 0; i < pageCount; i++) {
+                long[] histogram = columnIdx.definitionLevelHistogram(i);
+
+                if (histogram == null
+                        || histogram.length != expectedHistogramLength
+                        || definitionLevel < 0
+                        || definitionLevel >= histogram.length) {
+                    keep[i] = true;
+                    continue;
+                }
+
+                long absentCount = 0;
+
+                for (int level = 0; level < definitionLevel; level++) {
+                    absentCount += histogram[level];
+                }
+
+                long presentCount = 0;
+
+                for (int level = definitionLevel; level < histogram.length; level++) {
+                    presentCount += histogram[level];
+                }
+
+                keep[i] = seekingNulls ? absentCount > 0 : presentCount > 0;
+            }
+
+            return RowRanges.fromPages(pages, keep, rowCount);
+        }
+
         long[] nullCounts = columnIdx.nullCounts();
 
         for (int i = 0; i < pageCount; i++) {

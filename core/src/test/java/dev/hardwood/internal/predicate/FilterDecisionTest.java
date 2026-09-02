@@ -165,7 +165,7 @@ class FilterDecisionTest {
 
     @Test
     void isNotNullDecidedByNullCountAlone() {
-        ResolvedPredicate isNotNull = new ResolvedPredicate.IsNotNullPredicate(0);
+        ResolvedPredicate isNotNull = new ResolvedPredicate.IsNotNullPredicate(0, 1);
         assertThat(StatisticsFilterSupport.decideLeaf(isNotNull, stats(null, null, 0L)))
                 .isEqualTo(ALWAYS_MATCHES);
         assertThat(StatisticsFilterSupport.decideLeaf(isNotNull, stats(null, null, 3L)))

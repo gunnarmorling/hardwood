@@ -197,14 +197,12 @@ public class FilterPredicateResolver {
                 yield new ResolvedPredicate.BinaryInPredicate(cs.columnIndex(), p.values());
             }
             case FilterPredicate.IsNullPredicate p -> {
-                ColumnSchema cs = resolveColumn(p.column(), schema);
-                rejectRepeated(p.column(), cs);
-                yield new ResolvedPredicate.IsNullPredicate(cs.columnIndex());
+                NullTarget target = resolveNullTarget(p.column(), schema);
+                yield new ResolvedPredicate.IsNullPredicate(target.columnIndex(), target.definitionLevel());
             }
             case FilterPredicate.IsNotNullPredicate p -> {
-                ColumnSchema cs = resolveColumn(p.column(), schema);
-                rejectRepeated(p.column(), cs);
-                yield new ResolvedPredicate.IsNotNullPredicate(cs.columnIndex());
+                NullTarget target = resolveNullTarget(p.column(), schema);
+                yield new ResolvedPredicate.IsNotNullPredicate(target.columnIndex(), target.definitionLevel());
             }
             case And a -> new ResolvedPredicate.And(a.filters().stream()
                     .map(f -> resolve(f, schema, columnOrders))
@@ -238,6 +236,62 @@ public class FilterPredicateResolver {
     }
 
     // ==================== Column resolution ====================
+
+    private record NullTarget(int columnIndex, int definitionLevel) {
+    }
+
+    private static NullTarget resolveNullTarget(String columnName, FileSchema schema) {
+        ColumnSchema cs;
+
+        try {
+            cs = schema.getColumn(columnName);
+        }
+        catch (IllegalArgumentException e) {
+            SchemaNode node = SchemaPathResolver.resolve(schema, columnName).node();
+
+            if (node instanceof SchemaNode.GroupNode group) {
+                if (group.isList() || group.isMap() || group.maxRepetitionLevel() > 0) {
+                    throw repeatedColumnRejected(columnName);
+                }
+
+                SchemaNode.PrimitiveNode leaf = firstNonRepeatedLeaf(group);
+
+                if (leaf == null) {
+                    throw new IllegalArgumentException(
+                            "Filter predicates require a leaf column. "
+                                    + "Column '" + columnName + "' is a group.");
+                }
+
+                return new NullTarget(leaf.columnIndex(), group.maxDefinitionLevel());
+            }
+
+            throw new IllegalArgumentException(
+                    "Column '" + columnName + "' not found in schema", e);
+        }
+
+        rejectRepeated(columnName, cs);
+
+        return new NullTarget(cs.columnIndex(), cs.maxDefinitionLevel());
+    }
+
+    private static SchemaNode.PrimitiveNode firstNonRepeatedLeaf(SchemaNode.GroupNode group) {
+        for (SchemaNode child : group.children()) {
+            if (child instanceof SchemaNode.PrimitiveNode primitive) {
+                if (primitive.maxRepetitionLevel() == 0) {
+                    return primitive;
+                }
+            }
+            else if (child instanceof SchemaNode.GroupNode childGroup) {
+                SchemaNode.PrimitiveNode leaf = firstNonRepeatedLeaf(childGroup);
+
+                if (leaf != null) {
+                    return leaf;
+                }
+            }
+        }
+
+        return null;
+    }
 
     /// Resolves a column name to its [ColumnSchema].
     ///

@@ -33,6 +33,8 @@ import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
+import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.FilterPredicate.Operator;
@@ -341,6 +343,138 @@ class PageFilterEvaluatorTest {
         );
     }
 
+    @Test
+    void groupIsNullUsesDefinitionLevelHistogramPerPage() throws IOException {
+        byte[] columnIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .boolList(false, false)
+                .field(2, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(3, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(7, FieldType.LIST)
+                .i64List(
+                        0, 0, 30, 0,
+                        0, 30, 0, 0)
+                .stop()
+                .build();
+
+        byte[] offsetIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .structList(
+                        pageLocation(0, 0),
+                        pageLocation(100, 30))
+                .stop()
+                .build();
+
+        ByteBuffer file =
+                ByteBuffer.allocate(offsetIndex.length + columnIndex.length);
+
+        file.put(offsetIndex)
+                .put(columnIndex)
+                .flip();
+
+        ColumnChunk chunk = new ColumnChunk(
+                null,
+                0L,
+                offsetIndex.length,
+                (long) offsetIndex.length,
+                columnIndex.length,
+                "");
+
+        RowGroup rowGroup =
+                new RowGroup(List.of(chunk), 1000, 60);
+
+        FileSchema schema = nestedGroupSchema();
+
+        ResolvedPredicate predicate =
+                new ResolvedPredicate.IsNullPredicate(0, 2);
+
+        try (InputFile inputFile = InputFile.of(file)) {
+            RowGroupIndexBuffers buffers =
+                    RowGroupIndexBuffers.fetch(inputFile, rowGroup);
+
+            RowRanges ranges =
+                    PageFilterEvaluator.computeMatchingRows(
+                            predicate,
+                            rowGroup,
+                            buffers,
+                            new PageFilterEvaluator.IndexLocation(
+                                    "group-null.parquet",
+                                    0),
+                            schema);
+
+            assertFalse(ranges.overlapsPage(0, 30));
+            assertTrue(ranges.overlapsPage(30, 60));
+        }
+    }
+
+    @Test
+    void groupIsNotNullUsesDefinitionLevelHistogramPerPage() throws IOException {
+        byte[] columnIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .boolList(false, false)
+                .field(2, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(3, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(7, FieldType.LIST)
+                .i64List(
+                        0, 0, 30, 0,
+                        0, 30, 0, 0)
+                .stop()
+                .build();
+
+        byte[] offsetIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .structList(
+                        pageLocation(0, 0),
+                        pageLocation(100, 30))
+                .stop()
+                .build();
+
+        ByteBuffer file =
+                ByteBuffer.allocate(offsetIndex.length + columnIndex.length);
+
+        file.put(offsetIndex)
+                .put(columnIndex)
+                .flip();
+
+        ColumnChunk chunk = new ColumnChunk(
+                null,
+                0L,
+                offsetIndex.length,
+                (long) offsetIndex.length,
+                columnIndex.length,
+                "");
+
+        RowGroup rowGroup =
+                new RowGroup(List.of(chunk), 1000, 60);
+
+        FileSchema schema = nestedGroupSchema();
+
+        ResolvedPredicate predicate =
+                new ResolvedPredicate.IsNotNullPredicate(0, 2);
+
+        try (InputFile inputFile = InputFile.of(file)) {
+            RowGroupIndexBuffers buffers =
+                    RowGroupIndexBuffers.fetch(inputFile, rowGroup);
+
+            RowRanges ranges =
+                    PageFilterEvaluator.computeMatchingRows(
+                            predicate,
+                            rowGroup,
+                            buffers,
+                            new PageFilterEvaluator.IndexLocation(
+                                    "group-not-null.parquet",
+                                    0),
+                            schema);
+
+            assertTrue(ranges.overlapsPage(0, 30));
+            assertFalse(ranges.overlapsPage(30, 60));
+        }
+    }
+
     // Compound Predicate Tests
     //
     // Uses column_index_pushdown.parquet: 1 row group, 10000 rows,
@@ -482,6 +616,16 @@ class PageFilterEvaluatorTest {
         }
         return new ColumnIndex(nullPages, minValues, maxValues,
                 ColumnIndex.BoundaryOrder.UNORDERED, null, null, null, null);
+    }
+    private static FileSchema nestedGroupSchema() {
+        return FileSchema.builder("root")
+                .struct("company", RepetitionType.OPTIONAL, company -> company
+                        .struct("address", RepetitionType.OPTIONAL, address -> address
+                                .addColumn(
+                                        "street",
+                                        PhysicalType.INT32,
+                                        RepetitionType.OPTIONAL)))
+                .build();
     }
 
     private static ColumnIndex longColumnIndex(long[] mins, long[] maxs) {
@@ -625,13 +769,150 @@ class PageFilterEvaluatorTest {
         try (InputFile inputFile = InputFile.of(file)) {
             RowGroupIndexBuffers buffers = RowGroupIndexBuffers.fetch(inputFile, rowGroup);
             assertThatThrownBy(() -> PageFilterEvaluator.computeMatchingRows(
-                    new ResolvedPredicate.IsNotNullPredicate(0), rowGroup, buffers,
+                    new ResolvedPredicate.IsNotNullPredicate(0, 1), rowGroup, buffers,
                     new PageFilterEvaluator.IndexLocation("indexes.parquet", 7)))
                     .isInstanceOf(UncheckedIOException.class)
                     .hasMessageContaining("indexes.parquet")
                     .hasMessageContaining("row group 7")
                     .hasMessageContaining("column 0")
                     .hasMessageContaining("ColumnIndex describes 3 pages but OffsetIndex locates 2");
+        }
+    }
+
+    @Test
+    void groupNullPredicateWithoutPageHistogramKeepsAllPages() throws IOException {
+        byte[] columnIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .boolList(true, true)
+                .field(2, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(3, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(5, FieldType.LIST)
+                .i64List(30, 30)
+                .stop()
+                .build();
+
+        byte[] offsetIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .structList(
+                        pageLocation(0, 0),
+                        pageLocation(100, 30))
+                .stop()
+                .build();
+
+        ByteBuffer file =
+                ByteBuffer.allocate(offsetIndex.length + columnIndex.length);
+
+        file.put(offsetIndex)
+                .put(columnIndex)
+                .flip();
+
+        ColumnChunk chunk = new ColumnChunk(
+                null,
+                0L,
+                offsetIndex.length,
+                (long) offsetIndex.length,
+                columnIndex.length,
+                "");
+
+        RowGroup rowGroup =
+                new RowGroup(List.of(chunk), 1000, 60);
+
+        FileSchema schema = nestedGroupSchema();
+
+        try (InputFile inputFile = InputFile.of(file)) {
+            RowGroupIndexBuffers buffers =
+                    RowGroupIndexBuffers.fetch(inputFile, rowGroup);
+
+            RowRanges isNullRanges =
+                    PageFilterEvaluator.computeMatchingRows(
+                            new ResolvedPredicate.IsNullPredicate(0, 2),
+                            rowGroup,
+                            buffers,
+                            new PageFilterEvaluator.IndexLocation(
+                                    "no-histogram.parquet",
+                                    0),
+                            schema);
+
+            RowRanges isNotNullRanges =
+                    PageFilterEvaluator.computeMatchingRows(
+                            new ResolvedPredicate.IsNotNullPredicate(0, 2),
+                            rowGroup,
+                            buffers,
+                            new PageFilterEvaluator.IndexLocation(
+                                    "no-histogram.parquet",
+                                    0),
+                            schema);
+
+            assertTrue(isNullRanges.overlapsPage(0, 30));
+            assertTrue(isNullRanges.overlapsPage(30, 60));
+
+            assertTrue(isNotNullRanges.overlapsPage(0, 30));
+            assertTrue(isNotNullRanges.overlapsPage(30, 60));
+        }
+    }
+
+    @Test
+    void groupNullPredicateIgnoresWrongPageHistogramLength() throws IOException {
+        byte[] columnIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .boolList(false, false)
+                .field(2, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(3, FieldType.LIST)
+                .binaryList(intBytes(0), intBytes(0))
+                .field(7, FieldType.LIST)
+                .i64List(
+                        0, 30, 0,
+                        0, 30, 0)
+                .stop()
+                .build();
+
+        byte[] offsetIndex = new ThriftStructBuilder()
+                .field(1, FieldType.LIST)
+                .structList(
+                        pageLocation(0, 0),
+                        pageLocation(100, 30))
+                .stop()
+                .build();
+
+        ByteBuffer file =
+                ByteBuffer.allocate(offsetIndex.length + columnIndex.length);
+
+        file.put(offsetIndex)
+                .put(columnIndex)
+                .flip();
+
+        ColumnChunk chunk = new ColumnChunk(
+                null,
+                0L,
+                offsetIndex.length,
+                (long) offsetIndex.length,
+                columnIndex.length,
+                "");
+
+        RowGroup rowGroup =
+                new RowGroup(List.of(chunk), 1000, 60);
+
+        FileSchema schema = nestedGroupSchema();
+
+        try (InputFile inputFile = InputFile.of(file)) {
+            RowGroupIndexBuffers buffers =
+                    RowGroupIndexBuffers.fetch(inputFile, rowGroup);
+
+            RowRanges ranges =
+                    PageFilterEvaluator.computeMatchingRows(
+                            new ResolvedPredicate.IsNotNullPredicate(0, 2),
+                            rowGroup,
+                            buffers,
+                            new PageFilterEvaluator.IndexLocation(
+                                    "bad-histogram.parquet",
+                                    0),
+                            schema);
+
+            assertTrue(ranges.overlapsPage(0, 30));
+            assertTrue(ranges.overlapsPage(30, 60));
         }
     }
 

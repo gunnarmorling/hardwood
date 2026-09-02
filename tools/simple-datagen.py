@@ -396,6 +396,41 @@ pq.write_table(
 print("\nGenerated list_basic_test.parquet:")
 print("  - Data: id=[1,2,3,4], tags=[[a,b,c],[],null,[single]], scores=[[10,20,30],[100],[1,2],null]")
 
+# hardwood-hq/hardwood#977: group IS NULL / IS NOT NULL predicates.
+# Separates a present struct whose children are null from a null struct.
+group_null_schema = pa.schema([
+    ('id', pa.int32(), False),
+    ('address', pa.struct([
+        ('street', pa.string(), True),
+        ('city', pa.string(), True),
+    ]), True),
+])
+
+group_null_table = pa.table({
+    'id': [1, 2, 3, 4],
+    'address': [
+        {'street': '123 Main St', 'city': 'New York'},
+        {'street': None, 'city': 'Los Angeles'},
+        {'street': None, 'city': None},
+        None,
+    ],
+}, schema=group_null_schema)
+
+pq.write_table(
+    group_null_table,
+    'core/src/test/resources/group_null_predicate.parquet',
+    use_dictionary=False,
+    compression=None,
+    data_page_version='2.0',
+    write_page_index=True,
+)
+
+print("\nGenerated group_null_predicate.parquet:")
+print("  - id=1: address populated")
+print("  - id=2: address present, street null")
+print("  - id=3: address present, all children null")
+print("  - id=4: address itself null")
+
 # ---------------------------------------------------------------------------
 # Unannotated repeated field read as a list (hardwood-hq/hardwood#656).
 #
