@@ -15,6 +15,7 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
 
 ## 1.1.0.Beta1 (2026-08-31)
 
+[Announcement blog post](https://www.morling.dev/blog/parquet-file-write-support-bloom-filters-improved-performance-hardwood-1-1-0-beta1/) ·
 [API changes](/api-changes/1.1.0.Beta1/)
 
 Highlights of this release:
