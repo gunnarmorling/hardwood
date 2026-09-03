@@ -147,6 +147,26 @@ class DictionaryNumericPushDownTest {
                 .isFalse();
     }
 
+    @Test
+    void int32UnsortedProbesAndFirstIndexMatch() throws IOException {
+        assertThat(DictionaryFilterSupport.absentAll(dict(0), new int[]{ 9, 1, 5 })).isFalse();
+        assertThat(DictionaryFilterSupport.absentAll(dict(0), new int[]{ 0, 5, 7 })).isFalse();
+        assertThat(DictionaryFilterSupport.absentAll(null, new int[]{ 0 })).isFalse();
+        assertThat(DictionaryFilterSupport.absentAll(dict(999), new int[]{ 0 })).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(null, 0)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dict(999), 0)).isFalse();
+    }
+
+    @Test
+    void int64UnsortedProbesAndFirstIndexMatch() throws IOException {
+        assertThat(DictionaryFilterSupport.absentAll(dict(1), new long[]{ 3000L, 100L, 500L })).isFalse();
+        assertThat(DictionaryFilterSupport.absentAll(dict(1), new long[]{ 0L, 500L, 700L })).isFalse();
+        assertThat(DictionaryFilterSupport.absentAll(null, new long[]{ 0L })).isFalse();
+        assertThat(DictionaryFilterSupport.absentAll(dict(999), new long[]{ 0L })).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(null, 0L)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dict(999), 0L)).isFalse();
+    }
+
     private static Dictionary dict(int columnIndex) throws IOException {
         return dictionaries().forColumn(columnIndex);
     }
