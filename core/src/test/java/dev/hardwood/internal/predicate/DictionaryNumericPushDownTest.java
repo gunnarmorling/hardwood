@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import dev.hardwood.InputFile;
 import dev.hardwood.internal.predicate.dictionary.DictionaryFilterSupport;
 import dev.hardwood.internal.predicate.dictionary.RowGroupDictionaryFilterSource;
+import dev.hardwood.internal.reader.Dictionary;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.FilterPredicate;
@@ -125,6 +126,29 @@ class DictionaryNumericPushDownTest {
     void int64InListDropsOnlyWhenEveryValueIsAbsent() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.in("i64", 1500L, 2500L))).isTrue();
         assertThat(dictionaryDrop(FilterPredicate.in("i64", 1500L, 2000L))).isFalse();
+    }
+
+    @Test
+    void floatInListDropsOnlyWhenEveryValueIsAbsent() throws IOException {
+        assertThat(dictionaryDrop(FilterPredicate.in("f32", 3.0, 3.5))).isTrue();
+        assertThat(dictionaryDrop(FilterPredicate.in("f32", 3.0, 2.5))).isFalse();
+        assertThat(dictionaryDrop(FilterPredicate.in("f32", 3.5, 0.1))).isTrue();
+
+        assertThat(DictionaryFilterSupport.absentAll(dict(F32_COLUMN), new double[]{ 3.5, Double.NaN }, true))
+                .isFalse();
+    }
+
+    @Test
+    void doubleInListDropsOnlyWhenEveryValueIsAbsent() throws IOException {
+        assertThat(dictionaryDrop(FilterPredicate.in("f64", 3.0, 3.5))).isTrue();
+        assertThat(dictionaryDrop(FilterPredicate.in("f64", 3.0, 2.5))).isFalse();
+
+        assertThat(DictionaryFilterSupport.absentAll(dict(F64_COLUMN), new double[]{ 3.5, Double.NaN }, false))
+                .isFalse();
+    }
+
+    private static Dictionary dict(int columnIndex) throws IOException {
+        return dictionaries().forColumn(columnIndex);
     }
 
     private static RowGroupDictionaryFilterSource dictionaries() {
