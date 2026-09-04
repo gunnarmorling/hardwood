@@ -33,9 +33,7 @@ row-group and page skipping.
 The logical-type factories validate the column's logical type at reader creation: `BigDecimal`
 predicates require a `DECIMAL` column and `UUID` predicates require a `UUID` column. Applying them
 to a plain `FIXED_LEN_BYTE_ARRAY` column without the corresponding logical-type annotation throws
-`IllegalArgumentException`. A `BigDecimal` predicate reads a `DECIMAL` stored as `INT32`, `INT64`
-or `FIXED_LEN_BYTE_ARRAY`; one stored as `BYTE_ARRAY` is rejected with the same exception.
-Raw physical-type predicates (`int`, `long`, etc.) remain available for
+`IllegalArgumentException`. Raw physical-type predicates (`int`, `long`, etc.) remain available for
 columns without logical types or for filtering on the underlying physical value directly. Filters
 work with all reader types — `RowReader`, `ColumnReader`, `AvroRowReader`, and across multi-file
 readers.
