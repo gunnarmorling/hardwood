@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.util.List;
 
+import dev.hardwood.internal.schema.FixedWidthValidator;
 import dev.hardwood.internal.schema.SchemaPathResolver;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.LogicalType;
@@ -115,10 +116,19 @@ public class FilterPredicateResolver {
                     yield new ResolvedPredicate.LongPredicate(cs.columnIndex(), p.op(),
                             scaled.unscaledValue().longValueExact());
                 }
-                else {
+                else if (physicalType == PhysicalType.FIXED_LEN_BYTE_ARRAY) {
                     yield new ResolvedPredicate.BinaryPredicate(cs.columnIndex(), p.op(),
-                            toFixedLenDecimalBytes(scaled.unscaledValue(), cs.typeLength()),
+                            toFixedLenDecimalBytes(scaled.unscaledValue(),
+                                    FixedWidthValidator.requireWidth(null, cs)),
                             true);
+                }
+                else {
+                    // A BYTE_ARRAY decimal stores the minimal two's complement of each value,
+                    // so padding the literal to a fixed width would compare it against a
+                    // differently sized encoding of the same number.
+                    throw new IllegalArgumentException("Column '" + p.column()
+                            + "' stores its DECIMAL as " + physicalType
+                            + ", which decimal predicates do not support");
                 }
             }
             case IntColumnPredicate p -> {
