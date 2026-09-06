@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -262,7 +263,7 @@ class BinaryDecimalFilterTest {
         return out.toByteArray();
     }
 
-    private static List<BigDecimal> collect(RowReader rows) {
+    private static List<BigDecimal> collect(RowReader rows) throws IOException {
         List<BigDecimal> matched = new ArrayList<>();
         while (rows.hasNext()) {
             rows.next();

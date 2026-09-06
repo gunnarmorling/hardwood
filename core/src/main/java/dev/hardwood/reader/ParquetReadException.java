@@ -7,15 +7,15 @@
  */
 package dev.hardwood.reader;
 
-/// Thrown when a file's own bytes are wrong: the read reached them and they do
-/// not say something a Parquet file can say.
+/// Thrown when a file's own bytes are wrong: the read succeeded and what it
+/// returned does not say something a Parquet file can say.
 ///
 /// A bad magic number, a footer that will not parse, a dictionary page the
 /// metadata places outside its column chunk, a page whose checksum fails, values
 /// that do not decode under the encoding the file declares for them.
 ///
 /// **Trying again will not help.** That is what separates this from
-/// [java.io.IOException], which the reader raises when the bytes did not arrive —
+/// [java.io.IOException], which the reader raises when reading the file failed —
 /// a disk error, an S3 failure after its own retries have run out — and where a
 /// second attempt may well succeed. A caller deciding whether to retry can decide
 /// on the type alone.

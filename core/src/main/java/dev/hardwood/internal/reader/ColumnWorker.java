@@ -20,6 +20,7 @@ import java.util.concurrent.locks.LockSupport;
 import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.compression.DecompressorFactory;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 
 /// Per-column pipeline that decodes pages in parallel and assembles batches.
@@ -503,26 +504,68 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         LockSupport.unpark(drainThread);
     }
 
-    /// Enriches a throwable with file-name context if possible.
+    /// Says what a throwable means, then names the file it came from.
     ///
-    /// `RuntimeException` is enriched in-place via [ExceptionContext#addFileContext],
-    /// preserving the original type. `IOException` is wrapped in a fresh
-    /// [UncheckedIOException] carrying the prefix; this prevents
-    /// [BatchExchange#checkError] from later wrapping it in a generic
-    /// `RuntimeException("Error in pipeline for column 'X'")` that would lose the
-    /// file context. `Error` and other throwables propagate unchanged.
+    /// [#asReadFailure] decides the type first, so what is enriched here is already the
+    /// exception a caller will see. A `RuntimeException` — including the
+    /// `ParquetReadException` most decoder failures have just become — is enriched via
+    /// [ExceptionContext#addFileContext], which preserves whatever type it arrived as.
+    /// `IOException` is wrapped in a fresh [UncheckedIOException] carrying the prefix, the
+    /// form a transport failure takes across a task boundary and the one the readers unwrap
+    /// at their `hasNext`/`next`/`nextBatch` boundary. `Error` and other throwables propagate
+    /// unchanged.
     private static Throwable enrichWithFileName(Throwable t, String fileName) {
+        Throwable typed = asReadFailure(t);
         if (fileName == null || fileName.isEmpty()) {
-            return t;
+            return typed;
         }
-        if (t instanceof RuntimeException re) {
+        if (typed instanceof RuntimeException re) {
             return ExceptionContext.addFileContext(fileName, re);
         }
-        if (t instanceof IOException ioe) {
+        if (typed instanceof IOException ioe) {
             return new UncheckedIOException(
                     ExceptionContext.filePrefix(fileName)
                             + (ioe.getMessage() != null ? ioe.getMessage() : "I/O failure"),
                     ioe);
+        }
+        return typed;
+    }
+
+    /// What a decoder threw, said as what it means.
+    ///
+    /// A corrupt dictionary index reaches here as an
+    /// [ArrayIndexOutOfBoundsException] from `dict[i]`, an impossible RLE run
+    /// header as an [IllegalStateException], a length that will not fit as an
+    /// [ArithmeticException]. Every one of them is the file being wrong, and every
+    /// one of them reads to a user as a defect in this library. They become a
+    /// [ParquetReadException] keeping the original as its cause.
+    ///
+    /// Four things pass through. [Error] is neither the file's fault nor
+    /// something to retry. An [IOException] is the transport, as is an
+    /// [UncheckedIOException] — the form a fetch failure takes when it crosses a
+    /// task boundary, and a `RuntimeException` only for that reason. A
+    /// [ParquetReadException] already says what it is — including a
+    /// [dev.hardwood.reader.SchemaIncompatibleException]. And an
+    /// [UnsupportedOperationException] is a codec library that is absent or an
+    /// encoding not implemented, which is this library's limit rather than a
+    /// fault in the file.
+    ///
+    /// The cost is that a defect of ours reaching a decoder is reported as a
+    /// problem with the file. That is the rarer mistake: without this, every
+    /// corrupt file is reported as a defect of ours.
+    /// Package-private rather than private: this mapping is the judgement the reader's exception
+    /// model rests on, and it is asserted directly rather than through a corrupt file for every
+    /// arm of it.
+    static Throwable asReadFailure(Throwable t) {
+        if (t instanceof Error || t instanceof IOException
+                || t instanceof UncheckedIOException
+                || t instanceof ParquetReadException
+                || t instanceof UnsupportedOperationException) {
+            return t;
+        }
+        if (t instanceof RuntimeException) {
+            return new ParquetReadException(
+                    t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName(), t);
         }
         return t;
     }

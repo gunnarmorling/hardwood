@@ -7,6 +7,8 @@
  */
 package dev.hardwood.cli.command;
 
+import java.io.IOException;
+
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.reader.ParquetFileReader.RowReaderBuilder;
 import dev.hardwood.reader.RowReader;
@@ -46,7 +48,7 @@ final class RowLimits {
 
     /// Builds a [RowReader] applying the parsed row limit:
     /// positive → `head(limit)`, negative → `tail(-limit)`, zero → no limit.
-    static RowReader buildRowReader(ParquetFileReader reader, ColumnProjection projection, int rowLimit) {
+    static RowReader buildRowReader(ParquetFileReader reader, ColumnProjection projection, int rowLimit) throws IOException {
         RowReaderBuilder builder = reader.buildRowReader().projection(projection);
         if (rowLimit > 0) {
             builder.head(rowLimit);

@@ -7,6 +7,9 @@
  */
 package dev.hardwood.reader;
 
+import java.io.Closeable;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 
 import dev.hardwood.Experimental;
@@ -65,7 +68,7 @@ import dev.hardwood.schema.FileSchema;
 /// layer representation may change in future releases without prior
 /// deprecation.
 @Experimental
-public class ColumnReader implements AutoCloseable {
+public class ColumnReader implements Closeable {
 
     private final ColumnSchema column;
     private final boolean nested;
@@ -172,7 +175,25 @@ public class ColumnReader implements AutoCloseable {
     /// behind on the batch they already hold.
     ///
     /// @return true if a batch is available, false if exhausted
-    public boolean nextBatch() {
+    /// @throws IOException if the bytes could not be read
+    /// @throws dev.hardwood.reader.ParquetReadException if the file's bytes are not what a
+    ///         Parquet file can say: a footer or a page index that will not parse, a
+    ///         dictionary page the metadata places outside its column chunk, a page whose
+    ///         checksum fails, values that do not decode under the encoding declared for
+    ///         them. In a multi-file read this covers a later file that is not Parquet at
+    ///         all, or whose schema cannot be reconciled with the first file's
+    public boolean nextBatch() throws IOException {
+        try {
+            return nextBatchImpl();
+        }
+        catch (UncheckedIOException e) {
+            // The decode pipeline crosses task boundaries a checked exception
+            // cannot travel through, so a transport failure arrives wrapped.
+            throw ExceptionContext.unwrap(e);
+        }
+    }
+
+    private boolean nextBatchImpl() {
         if (coordinator != null) {
             // Filtered path: a single [FilterCoordinator] advances every reader
             // in the projection together so the per-batch selection is computed
@@ -486,7 +507,16 @@ public class ColumnReader implements AutoCloseable {
     /// Releases the resources held by this reader. Idempotent: calling it more
     /// than once has no further effect.
     @Override
-    public void close() {
+    public void close() throws IOException {
+        try {
+            closeImpl();
+        }
+        catch (UncheckedIOException e) {
+            throw ExceptionContext.unwrap(e);
+        }
+    }
+
+    private void closeImpl() throws IOException {
         // When a coordinator owns this reader, closing any single reader tears
         // down the whole projection (all sibling readers plus the shared
         // iterator). This keeps `try (ColumnReader r = ...filter(...).build())`
@@ -501,7 +531,7 @@ public class ColumnReader implements AutoCloseable {
     /// Closes this reader's own worker and (if owned) its iterator, without
     /// involving the [FilterCoordinator]. Called directly on the unfiltered
     /// path and by the coordinator when it tears down the projection.
-    void rawClose() {
+    void rawClose() throws IOException {
         if (closed) {
             return;
         }

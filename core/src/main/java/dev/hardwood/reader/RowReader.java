@@ -7,6 +7,9 @@
  */
 package dev.hardwood.reader;
 
+import java.io.Closeable;
+import java.io.IOException;
+
 import dev.hardwood.row.StructAccessor;
 
 /// Provides row-oriented iteration over a Parquet file.
@@ -25,20 +28,39 @@ import dev.hardwood.row.StructAccessor;
 ///     }
 /// }
 /// ```
-public interface RowReader extends StructAccessor, AutoCloseable {
+public interface RowReader extends StructAccessor, Closeable {
 
     /// Check if there are more rows to read.
     ///
+    /// Reaches the file when the current batch runs out, so it can fail the way
+    /// any read can.
+    ///
     /// @return true if there are more rows available
-    boolean hasNext();
+    /// @throws IOException if the bytes could not be read
+    /// @throws dev.hardwood.reader.ParquetReadException if the file's bytes are not what a
+    ///         Parquet file can say: a footer or a page index that will not parse, a
+    ///         dictionary page the metadata places outside its column chunk, a page whose
+    ///         checksum fails, values that do not decode under the encoding declared for
+    ///         them. In a multi-file read this covers a later file that is not Parquet at
+    ///         all, or whose schema cannot be reconciled with the first file's
+    boolean hasNext() throws IOException;
 
     /// Advance to the next row. Must be called before accessing row data.
     ///
     /// @throws java.util.NoSuchElementException if no more rows are available
-    void next();
+    /// @throws IOException if the bytes could not be read
+    /// @throws dev.hardwood.reader.ParquetReadException if the file's bytes are not what a
+    ///         Parquet file can say: a footer or a page index that will not parse, a
+    ///         dictionary page the metadata places outside its column chunk, a page whose
+    ///         checksum fails, values that do not decode under the encoding declared for
+    ///         them. In a multi-file read this covers a later file that is not Parquet at
+    ///         all, or whose schema cannot be reconciled with the first file's
+    void next() throws IOException;
 
     /// Releases the resources held by this reader. Idempotent: calling it more
     /// than once has no further effect.
+    ///
+    /// @throws IOException if a file this reader owns could not be closed
     @Override
-    void close();
+    void close() throws IOException;
 }

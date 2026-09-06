@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -269,7 +270,7 @@ class BuilderCombinationTest {
         }
     }
 
-    private static List<Long> ids(RowReaderBuilder builder) {
+    private static List<Long> ids(RowReaderBuilder builder) throws IOException {
         List<Long> rows = new ArrayList<>();
         try (RowReader r = builder.build()) {
             while (r.hasNext()) {

@@ -27,6 +27,7 @@ import dev.hardwood.InputFile;
 import dev.hardwood.cli.dive.DiveApp;
 import dev.hardwood.cli.dive.ParquetModel;
 import dev.hardwood.cli.internal.Fmt;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.s3.RangeBacking;
 import dev.tamboui.buffer.Buffer;
 import dev.tamboui.layout.Rect;
@@ -86,7 +87,7 @@ public class DiveCommand implements Command<CommandInvocation> {
             app.run();
             return CommandResult.SUCCESS;
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }

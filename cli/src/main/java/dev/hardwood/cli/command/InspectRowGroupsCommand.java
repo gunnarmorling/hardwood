@@ -25,6 +25,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 
 @CommandDefinition(name = "rowgroups", description = "Display per-row-group column chunk metadata (sizes, codec).", generateHelp = true)
 public class InspectRowGroupsCommand implements Command<CommandInvocation> {
@@ -50,7 +51,7 @@ public class InspectRowGroupsCommand implements Command<CommandInvocation> {
                 printRowGroup(i, rowGroups.get(i));
             }
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }

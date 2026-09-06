@@ -7,6 +7,8 @@
  */
 package dev.hardwood.reader;
 
+import java.io.IOException;
+
 import dev.hardwood.internal.reader.RecordFilterTally;
 
 /// Drives the filtered column-reader path (#624). It advances every reader of
@@ -105,7 +107,7 @@ final class FilterCoordinator {
         return true;
     }
 
-    void close() {
+    void close() throws IOException {
         if (closed) {
             return;
         }

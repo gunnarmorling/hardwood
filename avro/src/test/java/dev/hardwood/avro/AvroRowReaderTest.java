@@ -8,6 +8,7 @@
 package dev.hardwood.avro;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -119,7 +120,7 @@ class AvroRowReaderTest {
     }
 
     @Test
-    void rewrittenFieldUsesParquetAccessor() {
+    void rewrittenFieldUsesParquetAccessor() throws Exception {
         FileSchema schema = primitiveSchema("a-b", PhysicalType.INT32, RepetitionType.REQUIRED);
         AvroPlanNode plan = AvroSchemaConverter.plan(schema, ColumnProjection.all());
         RowReader rows = (RowReader) Proxy.newProxyInstance(
@@ -1609,7 +1610,7 @@ class AvroRowReaderTest {
         encoder.flush();
     }
 
-    private static List<GenericRecord> readAll(AvroRowReader reader) {
+    private static List<GenericRecord> readAll(AvroRowReader reader) throws IOException {
         List<GenericRecord> records = new ArrayList<>();
         while (reader.hasNext()) {
             records.add(reader.next());

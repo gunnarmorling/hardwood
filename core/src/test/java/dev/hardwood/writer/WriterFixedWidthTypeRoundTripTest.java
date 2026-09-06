@@ -7,6 +7,7 @@
  */
 package dev.hardwood.writer;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -485,7 +486,7 @@ class WriterFixedWidthTypeRoundTripTest {
         return reader.getFileMetaData().rowGroups().get(0).columns().get(columnIndex).metaData();
     }
 
-    private static boolean[] readBooleans(ParquetFileReader reader, int columnIndex) {
+    private static boolean[] readBooleans(ParquetFileReader reader, int columnIndex) throws IOException {
         try (ColumnReader column = reader.columnReader(columnIndex)) {
             boolean[] result = new boolean[Math.toIntExact(reader.getFileMetaData().numRows())];
             int pos = 0;

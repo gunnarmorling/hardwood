@@ -26,6 +26,7 @@ import dev.hardwood.internal.schema.SchemaNames;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.schema.SchemaNode;
 
@@ -62,7 +63,7 @@ public class SchemaCommand implements Command<CommandInvocation> {
 
             System.out.println(output);
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }

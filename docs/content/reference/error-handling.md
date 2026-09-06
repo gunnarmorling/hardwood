@@ -15,14 +15,48 @@ Hardwood throws specific exceptions for common error conditions.
 
 ## Reading
 
+A read that fails leaves you one decision: try again, or stop. The exception
+type answers it.
+
+> **Trying again may help:** `IOException`
+> **Trying again will not:** `ParquetReadException`, `UnsupportedOperationException`
+
 | Exception | When |
 |-----------|------|
-| `IOException` | Any I/O error: invalid Parquet file (bad magic number, corrupt footer, malformed page index), reading a column chunk whose `file_path` points at another file (the split-file layout is not supported; such a file's metadata still reads), encrypted files (Parquet Modular Encryption is not supported), local-disk read errors, S3 transport failures (after retry exhaustion — see [Read from S3](../how-to/s3.md)) |
-| `UnsupportedOperationException` | Compression codec library not on classpath — the message names the required dependency |
-| `IllegalArgumentException` | Accessing a column not in the projection, or invalid column name |
+| `IOException` | The bytes did not arrive: a local-disk read error, an S3 transport failure (after retry exhaustion — see [Read from S3](../how-to/s3.md)), a file that cannot be opened. Checked, and declared by every method that reaches the file: `ParquetFileReader.open`, `RowReader.hasNext`/`next`/`close`, `ColumnReader.nextBatch`/`close` |
+| `ParquetReadException` | The bytes arrived and are wrong: a bad magic number, a corrupt footer, a malformed page index, a dictionary page the metadata places outside its column chunk, a page whose checksum fails, values that do not decode. Unchecked |
+| `SchemaIncompatibleException` | A `ParquetReadException`. In a multi-file read, a file whose schema cannot be reconciled with the first file's; or one file's footer disagreeing with itself about which leaf a column chunk holds |
+| `UnsupportedOperationException` | The file is correct and Hardwood cannot read it: Parquet Modular Encryption, an encoding not implemented, a compression codec whose library is absent — the message names the dependency to add |
+| `IllegalArgumentException` | Accessing a column not in the projection, or an invalid column name |
 | `NullPointerException` | Calling a primitive accessor (`getInt`, `getLong`, etc.) on a null field without checking `isNull()` first |
 | `NoSuchElementException` | Calling `next()` on a `RowReader` when `hasNext()` returns `false` |
 | `IllegalStateException` | Calling `ColumnReader` accessors before `nextBatch()`, or calling nested-column methods on a flat column |
+
+The last four are mistakes in the calling code rather than read failures, and no
+file is involved.
+
+### Retrying
+
+```java
+try (ParquetFileReader reader = ParquetFileReader.open(file);
+     RowReader rows = reader.rowReader()) {
+    while (rows.hasNext()) {
+        rows.next();
+        total += rows.getLong("amount");
+    }
+}
+catch (IOException e) {
+    // The bytes did not arrive. Another attempt may succeed.
+}
+catch (ParquetReadException e) {
+    // This file will not read. Another attempt will fail the same way.
+}
+```
+
+Reading a `RowReader` inside a `Stream` or an `Iterator` means adapting a checked
+exception to an interface that cannot declare one. Wrap it in
+`UncheckedIOException` at that boundary and unwrap it where the stream is
+consumed; Hardwood itself raises `UncheckedIOException` from no public method.
 
 ## Writing
 

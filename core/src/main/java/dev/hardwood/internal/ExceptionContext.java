@@ -102,6 +102,26 @@ public final class ExceptionContext {
         return new RuntimeException(newMessage, e);
     }
 
+    /// Restates an [UncheckedIOException] as the [IOException] a method that can declare one
+    /// should raise.
+    ///
+    /// The wrapper's message is kept, because that is where the file name is: the read path
+    /// wraps a transport failure precisely so [#addFileContext] can name the file on it, and
+    /// unwrapping to the bare cause would hand the caller an unattributable failure. Where
+    /// nothing was added — the `UncheckedIOException(IOException)` constructor sets the message
+    /// to the cause's `toString()` — the cause itself is returned rather than a wrapper
+    /// repeating it.
+    ///
+    /// @param e the wrapper to restate
+    /// @return the [IOException] to throw, with `e`'s cause as its own
+    public static IOException unwrap(UncheckedIOException e) {
+        IOException cause = e.getCause();
+        String message = e.getMessage();
+        return message == null || message.equals(cause.toString())
+                ? cause
+                : new IOException(message, cause);
+    }
+
     private static boolean hasFilePrefix(String message) {
         if (message == null || message.isEmpty() || message.charAt(0) != '[') {
             return false;

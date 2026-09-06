@@ -626,6 +626,10 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// Compresses a page body with the chunk's codec. Compressing an in-memory buffer that
     /// fails is unrecoverable, so a codec error surfaces as an unchecked exception rather than
     /// forcing a checked-exception path through the [RecordShredder.LevelSink] callback.
+    ///
+    /// `ParquetFileWriter.flushRowGroup` unwraps it: it is the innermost frame every public
+    /// write method flushes through, and each of them declares the [IOException] a caller
+    /// should see.
     private byte[] compress(byte[] data, int offset, int length) {
         try {
             return compressor.compress(data, offset, length);

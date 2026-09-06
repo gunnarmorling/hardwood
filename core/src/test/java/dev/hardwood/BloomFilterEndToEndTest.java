@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
@@ -132,7 +133,7 @@ class BloomFilterEndToEndTest {
                 .isNotNull().isPositive();
     }
 
-    private static int countRows(ColumnReader reader) {
+    private static int countRows(ColumnReader reader) throws IOException {
         int total = 0;
         while (reader.nextBatch()) {
             total += reader.getRecordCount();
@@ -140,7 +141,7 @@ class BloomFilterEndToEndTest {
         return total;
     }
 
-    private static int countRows(RowReader reader) {
+    private static int countRows(RowReader reader) throws IOException {
         int total = 0;
         while (reader.hasNext()) {
             reader.next();

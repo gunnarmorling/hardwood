@@ -709,7 +709,7 @@ public class Utils {
     }
 
     /// Compare a single ColumnReader's data against reference rows.
-    static void compareColumnReader(String colName, ColumnReader columnReader, List<GenericRecord> referenceRows) {
+    static void compareColumnReader(String colName, ColumnReader columnReader, List<GenericRecord> referenceRows) throws IOException {
         int rowIdx = 0;
 
         while (columnReader.nextBatch()) {
@@ -753,7 +753,8 @@ public class Utils {
     /// offsets/level-null/element-null arrays and matching it to the same value
     /// extracted from the Avro [GenericRecord] along the column's [dev.hardwood.metadata.FieldPath].
     static void compareNestedColumnReader(FileSchema schema, ColumnSchema colSchema,
-                                          ColumnReader reader, List<GenericRecord> referenceRows) {
+                                          ColumnReader reader, List<GenericRecord> referenceRows)
+            throws IOException {
         int maxRep = colSchema.maxRepetitionLevel();
         List<String> path = colSchema.fieldPath().elements();
         // parquet-java's AvroParquetReader exposes Parquet maps via HashMap-backed

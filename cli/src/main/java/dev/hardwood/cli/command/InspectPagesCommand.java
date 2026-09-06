@@ -41,6 +41,7 @@ import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.metadata.Statistics;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
@@ -81,7 +82,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             metadata = reader.getFileMetaData();
             schema = reader.getFileSchema();
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }
@@ -102,7 +103,7 @@ public class InspectPagesCommand implements Command<CommandInvocation> {
             pageInputFile.open();
             printPages(metadata, schema, pageInputFile, filterColumnIndex);
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading pages: " + e.getMessage());
             return CommandResult.FAILURE;
         }

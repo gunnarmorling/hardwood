@@ -1051,23 +1051,42 @@ public class RowGroupIterator {
     /// ParquetFileReader leave those shared resources to the parent and instead
     /// tell it to stop tracking this iterator, so a closed child reader's work
     /// list does not stay reachable for the parent's whole lifetime.
-    public void close() {
+    public void close() throws IOException {
         metadataCache.clear();
         fetchPlanCache.clear();
 
-        if (ownsFileMetadataCache) {
-            fileMetadataCache.close();
-            for (InputFile file : inputFiles) {
-                try {
-                    file.close();
+        try {
+            if (ownsFileMetadataCache) {
+                fileMetadataCache.close();
+                // Reported rather than logged: a close that fails has failed, and a
+                // warning nobody reads is a silent failure. One is raised and the
+                // rest suppressed beneath it, as ParquetFileReader.close does.
+                IOException firstFailure = null;
+                for (InputFile file : inputFiles) {
+                    try {
+                        file.close();
+                    }
+                    catch (IOException e) {
+                        if (firstFailure == null) {
+                            firstFailure = e;
+                        }
+                        else {
+                            firstFailure.addSuppressed(e);
+                        }
+                    }
                 }
-                catch (IOException e) {
-                    LOG.log(System.Logger.Level.WARNING, "Failed to close file: " + file.name(), e);
+                if (firstFailure != null) {
+                    throw firstFailure;
                 }
             }
         }
-
-        closeListener.accept(this);
+        finally {
+            // The parent stops tracking this iterator whether or not closing its files
+            // succeeded: a failed close is still a close, and leaving the iterator on the
+            // parent's list would keep a torn-down work list reachable for the parent's
+            // whole lifetime.
+            closeListener.accept(this);
+        }
     }
 
     // ==================== Internal ====================

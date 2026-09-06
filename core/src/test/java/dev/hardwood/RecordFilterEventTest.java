@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -223,7 +224,7 @@ class RecordFilterEventTest extends AbstractJfrRecorderTest {
         return events.getFirst();
     }
 
-    private static long countRows(RowReader rows) {
+    private static long countRows(RowReader rows) throws IOException {
         long count = 0;
         while (rows.hasNext()) {
             rows.next();

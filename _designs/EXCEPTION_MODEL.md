@@ -1,6 +1,6 @@
 # Design: the exception model for reads
 
-Status: proposed
+Status: implemented
 
 ## The question a failure has to answer
 

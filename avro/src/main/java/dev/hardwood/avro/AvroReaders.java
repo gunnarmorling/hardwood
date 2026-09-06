@@ -7,6 +7,8 @@
  */
 package dev.hardwood.avro;
 
+import java.io.IOException;
+
 import dev.hardwood.avro.internal.AvroPlanNode;
 import dev.hardwood.avro.internal.AvroSchemaConverter;
 import dev.hardwood.reader.FilterPredicate;
@@ -36,7 +38,7 @@ public final class AvroReaders {
     }
 
     /// Create an `AvroRowReader` that reads all rows and columns.
-    public static AvroRowReader rowReader(ParquetFileReader reader) {
+    public static AvroRowReader rowReader(ParquetFileReader reader) throws IOException {
         return buildRowReader(reader).build();
     }
 
@@ -96,7 +98,7 @@ public final class AvroReaders {
             return this;
         }
 
-        public AvroRowReader build() {
+        public AvroRowReader build() throws IOException {
             ParquetFileReader.RowReaderBuilder underlying = fileReader.buildRowReader()
                     .projection(projection);
             if (filter != null) {

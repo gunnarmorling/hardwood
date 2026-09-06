@@ -7,6 +7,7 @@
  */
 package dev.hardwood.writer;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -788,7 +789,7 @@ class WriterEncodingPolicyTest {
 
     /// Every leaf value of a repeated column, flattened across its records — a list's leaf count
     /// differs from its record count, so the values are what there is to compare.
-    private static List<Object> readLeafValues(ParquetFileReader reader, PhysicalType type) {
+    private static List<Object> readLeafValues(ParquetFileReader reader, PhysicalType type) throws IOException {
         List<Object> read = new ArrayList<>();
         try (ColumnReader column = reader.columnReader(0)) {
             while (column.nextBatch()) {
