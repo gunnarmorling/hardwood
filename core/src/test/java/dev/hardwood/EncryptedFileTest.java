@@ -31,8 +31,8 @@ class EncryptedFileTest {
         Path file = Paths.get("src/test/resources/encrypted_footer.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining("encrypted_footer.parquet")
-                .hasMessageContaining("Encrypted Parquet files are not supported");
+                .hasMessage("[encrypted_footer.parquet] Encrypted Parquet files are not supported"
+                        + " (Parquet Modular Encryption)");
     }
 
     @Test
@@ -42,8 +42,8 @@ class EncryptedFileTest {
         Path file = Paths.get("src/test/resources/encrypted_plaintext_footer.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining("encrypted_plaintext_footer.parquet")
-                .hasMessageContaining("Encrypted Parquet files are not supported");
+                .hasMessage("[encrypted_plaintext_footer.parquet] Encrypted Parquet files are"
+                        + " not supported (Parquet Modular Encryption)");
     }
 
     @Test
@@ -55,8 +55,8 @@ class EncryptedFileTest {
                 List.of(InputFile.of(first), InputFile.of(encrypted)))) {
             assertThatThrownBy(() -> reader.getFileMetaData(1))
                     .isInstanceOf(EncryptedParquetException.class)
-                    .hasMessageContaining("encrypted_footer.parquet")
-                    .hasMessageContaining("Encrypted Parquet files are not supported");
+                    .hasMessage("[encrypted_footer.parquet] Encrypted Parquet files are not"
+                            + " supported (Parquet Modular Encryption)");
         }
     }
 }

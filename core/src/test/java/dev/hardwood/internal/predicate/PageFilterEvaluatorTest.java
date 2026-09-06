@@ -628,10 +628,9 @@ class PageFilterEvaluatorTest {
                     new ResolvedPredicate.IsNotNullPredicate(0), rowGroup, buffers,
                     new PageFilterEvaluator.IndexLocation("indexes.parquet", 7)))
                     .isInstanceOf(UncheckedIOException.class)
-                    .hasMessageContaining("indexes.parquet")
-                    .hasMessageContaining("row group 7")
-                    .hasMessageContaining("column 0")
-                    .hasMessageContaining("ColumnIndex describes 3 pages but OffsetIndex locates 2");
+                    .hasMessage("[indexes.parquet] Failed to parse the page index of column 0"
+                            + " in row group 7: Malformed Parquet metadata: ColumnIndex describes"
+                            + " 3 pages but OffsetIndex locates 2");
         }
     }
 
