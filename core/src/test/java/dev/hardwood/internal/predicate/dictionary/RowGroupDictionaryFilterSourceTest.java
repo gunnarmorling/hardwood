@@ -150,9 +150,9 @@ class RowGroupDictionaryFilterSourceTest {
 
             assertThatThrownBy(() -> source.forColumn(DICTIONARY_COLUMN))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Malformed Parquet metadata")
-                    .hasMessageContaining("dictionary page at offset 4096")
-                    .hasMessageContaining("lies after its first data page at offset 1024");
+                    .hasMessage("[column_index_pushdown_dict.parquet] Malformed Parquet metadata: column 1"
+                            + " declares a dictionary page at offset 4096 which lies after its"
+                            + " first data page at offset 1024");
         });
     }
 
@@ -163,8 +163,9 @@ class RowGroupDictionaryFilterSourceTest {
 
             assertThatThrownBy(() -> source.forColumn(DICTIONARY_COLUMN))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Malformed Parquet metadata")
-                    .hasMessageContaining("but its chunk ends at offset");
+                    .hasMessage("[column_index_pushdown_dict.parquet] Malformed Parquet metadata: column 1"
+                            + " declares a dictionary page at offset 95903 but its chunk ends"
+                            + " at offset 95903");
         });
     }
 
@@ -178,8 +179,9 @@ class RowGroupDictionaryFilterSourceTest {
 
             assertThatThrownBy(() -> source.forColumn(DICTIONARY_COLUMN))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Malformed Parquet metadata")
-                    .hasMessageContaining("bytes remain in its chunk");
+                    .hasMessage("[column_index_pushdown_dict.parquet] Malformed Parquet metadata: column 1"
+                            + " declares a dictionary page of 106 bytes but only 50 bytes remain"
+                            + " in its chunk");
         });
     }
 

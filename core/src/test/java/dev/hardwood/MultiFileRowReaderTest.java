@@ -181,12 +181,12 @@ class MultiFileRowReaderTest {
         try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(valid, invalid))) {
             assertThatThrownBy(() -> reader.getFileMetaData(1))
                     .isInstanceOf(IOException.class)
-                    .hasMessageContaining("Not a Parquet file");
+                    .hasMessage("[<memory>] Not a Parquet file (invalid magic number at start)");
             int readsAfterFailure = invalid.footerReadCount();
 
             assertThatThrownBy(reader::rowReader)
                     .isInstanceOf(UncheckedIOException.class)
-                    .hasMessageContaining("Failed to read metadata");
+                    .hasMessage("[<memory>] Failed to read metadata");
             assertThat(invalid.footerReadCount()).isEqualTo(readsAfterFailure);
         }
 
@@ -194,7 +194,7 @@ class MultiFileRowReaderTest {
         try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(valid, invalid))) {
             assertThatThrownBy(() -> reader.getFileMetaData(1))
                     .isInstanceOf(IOException.class)
-                    .hasMessageContaining("Not a Parquet file");
+                    .hasMessage("[<memory>] Not a Parquet file (invalid magic number at start)");
         }
         assertThat(invalid.footerReadCount()).isGreaterThan(readsBeforeReopen);
     }

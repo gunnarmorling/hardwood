@@ -39,6 +39,9 @@ class FooterCommandTest implements FooterCommandContract {
         Cli.Result result = Cli.launch("footer", "-f", file);
 
         assertThat(result.exitCode()).isNotZero();
-        assertThat(result.errorOutput()).contains("Encrypted Parquet files are not supported");
+        // The command reports the canonical message without the `[file] ` prefix the
+        // reader attaches: it was given the file, so naming it back is noise.
+        assertThat(result.errorOutput().strip()).isEqualTo(
+                "Encrypted Parquet files are not supported (Parquet Modular Encryption).");
     }
 }
