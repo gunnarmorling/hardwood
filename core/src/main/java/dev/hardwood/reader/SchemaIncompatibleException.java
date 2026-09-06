@@ -21,7 +21,10 @@ package dev.hardwood.reader;
 /// which leaf they hold, or a touched `FIXED_LEN_BYTE_ARRAY` column declares no
 /// `type_length` — which is optional in the format but required to decode the column —
 /// or declares one that is not positive.
-public class SchemaIncompatibleException extends RuntimeException {
+///
+/// A [ParquetReadException]: the bytes arrived and cannot be read as asked, and
+/// reading them again will not change that.
+public class SchemaIncompatibleException extends ParquetReadException {
 
     public SchemaIncompatibleException(String message) {
         super(message);

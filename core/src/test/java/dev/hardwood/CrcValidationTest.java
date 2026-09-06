@@ -7,7 +7,6 @@
  */
 package dev.hardwood;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.reader.ColumnReader;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -73,7 +73,7 @@ class CrcValidationTest {
                     colReader.nextBatch();
                 }
             }
-        }).hasRootCauseInstanceOf(IOException.class)
+        }).hasRootCauseInstanceOf(ParquetReadException.class)
           .rootCause().hasMessageContaining("CRC mismatch");
     }
 
@@ -119,7 +119,7 @@ class CrcValidationTest {
                     colReader.nextBatch();
                 }
             }
-        }).hasRootCauseInstanceOf(IOException.class)
+        }).hasRootCauseInstanceOf(ParquetReadException.class)
           .rootCause().hasMessageContaining("CRC mismatch");
     }
 

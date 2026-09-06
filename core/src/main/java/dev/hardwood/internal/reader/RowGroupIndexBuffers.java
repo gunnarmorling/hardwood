@@ -86,7 +86,10 @@ public class RowGroupIndexBuffers {
 
         long indexRegionSize = maxEnd - minOffset;
         if (indexRegionSize > Integer.MAX_VALUE) {
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+            // The file is correct; this reader will not fetch a region it cannot
+            // address with an int. Not the file's fault, and not something a
+            // second attempt changes.
+            throw new UnsupportedOperationException(ExceptionContext.filePrefix(inputFile.name())
                     + "Row-group index region too large (" + indexRegionSize
                     + " bytes) — split the file into smaller row groups");
         }

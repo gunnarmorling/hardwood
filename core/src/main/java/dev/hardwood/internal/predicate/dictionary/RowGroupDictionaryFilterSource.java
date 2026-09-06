@@ -21,6 +21,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PageEncodingStats;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
@@ -117,7 +118,7 @@ public final class RowGroupDictionaryFilterSource {
         // A first data page *preceding* the dictionary page cannot be read at all, so fail rather
         // than degrade to "no dictionary".
         if (dictionaryOffset != null && dataPageOffset < dictionaryOffset) {
-            throw new IllegalStateException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "Malformed Parquet metadata: column " + columnIndex
                     + " declares a dictionary page at offset " + dictionaryOffset
                     + " which lies after its first data page at offset " + dataPageOffset);
@@ -134,7 +135,7 @@ public final class RowGroupDictionaryFilterSource {
         long chunkStart = columnChunk.chunkStartOffset();
         long chunkEnd = chunkStart + metaData.totalCompressedSize();
         if (chunkEnd <= chunkStart) {
-            throw new IllegalStateException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "Malformed Parquet metadata: column " + columnIndex
                     + " declares a dictionary page at offset " + chunkStart
                     + " but its chunk ends at offset " + chunkEnd);
@@ -175,7 +176,7 @@ public final class RowGroupDictionaryFilterSource {
         }
 
         if (pageLength > availableBytes) {
-            throw new IllegalStateException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "Malformed Parquet metadata: column " + columnIndex
                     + " declares a dictionary page of " + pageLength
                     + " bytes but only " + availableBytes + " bytes remain in its chunk");
