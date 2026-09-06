@@ -39,7 +39,7 @@ public final class NestedReads {
 
     // ==================== Column (real-items) folds ====================
 
-    private static double foldInt(ColumnReader col) {
+    private static double foldInt(ColumnReader col) throws IOException {
         double sum = 0;
         while (col.nextBatch()) {
             int n = col.getValueCount();
@@ -55,7 +55,7 @@ public final class NestedReads {
         return sum;
     }
 
-    private static double foldLong(ColumnReader col) {
+    private static double foldLong(ColumnReader col) throws IOException {
         double sum = 0;
         while (col.nextBatch()) {
             int n = col.getValueCount();
@@ -71,7 +71,7 @@ public final class NestedReads {
         return sum;
     }
 
-    private static double foldDouble(ColumnReader col) {
+    private static double foldDouble(ColumnReader col) throws IOException {
         double sum = 0;
         while (col.nextBatch()) {
             int n = col.getValueCount();
@@ -146,7 +146,7 @@ public final class NestedReads {
         throw new IllegalStateException("no REPEATED layer in column");
     }
 
-    private static double foldLongStructural(ColumnReader col) {
+    private static double foldLongStructural(ColumnReader col) throws IOException {
         double sum = 0;
         int layer = -1;
         while (col.nextBatch()) {
@@ -174,7 +174,7 @@ public final class NestedReads {
         return sum;
     }
 
-    private static double foldDoubleStructural(ColumnReader col) {
+    private static double foldDoubleStructural(ColumnReader col) throws IOException {
         double sum = 0;
         int layer = -1;
         while (col.nextBatch()) {

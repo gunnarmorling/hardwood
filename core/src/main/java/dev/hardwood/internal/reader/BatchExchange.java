@@ -237,11 +237,21 @@ public class BatchExchange<B> {
 
     /// Checks if the pipeline encountered an error and throws if so.
     /// Call this after detecting a finished/null batch to surface pipeline errors.
+    ///
+    /// A `RuntimeException` and an [Error] are rethrown as they stand. [ColumnWorker] has
+    /// already said what a failure means by the time it reaches here — a decode failure is a
+    /// `ParquetReadException`, a fetch failure an `UncheckedIOException` — and an `Error` is
+    /// neither the file's fault nor something a caller retries. Relabelling either would
+    /// undo that one frame below the reader, and an `OutOfMemoryError` reported as a
+    /// `RuntimeException` is catchable by handlers that must never see it.
     public void checkError() {
         Throwable t = error;
         if (t != null) {
             if (t instanceof RuntimeException re) {
                 throw re;
+            }
+            if (t instanceof Error e) {
+                throw e;
             }
             throw new RuntimeException("Error in pipeline for column '" + columnName + "'", t);
         }

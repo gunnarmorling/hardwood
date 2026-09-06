@@ -7,6 +7,7 @@
  */
 package dev.hardwood.reader;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -68,7 +69,7 @@ import dev.hardwood.schema.FileSchema;
 /// itself may be arbitrarily large, but each individual column chunk must be at
 /// most 2 GB ([Integer#MAX_VALUE] bytes) of compressed data. The in-memory and
 /// object-store backends have a 2 GB limit on the whole file.
-public class ParquetFileReader implements AutoCloseable {
+public class ParquetFileReader implements Closeable {
 
     /// Sentinel used by the column-reader builders to mean "no explicit batch
     /// size set": the size is then resolved from the projected column widths via
@@ -315,13 +316,13 @@ public class ParquetFileReader implements AutoCloseable {
 
     /// Shortcut for [#buildRowReader()].build() — read every row of every
     /// column with no filter.
-    public RowReader rowReader() {
+    public RowReader rowReader() throws IOException {
         return buildRowReader().build();
     }
 
     /// Begin configuring a [RowReader] with optional projection, filter,
     /// and head/tail limit.
-    public RowReaderBuilder buildRowReader() {
+    public RowReaderBuilder buildRowReader() throws IOException {
         return new RowReaderBuilder(this);
     }
 
@@ -373,12 +374,13 @@ public class ParquetFileReader implements AutoCloseable {
     // Internal builder bridges
     // ============================================================
 
-    RowReader buildRowReader(ColumnProjection projection, FilterPredicate filter, long maxRows) {
+    RowReader buildRowReader(ColumnProjection projection, FilterPredicate filter, long maxRows)
+            throws IOException {
         return buildRowReader(projection, filter, null, maxRows, 0L);
     }
 
     RowReader buildRowReader(ColumnProjection projection, FilterPredicate filter,
-                             RowGroupPredicate rowGroupFilter, long maxRows, long skip) {
+                             RowGroupPredicate rowGroupFilter, long maxRows, long skip) throws IOException {
         // Apply the row-group predicate (e.g. byte-range) up front so `skip` indexes
         // into the kept sequence — a caller doing split-aware reading can seek inside *its*
         // split. Stats-based row-group dropping (via FilterPredicate) stays inside the
@@ -414,7 +416,8 @@ public class ParquetFileReader implements AutoCloseable {
     /// (filtered `skip`). Stops early if the reader is exhausted before `count`. If
     /// iteration fails, the partially built reader is closed before the error
     /// propagates, so its worker pipeline never leaks.
-    private static RowReader discardLeadingRows(RowReader reader, long count) {
+    private static RowReader discardLeadingRows(RowReader reader, long count)
+            throws IOException {
         try {
             for (long i = 0; i < count; i++) {
                 if (!reader.hasNext()) {
@@ -424,18 +427,19 @@ public class ParquetFileReader implements AutoCloseable {
             }
             return reader;
         }
-        catch (RuntimeException e) {
+        catch (RuntimeException | IOException e) {
             try {
                 reader.close();
             }
-            catch (RuntimeException closeException) {
+            catch (RuntimeException | IOException closeException) {
                 e.addSuppressed(closeException);
             }
             throw e;
         }
     }
 
-    RowReader buildTailRowReader(ColumnProjection projection, long tailRows) {
+    RowReader buildTailRowReader(ColumnProjection projection, long tailRows)
+            throws IOException {
         if (isMultiFile()) {
             throw new UnsupportedOperationException(
                     "Tail reading is not yet supported for multi-file readers");
@@ -495,19 +499,19 @@ public class ParquetFileReader implements AutoCloseable {
     }
 
     private RowReader buildRowReader(ColumnProjection projection, FilterPredicate filter,
-                                     long maxRows, List<RowGroup> firstFileRowGroups) {
+                                     long maxRows, List<RowGroup> firstFileRowGroups) throws IOException {
         return buildRowReader(projection, filter, maxRows, firstFileRowGroups, 0L);
     }
 
     private RowReader buildRowReader(ColumnProjection projection, FilterPredicate filter,
                                      long maxRows, List<RowGroup> firstFileRowGroups,
-                                     long tailSkip) {
+                                     long tailSkip) throws IOException {
         return buildRowReader(projection, filter, maxRows, firstFileRowGroups, tailSkip, 0L);
     }
 
     private RowReader buildRowReader(ColumnProjection projection, FilterPredicate filter,
                                      long maxRows, List<RowGroup> firstFileRowGroups,
-                                     long tailSkip, long physicalSkip) {
+                                     long tailSkip, long physicalSkip) throws IOException {
         ResolvedPredicate resolved = resolveFilter(filter);
 
         ProjectedSchema projectedSchema = ProjectedSchema.create(schema, projection, true);
@@ -889,7 +893,7 @@ public class ParquetFileReader implements AutoCloseable {
             return this;
         }
 
-        public RowReader build() {
+        public RowReader build() throws IOException {
             if (headRows > 0 && tailRows > 0) {
                 throw new IllegalArgumentException("head and tail are mutually exclusive");
             }

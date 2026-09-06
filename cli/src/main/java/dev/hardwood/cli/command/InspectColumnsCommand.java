@@ -39,6 +39,7 @@ import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
@@ -84,7 +85,7 @@ public class InspectColumnsCommand implements Command<CommandInvocation> {
                 inputFile.close();
             }
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }

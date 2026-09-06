@@ -210,7 +210,7 @@ class WriterLargeFileTest {
     /// The comparison is a plain `if` with an assertion inside rather than an assertion per
     /// value: at these row counts the assertion library's own per-call work dominates the read
     /// it is checking, and a mismatch still reports which row it was.
-    private static void assertValues(ParquetFileReader reader, long rows) {
+    private static void assertValues(ParquetFileReader reader, long rows) throws IOException {
         long row = 0;
         try (ColumnReader column = reader.columnReader(0)) {
             while (column.nextBatch()) {

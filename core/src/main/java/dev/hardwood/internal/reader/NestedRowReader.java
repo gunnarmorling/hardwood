@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
+import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.predicate.RecordFilterCompiler;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.predicate.RowMatcher;
@@ -239,7 +242,20 @@ public final class NestedRowReader implements FileAwareRowReader {
     // ==================== Iteration ====================
 
     @Override
-    public boolean hasNext() {
+    public boolean hasNext() throws IOException {
+        try {
+            return hasNextImpl();
+        }
+        catch (UncheckedIOException e) {
+            // The decode pipeline crosses task boundaries a checked exception
+            // cannot travel through, so a transport failure arrives wrapped.
+            // This is the boundary the contract is stated at, so it is unwrapped
+            // here and reported as what it is.
+            throw ExceptionContext.unwrap(e);
+        }
+    }
+
+    private boolean hasNextImpl() {
         if (exhausted) {
             return false;
         }
@@ -296,7 +312,20 @@ public final class NestedRowReader implements FileAwareRowReader {
     }
 
     @Override
-    public void next() {
+    public void next() throws IOException {
+        try {
+            nextImpl();
+        }
+        catch (UncheckedIOException e) {
+            // The decode pipeline crosses task boundaries a checked exception
+            // cannot travel through, so a transport failure arrives wrapped.
+            // This is the boundary the contract is stated at, so it is unwrapped
+            // here and reported as what it is.
+            throw ExceptionContext.unwrap(e);
+        }
+    }
+
+    private void nextImpl() {
         // hasNext parks the row it picked in `pendingRowIndex`; this only commits it.
         if (activeMatcher != null) {
             if (pendingRowIndex < 0) {
@@ -451,7 +480,20 @@ public final class NestedRowReader implements FileAwareRowReader {
     // ==================== Close ====================
 
     @Override
-    public void close() {
+    public void close() throws IOException {
+        try {
+            closeImpl();
+        }
+        catch (UncheckedIOException e) {
+            // The decode pipeline crosses task boundaries a checked exception
+            // cannot travel through, so a transport failure arrives wrapped.
+            // This is the boundary the contract is stated at, so it is unwrapped
+            // here and reported as what it is.
+            throw ExceptionContext.unwrap(e);
+        }
+    }
+
+    private void closeImpl() {
         if (closed) {
             return;
         }

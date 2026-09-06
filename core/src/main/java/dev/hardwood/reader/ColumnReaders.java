@@ -7,6 +7,8 @@
  */
 package dev.hardwood.reader;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -44,7 +46,7 @@ import dev.hardwood.schema.FileSchema;
 ///     }
 /// }
 /// ```
-public class ColumnReaders implements AutoCloseable {
+public class ColumnReaders implements Closeable {
 
     private final Map<String, ColumnReader> readersByName;
     private final ColumnReader[] readersByIndex;
@@ -202,8 +204,15 @@ public class ColumnReaders implements AutoCloseable {
     /// values from different rows.
     ///
     /// @return true if a new aligned batch is available across all readers, false if exhausted
+    /// @throws IOException if the bytes could not be read
+    /// @throws dev.hardwood.reader.ParquetReadException if the file's bytes are not what a
+    ///         Parquet file can say: a footer or a page index that will not parse, a
+    ///         dictionary page the metadata places outside its column chunk, a page whose
+    ///         checksum fails, values that do not decode under the encoding declared for
+    ///         them. In a multi-file read this covers a later file that is not Parquet at
+    ///         all, or whose schema cannot be reconciled with the first file's
     /// @throws IllegalStateException if the readers report mismatched record counts
-    public boolean nextBatch() {
+    public boolean nextBatch() throws IOException {
         if (coordinator != null) {
             boolean advanced = coordinator.advance();
             for (ColumnReader reader : readersByIndex) {
@@ -269,7 +278,7 @@ public class ColumnReaders implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         if (coordinator != null) {
             coordinator.close();
             return;

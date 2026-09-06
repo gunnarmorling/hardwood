@@ -26,6 +26,7 @@ import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqStruct;
 import dev.hardwood.row.PqVariant;
@@ -95,7 +96,7 @@ public class ConvertCommand implements Command<CommandInvocation> {
             System.err.println(e.getMessage());
             return CommandResult.FAILURE;
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }
@@ -135,7 +136,7 @@ public class ConvertCommand implements Command<CommandInvocation> {
     // ==================== CSV ====================
 
     private static void writeCsv(PrintWriter out, List<SchemaNode> fields, RowReader rowReader,
-                                 ColumnProjection projection, String nullString) {
+                                 ColumnProjection projection, String nullString) throws IOException {
         List<String> flatHeaders = new ArrayList<>();
         for (SchemaNode field : fields) {
             flattenHeaders(field, field.name(), projection, flatHeaders);
@@ -233,7 +234,7 @@ public class ConvertCommand implements Command<CommandInvocation> {
 
     // ==================== JSON ====================
 
-    private static void writeJson(PrintWriter out, List<SchemaNode> fields, RowReader rowReader) {
+    private static void writeJson(PrintWriter out, List<SchemaNode> fields, RowReader rowReader) throws IOException {
         String[] headers = fields.stream().map(SchemaNode::name).toArray(String[]::new);
         out.print("[");
         boolean first = true;

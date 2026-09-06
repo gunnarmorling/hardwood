@@ -33,6 +33,7 @@ import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 
@@ -76,7 +77,7 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
             metadata = reader.getFileMetaData();
             schema = reader.getFileSchema();
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }
@@ -95,7 +96,7 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
             inputFile.open();
             printDictionaries(metadata, columnSchema, context, inputFile);
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading dictionary: " + e.getMessage());
             return CommandResult.FAILURE;
         }

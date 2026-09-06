@@ -7,6 +7,8 @@
  */
 package dev.hardwood.avro;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -45,7 +47,7 @@ import dev.hardwood.row.StructAccessor;
 ///     }
 /// }
 /// ```
-public class AvroRowReader implements AutoCloseable {
+public class AvroRowReader implements Closeable {
 
     private sealed interface ValueLocation
             permits RootFieldLocation, StructFieldLocation, ListElementLocation, MapValueLocation {
@@ -101,14 +103,14 @@ public class AvroRowReader implements AutoCloseable {
     /// Check if there are more rows to read.
     ///
     /// @return true if there are more rows
-    public boolean hasNext() {
+    public boolean hasNext() throws IOException {
         return rowReader.hasNext();
     }
 
     /// Advance to the next row and return it as a GenericRecord.
     ///
     /// @return the current row as a GenericRecord
-    public GenericRecord next() {
+    public GenericRecord next() throws IOException {
         rowReader.next();
         return materializeRecord(rowReader, plan, RecordPosition.ROOT);
     }
@@ -121,7 +123,7 @@ public class AvroRowReader implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public void close() throws IOException {
         rowReader.close();
     }
 

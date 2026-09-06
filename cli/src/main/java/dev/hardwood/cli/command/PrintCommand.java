@@ -9,6 +9,7 @@ package dev.hardwood.cli.command;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Spliterator;
@@ -31,6 +32,7 @@ import dev.hardwood.cli.internal.BinaryValues;
 import dev.hardwood.cli.internal.table.RowTable;
 import dev.hardwood.cli.internal.table.StreamedTable;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.FileSchema;
@@ -94,8 +96,15 @@ public class PrintCommand implements Command<CommandInvocation> {
             System.err.println(e.getMessage());
             return CommandResult.FAILURE;
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
+            return CommandResult.FAILURE;
+        }
+        catch (UncheckedIOException e) {
+            // The row stream below adapts the reader to an Iterator, which cannot declare a
+            // checked exception, so a read failure arrives wrapped. This is where the stream
+            // is consumed, so it is unwrapped here and reported like any other read failure.
+            System.err.println("Error reading file: " + e.getCause().getMessage());
             return CommandResult.FAILURE;
         }
 
@@ -180,14 +189,27 @@ public class PrintCommand implements Command<CommandInvocation> {
 
     private Stream<RowReader> stream(RowReader rowReader) {
         return StreamSupport.stream(Spliterators.spliteratorUnknownSize(new Iterator<>() {
+            // Iterator cannot declare a checked exception, so a read failure is
+            // wrapped here and unwrapped in `execute`, which consumes the stream. This is
+            // what UncheckedIOException is for, and the only place the CLI needs it.
             @Override
             public boolean hasNext() {
-                return rowReader.hasNext();
+                try {
+                    return rowReader.hasNext();
+                }
+                catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
             }
 
             @Override
             public RowReader next() {
-                rowReader.next();
+                try {
+                    rowReader.next();
+                }
+                catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
                 return rowReader;
             }
         }, Spliterator.IMMUTABLE), false);

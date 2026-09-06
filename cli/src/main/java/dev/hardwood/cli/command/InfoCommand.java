@@ -26,6 +26,7 @@ import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 
 @CommandDefinition(name = "info", description = "Display high-level file information.", generateHelp = true)
 public class InfoCommand implements Command<CommandInvocation> {
@@ -60,7 +61,7 @@ public class InfoCommand implements Command<CommandInvocation> {
             FileMetaData metadata = reader.getFileMetaData();
             return kvKey != null ? printSingleKeyValue(metadata, kvKey) : printSummary(metadata);
         }
-        catch (IOException e) {
+        catch (IOException | ParquetReadException e) {
             System.err.println("Error reading file: " + e.getMessage());
             return CommandResult.FAILURE;
         }

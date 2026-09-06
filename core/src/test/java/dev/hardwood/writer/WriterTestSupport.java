@@ -7,6 +7,7 @@
  */
 package dev.hardwood.writer;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,7 +56,7 @@ final class WriterTestSupport {
         return reader.getFileMetaData().rowGroups().get(0).columns().get(columnIndex).metaData();
     }
 
-    static int[] readInts(ParquetFileReader reader, int columnIndex) {
+    static int[] readInts(ParquetFileReader reader, int columnIndex) throws IOException {
         try (ColumnReader column = reader.columnReader(columnIndex)) {
             int[] result = new int[reader.getFileMetaData().numRows() < 0 ? 0
                     : Math.toIntExact(reader.getFileMetaData().numRows())];
@@ -72,7 +73,7 @@ final class WriterTestSupport {
 
     /// Reads a flat column back into a boxed array, `null` at each null row, so both the
     /// values and their null positions can be asserted in one comparison.
-    static Integer[] readNullable(ParquetFileReader reader, int columnIndex) {
+    static Integer[] readNullable(ParquetFileReader reader, int columnIndex) throws IOException {
         int rows = Math.toIntExact(reader.getFileMetaData().numRows());
         Integer[] result = new Integer[rows];
         try (ColumnReader column = reader.columnReader(columnIndex)) {
@@ -127,7 +128,7 @@ final class WriterTestSupport {
 
     /// Reconstructs a `LIST` of `INT32` as one list per record — `null` for an absent list,
     /// empty for an empty one, a `null` entry for a null element.
-    static List<List<Integer>> readListOfInts(ParquetFileReader reader, int columnIndex) {
+    static List<List<Integer>> readListOfInts(ParquetFileReader reader, int columnIndex) throws IOException {
         List<List<Integer>> out = new ArrayList<>();
         try (ColumnReader column = reader.columnReader(columnIndex)) {
             while (column.nextBatch()) {

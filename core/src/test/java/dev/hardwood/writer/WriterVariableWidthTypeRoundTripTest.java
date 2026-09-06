@@ -7,6 +7,7 @@
  */
 package dev.hardwood.writer;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -367,7 +368,7 @@ class WriterVariableWidthTypeRoundTripTest {
         return reader.getFileMetaData().rowGroups().get(0).columns().get(columnIndex).metaData();
     }
 
-    private static byte[][] readBinaries(ParquetFileReader reader, int columnIndex) {
+    private static byte[][] readBinaries(ParquetFileReader reader, int columnIndex) throws IOException {
         try (ColumnReader column = reader.columnReader(columnIndex)) {
             byte[][] result = new byte[Math.toIntExact(reader.getFileMetaData().numRows())][];
             int pos = 0;

@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -271,7 +272,7 @@ class RowGroupFilterTest {
 
     // ==================== Helpers ====================
 
-    private static long countRows(ColumnReader col) {
+    private static long countRows(ColumnReader col) throws IOException {
         long n = 0;
         while (col.nextBatch()) {
             n += col.getRecordCount();
@@ -288,7 +289,7 @@ class RowGroupFilterTest {
         }
     }
 
-    private static long[] firstAndLastIds(ColumnReader col) {
+    private static long[] firstAndLastIds(ColumnReader col) throws IOException {
         long first = -1;
         long last = -1;
         while (col.nextBatch()) {

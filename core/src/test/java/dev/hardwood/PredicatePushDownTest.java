@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -275,7 +276,8 @@ class PredicatePushDownTest {
     /// the ids returned. Also reads the nested `address.zip` leaf, so a proven batch taking
     /// a different cursor than an evaluated one would show up as a misaligned struct.
     private static void assertNestedIdsUnderFilter(ParquetFileReader reader, FilterPredicate filter,
-                                                   long maxRows, List<Integer> expectedIds) {
+                                                   long maxRows, List<Integer> expectedIds)
+            throws IOException {
         ParquetFileReader.RowReaderBuilder builder = reader.buildRowReader().filter(filter);
         if (maxRows > 0) {
             builder = builder.head(maxRows);

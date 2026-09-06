@@ -9,6 +9,7 @@ package dev.hardwood.writer;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -20,10 +21,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import dev.hardwood.Experimental;
 import dev.hardwood.OutputFile;
 import dev.hardwood.internal.BuildInfo;
+import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.compression.Compressor;
 import dev.hardwood.internal.compression.CompressorFactory;
 import dev.hardwood.internal.thrift.FileMetaDataWriter;
@@ -169,6 +172,27 @@ public final class ParquetFileWriter implements Closeable {
     ///         have, or one its physical type cannot carry
     public static ParquetFileWriter create(OutputFile out, FileSchema schema, WriterConfig config)
             throws IOException {
+        return create(out, schema, config, () -> new CompressorFactory().getCompressor(config.codec()));
+    }
+
+    /// Opens a writer over a caller-supplied compressor.
+    ///
+    /// Package-private, and the only reason it exists is that a codec failure is otherwise
+    /// unreachable: every [Compressor] this writer can be configured with succeeds on an
+    /// in-memory buffer, so the tests that assert a failed compression is reported as the
+    /// [IOException] `writeBatch`, `writeRow` and `close` declare need to supply one that does
+    /// not. Not a configuration a caller has any use for.
+    static ParquetFileWriter create(OutputFile out, FileSchema schema, WriterConfig config,
+            Compressor compressor) throws IOException {
+        return create(out, schema, config, () -> compressor);
+    }
+
+    /// Resolves the compressor through a supplier rather than taking one, so the codec and its
+    /// library are still checked at the point in the order below where they always were —
+    /// after the schema and the encoding policies, so a file that fails on two counts reports
+    /// the same one it always did.
+    private static ParquetFileWriter create(OutputFile out, FileSchema schema, WriterConfig config,
+            Supplier<Compressor> compressors) throws IOException {
         // Everything this schema and configuration decide is settled before the output is
         // touched, so a file the writer cannot honour is never begun: the columns' physical
         // types, the schema's shape, the encoding policies against the schema's columns, then
@@ -185,7 +209,7 @@ public final class ParquetFileWriter implements Closeable {
         // is one rejection, at one moment, with one wording.
         WriterSchemaShape.validate(schema);
         ColumnEncoding[] encodings = resolveEncodings(schema, config);
-        Compressor compressor = new CompressorFactory().getCompressor(config.codec());
+        Compressor compressor = compressors.get();
         out.create();
         try {
             out.write(ByteBuffer.wrap(MAGIC));
@@ -442,11 +466,26 @@ public final class ParquetFileWriter implements Closeable {
         out.close();
     }
 
+    /// Writes the buffered row group out, unwrapping the one exception that cannot be
+    /// declared where it is raised.
+    ///
+    /// Compression happens under here and nowhere else, and a codec failure leaves
+    /// [dev.hardwood.internal.writer.ColumnChunkBuffer] as an [UncheckedIOException] because the
+    /// [RecordShredder.LevelSink] callback it sits inside cannot declare a checked one. This is
+    /// the innermost frame that can, and every public method that flushes — `writeBatch`,
+    /// `writeRow` and `close` — reaches the codec through here, so unwrapping once here is what
+    /// keeps all three reporting a failed write as the [IOException] their signatures promise.
     private void flushRowGroup() throws IOException {
         if (current.isEmpty()) {
             return;
         }
-        RowGroup rowGroup = current.flushTo(out);
+        RowGroup rowGroup;
+        try {
+            rowGroup = current.flushTo(out);
+        }
+        catch (UncheckedIOException e) {
+            throw ExceptionContext.unwrap(e);
+        }
         rowGroups.add(rowGroup);
         numRows += rowGroup.numRows();
         current.reset();

@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Array;
@@ -143,7 +144,7 @@ class DifferentialFixedSizeListTest {
         }
     }
 
-    private static RowReader openRows(ParquetFileReader reader, String where) {
+    private static RowReader openRows(ParquetFileReader reader, String where) throws IOException {
         RowReaderBuilder builder = reader.buildRowReader();
         if (where != null) {
             builder.filter(FilterPredicate.gtEq("__row__", 40L));
