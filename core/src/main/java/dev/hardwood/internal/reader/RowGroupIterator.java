@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import dev.hardwood.InputFile;
@@ -100,6 +100,13 @@ public class RowGroupIterator {
     private ProjectedSchema projectedSchema;
     private ResolvedPredicate filterPredicate;
     private boolean filterSatisfiedByStatistics;
+    /// Planning state, carried between files because a file is planned when the
+    /// read reaches it rather than all at once.
+    private int nextFileToPlan;
+    private long planRowBudget;
+    private long plannedRows;
+    private long planSkipRemaining;
+    private boolean planAllKeptAlwaysMatch = true;
     private boolean metadataFilteringEnabled = true;
 
     /// Reference schema leaf ordinals this read touches: every projected column plus
@@ -127,7 +134,10 @@ public class RowGroupIterator {
     // fetch-plan caches for that index. Prevents unbounded retention of fetched
     // chunk bytes for the lifetime of the iterator (matters most for remote I/O,
     // where ChunkHandle.data is heap-allocated rather than an mmap slice).
-    private AtomicIntegerArray workItemRefCounts;
+    /// One counter per work item, added as the item is planned. Keyed rather
+    /// than indexed because the work list grows, and read from every column's
+    /// retriever thread without the planning lock.
+    private final Map<Integer, AtomicInteger> workItemRefCounts = new ConcurrentHashMap<>();
 
     /// A single unit of work: one row group in one file.
     ///
@@ -253,6 +263,13 @@ public class RowGroupIterator {
     /// Rows to discard from the first kept row group after whole row groups
     /// before the physical skip target have been dropped from the work list.
     public long firstRowGroupSkip() {
+        if (physicalSkip == 0) {
+            return 0;
+        }
+        // Written when the first work item is added, so planning as far as that item is
+        // enough — planning the whole read would put every footer back on the critical
+        // path of any skipping read.
+        ensurePlannedThrough(0);
         return firstRowGroupSkip;
     }
 
@@ -336,23 +353,21 @@ public class RowGroupIterator {
 
         validateReferenceColumns();
 
-        buildWorkList();
-
-        int columnCount = projectedSchema.getProjectedColumnCount();
-        workItemRefCounts = new AtomicIntegerArray(workItems.size());
-        for (int i = 0; i < workItems.size(); i++) {
-            workItemRefCounts.set(i, columnCount);
-        }
-
-        // Trigger prefetch of second file
-        triggerPrefetch(1);
+        // Planning starts here and proceeds a file at a time, driven by what the
+        // read reaches. Nothing is planned yet.
+        planRowBudget = maxRows > 0 ? maxRows : Long.MAX_VALUE;
+        planSkipRemaining = physicalSkip;
+        nextFileToPlan = 0;
 
         return projectedSchema;
     }
 
     /// Returns the ordered work list of (file, rowGroup) pairs.
     public List<WorkItem> getWorkItems() {
-        return workItems;
+        ensureFullyPlanned();
+        synchronized (this) {
+            return List.copyOf(workItems);
+        }
     }
 
     /// Returns the projected schema.
@@ -476,6 +491,9 @@ public class RowGroupIterator {
                     "canFastSkipAllRowGroups requires a single-file iterator, got "
                             + inputFiles.size() + " files");
         }
+        // Whether every row group supports per-page masking is a question about all of
+        // them, so this one plans the read out. Single-file only, so that is one footer.
+        ensureFullyPlanned();
         for (WorkItem workItem : workItems) {
             if (getSharedMetadata(workItem).maskCapability() == MaskCapability.NO) {
                 return false;
@@ -491,12 +509,23 @@ public class RowGroupIterator {
     /// @param projectedColumnIndex the projected column index
     /// @return a fetch plan for iterating pages with lazy byte fetching
     public FetchPlan getColumnPlan(WorkItem workItem, int projectedColumnIndex) {
-        FetchPlan[] plans = fetchPlanCache.computeIfAbsent(workItem.workItemIndex(),
-                idx -> {
-                    FetchPlan[] computed = computeFetchPlans(workItem);
-                    prefetchNextRowGroup(workItem);
-                    return computed;
-                });
+        int workItemIndex = workItem.workItemIndex();
+        FetchPlan[] plans = fetchPlanCache.get(workItemIndex);
+        if (plans != null) {
+            return plans[projectedColumnIndex];
+        }
+        // The mapping function stays pure metadata work. Prefetching the next row group
+        // plans the next file when this one is exhausted, which reads a footer and, under
+        // a filter, probes bloom filters and dictionaries; a ConcurrentHashMap holds a bin
+        // lock for the whole of a mapping function, so that I/O must not run inside one.
+        boolean[] planned = new boolean[1];
+        plans = fetchPlanCache.computeIfAbsent(workItemIndex, idx -> {
+            planned[0] = true;
+            return computeFetchPlans(workItem);
+        });
+        if (planned[0]) {
+            prefetchNextRowGroup(workItem);
+        }
         return plans[projectedColumnIndex];
     }
 
@@ -511,11 +540,12 @@ public class RowGroupIterator {
     /// cache reference; the underlying chunk memory is reclaimed by GC once
     /// downstream consumers finish processing.
     public void releaseWorkItem(WorkItem workItem) {
-        if (workItemRefCounts == null) {
+        AtomicInteger counter = workItemRefCounts.get(workItem.workItemIndex());
+        if (counter == null) {
             return;
         }
         int idx = workItem.workItemIndex();
-        int remaining = workItemRefCounts.decrementAndGet(idx);
+        int remaining = counter.decrementAndGet();
         if (remaining == 0) {
             metadataCache.remove(idx);
             fetchPlanCache.remove(idx);
@@ -525,12 +555,26 @@ public class RowGroupIterator {
     /// Triggers async pre-computation and pre-fetch for the next row group.
     /// The plan computation is pure metadata work (no I/O). The pre-fetch
     /// kicks off the first chunk's `readRange()` asynchronously.
+    ///
+    /// The next row group is asked for through [#workItemAt], so the last row group of a
+    /// file prefetches into the next one rather than stopping at the boundary — which
+    /// is the one step of a read this prefetch exists to cover.
+    ///
+    /// That call stays on the caller. Planning a file validates its schema against the
+    /// reference and throws when they disagree; raised inside the fire-and-forget task
+    /// below, the throw would be lost and the file skipped, with its rows silently
+    /// missing from the read. The caller is the retriever, and what it blocks on is the
+    /// next file's footer, whose read [#triggerPrefetch] has already started — except
+    /// under a filter, where planning also probes that file's bloom filters and
+    /// dictionaries, which nothing has started.
+    ///
+    /// Called by [#getColumnPlan] after its `computeIfAbsent` returns, never from inside
+    /// it: this blocks, and a mapping function holds a bin lock for its whole duration.
     private void prefetchNextRowGroup(WorkItem currentWorkItem) {
-        int nextIndex = currentWorkItem.workItemIndex() + 1;
-        if (nextIndex >= workItems.size()) {
+        WorkItem nextWorkItem = workItemAt(currentWorkItem.workItemIndex() + 1);
+        if (nextWorkItem == null) {
             return;
         }
-        WorkItem nextWorkItem = workItems.get(nextIndex);
         CompletableFuture.runAsync(() -> {
             try (FetchReason.Scope ignored = FetchReason.set(
                     "prefetch rg=" + nextWorkItem.rowGroupIndex())) {
@@ -1030,87 +1074,122 @@ public class RowGroupIterator {
 
     // ==================== Internal ====================
 
-    /// Builds the work list by iterating all files and row groups.
-    private void buildWorkList() {
-        long rowBudget = maxRows > 0 ? maxRows : Long.MAX_VALUE;
-        long rowsConsumed = 0;
-        long physicalSkipRemaining = physicalSkip;
+    /// Plans one more file, appending its surviving row groups to the work list.
+    ///
+    /// Returns `false` when there is nothing left to plan — every file done, or
+    /// the row budget spent. Planning a file opens its footer, checks its schema
+    /// against the reference, and with a filter probes its bloom filters and
+    /// dictionaries, so a file is planned when the read reaches it rather than
+    /// when the reader was built. See #1107.
+    private synchronized boolean planNextFile() {
+        if (nextFileToPlan >= inputFiles.size() || planRowBudget <= 0) {
+            return false;
+        }
         boolean hasFilter = filterPredicate != null;
-
-        boolean allKeptAlwaysMatch = true;
-        for (int fileIndex = 0; fileIndex < inputFiles.size() && rowBudget > 0; fileIndex++) {
-            PreparedFile prepared = getPreparedFile(fileIndex);
-            FileColumnOrdinals columnOrdinals = fileIndex == 0
-                    ? FileColumnOrdinals.identity(referenceSchema.getColumnCount(), filterPredicate)
-                    : FileColumnOrdinals.of(
-                            validateSchemaCompatibility(prepared.inputFile(), prepared.schema()),
-                            filterPredicate);
-            List<RowGroup> sourceRowGroups = fileIndex == 0 && firstFileRowGroups != null
-                    ? firstFileRowGroups : prepared.rowGroups();
-            // Metadata pruning indexes every row group's chunk list by ordinal, so with
-            // it active the cross-check has to cover the whole file before it runs.
-            // Without it, the only row groups ever indexed are those that become work
-            // items, and the ones physicalSkip / maxRows discard are never looked at.
-            ChunkPathCheck chunkPaths = chunkPathCheck(prepared.schema(), columnOrdinals);
-            boolean pruningIndexesChunks = filterPredicate != null && metadataFilteringEnabled;
-            if (pruningIndexesChunks) {
-                for (int rgIndex = 0; rgIndex < sourceRowGroups.size(); rgIndex++) {
-                    chunkPaths.verify(sourceRowGroups.get(rgIndex), rgIndex, prepared.inputFile());
-                }
+        int fileIndex = nextFileToPlan++;
+        PreparedFile prepared = getPreparedFile(fileIndex);
+        FileColumnOrdinals columnOrdinals = fileIndex == 0
+                ? FileColumnOrdinals.identity(referenceSchema.getColumnCount(), filterPredicate)
+                : FileColumnOrdinals.of(
+                        validateSchemaCompatibility(prepared.inputFile(), prepared.schema()),
+                        filterPredicate);
+        List<RowGroup> sourceRowGroups = fileIndex == 0 && firstFileRowGroups != null
+                ? firstFileRowGroups : prepared.rowGroups();
+        // Metadata pruning indexes every row group's chunk list by ordinal, so with
+        // it active the cross-check has to cover the whole file before it runs.
+        // Without it, the only row groups ever indexed are those that become work
+        // items, and the ones physicalSkip / maxRows discard are never looked at.
+        ChunkPathCheck chunkPaths = chunkPathCheck(prepared.schema(), columnOrdinals);
+        boolean pruningIndexesChunks = filterPredicate != null && metadataFilteringEnabled;
+        if (pruningIndexesChunks) {
+            for (int rgIndex = 0; rgIndex < sourceRowGroups.size(); rgIndex++) {
+                chunkPaths.verify(sourceRowGroups.get(rgIndex), rgIndex, prepared.inputFile());
             }
-            List<FilteredRowGroup> rowGroups = filterRowGroups(
-                    sourceRowGroups, prepared.inputFile(), prepared.schema(), columnOrdinals);
+        }
+        List<FilteredRowGroup> rowGroups = filterRowGroups(
+                sourceRowGroups, prepared.inputFile(), prepared.schema(), columnOrdinals);
 
-            for (int rgIndex = 0; rgIndex < rowGroups.size() && rowBudget > 0; rgIndex++) {
-                FilteredRowGroup decided = rowGroups.get(rgIndex);
-                RowGroup rg = decided.rowGroup();
-                long rgRows = rg.numRows();
-                if (physicalSkipRemaining >= rgRows) {
-                    physicalSkipRemaining -= rgRows;
-                    continue;
-                }
-
-                long leadingSkip = physicalSkipRemaining;
-                physicalSkipRemaining = 0;
-                if (workItems.isEmpty()) {
-                    firstRowGroupSkip = leadingSkip;
-                }
-
-                // Not yet cross-checked when pruning was skipped: filterRowGroups then
-                // returns every row group untouched, so rgIndex is the file's own index.
-                if (!pruningIndexesChunks) {
-                    chunkPaths.verify(rg, rgIndex, prepared.inputFile());
-                }
-
-                allKeptAlwaysMatch &= decided.alwaysMatches();
-                workItems.add(new WorkItem(
-                        prepared.inputFile(),
-                        rg,
-                        prepared.schema(),
-                        columnOrdinals,
-                        fileIndex,
-                        rgIndex,
-                        workItems.size(),
-                        rowsConsumed,
-                        decided.alwaysMatches()));
-
-                // maxRows limiting: deduct row count from budget.
-                // With a filter active, actual match count is unpredictable,
-                // so all row groups remain available.
-                if (!hasFilter) {
-                    rowBudget -= rgRows - leadingSkip;
-                }
-                rowsConsumed += rgRows - leadingSkip;
+        for (int rgIndex = 0; rgIndex < rowGroups.size() && planRowBudget > 0; rgIndex++) {
+            FilteredRowGroup decided = rowGroups.get(rgIndex);
+            RowGroup rg = decided.rowGroup();
+            long rgRows = rg.numRows();
+            if (planSkipRemaining >= rgRows) {
+                planSkipRemaining -= rgRows;
+                continue;
             }
 
-            // Trigger prefetch of next file
-            triggerPrefetch(fileIndex + 1);
+            long leadingSkip = planSkipRemaining;
+            planSkipRemaining = 0;
+            if (workItems.isEmpty()) {
+                firstRowGroupSkip = leadingSkip;
+            }
+
+            // Not yet cross-checked when pruning was skipped: filterRowGroups then
+            // returns every row group untouched, so rgIndex is the file's own index.
+            if (!pruningIndexesChunks) {
+                chunkPaths.verify(rg, rgIndex, prepared.inputFile());
+            }
+
+            planAllKeptAlwaysMatch &= decided.alwaysMatches();
+            workItemRefCounts.put(workItems.size(),
+                    new AtomicInteger(projectedSchema.getProjectedColumnCount()));
+            workItems.add(new WorkItem(
+                    prepared.inputFile(),
+                    rg,
+                    prepared.schema(),
+                    columnOrdinals,
+                    fileIndex,
+                    rgIndex,
+                    workItems.size(),
+                    plannedRows,
+                    decided.alwaysMatches()));
+
+            // maxRows limiting: deduct row count from budget.
+            // With a filter active, actual match count is unpredictable,
+            // so all row groups remain available.
+            if (!hasFilter) {
+                planRowBudget -= rgRows - leadingSkip;
+            }
+            plannedRows += rgRows - leadingSkip;
         }
 
-        filterSatisfiedByStatistics = hasFilter && !workItems.isEmpty() && allKeptAlwaysMatch;
+        // Trigger prefetch of next file
+        triggerPrefetch(fileIndex + 1);
 
-        LOG.log(System.Logger.Level.DEBUG, "Built work list: {0} row groups across {1} files",
-                workItems.size(), inputFiles.size());
+        filterSatisfiedByStatistics = hasFilter && !workItems.isEmpty() && planAllKeptAlwaysMatch;
+
+        LOG.log(System.Logger.Level.DEBUG,
+                "Planned file {0}: {1} row groups in the work list so far",
+                fileIndex, workItems.size());
+        return true;
+    }
+
+    /// The work item at `index`, planning further files if the read has reached
+    /// past what is planned. `null` once the read is done.
+    ///
+    /// Synchronized because every projected column walks this list on its own
+    /// retriever thread, and a step past the planned end plans another file.
+    /// Planning mutates shared state, so exactly one column may do it at a time;
+    /// the others see the finished result.
+    public synchronized WorkItem workItemAt(int index) {
+        ensurePlannedThrough(index);
+        return index < workItems.size() ? workItems.get(index) : null;
+    }
+
+    /// Plans until `index` exists in the work list, or nothing is left to plan.
+    private synchronized void ensurePlannedThrough(int index) {
+        while (workItems.size() <= index && planNextFile()) {
+            // planNextFile appends
+        }
+    }
+
+    /// Plans every remaining file. Needed by the questions that are about the
+    /// whole read rather than the next row group — whether statistics satisfied
+    /// the filter outright, and where a physical skip lands.
+    private synchronized void ensureFullyPlanned() {
+        while (planNextFile()) {
+            // planNextFile appends
+        }
     }
 
     /// Whether statistics prove that every row of every work-list row group satisfies the
@@ -1119,6 +1198,10 @@ public class RowGroupIterator {
     ///
     /// Only meaningful after [#initialize]; `false` when no filter is set.
     public boolean isFilterSatisfiedByStatistics() {
+        // A property of the whole read: every kept row group in every file had
+        // to match outright. Answering it plans everything, which is why a
+        // filtered read still plans when its reader is built.
+        ensureFullyPlanned();
         return filterSatisfiedByStatistics;
     }
 

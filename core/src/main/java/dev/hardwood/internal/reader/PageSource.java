@@ -24,7 +24,9 @@ public class PageSource {
     private final int projectedColumnIndex;
 
     // Current position in the work list
-    private final Iterator<RowGroupIterator.WorkItem> workItemIterator;
+    /// How far this column has walked the work list. Each step may plan another
+    /// file, so the list can grow behind the cursor.
+    private int workItemCursor;
 
     // Current row group's page iterator
     private Iterator<PageInfo> currentPlan;
@@ -41,7 +43,9 @@ public class PageSource {
     public PageSource(RowGroupIterator rowGroupIterator, int projectedColumnIndex) {
         this.rowGroupIterator = rowGroupIterator;
         this.projectedColumnIndex = projectedColumnIndex;
-        this.workItemIterator = rowGroupIterator.getWorkItems().iterator();
+        // No work items taken here: asking for them plans the read, and a page
+        // source is built per projected column when the reader is. The cursor
+        // pulls them one at a time as this column advances. See #1107.
     }
 
     /// Returns the name of the file currently being read, or `null` if no work item
@@ -70,11 +74,11 @@ public class PageSource {
                 currentWorkItem = null;
             }
 
-            if (!workItemIterator.hasNext()) {
+            RowGroupIterator.WorkItem workItem = rowGroupIterator.workItemAt(workItemCursor);
+            if (workItem == null) {
                 return null;
             }
-
-            RowGroupIterator.WorkItem workItem = workItemIterator.next();
+            workItemCursor++;
             FetchPlan plan = rowGroupIterator.getColumnPlan(workItem, projectedColumnIndex);
             currentPlan = plan.isEmpty() ? null : plan.pages();
             currentWorkItem = workItem;

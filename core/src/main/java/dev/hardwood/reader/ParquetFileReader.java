@@ -193,6 +193,11 @@ public class ParquetFileReader implements AutoCloseable {
     /// is read from the first file and is assumed to be common across all
     /// files. Files are opened on demand by the iterator; the first file is
     /// opened eagerly so any I/O or metadata error surfaces immediately.
+    ///
+    /// A later file is opened when a read arrives at it, so its I/O errors and any
+    /// disagreement with the reference schema are raised from the reading loop rather
+    /// than from the call that built the reader — always before any row of that file is
+    /// returned.
     public static ParquetFileReader openAll(List<? extends InputFile> inputFiles) throws IOException {
         return openInternal(inputFiles, HardwoodContextImpl.create(), ReaderConfig.defaults(), true);
     }
@@ -613,8 +618,9 @@ public class ParquetFileReader implements AutoCloseable {
             iterator.setFirstFile(schema, rowGroups);
             ProjectedSchema projected = iterator.initialize(projection, null);
             // Every row group pruned (e.g. a byte-range row-group filter dropped
-            // them all): nothing to decode.
-            if (iterator.getWorkItems().isEmpty()) {
+            // them all): nothing to decode. Asked of the first work item rather than
+            // the whole list, which would plan every file before the first batch.
+            if (iterator.workItemAt(0) == null) {
                 return ColumnReaders.noRows(schema, projected);
             }
             return new ColumnReaders(context, fixedListFastPathEnabled, iterator, schema, projected,
@@ -635,7 +641,8 @@ public class ParquetFileReader implements AutoCloseable {
         // buffers) and the selection engine entirely; expose exhausted no-op
         // readers over the payload columns. The iterator is registered above and
         // closed by close(), so its file handles/prefetch futures still release.
-        if (iterator.getWorkItems().isEmpty()) {
+        // Asked of the first work item, so a read that has one plans no further.
+        if (iterator.workItemAt(0) == null) {
             return ColumnReaders.noRows(schema, payloadProjected);
         }
         // Size against the augmented projection — the predicate columns allocate
