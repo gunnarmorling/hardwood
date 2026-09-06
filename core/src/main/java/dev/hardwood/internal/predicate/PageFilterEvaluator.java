@@ -8,7 +8,6 @@
 package dev.hardwood.internal.predicate;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.List;
 
 import dev.hardwood.internal.ExceptionContext;
@@ -22,6 +21,7 @@ import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.OffsetIndex;
 import dev.hardwood.metadata.PageLocation;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Evaluates a [ResolvedPredicate] against per-page statistics from the Column Index
 /// to produce [RowRanges] representing rows that might match.
@@ -224,6 +224,12 @@ public class PageFilterEvaluator {
     /// The page index is read per column chunk, outside the footer parse that
     /// [dev.hardwood.internal.reader.ParquetMetadataReader] attributes, so failures are named
     /// here: file, row group and column are all at hand.
+    private static String prefix(IndexLocation location, int columnIndex) {
+        return ExceptionContext.filePrefix(location.fileName())
+                + "Failed to parse the page index of column " + columnIndex
+                + " in row group " + location.rowGroupIndex() + ": ";
+    }
+
     private static IndexPair readIndexPair(ColumnIndexBuffers colBuffers, IndexLocation location,
             int columnIndex) {
         try {
@@ -232,15 +238,18 @@ public class PageFilterEvaluator {
             int columnIndexPages = columnIdx.getPageCount();
             int offsetIndexPages = offsetIdx.pageLocations().size();
             if (columnIndexPages != offsetIndexPages) {
-                throw new IOException("Malformed Parquet metadata: ColumnIndex describes "
+                // Attributed here rather than by the catch below: this is not an
+                // IOException and so does not pass through it.
+                throw new ParquetReadException(prefix(location, columnIndex)
+                        + "Malformed Parquet metadata: ColumnIndex describes "
                         + columnIndexPages + " pages but OffsetIndex locates " + offsetIndexPages);
             }
             return new IndexPair(columnIdx, offsetIdx);
         }
         catch (IOException e) {
-            throw new UncheckedIOException(ExceptionContext.filePrefix(location.fileName())
-                    + "Failed to parse the page index of column " + columnIndex
-                    + " in row group " + location.rowGroupIndex() + ": " + e.getMessage(), e);
+            // The index is already in a buffer, so a failure parsing it is the
+            // file, not the transport.
+            throw new ParquetReadException(prefix(location, columnIndex) + e.getMessage(), e);
         }
     }
 

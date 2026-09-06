@@ -7,14 +7,12 @@
  */
 package dev.hardwood;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import dev.hardwood.internal.EncryptedParquetException;
 import dev.hardwood.reader.ParquetFileReader;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -30,7 +28,7 @@ class EncryptedFileTest {
         // Encrypted-footer mode: magic bytes are 'PARE' instead of 'PAR1'.
         Path file = Paths.get("src/test/resources/encrypted_footer.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("[encrypted_footer.parquet] Encrypted Parquet files are not supported"
                         + " (Parquet Modular Encryption)");
     }
@@ -41,20 +39,20 @@ class EncryptedFileTest {
         // encryption_algorithm and the column data is encrypted.
         Path file = Paths.get("src/test/resources/encrypted_plaintext_footer.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("[encrypted_plaintext_footer.parquet] Encrypted Parquet files are"
                         + " not supported (Parquet Modular Encryption)");
     }
 
     @Test
-    void encryptedLaterFilePreservesSpecificCheckedException() throws Exception {
+    void encryptedLaterFileIsReportedAsUnsupported() throws Exception {
         Path first = Paths.get("src/test/resources/plain_uncompressed.parquet");
         Path encrypted = Paths.get("src/test/resources/encrypted_footer.parquet");
 
         try (ParquetFileReader reader = ParquetFileReader.openAll(
                 List.of(InputFile.of(first), InputFile.of(encrypted)))) {
             assertThatThrownBy(() -> reader.getFileMetaData(1))
-                    .isInstanceOf(EncryptedParquetException.class)
+                    .isInstanceOf(UnsupportedOperationException.class)
                     .hasMessage("[encrypted_footer.parquet] Encrypted Parquet files are not"
                             + " supported (Parquet Modular Encryption)");
         }

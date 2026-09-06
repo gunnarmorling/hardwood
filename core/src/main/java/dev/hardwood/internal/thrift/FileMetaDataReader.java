@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import dev.hardwood.internal.EncryptedParquetException;
+import dev.hardwood.internal.EncryptedFileException;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnOrder;
 import dev.hardwood.metadata.FileMetaData;
@@ -88,7 +88,7 @@ public class FileMetaDataReader {
                     // The footer parses, but the column data is encrypted and
                     // Hardwood cannot decrypt it. Fail fast rather than letting a
                     // later page scan crash with an unattributable error.
-                    throw new EncryptedParquetException();
+                    throw new EncryptedFileException();
                 default:
                     reader.skipField(ThriftCompactReader.fieldType(header));
                     break;

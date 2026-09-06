@@ -7,21 +7,22 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.zip.CRC32;
+
+import dev.hardwood.reader.ParquetReadException;
 
 class CrcValidator {
 
     /// Asserts that the CRC-32 checksum of the given page data matches the expected value
     /// from the page header. Throws if the checksum does not match.
     /// The buffer's position and limit are not modified.
-    static void assertCorrectCrc(int expectedCrc, ByteBuffer pageData, String columnName) throws IOException {
+    static void assertCorrectCrc(int expectedCrc, ByteBuffer pageData, String columnName) {
         CRC32 crc = new CRC32();
         crc.update(pageData.duplicate());
         int actualCrc = (int) crc.getValue();
         if (actualCrc != expectedCrc) {
-            throw new IOException("CRC mismatch for column " + columnName
+            throw new ParquetReadException("CRC mismatch for column " + columnName
                     + ": expected " + Integer.toHexString(expectedCrc)
                     + " but computed " + Integer.toHexString(actualCrc));
         }

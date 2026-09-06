@@ -23,6 +23,7 @@ import dev.hardwood.metadata.PageEncodingStats;
 import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.FileSchema;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,7 +150,7 @@ class RowGroupDictionaryFilterSourceTest {
             RowGroupDictionaryFilterSource source = fixture.sourceWithOffsets(4096L, 1024L);
 
             assertThatThrownBy(() -> source.forColumn(DICTIONARY_COLUMN))
-                    .isInstanceOf(IllegalStateException.class)
+                    .isInstanceOf(ParquetReadException.class)
                     .hasMessage("[column_index_pushdown_dict.parquet] Malformed Parquet metadata: column 1"
                             + " declares a dictionary page at offset 4096 which lies after its"
                             + " first data page at offset 1024");
@@ -162,7 +163,7 @@ class RowGroupDictionaryFilterSourceTest {
             RowGroupDictionaryFilterSource source = fixture.sourceWithChunkSize(0L);
 
             assertThatThrownBy(() -> source.forColumn(DICTIONARY_COLUMN))
-                    .isInstanceOf(IllegalStateException.class)
+                    .isInstanceOf(ParquetReadException.class)
                     .hasMessage("[column_index_pushdown_dict.parquet] Malformed Parquet metadata: column 1"
                             + " declares a dictionary page at offset 95903 but its chunk ends"
                             + " at offset 95903");
@@ -178,7 +179,7 @@ class RowGroupDictionaryFilterSourceTest {
             RowGroupDictionaryFilterSource source = fixture.sourceWithChunkSize(50L);
 
             assertThatThrownBy(() -> source.forColumn(DICTIONARY_COLUMN))
-                    .isInstanceOf(IllegalStateException.class)
+                    .isInstanceOf(ParquetReadException.class)
                     .hasMessage("[column_index_pushdown_dict.parquet] Malformed Parquet metadata: column 1"
                             + " declares a dictionary page of 106 bytes but only 50 bytes remain"
                             + " in its chunk");

@@ -7,8 +7,6 @@
  */
 package dev.hardwood;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -21,6 +19,7 @@ import dev.hardwood.internal.reader.CountingInputFile;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.reader.ColumnReaders;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqStruct;
 import dev.hardwood.schema.ColumnProjection;
@@ -180,20 +179,22 @@ class MultiFileRowReaderTest {
 
         try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(valid, invalid))) {
             assertThatThrownBy(() -> reader.getFileMetaData(1))
-                    .isInstanceOf(IOException.class)
+                    .isInstanceOf(ParquetReadException.class)
                     .hasMessage("[<memory>] Not a Parquet file (invalid magic number at start)");
             int readsAfterFailure = invalid.footerReadCount();
 
+            // A malformed file now reaches the caller as what it is, rather than
+            // wrapped as a metadata read that failed.
             assertThatThrownBy(reader::rowReader)
-                    .isInstanceOf(UncheckedIOException.class)
-                    .hasMessage("[<memory>] Failed to read metadata");
+                    .isInstanceOf(ParquetReadException.class)
+                    .hasMessage("[<memory>] Not a Parquet file (invalid magic number at start)");
             assertThat(invalid.footerReadCount()).isEqualTo(readsAfterFailure);
         }
 
         int readsBeforeReopen = invalid.footerReadCount();
         try (ParquetFileReader reader = ParquetFileReader.openAll(List.of(valid, invalid))) {
             assertThatThrownBy(() -> reader.getFileMetaData(1))
-                    .isInstanceOf(IOException.class)
+                    .isInstanceOf(ParquetReadException.class)
                     .hasMessage("[<memory>] Not a Parquet file (invalid magic number at start)");
         }
         assertThat(invalid.footerReadCount()).isGreaterThan(readsBeforeReopen);

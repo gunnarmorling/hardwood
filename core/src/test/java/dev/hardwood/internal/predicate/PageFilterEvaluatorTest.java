@@ -8,7 +8,6 @@
 package dev.hardwood.internal.predicate;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +35,7 @@ import dev.hardwood.metadata.PageLocation;
 import dev.hardwood.metadata.RowGroup;
 import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.FilterPredicate.Operator;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.FileSchema;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -627,7 +627,7 @@ class PageFilterEvaluatorTest {
             assertThatThrownBy(() -> PageFilterEvaluator.computeMatchingRows(
                     new ResolvedPredicate.IsNotNullPredicate(0), rowGroup, buffers,
                     new PageFilterEvaluator.IndexLocation("indexes.parquet", 7)))
-                    .isInstanceOf(UncheckedIOException.class)
+                    .isInstanceOf(ParquetReadException.class)
                     .hasMessage("[indexes.parquet] Failed to parse the page index of column 0"
                             + " in row group 7: Malformed Parquet metadata: ColumnIndex describes"
                             + " 3 pages but OffsetIndex locates 2");

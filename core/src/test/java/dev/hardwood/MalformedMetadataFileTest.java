@@ -7,13 +7,13 @@
  */
 package dev.hardwood;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -29,7 +29,7 @@ class MalformedMetadataFileTest {
         // Footer is structurally valid except for data_page_offset = -1.
         Path file = Paths.get("src/test/resources/negative_data_page_offset.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessage("[negative_data_page_offset.parquet] "
                         + "Malformed Parquet metadata: ColumnMetaData.data_page_offset must be non-negative but was -1");
     }

@@ -14,12 +14,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import dev.hardwood.InputFile;
-import dev.hardwood.internal.EncryptedParquetException;
+import dev.hardwood.internal.EncryptedFileException;
 import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.FetchReason;
 import dev.hardwood.internal.thrift.FileMetaDataReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
 import dev.hardwood.metadata.FileMetaData;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Utility class for reading Parquet file metadata from an [InputFile].
 ///
@@ -34,6 +35,11 @@ public final class ParquetMetadataReader {
     private static final int FOOTER_LENGTH_SIZE = 4;
     private static final int MAGIC_SIZE = 4;
 
+    /// Named once because two places raise it: the magic-byte check here, and the
+    /// `encryption_algorithm` field a plaintext footer carries.
+    public static final String ENCRYPTED_MESSAGE =
+            "Encrypted Parquet files are not supported (Parquet Modular Encryption)";
+
     private ParquetMetadataReader() {
         // Utility class
     }
@@ -42,11 +48,12 @@ public final class ParquetMetadataReader {
     ///
     /// @param inputFile the input file to read metadata from
     /// @return the parsed FileMetaData
-    /// @throws IOException if the file is not a valid Parquet file
+    /// @throws IOException if the file cannot be read
+    /// @throws ParquetReadException if what it holds is not a Parquet file
     public static FileMetaData readMetadata(InputFile inputFile) throws IOException {
         long fileSize = inputFile.length();
         if (fileSize < MAGIC_SIZE + MAGIC_SIZE + FOOTER_LENGTH_SIZE) {
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "File too small to be a valid Parquet file");
         }
 
@@ -61,7 +68,7 @@ public final class ParquetMetadataReader {
             throw encrypted(inputFile);
         }
         if (!Arrays.equals(startMagic, MAGIC)) {
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "Not a Parquet file (invalid magic number at start)");
         }
 
@@ -79,14 +86,14 @@ public final class ParquetMetadataReader {
             throw encrypted(inputFile);
         }
         if (!Arrays.equals(endMagic, MAGIC)) {
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "Not a Parquet file (invalid magic number at end)");
         }
 
         // Validate footer length
         long footerStart = fileSize - MAGIC_SIZE - FOOTER_LENGTH_SIZE - footerLength;
         if (footerStart < MAGIC_SIZE) {
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+            throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                     + "Invalid footer length: " + footerLength);
         }
 
@@ -99,22 +106,28 @@ public final class ParquetMetadataReader {
         try {
             return FileMetaDataReader.read(reader);
         }
-        catch (EncryptedParquetException e) {
+        catch (EncryptedFileException e) {
             // Plaintext-footer encryption: the footer parsed, but the data is
             // encrypted. Re-throw with file context for an attributable error.
             throw encrypted(inputFile);
         }
         catch (IOException e) {
-            // Any failure parsing the footer (negative sizes/counts/offsets,
-            // unknown field type, truncated/EOF mid-footer, ...) names the
-            // problem but not the file; attach file context so the controlled
-            // error stays attributable.
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name()) + e.getMessage(), e);
+            // The footer is already in a buffer, so nothing here is transport:
+            // negative sizes, an unknown field type, EOF part way through a
+            // struct are all the file saying something it cannot say. The Thrift
+            // reader signals them as IOException because that is its channel;
+            // this is the boundary where they become what they are.
+            throw new ParquetReadException(
+                    ExceptionContext.filePrefix(inputFile.name()) + e.getMessage(), e);
         }
     }
 
-    private static EncryptedParquetException encrypted(InputFile inputFile) {
-        return new EncryptedParquetException(
-                ExceptionContext.filePrefix(inputFile.name()) + EncryptedParquetException.MESSAGE);
+    /// An encrypted file is a correct file this library does not read, which is
+    /// what [UnsupportedOperationException] says everywhere else the reader meets
+    /// something it has not implemented — an absent codec library, an encoding it
+    /// does not decode.
+    private static UnsupportedOperationException encrypted(InputFile inputFile) {
+        return new UnsupportedOperationException(
+                ExceptionContext.filePrefix(inputFile.name()) + ENCRYPTED_MESSAGE);
     }
 }

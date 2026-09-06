@@ -111,12 +111,13 @@ class BadDataHandlingTest {
 
     @Test
     void rejectCorruptDictionaryChecksum() throws IOException {
-        // Intentionally corrupted CRC checksum in dictionary page.
-        // Caught and wrapped by IndexedFetchPlan as UncheckedIOException with
-        // a `[fileName]` prefix.
+        // Intentionally corrupted CRC checksum in dictionary page. The mismatch
+        // is a ParquetReadException and so passes IndexedFetchPlan's
+        // `catch (IOException)`, which would have retitled it after the step
+        // that noticed rather than the thing that is wrong.
         assertCorruptChecksumRejected("data/rle-dict-uncompressed-corrupt-checksum.parquet",
-                "[rle-dict-uncompressed-corrupt-checksum.parquet]"
-                        + " Failed to parse dictionary for column 'long_field'",
+                "[rle-dict-uncompressed-corrupt-checksum.parquet] CRC mismatch for column"
+                        + " long_field: expected 6522df6a but computed 6522df69",
                 "CRC mismatch for column long_field: expected 6522df6a but computed 6522df69");
     }
 
