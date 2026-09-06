@@ -187,8 +187,8 @@ provably_merged() { # $1 = ref, $2 = display name, $3 = merge oid, $4 = pr numbe
 #                     match a merged PR head and pass every content check. Deleting
 #                     the trunk would be "safe" and catastrophic. Also covers the
 #                     origin/HEAD symref, which resolves to the trunk tip.
-#   docs / release    Publishing jobs track these by name. Their content is
-#                     merged; their job is to keep existing.
+#   docs              docs-publish.yml is dispatched against these by ref. Their
+#                     content is merged; their job is to keep existing.
 
 is_protected() { # $1 = bare branch name (no remote prefix)
   local b=$1
@@ -196,7 +196,6 @@ is_protected() { # $1 = bare branch name (no remote prefix)
     main|master|HEAD|'') return 0 ;;
     *-docs)              return 0 ;;   # 1.0.0.CR1-docs, v1.0.0.Final-docs, ...
     v[0-9]*|[0-9]*.[0-9]*) return 0 ;; # v1.0.0.CR2, 1.0.0.Beta2, ...
-    *[Rr]elease*)        return 0 ;;   # aalmiray_releases, release-*, ...
   esac
   return 1
 }
