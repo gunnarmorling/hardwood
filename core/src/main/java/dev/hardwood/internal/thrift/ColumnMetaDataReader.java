@@ -30,6 +30,16 @@ public class ColumnMetaDataReader {
     private static final FieldPath EMPTY_PATH = new FieldPath(List.of());
 
     public static ColumnMetaData read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("ColumnMetaData", depth, e);
+        }
+    }
+
+    private static ColumnMetaData readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

@@ -25,9 +25,13 @@ import dev.hardwood.cli.internal.IndexValueFormatter;
 import dev.hardwood.cli.internal.Sizes;
 import dev.hardwood.cli.internal.Strings;
 import dev.hardwood.cli.internal.table.RowTable;
+import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext.Region;
 import dev.hardwood.internal.reader.Dictionary;
 import dev.hardwood.internal.reader.DictionaryParser;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
+import dev.hardwood.internal.thrift.ThriftParseException;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.FileMetaData;
 import dev.hardwood.metadata.PhysicalType;
@@ -138,8 +142,8 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
                     chunk.metaData().totalCompressedSize(), 4 * 1024 * 1024));
             ByteBuffer dictRegion = inputFile.readRange(chunkStart, dictReadSize);
 
-            Dictionary dictionary = DictionaryParser.parse(
-                    dictRegion, columnSchema, chunk.metaData(), context);
+            Dictionary dictionary = parseDictionary(dictRegion, columnSchema, chunk, context,
+                    inputFile.name(), rgIdx, chunkStart);
 
             if (dictionary == null) {
                 messages.add("Row Group " + rgIdx + ": no dictionary (column is not dictionary-encoded)");
@@ -172,6 +176,27 @@ public class InspectDictionaryCommand implements Command<CommandInvocation> {
     /// No cell can be wider than the column cap, so hexing a binary payload
     /// beyond it is waste. An untruncated table shows the value whole, and has
     /// no cap.
+    /// Parses one row group's dictionary, naming where a failure was.
+    ///
+    /// The parser reports what went wrong, and the read path that names the
+    /// file, row group and column runs only inside `ColumnReader`; this command
+    /// reaches the parser directly, so without this the whole message for a
+    /// corrupt dictionary is "CRC mismatch: expected … but computed …".
+    private static Dictionary parseDictionary(ByteBuffer dictRegion, ColumnSchema columnSchema,
+            ColumnChunk chunk, HardwoodContextImpl context, String fileName, int rowGroupIndex,
+            long dictionaryOffset) throws IOException {
+        try {
+            return DictionaryParser.parse(dictRegion, columnSchema, chunk.metaData(), context);
+        }
+        catch (IOException e) {
+            int bytesRead = ThriftParseException.bytesReadOf(e);
+            boolean exact = bytesRead >= 0;
+            throw new IOException(ExceptionContext.prefix(new ReadContext(fileName, rowGroupIndex,
+                    columnSchema.name(), Region.DICTIONARY_PAGE,
+                    exact ? dictionaryOffset + bytesRead : dictionaryOffset, exact)) + e.getMessage(), e);
+        }
+    }
+
     private int cellBudget() {
         return truncate ? maxWidth : BinaryValues.NO_LIMIT;
     }

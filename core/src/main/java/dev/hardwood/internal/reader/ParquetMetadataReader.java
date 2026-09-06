@@ -16,9 +16,12 @@ import java.util.Arrays;
 import dev.hardwood.InputFile;
 import dev.hardwood.internal.EncryptedParquetException;
 import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext.Region;
 import dev.hardwood.internal.FetchReason;
 import dev.hardwood.internal.thrift.FileMetaDataReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
+import dev.hardwood.internal.thrift.ThriftParseException;
 import dev.hardwood.metadata.FileMetaData;
 
 /// Utility class for reading Parquet file metadata from an [InputFile].
@@ -107,9 +110,22 @@ public final class ParquetMetadataReader {
         catch (IOException e) {
             // Any failure parsing the footer (negative sizes/counts/offsets,
             // unknown field type, truncated/EOF mid-footer, ...) names the
-            // problem but not the file; attach file context so the controlled
-            // error stays attributable.
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name()) + e.getMessage(), e);
+            // problem but not where it is. The footer's own offset and how far
+            // the reader got into it are both to hand, and their sum is the
+            // byte to go and look at. There is no column and no row group: a
+            // footer belongs to the file rather than to any one part of it, and
+            // the clause omits what it is not given.
+            // A parse failure knows the byte it stopped on. A value the footer
+            // parsed cleanly and then failed validation on does not: it is
+            // wrong about what it says, not about where it sits, and naming a
+            // byte for it would send a reader to bytes that are exactly as the
+            // writer intended.
+            int bytesRead = ThriftParseException.bytesReadOf(e);
+            long offset = bytesRead >= 0 ? footerStart + bytesRead : ReadContext.UNKNOWN_OFFSET;
+            throw new IOException(ExceptionContext.prefix(
+                    new ReadContext(inputFile.name(), ReadContext.UNKNOWN_ROW_GROUP, null,
+                            Region.FOOTER, offset, bytesRead >= 0))
+                    + e.getMessage(), e);
         }
     }
 

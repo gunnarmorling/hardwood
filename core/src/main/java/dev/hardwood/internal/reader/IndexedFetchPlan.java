@@ -15,7 +15,11 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 
+import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext.Region;
 import dev.hardwood.internal.FetchReason;
+import dev.hardwood.internal.thrift.ThriftParseException;
 import dev.hardwood.jfr.RowGroupScannedEvent;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -188,7 +192,7 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
             ChunkHandle handle = chunkHandles.get(currentGroupIndex);
             ByteBuffer pageData = handle.slice(loc.offset(), loc.compressedPageSize());
             PageInfo page = new PageInfo(pageData, columnSchema, columnChunk.metaData(),
-                    dictionary, needed.mask());
+                    dictionary, needed.mask(), loc.offset());
 
             if (!eventEmitted && !hasNext()) {
                 emitEvent();
@@ -223,8 +227,17 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
                 return DictionaryParser.parse(dictRegion, columnSchema, metaData, context);
             }
             catch (IOException e) {
-                throw new UncheckedIOException("Failed to parse dictionary for column '"
-                        + columnSchema.name() + "'", e);
+                // The parser's message already says what went wrong; what it
+                // cannot say is where. The retriever's own catch knows only
+                // that a fetch was in progress, so the region and the byte are
+                // attached here, where the dictionary's offset is in scope.
+                int bytesRead = ThriftParseException.bytesReadOf(e);
+                boolean exact = bytesRead >= 0;
+                throw new UncheckedIOException(
+                        ExceptionContext.prefix(new ReadContext(fileName, rowGroupIndex,
+                                columnSchema.name(), Region.DICTIONARY_PAGE,
+                                exact ? dictAreaStart + bytesRead : dictAreaStart, exact))
+                                + e.getMessage(), e);
             }
         }
 

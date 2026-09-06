@@ -86,16 +86,23 @@ class BadDataHandlingTest {
     void rejectArrowGH45185() throws IOException {
         // Repetition levels start with 1 instead of the required 0
         assertBadDataRejected("ARROW-GH-45185.parquet",
-                "[ARROW-GH-45185.parquet] Invalid column chunk for 'element':"
-                        + " first repetition level must be 0 but was 1");
+                "[ARROW-GH-45185.parquet] row group 0, column x.list.element, batch assembly"
+                        + " — Invalid column chunk: first repetition level must be 0 but was 1");
     }
 
     @Test
     void rejectArrowGH47662() throws IOException {
         // Schema declares flba_field as required fixed_len_byte_array(4) with
         // 1000 values, but the page data runs out at value 92.
-        assertBadDataRejected("ARROW-GH-47662.parquet",
-                "[ARROW-GH-47662.parquet] Unexpected EOF while reading fixed-length byte array");
+        // Neither the byte nor the phrasing that introduces it is asserted.
+        // The byte races between pages (see Utils.assertBadDataRejectedContaining),
+        // and whether the message says "at byte" or "beginning at byte" depends
+        // on whether the failure knew where it stopped — this one does not, it
+        // ran out of input part way through a page and can name only the page.
+        Utils.assertBadDataRejectedContaining("ARROW-GH-47662.parquet",
+                readAction("ARROW-GH-47662.parquet"),
+                "[ARROW-GH-47662.parquet] row group 0, column flba_field, data page",
+                " — Unexpected EOF while reading fixed-length byte array");
     }
 
     @Test
@@ -104,20 +111,22 @@ class BadDataHandlingTest {
         // The CRC IOException is wrapped in UncheckedIOException with file context
         // by ColumnWorker before BatchExchange forwards it.
         assertCorruptChecksumRejected("data/datapage_v1-corrupt-checksum.parquet",
-                "[datapage_v1-corrupt-checksum.parquet]"
-                        + " CRC mismatch for column a: expected bbce3b9d but computed f4f6d0a",
-                "CRC mismatch for column a: expected bbce3b9d but computed f4f6d0a");
+                "[datapage_v1-corrupt-checksum.parquet] row group 0, column a, data page",
+                " — CRC mismatch: expected bbce3b9d but computed f4f6d0a",
+                "CRC mismatch: expected bbce3b9d but computed f4f6d0a");
     }
 
     @Test
     void rejectCorruptDictionaryChecksum() throws IOException {
         // Intentionally corrupted CRC checksum in dictionary page.
-        // Caught and wrapped by IndexedFetchPlan as UncheckedIOException with
-        // a `[fileName]` prefix.
+        // The fetch plan attaches the region and the dictionary's own offset,
+        // which the retriever's catch could not: it knows only that a fetch was
+        // in progress, and would have reported this as "page fetch".
         assertCorruptChecksumRejected("data/rle-dict-uncompressed-corrupt-checksum.parquet",
-                "[rle-dict-uncompressed-corrupt-checksum.parquet]"
-                        + " Failed to parse dictionary for column 'long_field'",
-                "CRC mismatch for column long_field: expected 6522df6a but computed 6522df69");
+                "[rle-dict-uncompressed-corrupt-checksum.parquet] row group 0,"
+                        + " column long_field, dictionary page",
+                " — CRC mismatch: expected 6522df6a but computed 6522df69",
+                "CRC mismatch: expected 6522df6a but computed 6522df69");
     }
 
     @Test
@@ -169,8 +178,9 @@ class BadDataHandlingTest {
 
     // ==================== Helpers ====================
 
-    private void assertCorruptChecksumRejected(String relativePath, String expectedMessage,
-                                                String expectedCauseMessage) throws IOException {
+    private void assertCorruptChecksumRejected(String relativePath, String messageStart,
+                                                String messageEnd, String expectedCauseMessage)
+            throws IOException {
         Path testFile = repoDir.resolve(relativePath);
 
         assertThatThrownBy(() -> {
@@ -181,7 +191,7 @@ class BadDataHandlingTest {
                 }
             }
         }).as("Expected %s to be rejected due to corrupt checksum", relativePath)
-          .hasMessage(expectedMessage)
+          .hasMessageContainingAll(messageStart, messageEnd)
           .hasRootCauseMessage(expectedCauseMessage);
     }
 

@@ -16,6 +16,9 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 import dev.hardwood.InputFile;
+import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext.Region;
 import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
 import dev.hardwood.internal.metadata.PageHeader;
@@ -23,6 +26,7 @@ import dev.hardwood.internal.predicate.PageDropPredicates;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
+import dev.hardwood.internal.thrift.ThriftParseException;
 import dev.hardwood.jfr.RowGroupScannedEvent;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -334,6 +338,21 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
             return result;
         }
 
+        /// The `[file] row group N, column c, region at byte B — ` prefix for a
+        /// failure this iterator raises itself.
+        ///
+        /// These reads happen on the retriever thread, whose own catch knows
+        /// only that a fetch was in progress. Building the prefix here is what
+        /// keeps the region and the byte — both in scope only at this depth —
+        /// and [ExceptionContext#enrich] leaves an already-prefixed
+        /// message alone on the way out.
+        private String readPrefix(Region region, long regionOffset, IOException e) {
+            int bytesRead = ThriftParseException.bytesReadOf(e);
+            boolean exact = bytesRead >= 0;
+            return ExceptionContext.prefix(new ReadContext(fileName, rowGroupIndex,
+                    columnSchema.name(), region, exact ? regionOffset + bytesRead : regionOffset, exact));
+        }
+
         /// Reads a page header at the given relative position, growing the
         /// peek buffer on EOF. Needed because `DataPageHeader.statistics` may
         /// carry long `min_value`/`max_value` binaries that push the header
@@ -347,6 +366,14 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
                 try {
                     PageHeader header = PageHeaderReader.read(headerReader);
                     return new ParsedHeader(header, headerReader.getBytesRead());
+                }
+                catch (ThriftParseException e) {
+                    // A header that will not parse is not a header that is
+                    // merely too short for the peek, so growing the buffer
+                    // cannot help; the loop below is for EOF alone.
+                    throw new IOException(
+                            readPrefix(Region.PAGE_HEADER, columnChunkOffset + relPos, e)
+                                    + e.getMessage(), e);
                 }
                 catch (EOFException eof) {
                     if (peekSize >= remaining) {
@@ -444,10 +471,17 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
                 int dictTotalSize = headerSize + compressedSize;
                 ByteBuffer dictRegion = readBytes(position, dictTotalSize);
                 ByteBuffer compressedData = dictRegion.slice(headerSize, compressedSize);
-                if (header.crc() != null) {
-                    CrcValidator.assertCorrectCrc(header.crc(), compressedData, columnSchema.name());
+                long dictOffset = columnChunkOffset + position;
+                try {
+                    if (header.crc() != null) {
+                        CrcValidator.assertCorrectCrc(header.crc(), compressedData);
+                    }
+                    dictionary = DictionaryParser.parse(dictRegion, columnSchema, metaData, context);
                 }
-                dictionary = DictionaryParser.parse(dictRegion, columnSchema, metaData, context);
+                catch (IOException e) {
+                    throw new IOException(readPrefix(Region.DICTIONARY_PAGE, dictOffset, e)
+                            + e.getMessage(), e);
+                }
                 position += dictTotalSize;
             }
         }
@@ -552,7 +586,8 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
                 }
                 else {
                     ByteBuffer pageData = readBytes(position, totalPageSize);
-                    pageInfo = new PageInfo(pageData, columnSchema, metaData, dictionary, mask);
+                    pageInfo = new PageInfo(pageData, columnSchema, metaData, dictionary, mask,
+                            columnChunkOffset + position);
                 }
                 valuesRead += numValues;
                 recordsRead += recordsInPage;

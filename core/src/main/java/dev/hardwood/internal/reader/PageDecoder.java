@@ -161,7 +161,7 @@ public class PageDecoder {
         ByteBuffer pageData = pageBuffer.slice(headerSize, compressedSize);
 
         if (pageHeader.crc() != null) {
-            CrcValidator.assertCorrectCrc(pageHeader.crc(), pageData, column.name());
+            CrcValidator.assertCorrectCrc(pageHeader.crc(), pageData);
         }
 
         Page result = switch (pageHeader.type()) {

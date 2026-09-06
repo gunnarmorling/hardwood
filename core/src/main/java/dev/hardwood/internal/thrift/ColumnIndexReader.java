@@ -35,6 +35,16 @@ import dev.hardwood.metadata.ColumnIndex;
 public class ColumnIndexReader {
 
     public static ColumnIndex read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("ColumnIndex", depth, e);
+        }
+    }
+
+    private static ColumnIndex readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

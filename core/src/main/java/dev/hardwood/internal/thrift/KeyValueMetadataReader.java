@@ -38,6 +38,17 @@ class KeyValueMetadataReader {
 
     /// Reads a single KeyValue Thrift struct (field 1: key, field 2: value) and puts it into the map.
     private static void readKeyValue(ThriftCompactReader reader, Map<String, String> target) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            readKeyValueFields(reader, target);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("KeyValue", depth, e);
+        }
+    }
+
+    private static void readKeyValueFields(ThriftCompactReader reader, Map<String, String> target)
+            throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             String key = null;

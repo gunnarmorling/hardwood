@@ -24,6 +24,16 @@ import dev.hardwood.metadata.PageLocation;
 public class OffsetIndexReader {
 
     public static OffsetIndex read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("OffsetIndex", depth, e);
+        }
+    }
+
+    private static OffsetIndex readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

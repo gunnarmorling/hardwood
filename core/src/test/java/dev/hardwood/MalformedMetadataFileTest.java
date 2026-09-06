@@ -22,6 +22,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /// **file-attributed** error. The low-level field-name coverage lives in
 /// [dev.hardwood.internal.thrift.MalformedMetadataValidationTest]; this test pins
 /// the end-to-end behaviour that the message also names the offending file.
+///
+/// No byte is named: the footer parsed, and it is the value that is wrong
+/// rather than the bytes holding it, so an offset would point at bytes that are
+/// exactly what the writer meant to put there.
 class MalformedMetadataFileTest {
 
     @Test
@@ -30,7 +34,7 @@ class MalformedMetadataFileTest {
         Path file = Paths.get("src/test/resources/negative_data_page_offset.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
                 .isInstanceOf(IOException.class)
-                .hasMessage("[negative_data_page_offset.parquet] "
+                .hasMessage("[negative_data_page_offset.parquet] footer — "
                         + "Malformed Parquet metadata: ColumnMetaData.data_page_offset must be non-negative but was -1");
     }
 }

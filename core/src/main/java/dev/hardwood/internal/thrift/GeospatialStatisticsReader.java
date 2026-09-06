@@ -20,6 +20,16 @@ import dev.hardwood.metadata.GeospatialStatistics;
 public class GeospatialStatisticsReader {
 
     public static GeospatialStatistics read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("GeospatialStatistics", depth, e);
+        }
+    }
+
+    private static GeospatialStatistics readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

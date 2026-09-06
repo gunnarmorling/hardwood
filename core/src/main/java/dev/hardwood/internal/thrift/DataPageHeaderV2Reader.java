@@ -18,6 +18,16 @@ import dev.hardwood.metadata.Statistics;
 public class DataPageHeaderV2Reader {
 
     public static DataPageHeaderV2 read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("DataPageHeaderV2", depth, e);
+        }
+    }
+
+    private static DataPageHeaderV2 readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
