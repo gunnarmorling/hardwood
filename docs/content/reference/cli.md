@@ -326,6 +326,36 @@ Available screens:
 - **Dictionary** — full-value modal on Enter and `/` inline search
 - **Data preview** — row values via `RowReader`; `←/→` scrolls the visible column window, `PgDn/PgUp` flips pages
 
+### When a file will not read
+
+Any screen that reads from the file shows a **Read failed** overlay in place of
+itself when the read does not come back. The session stays up: `Esc` leaves the
+screen, and the keys that move between pages, chunks or rows still work, so a
+damaged region can be stepped over rather than backed out of.
+
+The overlay carries the reader's own message, which names the file, the column,
+the region and the byte the read gave up on, and it shows the bytes at that
+offset:
+
+```
+╭ Read failed ─────────────────────────────────────────────╮
+│ [data.parquet] column id, page header (row group 0) at   │
+│ byte 41104 (0x00a090) — PageHeader field 15 — Unknown    │
+│ field type: 15                                           │
+│                                                          │
+│ 00a088  ff 13 00 00 00 00 00 00 ........                 │
+│ 00a090  ff ff ff ff ff ff ff ff ........                 │
+│ 00a098  ff ff ff ff ff ff ff ff ........                 │
+│                                                          │
+│ [Esc] back                                               │
+╰──────────────────────────────────────────────────────────╯
+```
+
+Offsets in the gutter are absolute, so they match the offset in the message and
+what a hex editor shows, and the byte the read stopped on is coloured. A failure
+with no position to show — one raised while decoding a page rather than while
+reading the file — shows the message alone.
+
 A tour through the main screens (click any shot to open it full size):
 
 <figure markdown="span">[![Overview screen](../assets/cli/01-landing-overview.svg){ width="720" }](../assets/cli/01-landing-overview.svg)<figcaption>Overview</figcaption></figure>

@@ -19,6 +19,9 @@ import java.util.Set;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.cli.internal.Encodings;
+import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext.Region;
 import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.internal.reader.ColumnIndexBuffers;
 import dev.hardwood.internal.reader.Dictionary;
@@ -29,6 +32,7 @@ import dev.hardwood.internal.thrift.ColumnIndexReader;
 import dev.hardwood.internal.thrift.OffsetIndexReader;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
+import dev.hardwood.internal.thrift.ThriftParseException;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnIndex;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -190,11 +194,13 @@ public final class ParquetModel implements AutoCloseable {
         ColumnIndexBuffers buffers = indexBuffersFor(rowGroupIndex).forColumn(columnIndex);
         ColumnIndex result = null;
         if (buffers != null && buffers.columnIndex() != null) {
+            ThriftCompactReader reader = new ThriftCompactReader(buffers.columnIndex());
             try {
-                result = ColumnIndexReader.read(new ThriftCompactReader(buffers.columnIndex()));
+                result = ColumnIndexReader.read(reader);
             }
             catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw readFailure(e, columnIndex, Region.COLUMN_INDEX, rowGroupIndex,
+                        chunk(rowGroupIndex, columnIndex).columnIndexOffset());
             }
         }
         columnIndexCache.put(key, result);
@@ -211,11 +217,13 @@ public final class ParquetModel implements AutoCloseable {
         ColumnIndexBuffers buffers = indexBuffersFor(rowGroupIndex).forColumn(columnIndex);
         OffsetIndex result = null;
         if (buffers != null && buffers.offsetIndex() != null) {
+            ThriftCompactReader reader = new ThriftCompactReader(buffers.offsetIndex());
             try {
-                result = OffsetIndexReader.read(new ThriftCompactReader(buffers.offsetIndex()));
+                result = OffsetIndexReader.read(reader);
             }
             catch (IOException e) {
-                throw new UncheckedIOException(e);
+                throw readFailure(e, columnIndex, Region.OFFSET_INDEX, rowGroupIndex,
+                        chunk(rowGroupIndex, columnIndex).offsetIndexOffset());
             }
         }
         offsetIndexCache.put(key, result);
@@ -265,12 +273,15 @@ public final class ParquetModel implements AutoCloseable {
         long start = dictOffset != null && dictOffset > 0 ? dictOffset : cmd.dataPageOffset();
         long totalBytes = cmd.totalCompressedSize();
         List<PageHeader> headers = new ArrayList<>();
+        // `position` is declared out here so the catch can say how far the walk
+        // got: the offset of the header that would not parse is the whole point
+        // of the message, and inside the try it is out of scope by then.
+        int position = 0;
         try {
             // The offsets address the file named by file_path, not this one; the pages this
             // would walk are whatever happens to sit there.
             cc.requireSameFile();
             ByteBuffer buffer = inputFile.readRange(start, Math.toIntExact(totalBytes));
-            int position = 0;
             while (position < buffer.limit()) {
                 ThriftCompactReader tcr = new ThriftCompactReader(buffer, position);
                 PageHeader header = PageHeaderReader.read(tcr);
@@ -280,7 +291,7 @@ public final class ParquetModel implements AutoCloseable {
             }
         }
         catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw readFailure(e, columnIndex, Region.PAGE_HEADER, rowGroupIndex, start + position);
         }
         List<PageHeader> result = List.copyOf(headers);
         pageHeaderCache.put(key, result);
@@ -343,8 +354,34 @@ public final class ParquetModel implements AutoCloseable {
             return dict;
         }
         catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw readFailure(e, columnIndex, Region.DICTIONARY_PAGE, rowGroupIndex, chunkStart);
         }
+    }
+
+    /// Wraps a read failure with where in the file it happened, so a screen can
+    /// say more than that something went wrong.
+    ///
+    /// `base` is the file offset of the region being parsed; a parse failure
+    /// also knows how far into that region it got, and the two compose into the
+    /// byte a reader can go and look at. Without the second half the message
+    /// names the region's first byte every time, which is the right answer only
+    /// when the damage is at its front.
+    ///
+    /// Only ever called from a `catch`.
+    private UncheckedIOException readFailure(IOException e, int columnIndex, Region region,
+                                             int rowGroupIndex, Long base) {
+        long offset = ReadContext.UNKNOWN_OFFSET;
+        boolean exact = false;
+        if (base != null) {
+            int bytesRead = ThriftParseException.bytesReadOf(e);
+            exact = bytesRead >= 0;
+            offset = exact ? base + bytesRead : base;
+        }
+        ReadContext context = new ReadContext(displayPath, rowGroupIndex,
+                schema.getColumn(columnIndex).fieldPath().toString(), region,
+                offset, exact);
+        return (UncheckedIOException) ExceptionContext.enrich(
+                context, new UncheckedIOException(e.getMessage(), e));
     }
 
     public InputFile inputFile() {

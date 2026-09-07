@@ -7,9 +7,10 @@
  */
 package dev.hardwood.cli.dive.internal;
 
+import java.util.Arrays;
 import java.util.Base64;
 
-import dev.hardwood.cli.internal.Fmt;
+import dev.hardwood.cli.internal.HexDump;
 
 /// Best-effort pretty-printing of key/value metadata values on the Overview
 /// modal. Most Parquet writers shove structured content into these strings:
@@ -69,22 +70,10 @@ public final class KvMetadataFormatter {
                 .append(" bytes)\n\n");
         sb.append(decoded.length > 256 ? "Hex dump (first 256 bytes):\n" : "Hex dump:\n");
         int limit = Math.min(decoded.length, 256);
-        for (int i = 0; i < limit; i += 16) {
-            sb.append(Fmt.fmt("%04x  ", i));
-            for (int j = 0; j < 16; j++) {
-                if (i + j < limit) {
-                    sb.append(Fmt.fmt("%02x ", decoded[i + j] & 0xff));
-                }
-                else {
-                    sb.append("   ");
-                }
-            }
-            sb.append(' ');
-            for (int j = 0; j < 16 && i + j < limit; j++) {
-                byte b = decoded[i + j];
-                sb.append((b >= 0x20 && b < 0x7f) ? (char) b : '.');
-            }
-            sb.append('\n');
+        // Offsets from zero here, not from a file: this is a base64 blob out of
+        // the footer's key/value metadata, and it has no position on disk.
+        for (HexDump.Row row : HexDump.rows(Arrays.copyOf(decoded, limit), 0, HexDump.WIDE_ROW)) {
+            sb.append(row.text()).append('\n');
         }
         if (decoded.length > limit) {
             sb.append("... (").append(decoded.length - limit).append(" more bytes)\n");

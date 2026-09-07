@@ -228,4 +228,46 @@ class ExceptionContextTest {
         assertThat(wrapped).isInstanceOf(IndexOutOfBoundsException.class);
         assertThat(wrapped.getMessage()).contains("column k", "Index 7 out of bounds for length 2");
     }
+
+    /// The offset has to be reachable without reading it back out of the
+    /// message: a caller that wants to show the bytes needs a number, and
+    /// parsing one out of prose is the kind of coupling that breaks the next
+    /// time the wording changes.
+    @Test
+    void anIoFailureKeepsItsContextForACallerToActOn() {
+        Throwable wrapped = ExceptionContext.enrich(
+                new ReadContext("f.parquet", 0, "id", Region.PAGE_HEADER, 41104, true),
+                new UncheckedIOException(new IOException("Unknown field type: 15")));
+
+        assertThat(wrapped).isInstanceOf(ContextualUncheckedIOException.class);
+        ReadContext context = ((ContextualUncheckedIOException) wrapped).readContext();
+        assertThat(context.offset()).isEqualTo(41104);
+        assertThat(context.column()).isEqualTo("id");
+    }
+
+    /// Catching stays exactly as it was — the reader, the commands and dive all
+    /// branch on the plain type, and a context only reachable by catching
+    /// something else would be a context nobody catches.
+    @Test
+    void theCarrierIsStillAnUncheckedIoException() {
+        Throwable wrapped = ExceptionContext.enrich(
+                new ReadContext("f.parquet", 0, "id", Region.DATA_PAGE, 2048, true),
+                new UncheckedIOException(new IOException("boom")));
+
+        assertThat(wrapped).isInstanceOf(UncheckedIOException.class);
+        assertThat(((UncheckedIOException) wrapped).getCause()).hasMessage("boom");
+    }
+
+    /// A decoder failure keeps its own type and carries no context, so a caller
+    /// cannot be handed an offset it would go looking for on disk — the page it
+    /// names is all it knows, and that is not a byte.
+    @Test
+    void aDecoderFailureCarriesNoContext() {
+        Throwable wrapped = ExceptionContext.enrich(
+                new ReadContext("f.parquet", 0, "id", Region.DATA_PAGE, 37, false),
+                new IllegalStateException("bad run"));
+
+        assertThat(wrapped).isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(ContextualUncheckedIOException.class);
+    }
 }

@@ -202,8 +202,8 @@ public final class ExceptionContext {
             return e;
         }
         String clause = contextClause(context);
-        RuntimeException titled = clause.isEmpty() ? e : retitle(clause, e);
-        return addFileContext(context.fileName(), titled);
+        RuntimeException titled = clause.isEmpty() ? e : retitle(clause, e, context);
+        return addFileContext(context.fileName(), titled, context);
     }
 
     /// Prefixes `e`'s message with `clause`, keeping its type and cause.
@@ -211,9 +211,10 @@ public final class ExceptionContext {
     /// Separated by a dash rather than a colon because the message being
     /// prefixed usually ends up carrying its own — `CRC mismatch: expected …`
     /// behind `at byte 41104:` reads as one sentence punctuated twice.
-    private static RuntimeException retitle(String clause, RuntimeException e) {
+    private static RuntimeException retitle(String clause, RuntimeException e, ReadContext context) {
         String message = e.getMessage();
-        return rewrap(e, clause + " — " + (message != null ? message : e.getClass().getSimpleName()));
+        return rewrap(e, clause + " — " + (message != null ? message : e.getClass().getSimpleName()),
+                context);
     }
 
     /// Amends the exception message with a `[fileName] ` prefix. Preserves the
@@ -224,6 +225,11 @@ public final class ExceptionContext {
     /// @param e        the exception to enrich
     /// @return the enriched (or original) exception — never `null`
     public static RuntimeException addFileContext(String fileName, RuntimeException e) {
+        return addFileContext(fileName, e, null);
+    }
+
+    private static RuntimeException addFileContext(String fileName, RuntimeException e,
+            ReadContext context) {
         if (fileName == null || fileName.isEmpty()) {
             return e;
         }
@@ -239,7 +245,8 @@ public final class ExceptionContext {
             return e;
         }
         return rewrap(e, prefix
-                + (originalMessage != null ? originalMessage : e.getClass().getSimpleName()));
+                + (originalMessage != null ? originalMessage : e.getClass().getSimpleName()),
+                context);
     }
 
     /// Re-throws `e`'s content under `newMessage`, preserving its type and cause
@@ -249,7 +256,8 @@ public final class ExceptionContext {
     /// **Cause-chain note for [UncheckedIOException]:** the type requires an
     /// [IOException] cause, so the original is attached as suppressed and the
     /// cause slot holds the inner [IOException].
-    private static RuntimeException rewrap(RuntimeException e, String newMessage) {
+    private static RuntimeException rewrap(RuntimeException e, String newMessage,
+            ReadContext context) {
         String originalMessage = e.getMessage();
         if (e instanceof UncheckedIOException uio) {
             // UncheckedIOException requires an IOException cause, so we can't chain
@@ -258,7 +266,9 @@ public final class ExceptionContext {
             if (ioCause == null) {
                 ioCause = new IOException(originalMessage);
             }
-            UncheckedIOException wrapped = new UncheckedIOException(newMessage, ioCause);
+            UncheckedIOException wrapped = context != null
+                    ? new ContextualUncheckedIOException(newMessage, ioCause, context)
+                    : new UncheckedIOException(newMessage, ioCause);
             wrapped.addSuppressed(e);
             return wrapped;
         }
