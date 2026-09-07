@@ -456,18 +456,13 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
 
             if (header.type() == PageType.DICTIONARY_PAGE) {
                 int compressedSize = header.compressedPageSize();
-                int numValues = header.dictionaryPageHeader().numValues();
-                if (numValues < 0) {
-                    throw new ParquetReadException("Invalid dictionary page for column '"
-                            + columnSchema.name() + "': negative numValues (" + numValues + ")");
-                }
                 int dictTotalSize = headerSize + compressedSize;
-                ByteBuffer dictRegion = readBytes(position, dictTotalSize);
-                ByteBuffer compressedData = dictRegion.slice(headerSize, compressedSize);
-                if (header.crc() != null) {
-                    CrcValidator.assertCorrectCrc(header.crc(), compressedData, columnSchema.name());
-                }
-                dictionary = DictionaryParser.parse(dictRegion, columnSchema, metaData, context);
+                // The header is already parsed, so hand it over rather than a region the
+                // parser would have to open and read the same header out of again.
+                ByteBuffer compressedData = readBytes(position, dictTotalSize)
+                        .slice(headerSize, compressedSize);
+                dictionary = DictionaryParser.parsePage(header, compressedData,
+                        columnSchema, metaData, context);
                 position += dictTotalSize;
             }
         }

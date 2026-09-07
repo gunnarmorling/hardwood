@@ -10,6 +10,7 @@ package dev.hardwood.internal.reader;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.compression.Decompressor;
+import dev.hardwood.internal.metadata.DictionaryPageHeader;
 import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
@@ -64,15 +65,67 @@ public final class DictionaryParser {
         }
 
         int headerSize = probeReader.getBytesRead();
+        ByteBuffer compressedData = dictRegion.slice(headerSize, header.compressedPageSize());
+
+        return parsePage(header, compressedData, columnSchema, metaData, context);
+    }
+
+    /// Parses a dictionary page whose header the caller has already read.
+    ///
+    /// A caller scanning a column chunk page by page parses the header anyway, to learn where
+    /// the page ends. Handing it back here is what keeps the header from being parsed — and its
+    /// CRC computed — a second time.
+    ///
+    /// This is the one place the page's own claims are checked, so every entry point validates
+    /// them alike: [#parse] reaches it too, once it has found a dictionary page to hand over.
+    ///
+    /// Both the page type and the body's length are checked rather than trusted: a body that is
+    /// not the one the header describes — a region handed over whole, say — decodes to values
+    /// that are wrong rather than absent, and on the files that carry no page CRC there is
+    /// nothing else left to catch it.
+    ///
+    /// @param header the page header, already parsed, with [PageType#DICTIONARY_PAGE] as its type
+    /// @param compressedData the page body alone, `header.compressedPageSize()` bytes,
+    ///        with the header excluded
+    /// @param columnSchema the column schema (for type info)
+    /// @param metaData the column metadata (for codec)
+    /// @param context the hardwood context (for decompressor)
+    /// @return the parsed dictionary
+    /// @throws ParquetReadException if the page is not the one the header describes, if the
+    ///         header contradicts itself, or if the body cannot be decoded
+    public static Dictionary parsePage(PageHeader header, ByteBuffer compressedData,
+                            ColumnSchema columnSchema, ColumnMetaData metaData,
+                            HardwoodContextImpl context) {
+        if (header.type() != PageType.DICTIONARY_PAGE) {
+            throw new ParquetReadException("Invalid dictionary page for column '"
+                    + columnSchema.name() + "': page type is " + header.type());
+        }
+
         int compressedSize = header.compressedPageSize();
-        ByteBuffer compressedData = dictRegion.slice(headerSize, compressedSize);
+        if (compressedData.remaining() != compressedSize) {
+            throw new ParquetReadException("Invalid dictionary page for column '"
+                    + columnSchema.name() + "': body of " + compressedData.remaining()
+                    + " bytes, header claims " + compressedSize);
+        }
+
+        DictionaryPageHeader dictionaryPageHeader = header.dictionaryPageHeader();
+        if (dictionaryPageHeader == null) {
+            throw new ParquetReadException("Invalid dictionary page for column '"
+                    + columnSchema.name() + "': no dictionary_page_header");
+        }
+
+        int numValues = dictionaryPageHeader.numValues();
+        if (numValues < 0) {
+            throw new ParquetReadException("Invalid dictionary page for column '"
+                    + columnSchema.name() + "': negative numValues (" + numValues + ")");
+        }
 
         if (header.crc() != null) {
             CrcValidator.assertCorrectCrc(header.crc(), compressedData, columnSchema.name());
         }
 
-        return decompress(compressedData, header.dictionaryPageHeader().numValues(),
-                header.uncompressedPageSize(), columnSchema, metaData.codec(), context);
+        return decompress(compressedData, numValues, header.uncompressedPageSize(),
+                columnSchema, metaData.codec(), context);
     }
 
     /// Parses a dictionary from a buffer given the chunk layout. Locates the
