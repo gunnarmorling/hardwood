@@ -30,7 +30,6 @@ import org.openjdk.jmh.infra.Blackhole;
 
 import dev.hardwood.InputFile;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
-import dev.hardwood.internal.reader.PageInfo;
 import dev.hardwood.internal.reader.PageIterator;
 import dev.hardwood.internal.reader.SequentialFetchPlan;
 import dev.hardwood.metadata.ColumnChunk;
