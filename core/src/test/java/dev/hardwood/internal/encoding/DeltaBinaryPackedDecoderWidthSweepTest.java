@@ -20,6 +20,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import dev.hardwood.reader.ParquetReadException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -238,7 +240,7 @@ class DeltaBinaryPackedDecoderWidthSweepTest {
 
         assertThatThrownBy(() -> new DeltaBinaryPackedDecoder(encoded, 0)
                 .readLongs(new long[VALUE_COUNT + 1], null, 0))
-                        .isInstanceOf(IOException.class)
+                        .isInstanceOf(ParquetReadException.class)
                         .hasMessageContaining("No more values to read");
     }
 

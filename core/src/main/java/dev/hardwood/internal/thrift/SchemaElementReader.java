@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ConvertedType;
 import dev.hardwood.metadata.LogicalType;
@@ -19,7 +17,7 @@ import dev.hardwood.metadata.SchemaElement;
 /// Reader for SchemaElement from Thrift Compact Protocol.
 public class SchemaElementReader {
 
-    public static SchemaElement read(ThriftCompactReader reader) throws IOException {
+    public static SchemaElement read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -29,7 +27,7 @@ public class SchemaElementReader {
         }
     }
 
-    private static SchemaElement readInternal(ThriftCompactReader reader) throws IOException {
+    private static SchemaElement readInternal(ThriftCompactReader reader) {
         String name = null;
         PhysicalType type = null;
         Integer typeLength = null;

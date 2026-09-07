@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.encoding;
 
-import java.io.IOException;
-
 /// Interface for decoders that read values directly into an output array,
 /// placing them at positions indicated by definition levels.
 public interface ValueDecoder {
@@ -18,7 +16,7 @@ public interface ValueDecoder {
     /// before decoding individual values.
     ///
     /// @param numNonNullValues the number of actual values in the encoded data
-    default void initialize(int numNonNullValues) throws IOException {
+    default void initialize(int numNonNullValues) {
         // No-op by default - most decoders don't need initialization
     }
 
@@ -27,7 +25,7 @@ public interface ValueDecoder {
     /// @param output the output array to populate
     /// @param definitionLevels definition levels indicating which positions have values (null for required columns)
     /// @param maxDefLevel the maximum definition level (value is present when defLevel == maxDefLevel)
-    default void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    default void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) {
         throw new UnsupportedOperationException("readLongs not supported by this decoder");
     }
 
@@ -36,7 +34,7 @@ public interface ValueDecoder {
     /// @param output the output array to populate
     /// @param definitionLevels definition levels indicating which positions have values (null for required columns)
     /// @param maxDefLevel the maximum definition level (value is present when defLevel == maxDefLevel)
-    default void readDoubles(double[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    default void readDoubles(double[] output, int[] definitionLevels, int maxDefLevel) {
         throw new UnsupportedOperationException("readDoubles not supported by this decoder");
     }
 
@@ -45,7 +43,7 @@ public interface ValueDecoder {
     /// @param output the output array to populate
     /// @param definitionLevels definition levels indicating which positions have values (null for required columns)
     /// @param maxDefLevel the maximum definition level (value is present when defLevel == maxDefLevel)
-    default void readInts(int[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    default void readInts(int[] output, int[] definitionLevels, int maxDefLevel) {
         throw new UnsupportedOperationException("readInts not supported by this decoder");
     }
 
@@ -54,7 +52,7 @@ public interface ValueDecoder {
     /// @param output the output array to populate
     /// @param definitionLevels definition levels indicating which positions have values (null for required columns)
     /// @param maxDefLevel the maximum definition level (value is present when defLevel == maxDefLevel)
-    default void readFloats(float[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    default void readFloats(float[] output, int[] definitionLevels, int maxDefLevel) {
         throw new UnsupportedOperationException("readFloats not supported by this decoder");
     }
 
@@ -63,7 +61,7 @@ public interface ValueDecoder {
     /// @param output the output array to populate
     /// @param definitionLevels definition levels indicating which positions have values (null for required columns)
     /// @param maxDefLevel the maximum definition level (value is present when defLevel == maxDefLevel)
-    default void readBooleans(boolean[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    default void readBooleans(boolean[] output, int[] definitionLevels, int maxDefLevel) {
         throw new UnsupportedOperationException("readBooleans not supported by this decoder");
     }
 
@@ -72,7 +70,7 @@ public interface ValueDecoder {
     /// @param output the output array to populate
     /// @param definitionLevels definition levels indicating which positions have values (null for required columns)
     /// @param maxDefLevel the maximum definition level (value is present when defLevel == maxDefLevel)
-    default void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    default void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) {
         throw new UnsupportedOperationException("readByteArrays not supported by this decoder");
     }
 }

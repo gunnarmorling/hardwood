@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
@@ -15,8 +14,10 @@ import dev.hardwood.InputFile;
 import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
+import dev.hardwood.internal.thrift.ThriftTruncatedException;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.PageType;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reads just enough of a column chunk to identify its first data page's
 /// format (v1 vs v2). Used by the per-page mask gate in [RowGroupIterator] to
@@ -62,11 +63,11 @@ final class PageFormatProbe {
                 PageHeader header = PageHeaderReader.read(new ThriftCompactReader(buf));
                 return header.type();
             }
-            catch (EOFException eof) {
+            catch (ThriftTruncatedException truncated) {
                 if (peek >= peekCeiling) {
-                    throw new IOException("First data page header for column at offset "
+                    throw new ParquetReadException("First data page header for column at offset "
                             + offset + " exceeds " + peekCeiling
-                            + " bytes — the file is likely corrupt", eof);
+                            + " bytes — the file is likely corrupt", truncated);
                 }
                 peek = Math.min(peekCeiling, peek * 2);
             }

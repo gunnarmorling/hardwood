@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.encoding;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.DoubleBuffer;
@@ -17,6 +16,7 @@ import java.nio.LongBuffer;
 import java.util.Arrays;
 
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Decoder for PLAIN encoding.
 /// PLAIN encoding stores values in their native binary representation.
@@ -51,9 +51,9 @@ public class PlainDecoder implements ValueDecoder {
     }
 
     /// Read a fixed-length byte array value.
-    public byte[] readFixedLenByteArray(int length) throws IOException {
+    public byte[] readFixedLenByteArray(int length) {
         if (pos + length > data.length) {
-            throw new IOException("Unexpected EOF while reading fixed-length byte array");
+            throw new ParquetReadException("Unexpected EOF while reading fixed-length byte array");
         }
         byte[] result = Arrays.copyOfRange(data, pos, pos + length);
         pos += length;
@@ -62,11 +62,11 @@ public class PlainDecoder implements ValueDecoder {
 
     /// Read INT64 values directly into a primitive long array.
     @Override
-    public void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             int numBytes = output.length * 8;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading INT64 values");
+                throw new ParquetReadException("Unexpected EOF while reading INT64 values");
             }
             ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer().get(output);
             pos += numBytes;
@@ -80,7 +80,7 @@ public class PlainDecoder implements ValueDecoder {
             }
             int numBytes = numDefined * 8;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading INT64 values");
+                throw new ParquetReadException("Unexpected EOF while reading INT64 values");
             }
             LongBuffer longBuffer = ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
             pos += numBytes;
@@ -94,11 +94,11 @@ public class PlainDecoder implements ValueDecoder {
 
     /// Read DOUBLE values directly into a primitive double array.
     @Override
-    public void readDoubles(double[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readDoubles(double[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             int numBytes = output.length * 8;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading DOUBLE values");
+                throw new ParquetReadException("Unexpected EOF while reading DOUBLE values");
             }
             ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer().get(output);
             pos += numBytes;
@@ -112,7 +112,7 @@ public class PlainDecoder implements ValueDecoder {
             }
             int numBytes = numDefined * 8;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading DOUBLE values");
+                throw new ParquetReadException("Unexpected EOF while reading DOUBLE values");
             }
             DoubleBuffer doubleBuffer = ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asDoubleBuffer();
             pos += numBytes;
@@ -126,11 +126,11 @@ public class PlainDecoder implements ValueDecoder {
 
     /// Read INT32 values directly into a primitive int array.
     @Override
-    public void readInts(int[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readInts(int[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             int numBytes = output.length * 4;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading INT32 values");
+                throw new ParquetReadException("Unexpected EOF while reading INT32 values");
             }
             ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer().get(output);
             pos += numBytes;
@@ -144,7 +144,7 @@ public class PlainDecoder implements ValueDecoder {
             }
             int numBytes = numDefined * 4;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading INT32 values");
+                throw new ParquetReadException("Unexpected EOF while reading INT32 values");
             }
             IntBuffer intBuffer = ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asIntBuffer();
             pos += numBytes;
@@ -158,11 +158,11 @@ public class PlainDecoder implements ValueDecoder {
 
     /// Read FLOAT values directly into a primitive float array.
     @Override
-    public void readFloats(float[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readFloats(float[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             int numBytes = output.length * 4;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading FLOAT values");
+                throw new ParquetReadException("Unexpected EOF while reading FLOAT values");
             }
             ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(output);
             pos += numBytes;
@@ -176,7 +176,7 @@ public class PlainDecoder implements ValueDecoder {
             }
             int numBytes = numDefined * 4;
             if (pos + numBytes > data.length) {
-                throw new IOException("Unexpected EOF while reading FLOAT values");
+                throw new ParquetReadException("Unexpected EOF while reading FLOAT values");
             }
             FloatBuffer floatBuffer = ByteBuffer.wrap(data, pos, numBytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
             pos += numBytes;
@@ -190,7 +190,7 @@ public class PlainDecoder implements ValueDecoder {
 
     /// Read BOOLEAN values directly into a primitive boolean array.
     @Override
-    public void readBooleans(boolean[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readBooleans(boolean[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             for (int i = 0; i < output.length; i++) {
                 output[i] = readBoolean();
@@ -207,7 +207,7 @@ public class PlainDecoder implements ValueDecoder {
 
     /// Read BYTE_ARRAY, FIXED_LEN_BYTE_ARRAY, or INT96 values directly into a byte[][] array.
     @Override
-    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             for (int i = 0; i < output.length; i++) {
                 output[i] = readByteArrayValue();
@@ -223,21 +223,21 @@ public class PlainDecoder implements ValueDecoder {
     }
 
     /// Read a single byte array value based on the physical type.
-    private byte[] readByteArrayValue() throws IOException {
+    private byte[] readByteArrayValue() {
         return switch (type) {
             case BYTE_ARRAY -> readByteArray();
             case FIXED_LEN_BYTE_ARRAY -> readFixedLenByteArray(typeLength);
             case INT96 -> readInt96();
-            default -> throw new IOException("readByteArrays not supported for type: " + type);
+            default -> throw new ParquetReadException("readByteArrays not supported for type: " + type);
         };
     }
 
-    private boolean readBoolean() throws IOException {
+    private boolean readBoolean() {
         // Booleans are bit-packed in PLAIN encoding (8 values per byte, LSB first)
         if (bitPosition == 8) {
             // Need to read a new byte
             if (pos >= data.length) {
-                throw new IOException("Unexpected EOF while reading boolean");
+                throw new ParquetReadException("Unexpected EOF while reading boolean");
             }
             currentByte = data[pos++] & 0xFF;
             bitPosition = 0;
@@ -249,25 +249,25 @@ public class PlainDecoder implements ValueDecoder {
         return value;
     }
 
-    private byte[] readInt96() throws IOException {
+    private byte[] readInt96() {
         if (pos + 12 > data.length) {
-            throw new IOException("Unexpected EOF while reading INT96");
+            throw new ParquetReadException("Unexpected EOF while reading INT96");
         }
         byte[] result = Arrays.copyOfRange(data, pos, pos + 12);
         pos += 12;
         return result;
     }
 
-    private byte[] readByteArray() throws IOException {
+    private byte[] readByteArray() {
         // Read length (4 bytes, little-endian)
         if (pos + 4 > data.length) {
-            throw new IOException("Unexpected EOF while reading BYTE_ARRAY length");
+            throw new ParquetReadException("Unexpected EOF while reading BYTE_ARRAY length");
         }
         int length = ByteBuffer.wrap(data, pos, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
         pos += 4;
 
         if (length < 0) {
-            throw new IOException("Invalid BYTE_ARRAY length: " + length);
+            throw new ParquetReadException("Invalid BYTE_ARRAY length: " + length);
         }
 
         if (length == 0) {
@@ -276,7 +276,7 @@ public class PlainDecoder implements ValueDecoder {
 
         // Read data
         if (pos + length > data.length) {
-            throw new IOException("Unexpected EOF while reading BYTE_ARRAY data");
+            throw new ParquetReadException("Unexpected EOF while reading BYTE_ARRAY data");
         }
         byte[] result = Arrays.copyOfRange(data, pos, pos + length);
         pos += length;

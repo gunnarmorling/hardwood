@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.metadata.ColumnOrder;
 
 /// Reader for the `ColumnOrder` union from Thrift Compact Protocol.
@@ -22,7 +20,7 @@ public class ColumnOrderReader {
     /// Thrift union field id of the `IEEE_754_TOTAL_ORDER` (`IEEE754TotalOrder`) member.
     private static final short IEEE_754_TOTAL_ORDER = 2;
 
-    public static ColumnOrder read(ThriftCompactReader reader) throws IOException {
+    public static ColumnOrder read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             ColumnOrder order = ColumnOrder.UNKNOWN;

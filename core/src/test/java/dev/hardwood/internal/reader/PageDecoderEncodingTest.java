@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -26,6 +25,7 @@ import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.FieldPath;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -38,9 +38,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /// page declaring one its column has no business carrying is a malformed file, and the decoder has
 /// to say so rather than decode the bytes into a page of the wrong shape — which is silently wrong
 /// twice over, once in the values and once in the [Page] variant handed to the column reader.
-/// Being a malformed file rather than a gap in this release, each of these is an [IOException];
-/// [java.lang.UnsupportedOperationException] is left to mean an encoding no decoder has been
-/// written for.
+/// Being a malformed file rather than a gap in this release, each of these is a
+/// [ParquetReadException]; [java.lang.UnsupportedOperationException] is left to mean an encoding
+/// no decoder has been written for.
 class PageDecoderEncodingTest {
 
     private static final int NUM_VALUES = 4;
@@ -53,7 +53,7 @@ class PageDecoderEncodingTest {
     @Test
     void rejectsDeltaLengthByteArrayOnAnIntegerColumn() {
         assertThatThrownBy(() -> decode(Encoding.DELTA_LENGTH_BYTE_ARRAY, PhysicalType.INT32))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("DELTA_LENGTH_BYTE_ARRAY")
                 .hasMessageContaining("INT32");
     }
@@ -64,7 +64,7 @@ class PageDecoderEncodingTest {
     @Test
     void rejectsDeltaLengthByteArrayOnAFixedLengthColumn() {
         assertThatThrownBy(() -> decode(Encoding.DELTA_LENGTH_BYTE_ARRAY, PhysicalType.FIXED_LEN_BYTE_ARRAY))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("DELTA_LENGTH_BYTE_ARRAY")
                 .hasMessageContaining("FIXED_LEN_BYTE_ARRAY");
     }
@@ -72,7 +72,7 @@ class PageDecoderEncodingTest {
     @Test
     void rejectsDeltaByteArrayOnADoubleColumn() {
         assertThatThrownBy(() -> decode(Encoding.DELTA_BYTE_ARRAY, PhysicalType.DOUBLE))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("DELTA_BYTE_ARRAY")
                 .hasMessageContaining("DOUBLE");
     }
@@ -99,7 +99,7 @@ class PageDecoderEncodingTest {
     @Test
     void rejectsRleOnAnIntegerColumn() {
         assertThatThrownBy(() -> decode(Encoding.RLE, PhysicalType.INT32))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("RLE encodes only boolean values")
                 .hasMessageContaining("INT32");
     }
@@ -110,7 +110,7 @@ class PageDecoderEncodingTest {
     @Test
     void rejectsByteStreamSplitOnAByteArrayColumn() {
         assertThatThrownBy(() -> decode(Encoding.BYTE_STREAM_SPLIT, PhysicalType.BYTE_ARRAY))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("BYTE_STREAM_SPLIT")
                 .hasMessageContaining("BYTE_ARRAY");
     }
@@ -120,7 +120,7 @@ class PageDecoderEncodingTest {
     @Test
     void rejectsBitPackedAsAValueEncoding() {
         assertThatThrownBy(() -> decode(Encoding.BIT_PACKED, PhysicalType.INT32))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("BIT_PACKED encodes levels");
     }
 

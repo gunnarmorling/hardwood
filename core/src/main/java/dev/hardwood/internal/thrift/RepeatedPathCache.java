@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.Arrays;
 
 import dev.hardwood.metadata.FieldPath;
@@ -49,7 +48,7 @@ final class RepeatedPathCache {
     ///
     /// @param reader positioned on the list header of the path
     /// @param fieldName fully-qualified field name for the error message
-    FieldPath next(ThriftCompactReader reader, String fieldName) throws IOException {
+    FieldPath next(ThriftCompactReader reader, String fieldName) {
         int slot = position++;
         byte[] predicted = slot < encoded.length ? encoded[slot] : null;
         if (predicted != null && reader.matchesAt(predicted)) {

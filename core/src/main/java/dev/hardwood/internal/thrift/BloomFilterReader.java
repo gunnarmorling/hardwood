@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.bloomfilter.BloomFilter;
@@ -20,7 +19,7 @@ import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
 /// bytes fetched from `bloom_filter_offset`); this reader does no file I/O of its own.
 public class BloomFilterReader {
 
-    public static BloomFilter read(ThriftCompactReader reader) throws IOException {
+    public static BloomFilter read(ThriftCompactReader reader) {
         BloomFilterHeader header = BloomFilterHeaderReader.read(reader);
         return readBitset(header, reader);
     }
@@ -28,8 +27,7 @@ public class BloomFilterReader {
     /// Reads and validates the `numBytes` bitset that follows an already-parsed [BloomFilterHeader],
     /// from `reader` positioned immediately after the header. Lets a caller that parsed the header
     /// itself (e.g. to size a fetch) build the filter without decoding the header a second time.
-    public static BloomFilter readBitset(BloomFilterHeader header, ThriftCompactReader reader)
-            throws IOException {
+    public static BloomFilter readBitset(BloomFilterHeader header, ThriftCompactReader reader) {
         int numBytes = header.numBytes();
         // A split-block bitset is an array of 32-byte blocks, so its size must be a positive
         // multiple of 32; anything else would mis-shape the block math during probing.

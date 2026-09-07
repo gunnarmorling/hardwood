@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
@@ -18,7 +17,7 @@ import dev.hardwood.metadata.RowGroup;
 /// Reader for RowGroup from Thrift Compact Protocol.
 public class RowGroupReader {
 
-    public static RowGroup read(ThriftCompactReader reader) throws IOException {
+    public static RowGroup read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -28,7 +27,7 @@ public class RowGroupReader {
         }
     }
 
-    private static RowGroup readInternal(ThriftCompactReader reader) throws IOException {
+    private static RowGroup readInternal(ThriftCompactReader reader) {
         List<ColumnChunk> columns = Collections.emptyList();
         long totalByteSize = 0;
         long numRows = 0;

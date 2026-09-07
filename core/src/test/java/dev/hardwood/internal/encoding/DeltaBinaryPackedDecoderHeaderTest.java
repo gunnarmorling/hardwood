@@ -12,6 +12,8 @@ import java.io.IOException;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.reader.ParquetReadException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -23,21 +25,21 @@ class DeltaBinaryPackedDecoderHeaderTest {
     @Test
     void refusesAZeroBlockSize() {
         assertThatThrownBy(() -> decode(header(0, 4, 5, 100), 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("Invalid block size: 0");
     }
 
     @Test
     void refusesANegativeTotalValueCount() {
         assertThatThrownBy(() -> decode(header(128, 4, -1, 100), 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("Invalid total value count: -1");
     }
 
     @Test
     void refusesAZeroMiniblockCount() {
         assertThatThrownBy(() -> decode(header(128, 0, 5, 100), 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("Invalid miniblock count: 0");
     }
 
@@ -47,14 +49,14 @@ class DeltaBinaryPackedDecoderHeaderTest {
         // negative divisor divides evenly (128 % -1 == 0), so the divisibility check does not stop
         // it either. Unrefused it reaches new int[-1].
         assertThatThrownBy(() -> decode(header(128, -1, 5, 100), 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("Invalid miniblock count: -1");
     }
 
     @Test
     void refusesABlockSizeThatTheMiniblockCountDoesNotDivide() {
         assertThatThrownBy(() -> decode(header(128, 3, 5, 100), 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("not divisible");
     }
 
@@ -63,7 +65,7 @@ class DeltaBinaryPackedDecoderHeaderTest {
         byte[] page = concat(concat(header(128, 1, 5, 100), zigzag(3)), new byte[] { (byte) 200 });
 
         assertThatThrownBy(() -> decode(page, 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("Invalid bit width: 200");
     }
 
@@ -85,7 +87,7 @@ class DeltaBinaryPackedDecoderHeaderTest {
         byte[] page = concat(concat(header(1 << 30, 1, 5, 100), zigzag(3)), new byte[] { 0 });
 
         assertThatThrownBy(() -> decode(page, 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("Block size 1073741824 exceeds the maximum");
     }
 
@@ -97,7 +99,7 @@ class DeltaBinaryPackedDecoderHeaderTest {
                 new byte[] { 0 });
 
         assertThatThrownBy(() -> decode(page, 5))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("exceeds the maximum");
     }
 
@@ -109,10 +111,10 @@ class DeltaBinaryPackedDecoderHeaderTest {
         byte[] page = concat(header(128, 4, 0, 100), zigzag(0));
 
         assertThatThrownBy(() -> decode(page, 1))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("No more values to read");
         assertThatThrownBy(() -> new DeltaBinaryPackedDecoder(page, 0).readInt())
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("No more values to read");
     }
 

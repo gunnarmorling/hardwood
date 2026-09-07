@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Statistics;
 
@@ -18,7 +16,7 @@ import dev.hardwood.metadata.Statistics;
 /// over deprecated fields 1/2 (`max`/`min`).
 public class StatisticsReader {
 
-    public static Statistics read(ThriftCompactReader reader) throws IOException {
+    public static Statistics read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -28,7 +26,7 @@ public class StatisticsReader {
         }
     }
 
-    private static Statistics readInternal(ThriftCompactReader reader) throws IOException {
+    private static Statistics readInternal(ThriftCompactReader reader) {
         byte[] deprecatedMax = null;
         byte[] deprecatedMin = null;
         Long nullCount = null;

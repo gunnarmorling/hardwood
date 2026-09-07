@@ -7,9 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.EOFException;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.List;
@@ -23,11 +20,13 @@ import dev.hardwood.internal.predicate.PageDropPredicates;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
+import dev.hardwood.internal.thrift.ThriftTruncatedException;
 import dev.hardwood.jfr.RowGroupScannedEvent;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 
 /// [FetchPlan] for columns without an OffsetIndex.
@@ -90,7 +89,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
     private final List<ResolvedPredicate> dropLeaves;
     /// Row ranges this column should keep. [RowRanges#ALL] means no per-page
     /// row mask is applied; a non-trivial range is paired with [#rowGroupRowCount]
-    /// so the iterator can compute `pageLastRow` for the final page. 
+    /// so the iterator can compute `pageLastRow` for the final page.
     private final RowRanges matchingRows;
     /// Total rows in the enclosing row group. Used together with
     /// [#matchingRows] to compute the final page's `pageLastRow` when masks
@@ -308,13 +307,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
             if (exhausted) {
                 return false;
             }
-            try {
-                nextPage = findNextEmittablePage();
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException("Failed to scan pages for column '"
-                        + columnSchema.name() + "'", e);
-            }
+            nextPage = findNextEmittablePage();
             nextPageComputed = true;
             if (nextPage == null) {
                 exhausted = true;
@@ -338,7 +331,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// peek buffer on EOF. Needed because `DataPageHeader.statistics` may
         /// carry long `min_value`/`max_value` binaries that push the header
         /// past the initial peek size.
-        private ParsedHeader readPageHeader(int relPos) throws IOException {
+        private ParsedHeader readPageHeader(int relPos) {
             int remaining = columnChunkLength - relPos;
             int peekSize = Math.min(PageFormatProbe.INITIAL_PEEK_SIZE, remaining);
             while (true) {
@@ -348,16 +341,16 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
                     PageHeader header = PageHeaderReader.read(headerReader);
                     return new ParsedHeader(header, headerReader.getBytesRead());
                 }
-                catch (EOFException eof) {
+                catch (ThriftTruncatedException truncated) {
                     if (peekSize >= remaining) {
-                        throw new IOException("Page header for column '"
+                        throw new ParquetReadException("Page header for column '"
                                 + columnSchema.name() + "' exceeds the full column chunk remainder ("
-                                + remaining + " bytes) — the file is likely corrupt", eof);
+                                + remaining + " bytes) — the file is likely corrupt", truncated);
                     }
                     if (peekSize >= PageFormatProbe.MAX_PEEK_SIZE) {
-                        throw new IOException("Page header for column '"
+                        throw new ParquetReadException("Page header for column '"
                                 + columnSchema.name() + "' exceeds maximum peek size ("
-                                + PageFormatProbe.MAX_PEEK_SIZE + " bytes)", eof);
+                                + PageFormatProbe.MAX_PEEK_SIZE + " bytes)", truncated);
                     }
                     peekSize = Math.min(remaining,
                             Math.min(peekSize * 2, PageFormatProbe.MAX_PEEK_SIZE));
@@ -425,7 +418,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         }
 
         /// Scans past the dictionary page (if present) on first access.
-        private void initialize() throws IOException {
+        private void initialize() {
             initialized = true;
             if (position >= columnChunkLength) {
                 return;
@@ -438,7 +431,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
                 int compressedSize = header.compressedPageSize();
                 int numValues = header.dictionaryPageHeader().numValues();
                 if (numValues < 0) {
-                    throw new IOException("Invalid dictionary page for column '"
+                    throw new ParquetReadException("Invalid dictionary page for column '"
                             + columnSchema.name() + "': negative numValues (" + numValues + ")");
                 }
                 int dictTotalSize = headerSize + compressedSize;
@@ -467,7 +460,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// even with masked drops because `valuesRead` accumulates each
         /// page's `header.num_values` regardless of whether the page was
         /// kept, dropped, or replaced with a null-placeholder.
-        private PageInfo findNextEmittablePage() throws IOException {
+        private PageInfo findNextEmittablePage() {
             if (!initialized) {
                 initialize();
             }
@@ -562,12 +555,12 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
             }
 
             if (valuesRead != metaData.numValues()) {
-                throw new IOException("Value count mismatch for column '" + columnSchema.name()
+                throw new ParquetReadException("Value count mismatch for column '" + columnSchema.name()
                         + "': metadata declares " + metaData.numValues()
                         + " values but pages contain " + valuesRead);
             }
             if (!matchingRows.isAll() && recordsRead != rowGroupRowCount) {
-                throw new IOException("Record count mismatch for column '" + columnSchema.name()
+                throw new ParquetReadException("Record count mismatch for column '" + columnSchema.name()
                         + "': row group declares " + rowGroupRowCount
                         + " rows but pages contain " + recordsRead + " records.");
             }
@@ -580,8 +573,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// v1 nested page would require decompression to count records and
         /// is rejected here — the row-group-wide gate is responsible for
         /// promoting `matchingRows` to ALL before we ever reach this branch.
-        private int computeRecordsInPage(PageHeader header, int headerSize, int numValues)
-                throws IOException {
+        private int computeRecordsInPage(PageHeader header, int headerSize, int numValues) {
             if (columnSchema.maxRepetitionLevel() == 0) {
                 return numValues;
             }

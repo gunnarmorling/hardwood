@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.predicate;
 
-import java.io.IOException;
 import java.util.List;
 
 import dev.hardwood.internal.ExceptionContext;
@@ -226,25 +225,27 @@ public class PageFilterEvaluator {
     /// here: file, row group and column are all at hand.
     private static IndexPair readIndexPair(ColumnIndexBuffers colBuffers, IndexLocation location,
             int columnIndex) {
+        ColumnIndex columnIdx;
+        OffsetIndex offsetIdx;
         try {
-            ColumnIndex columnIdx = ColumnIndexReader.read(new ThriftCompactReader(colBuffers.columnIndex()));
-            OffsetIndex offsetIdx = OffsetIndexReader.read(new ThriftCompactReader(colBuffers.offsetIndex()));
-            int columnIndexPages = columnIdx.getPageCount();
-            int offsetIndexPages = offsetIdx.pageLocations().size();
-            if (columnIndexPages != offsetIndexPages) {
-                // Attributed here rather than by the catch below: this is not an
-                // IOException and so does not pass through it.
-                throw new ParquetReadException(prefix(location, columnIndex)
-                        + "Malformed Parquet metadata: ColumnIndex describes "
-                        + columnIndexPages + " pages but OffsetIndex locates " + offsetIndexPages);
-            }
-            return new IndexPair(columnIdx, offsetIdx);
+            columnIdx = ColumnIndexReader.read(new ThriftCompactReader(colBuffers.columnIndex()));
+            offsetIdx = OffsetIndexReader.read(new ThriftCompactReader(colBuffers.offsetIndex()));
         }
-        catch (IOException e) {
-            // The index is already in a buffer, so a failure parsing it is the
-            // file, not the transport.
+        catch (ParquetReadException e) {
+            // The reader already says the failure is the file's; what it cannot
+            // say is which column's index it was parsing.
             throw new ParquetReadException(prefix(location, columnIndex) + e.getMessage(), e);
         }
+        // Outside the catch, and prefixed once: both structs parsed, so this is the
+        // pair disagreeing rather than either of them failing to read.
+        int columnIndexPages = columnIdx.getPageCount();
+        int offsetIndexPages = offsetIdx.pageLocations().size();
+        if (columnIndexPages != offsetIndexPages) {
+            throw new ParquetReadException(prefix(location, columnIndex)
+                    + "Malformed Parquet metadata: ColumnIndex describes "
+                    + columnIndexPages + " pages but OffsetIndex locates " + offsetIndexPages);
+        }
+        return new IndexPair(columnIdx, offsetIdx);
     }
 
     /// Names the column chunk whose page index failed to parse, for the message of every

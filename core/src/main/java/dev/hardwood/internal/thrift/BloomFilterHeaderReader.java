@@ -7,14 +7,12 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 
 public class BloomFilterHeaderReader {
 
-    public static BloomFilterHeader read(ThriftCompactReader reader) throws IOException {
+    public static BloomFilterHeader read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -23,7 +21,7 @@ public class BloomFilterHeaderReader {
         }
     }
 
-    private static BloomFilterHeader readInternal(ThriftCompactReader reader) throws IOException {
+    private static BloomFilterHeader readInternal(ThriftCompactReader reader) {
         int numBytes = -1;
         BloomFilterHeader.Algorithm algorithm = null;
         BloomFilterHeader.Hash hash = null;
@@ -66,14 +64,14 @@ public class BloomFilterHeaderReader {
         return new BloomFilterHeader(numBytes, algorithm, hash, compression);
     }
 
-    private static int readRequiredBitsetSize(ThriftCompactReader reader, byte type) throws IOException {
+    private static int readRequiredBitsetSize(ThriftCompactReader reader, byte type) {
         if (type != Codes.I32) {
             throw wrongWireType("required field 'numBytes'", type);
         }
         return reader.readNonNegativeI32("BloomFilterHeader.numBytes");
     }
 
-    private static short readUnionVariant(ThriftCompactReader reader, byte type, String name) throws IOException {
+    private static short readUnionVariant(ThriftCompactReader reader, byte type, String name) {
         if (type != Codes.STRUCT) {
             throw wrongWireType("union field '" + name + "'", type);
         }

@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.metadata.DictionaryPageHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
@@ -16,7 +14,7 @@ import dev.hardwood.metadata.Encoding;
 /// Reader for DictionaryPageHeader from Thrift Compact Protocol.
 public class DictionaryPageHeaderReader {
 
-    public static DictionaryPageHeader read(ThriftCompactReader reader) throws IOException {
+    public static DictionaryPageHeader read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -26,7 +24,7 @@ public class DictionaryPageHeaderReader {
         }
     }
 
-    private static DictionaryPageHeader readInternal(ThriftCompactReader reader) throws IOException {
+    private static DictionaryPageHeader readInternal(ThriftCompactReader reader) {
         int numValues = 0;
         Encoding encoding = null;
 

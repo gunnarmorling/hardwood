@@ -7,12 +7,12 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnIndex;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for ColumnIndex from Thrift Compact Protocol.
 ///
@@ -34,7 +34,7 @@ import dev.hardwood.metadata.ColumnIndex;
 /// lengths are cross-checked once the struct has been read — see [#checkPageCounts].
 public class ColumnIndexReader {
 
-    public static ColumnIndex read(ThriftCompactReader reader) throws IOException {
+    public static ColumnIndex read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -44,7 +44,7 @@ public class ColumnIndexReader {
         }
     }
 
-    private static ColumnIndex readInternal(ThriftCompactReader reader) throws IOException {
+    private static ColumnIndex readInternal(ThriftCompactReader reader) {
         boolean[] nullPages = new boolean[0];
         List<byte[]> minValues = Collections.emptyList();
         List<byte[]> maxValues = Collections.emptyList();
@@ -136,7 +136,7 @@ public class ColumnIndexReader {
     /// divisibility by the page count can be checked.
     private static void checkPageCounts(int pageCount, int minValueCount, int maxValueCount,
             long[] nullCounts, long[] nanCounts, long[] repetitionLevelHistograms,
-            long[] definitionLevelHistograms) throws IOException {
+            long[] definitionLevelHistograms) {
 
         checkPerPageLength("min_values", minValueCount, pageCount);
         checkPerPageLength("max_values", maxValueCount, pageCount);
@@ -150,19 +150,19 @@ public class ColumnIndexReader {
         checkHistogramLength("definition_level_histograms", definitionLevelHistograms, pageCount);
     }
 
-    private static void checkPerPageLength(String field, int length, int pageCount) throws IOException {
+    private static void checkPerPageLength(String field, int length, int pageCount) {
         if (length != pageCount) {
-            throw new IOException("Malformed Parquet metadata: ColumnIndex." + field + " has length "
+            throw new ParquetReadException("Malformed Parquet metadata: ColumnIndex." + field + " has length "
                     + length + " but the index describes " + pageCount + " pages");
         }
     }
 
-    private static void checkHistogramLength(String field, long[] histograms, int pageCount) throws IOException {
+    private static void checkHistogramLength(String field, long[] histograms, int pageCount) {
         if (histograms == null) {
             return;
         }
         if (pageCount == 0 ? histograms.length != 0 : histograms.length % pageCount != 0) {
-            throw new IOException("Malformed Parquet metadata: ColumnIndex." + field + " has length "
+            throw new ParquetReadException("Malformed Parquet metadata: ColumnIndex." + field + " has length "
                     + histograms.length + " for " + pageCount
                     + " pages, which is not a whole number of entries per page");
         }

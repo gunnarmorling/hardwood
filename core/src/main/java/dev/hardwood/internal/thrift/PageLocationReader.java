@@ -7,15 +7,13 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.PageLocation;
 
 /// Reader for PageLocation from Thrift Compact Protocol.
 public class PageLocationReader {
 
-    public static PageLocation read(ThriftCompactReader reader) throws IOException {
+    public static PageLocation read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -25,7 +23,7 @@ public class PageLocationReader {
         }
     }
 
-    private static PageLocation readInternal(ThriftCompactReader reader) throws IOException {
+    private static PageLocation readInternal(ThriftCompactReader reader) {
         long offset = 0;
         int compressedPageSize = 0;
         long firstRowIndex = 0;

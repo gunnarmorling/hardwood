@@ -19,6 +19,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PageEncodingStats;
 import dev.hardwood.metadata.PageType;
+import dev.hardwood.reader.ParquetReadException;
 
 import static dev.hardwood.internal.thrift.ThriftCompactConstants.STOP;
 import static dev.hardwood.internal.thrift.ThriftStructBuilder.fieldHeader;
@@ -118,7 +119,7 @@ class PageEncodingStatsReaderTest {
                 ENCODING_STATS_FIELD, longFormListHeader(ElementType.STRUCT),
                 0x80, 0x80, 0x80, 0x80, 0x08,
                 STOP)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("2147483648 elements");
     }
 

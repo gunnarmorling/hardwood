@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 import dev.hardwood.internal.encoding.PlainDecoder;
@@ -33,7 +32,7 @@ public sealed interface Dictionary {
     /// @param type physical type of the column
     /// @param typeLength type length for fixed-length types (may be null for variable-length types)
     /// @return typed dictionary
-    static Dictionary parse(byte[] data, int numValues, PhysicalType type, Integer typeLength) throws IOException {
+    static Dictionary parse(byte[] data, int numValues, PhysicalType type, Integer typeLength) {
         PlainDecoder decoder = new PlainDecoder(data, 0, type, typeLength);
 
         return switch (type) {

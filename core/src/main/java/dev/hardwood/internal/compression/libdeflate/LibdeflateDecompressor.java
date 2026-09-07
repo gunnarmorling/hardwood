@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.compression.libdeflate;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.compression.Decompressor;
@@ -21,7 +20,7 @@ public final class LibdeflateDecompressor implements Decompressor {
     }
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         throw new UnsupportedOperationException("libdeflate requires Java 22+");
     }
 

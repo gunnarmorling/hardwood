@@ -7,7 +7,6 @@
  */
 package dev.hardwood.metadata;
 
-import java.io.IOException;
 
 /// Column chunk metadata.
 ///
@@ -47,10 +46,14 @@ public record ColumnChunk(
     /// This is checked where the data is about to be read rather than while parsing the footer,
     /// so that the metadata of such a file stays inspectable.
     ///
-    /// @throws IOException if this chunk's data lives in another file
-    public void requireSameFile() throws IOException {
+    /// The file is correct — the split-file layout is legal Parquet — and this reader does not
+    /// read it, which is a limit of this library rather than a fault in the file.
+    ///
+    /// @throws UnsupportedOperationException if this chunk's data lives in another file
+    public void requireSameFile() {
         if (!filePath.isEmpty()) {
-            throw new IOException("Column chunk stores its data in a separate file ('" + filePath
+            throw new UnsupportedOperationException(
+                    "Column chunk stores its data in a separate file ('" + filePath
                     + "'); the split-file layout is not supported");
         }
     }

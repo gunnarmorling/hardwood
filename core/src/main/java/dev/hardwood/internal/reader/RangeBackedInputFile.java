@@ -76,7 +76,9 @@ public final class RangeBackedInputFile implements InputFile {
         delegate.open();
         long length = delegate.length();
         if (length > Integer.MAX_VALUE) {
-            throw new IOException("File too large for range backing: "
+            // The file is correct and readable; this cache is what cannot address it,
+            // and the message names the option that reads it anyway.
+            throw new UnsupportedOperationException("File too large for range backing: "
                     + delegate.name() + " is " + length
                     + " bytes; the mmap-backed cache supports up to "
                     + Integer.MAX_VALUE + " bytes. Open with "

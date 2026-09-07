@@ -7,10 +7,11 @@
  */
 package dev.hardwood.internal.compression;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.zip.DataFormatException;
 import java.util.zip.Inflater;
+
+import dev.hardwood.reader.ParquetReadException;
 
 /// Decompressor for GZIP-compressed data using Inflater directly for maximum performance.
 ///
@@ -27,7 +28,7 @@ public class GzipDecompressor implements Decompressor {
     private static final ThreadLocal<byte[]> OUTPUT_BUFFER = new ThreadLocal<>();
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         byte[] result = borrowOutputBuffer(uncompressedSize);
         int totalDecompressed = 0;
 
@@ -48,10 +49,10 @@ public class GzipDecompressor implements Decompressor {
                             break;
                         }
                         if (inflater.needsInput()) {
-                            throw new IOException("Truncated GZIP data");
+                            throw new ParquetReadException("Truncated GZIP data");
                         }
                         if (inflater.needsDictionary()) {
-                            throw new IOException("GZIP stream requires dictionary");
+                            throw new ParquetReadException("GZIP stream requires dictionary");
                         }
                     }
                     totalDecompressed += decompressed;
@@ -61,7 +62,7 @@ public class GzipDecompressor implements Decompressor {
                 compressed.position(compressed.position() + headerEnd + consumed);
             }
             catch (DataFormatException e) {
-                throw new IOException("GZIP decompression failed", e);
+                throw new ParquetReadException("GZIP decompression failed", e);
             }
             finally {
                 inflater.end();
@@ -69,28 +70,28 @@ public class GzipDecompressor implements Decompressor {
         }
 
         if (totalDecompressed != uncompressedSize) {
-            throw new IOException("Decompressed size mismatch: expected " + uncompressedSize +
+            throw new ParquetReadException("Decompressed size mismatch: expected " + uncompressedSize +
                     " but got " + totalDecompressed);
         }
 
         return result;
     }
 
-    private int skipGzipHeader(ByteBuffer buffer) throws IOException {
+    private int skipGzipHeader(ByteBuffer buffer) {
         int start = buffer.position();
         if (buffer.remaining() < 10) {
-            throw new IOException("GZIP data too short for header");
+            throw new ParquetReadException("GZIP data too short for header");
         }
 
         // Check magic number
         int magic = (buffer.get(start) & 0xff) | ((buffer.get(start + 1) & 0xff) << 8);
         if (magic != GZIP_MAGIC) {
-            throw new IOException("Not in GZIP format");
+            throw new ParquetReadException("Not in GZIP format");
         }
 
         // Check compression method (must be 8 = deflate)
         if (buffer.get(start + 2) != 8) {
-            throw new IOException("Unsupported compression method: " + buffer.get(start + 2));
+            throw new ParquetReadException("Unsupported compression method: " + buffer.get(start + 2));
         }
 
         int flags = buffer.get(start + 3) & 0xff;
@@ -99,7 +100,7 @@ public class GzipDecompressor implements Decompressor {
         // Skip extra field if present
         if ((flags & FEXTRA) != 0) {
             if (offset + 2 > buffer.remaining()) {
-                throw new IOException("Truncated GZIP extra field");
+                throw new ParquetReadException("Truncated GZIP extra field");
             }
             int extraLen = (buffer.get(start + offset) & 0xff) | ((buffer.get(start + offset + 1) & 0xff) << 8);
             offset += 2 + extraLen;
@@ -127,7 +128,7 @@ public class GzipDecompressor implements Decompressor {
         }
 
         if (offset >= buffer.remaining()) {
-            throw new IOException("GZIP header extends beyond data");
+            throw new ParquetReadException("GZIP header extends beyond data");
         }
 
         return offset;

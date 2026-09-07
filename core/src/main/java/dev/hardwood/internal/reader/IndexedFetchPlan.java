@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.List;
@@ -219,13 +217,10 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
             int dictRegionSize = Math.toIntExact(firstDataPageOffset - dictAreaStart);
             ByteBuffer dictRegion = chunkHandles.get(0).slice(dictAreaStart, dictRegionSize);
 
-            try {
-                return DictionaryParser.parse(dictRegion, columnSchema, metaData, context);
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException("Failed to parse dictionary for column '"
-                        + columnSchema.name() + "'", e);
-            }
+            // Not retitled on the way out. The parser says what is wrong with the
+            // dictionary — a checksum that disagrees, a header that will not parse —
+            // and naming the step that noticed would replace that with less.
+            return DictionaryParser.parse(dictRegion, columnSchema, metaData, context);
         }
 
         private void emitEvent() {

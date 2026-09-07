@@ -187,12 +187,12 @@ public final class RowGroupDictionaryFilterSource {
     /// Checked, because reading a filter is a read like any other and every frame above this
     /// one says so; the cause is the [IOException] the metadata contract advertises for the
     /// split-file layout.
-    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) throws IOException {
+    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) {
         try {
             columnChunk.requireSameFile();
         }
-        catch (IOException e) {
-            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
+        catch (UnsupportedOperationException e) {
+            throw new UnsupportedOperationException(ExceptionContext.filePrefix(inputFile.name())
                     + "Cannot read column " + columnIndex + ": " + e.getMessage(), e);
         }
     }

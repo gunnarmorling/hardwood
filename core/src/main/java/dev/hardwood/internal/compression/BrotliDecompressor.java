@@ -13,11 +13,13 @@ import java.nio.ByteBuffer;
 
 import com.aayushatharva.brotli4j.decoder.BrotliInputStream;
 
+import dev.hardwood.reader.ParquetReadException;
+
 /// Decompressor for Brotli compressed data.
 public class BrotliDecompressor implements Decompressor {
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         BrotliLoader.ensureLoaded();
 
         // Brotli4j has no direct ByteBuffer API, so extract to a byte array.
@@ -29,20 +31,29 @@ public class BrotliDecompressor implements Decompressor {
         // Netty ByteBuf, which would otherwise force io.netty:netty-buffer onto the
         // classpath just to unwrap the bytes.
         byte[] decompressed;
+        boolean trailingBytes;
         try (BrotliInputStream in = new BrotliInputStream(new ByteArrayInputStream(compressedBytes))) {
             decompressed = in.readNBytes(uncompressedSize);
-            if (decompressed.length != uncompressedSize) {
-                throw new IOException(
-                        "Brotli decompression size mismatch: expected " + uncompressedSize +
-                                ", got " + decompressed.length);
-            }
-            if (in.read() != -1) {
-                throw new IOException(
-                        "Brotli decompression produced more than the expected " + uncompressedSize + " bytes");
-            }
+            trailingBytes = in.read() != -1;
         }
-        catch (RuntimeException e) {
-            throw new IOException("Brotli decompression failed", e);
+        catch (IOException | RuntimeException e) {
+            // The source is a byte array, so an IOException here is the decoder
+            // rejecting the stream rather than anything reaching a file.
+            throw new ParquetReadException("Brotli decompression failed", e);
+        }
+
+        // Outside the catch, and deliberately: the stream decoded, so a length that disagrees
+        // with the header is what the bytes say rather than the decoder refusing them. Raised
+        // inside, these would be caught by the arm above and reported as the generic failure
+        // with their own message demoted to a cause.
+        if (decompressed.length != uncompressedSize) {
+            throw new ParquetReadException(
+                    "Brotli decompression size mismatch: expected " + uncompressedSize +
+                            ", got " + decompressed.length);
+        }
+        if (trailingBytes) {
+            throw new ParquetReadException(
+                    "Brotli decompression produced more than the expected " + uncompressedSize + " bytes");
         }
 
         return decompressed;

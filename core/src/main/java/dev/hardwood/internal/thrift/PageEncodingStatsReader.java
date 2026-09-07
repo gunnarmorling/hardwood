@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -33,7 +32,7 @@ class PageEncodingStatsReader {
     ///
     /// The reader is always left positioned on the byte after the list, so the rest of the
     /// footer parses regardless of what this field contained.
-    static List<PageEncodingStats> read(ThriftCompactReader reader) throws IOException {
+    static List<PageEncodingStats> read(ThriftCompactReader reader) {
         long listHeader =
                 reader.acceptListHeader(Codes.STRUCT, "ColumnMetaData.encoding_stats");
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
@@ -61,7 +60,7 @@ class PageEncodingStatsReader {
     /// Returns `null` for a struct that does not carry all three at that wire type, or whose
     /// count is negative. The struct is consumed either way, leaving the reader on the next
     /// element.
-    private static PageEncodingStats readStats(ThriftCompactReader reader) throws IOException {
+    private static PageEncodingStats readStats(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             PageType pageType = null;

@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
@@ -23,7 +22,7 @@ import dev.hardwood.metadata.PageLocation;
 /// - 2: unencoded_byte_array_data_bytes (list<i64>, optional)
 public class OffsetIndexReader {
 
-    public static OffsetIndex read(ThriftCompactReader reader) throws IOException {
+    public static OffsetIndex read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -33,7 +32,7 @@ public class OffsetIndexReader {
         }
     }
 
-    private static OffsetIndex readInternal(ThriftCompactReader reader) throws IOException {
+    private static OffsetIndex readInternal(ThriftCompactReader reader) {
         List<PageLocation> pageLocations = Collections.emptyList();
         long[] unencodedByteArrayDataBytes = null;
 
