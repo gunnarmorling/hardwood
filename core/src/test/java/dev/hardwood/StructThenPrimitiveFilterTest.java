@@ -66,7 +66,7 @@ class StructThenPrimitiveFilterTest {
     /// the `point` struct (so its field index 3 differs from leaf index 4).
     ///
     /// The predicate must be evaluated on the record-side path
-    /// (`RecordFilterCompiler` → `FilteredRowReader`), where columns are
+    /// (`RecordFilterCompiler` → the row reader's record matcher), where columns are
     /// addressed through the reader's indexed accessors. To force that path
     /// reliably we AND in a predicate on the `tag` string column: a `BYTE_ARRAY`
     /// predicate is not drain-side eligible (`BatchFilterCompiler` returns null

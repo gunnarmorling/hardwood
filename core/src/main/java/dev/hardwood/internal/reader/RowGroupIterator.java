@@ -99,14 +99,12 @@ public class RowGroupIterator {
     private FileSchema referenceSchema;
     private ProjectedSchema projectedSchema;
     private ResolvedPredicate filterPredicate;
-    private boolean filterSatisfiedByStatistics;
     /// Planning state, carried between files because a file is planned when the
     /// read reaches it rather than all at once.
     private int nextFileToPlan;
     private long planRowBudget;
     private long plannedRows;
     private long planSkipRemaining;
-    private boolean planAllKeptAlwaysMatch = true;
     private boolean metadataFilteringEnabled = true;
 
     /// Reference schema leaf ordinals this read touches: every projected column plus
@@ -1130,7 +1128,6 @@ public class RowGroupIterator {
                 chunkPaths.verify(rg, rgIndex, prepared.inputFile());
             }
 
-            planAllKeptAlwaysMatch &= decided.alwaysMatches();
             workItemRefCounts.put(workItems.size(),
                     new AtomicInteger(projectedSchema.getProjectedColumnCount()));
             workItems.add(new WorkItem(
@@ -1155,8 +1152,6 @@ public class RowGroupIterator {
 
         // Trigger prefetch of next file
         triggerPrefetch(fileIndex + 1);
-
-        filterSatisfiedByStatistics = hasFilter && !workItems.isEmpty() && planAllKeptAlwaysMatch;
 
         LOG.log(System.Logger.Level.DEBUG,
                 "Planned file {0}: {1} row groups in the work list so far",
@@ -1192,17 +1187,13 @@ public class RowGroupIterator {
         }
     }
 
-    /// Whether statistics prove that every row of every work-list row group satisfies the
-    /// filter predicate — every unit either fully matched or was dropped. Readers may then
-    /// skip per-row predicate evaluation entirely and treat the read as unfiltered.
+    /// Whether a filter predicate is installed, so that row groups can reach the
+    /// readers with [WorkItem#filterAlwaysMatches] unset and rows scanned therefore
+    /// outnumber rows matched.
     ///
-    /// Only meaningful after [#initialize]; `false` when no filter is set.
-    public boolean isFilterSatisfiedByStatistics() {
-        // A property of the whole read: every kept row group in every file had
-        // to match outright. Answering it plans everything, which is why a
-        // filtered read still plans when its reader is built.
-        ensureFullyPlanned();
-        return filterSatisfiedByStatistics;
+    /// Only meaningful after [#initialize].
+    public boolean hasFilter() {
+        return filterPredicate != null;
     }
 
     /// Gets or loads file-wide metadata. Projection-specific validation remains

@@ -160,10 +160,10 @@ class Float16LogicalTypeTest {
         assertThat(Float.isNaN(kept.get(3))).isTrue();
     }
 
-    /// `getFloat` must work through the [dev.hardwood.internal.reader.FilteredRowReader]
+    /// `getFloat` must work through the record-matcher
     /// delegating wrapper installed by `buildRowReader().filter(...)`.
     @Test
-    void testGetFloatThroughFilteredRowReader() throws IOException {
+    void testGetFloatThroughRecordMatcher() throws IOException {
         // id=1..7 maps to half=0.0, 1.0, -1.5, 65504.0, +Inf, NaN, null. With id>3
         // the filtered reader yields rows id=4..7.
         List<Float> filtered = new ArrayList<>();

@@ -65,14 +65,11 @@ actual values.
 groups are dropped (unchanged), and each surviving `WorkItem` carries
 `filterAlwaysMatches`.
 
-Two consumers:
+The decision is consumed per row group, never per read: a read is not one shape, and
+asking a question about all of it would mean planning every file before the first row
+(#1107). Three consumers:
 
-1. **Wholesale**: when every work-list row group is `ALWAYS_MATCHES`
-   (`RowGroupIterator.isFilterSatisfiedByStatistics`), `FlatRowReader.create` /
-   `NestedRowReader.create` treat the read as unfiltered — no matcher compilation, no
-   `FilteredRowReader` wrapper, and `maxRows` caps scanned rows directly since
-   scanned == matching.
-2. **Per-batch, drain-side**: batches must be homogeneous for a batch-level skip, so
+1. **Per-batch, drain-side**: batches must be homogeneous for a batch-level skip, so
    the drain flushes the current batch when a page crosses a row-group boundary that
    changes the flag — the same mechanism as the existing file-boundary flush, and
    applied **uniformly across all workers of a projection** so batches stay
@@ -80,6 +77,15 @@ Two consumers:
    always-matching batch the worker skips `ColumnBatchMatcher.test` and writes the
    all-ones mask a matcher would have produced; `Batch.filterAlwaysMatches` records
    the proof for downstream consumers.
+2. **Per-batch, record matcher**: `FlatRowReader` / `NestedRowReader` read the same
+   `Batch.filterAlwaysMatches`. A proven batch, in a read with no `maxRows` cap to
+   count matches against, clears the reader's active matcher, which puts the batch on
+   the plain cursor — no evaluation, no per-row match bookkeeping, and the whole batch
+   tallied once. A proven batch costs what an unfiltered batch costs.
+3. **The row cap**: `ColumnWorker` holds `maxRows` while every row group it has reached
+   was proven, because scanned rows and matching rows are then the same rows. The first
+   row group that was not proven drops the cap for the remainder of the read, leaving
+   it to the reader, which counts matches.
 
 The flag travels retriever → drain through a per-slot buffer written alongside
 `fileNameBuffer[slot]`, under the same happens-before chain.
@@ -94,7 +100,9 @@ The flag travels retriever → drain through a per-slot buffer written alongside
 - **`ColumnReader` / `SelectionEngine`**: `computeSelection` already has an every-record
   fast path (`-1`); feeding it from `Batch.filterAlwaysMatches` is part of the same
   follow-up.
-- **Record-matcher path** (`FilteredRowReader`): benefits from the wholesale case only;
-  the wrapper has no row-group visibility for per-group skips.
+- **Row groups statistics cannot decide**: the record matcher still evaluates them a
+  row at a time, on the consumer thread — which profiling for #1107 showed to be the
+  pipeline's critical path (98% busy against decode workers 90–97% parked). Moving
+  those predicate shapes to the drain side is #485.
 - The row-group decision is exactly the trigger condition the rewrite capability's
   byte-copy fast path needs (#791, item 6).
