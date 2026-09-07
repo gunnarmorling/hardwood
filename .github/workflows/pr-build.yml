@@ -164,6 +164,50 @@ jobs:
           path: ~/.m2/repository/dev/hardwood/hardwood-cli/
           retention-days: 1
 
+  compile-performance-tests:
+    needs: build-s3
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 'Check out repository'
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6 — https://github.com/actions/checkout/releases/tag/v6
+        with:
+          submodules: 'true'
+
+      - name: 'Set up Java'
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5 — https://github.com/actions/setup-java/releases/tag/v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: 'Cache Maven dependencies'
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7  # v5 — https://github.com/actions/cache/releases/tag/v5
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-${{ runner.os }}-${{ github.job }}-
+            maven-${{ runner.os }}-build-s3-
+            maven-${{ runner.os }}-build-core-
+            maven-${{ runner.os }}-
+
+      - name: 'Download core and s3 artifacts'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8 — https://github.com/actions/download-artifact/releases/tag/v8
+        with:
+          pattern: maven-repo-{core,s3}
+          path: ~/.m2/repository/dev/hardwood/
+          merge-multiple: true
+
+      - name: 'Compile performance-testing'
+        # These modules are in the reactor only under `-Pperformance-test`, so nothing
+        # else in this workflow compiles them and an API change can pass the gate and
+        # break `main`. Compiling is what catches that: every such break so far has
+        # been a compile error. Running the benchmarks is a separate workflow — they
+        # are slow and need ~100 MB per dataset — so this stops at `test-compile`, and
+        # `-Dquick` sets `testdata.download.skip` so no dataset is fetched.
+        run: ./mvnw -ntp -B -Pperformance-test -Dquick test-compile -pl :hardwood-performance-testing -amd
+
   build-parquet-java-compat:
     needs: build-s3
     runs-on: ubuntu-latest
