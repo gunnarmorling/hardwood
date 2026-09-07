@@ -142,7 +142,7 @@ public class LogicalTypeReader {
 
         // Validate both fields were read
         if (scale < 0 || precision <= 0) {
-            throw new IllegalStateException(
+            throw new ParquetReadException(
                     "Invalid DecimalType: scale=" + scale + ", precision=" + precision);
         }
 
@@ -301,7 +301,7 @@ public class LogicalTypeReader {
                 case 1 -> TimeUnit.MILLIS;
                 case 2 -> TimeUnit.MICROS;
                 case 3 -> TimeUnit.NANOS;
-                default -> throw new IllegalArgumentException("Unexpected time unit:" + fieldId);
+                default -> throw new ParquetReadException("Unexpected time unit:" + fieldId);
             };
         }
         finally {

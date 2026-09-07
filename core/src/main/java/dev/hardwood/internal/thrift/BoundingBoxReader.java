@@ -9,6 +9,7 @@ package dev.hardwood.internal.thrift;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.BoundingBox;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for the Thrift BoundingBox struct from Parquet metadata.
 public class BoundingBoxReader {
@@ -53,7 +54,7 @@ public class BoundingBoxReader {
         }
 
         if (xmin == null || xmax == null || ymin == null || ymax == null) {
-            throw new IllegalStateException(
+            throw new ParquetReadException(
                     "Invalid BoundingBox: missing required field(s) "
                             + (xmin == null ? "xmin " : "")
                             + (xmax == null ? "xmax " : "")
@@ -66,7 +67,7 @@ public class BoundingBoxReader {
 
     private static double readRequiredDouble(ThriftCompactReader reader, byte type, String name) {
         if (type != Codes.DOUBLE) {
-            throw new IllegalStateException(
+            throw new ParquetReadException(
                     "Invalid BoundingBox: required field '" + name
                             + "' has wrong wire type 0x" + Integer.toHexString(type & 0xFF));
         }

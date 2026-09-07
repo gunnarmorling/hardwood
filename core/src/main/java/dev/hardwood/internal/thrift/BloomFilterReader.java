@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.bloomfilter.BloomFilter;
 import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for a column chunk's bloom filter: the `BloomFilterHeader` thrift struct followed
 /// immediately by `numBytes` of raw split-block bitset bytes.
@@ -32,12 +33,12 @@ public class BloomFilterReader {
         // A split-block bitset is an array of 32-byte blocks, so its size must be a positive
         // multiple of 32; anything else would mis-shape the block math during probing.
         if (numBytes == 0 || numBytes % 32 != 0) {
-            throw new IllegalStateException(
+            throw new ParquetReadException(
                     "Malformed bloom filter: bitset size must be a positive multiple of 32 bytes but was "
                             + numBytes);
         }
         if (numBytes > reader.remaining()) {
-            throw new IllegalStateException("Malformed bloom filter: header declares " + numBytes
+            throw new ParquetReadException("Malformed bloom filter: header declares " + numBytes
                     + " bitset bytes but only " + reader.remaining() + " remain");
         }
         ByteBuffer bitset = reader.readSlice(numBytes);
