@@ -45,6 +45,7 @@ class ColumnReaderExactFilterTest {
     private static final Path INT_FILE = Paths.get("src/test/resources/filter_pushdown_int.parquet");
     private static final Path LIST_FILE = Paths.get("src/test/resources/filter_pushdown_list.parquet");
     private static final Path NESTED_FILE = Paths.get("src/test/resources/filter_pushdown_nested.parquet");
+    private static final Path MIXED_FILE = Paths.get("src/test/resources/filter_pushdown_mixed.parquet");
 
     // ==================== Flat, drain-side-eligible predicate ====================
 
@@ -284,6 +285,44 @@ class ColumnReaderExactFilterTest {
             }
             assertThat(count).isEqualTo(99); // 151..249
         }
+    }
+
+    @Test
+    void nestedCompoundAgreesWithRowReader() throws Exception {
+        // Or[Column(rating), And[Column(id), Column(price)]] — a compound with a
+        // compound child, so the merger's plan walk has to recurse to find every
+        // referenced column. The engine's merger runs the matchers itself (no
+        // workers ran them), which the one-level cases above also do; what is new
+        // here is the depth.
+        FilterPredicate filter = FilterPredicate.or(
+                FilterPredicate.and(
+                        FilterPredicate.gt("id", 5),
+                        FilterPredicate.lt("price", 100.0)),
+                FilterPredicate.gt("rating", 5.0f));
+
+        List<Integer> oracleIds = new ArrayList<>();
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(MIXED_FILE));
+             RowReader rows = reader.buildRowReader().filter(filter).build()) {
+            while (rows.hasNext()) {
+                rows.next();
+                oracleIds.add(rows.getInt("id"));
+            }
+        }
+
+        List<Integer> groupedIds = new ArrayList<>();
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(MIXED_FILE));
+             ColumnReaders columns = reader.buildColumnReaders(ColumnProjection.columns("id"))
+                     .filter(filter).build()) {
+            while (columns.nextBatch()) {
+                int[] ids = columns.getColumnReader("id").getInts();
+                for (int i = 0; i < columns.getRecordCount(); i++) {
+                    groupedIds.add(ids[i]);
+                }
+            }
+        }
+
+        assertThat(oracleIds).containsExactly(6, 7, 8, 9, 10, 15);
+        assertThat(groupedIds).containsExactlyElementsOf(oracleIds);
     }
 
     // ==================== Nulls: payload compaction and three-valued logic ====================

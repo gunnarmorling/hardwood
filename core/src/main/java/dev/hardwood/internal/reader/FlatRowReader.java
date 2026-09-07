@@ -22,8 +22,6 @@ import dev.hardwood.internal.conversion.LogicalTypeConverter;
 import dev.hardwood.internal.predicate.BatchFilterCompiler;
 import dev.hardwood.internal.predicate.ColumnBatchMatcher;
 import dev.hardwood.internal.predicate.CompiledBatchFilter;
-import dev.hardwood.internal.predicate.MergePlan;
-import dev.hardwood.internal.predicate.MergePlanEvaluator;
 import dev.hardwood.internal.predicate.RecordFilterCompiler;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.predicate.RowMatcher;
@@ -102,34 +100,17 @@ public final class FlatRowReader implements FileAwareRowReader {
     private boolean exhausted;
     private boolean closed;
 
-    // Drain-side filter path: when drainSide is true, iterate via nextSetBit over
-    // combinedWords. When false, the original rowIndex++ path is taken.
-    private final boolean drainSide;
-    /// Combined per-row matches for the current batch. `null` when `!drainSide`.
-    /// Multi-column case: an owned buffer that [#intersectMatches] hands to
-    /// [#mergeEvaluator] for in-place population. Single-column case
-    /// (`mergePlan instanceof MergePlan.Column`): aliased per batch to the
-    /// underlying [BatchExchange.Batch#matches] array (no copy, no evaluator
-    /// call — there is nothing to combine).
+    /// Owns the whole per-batch match merge — the plan, the evaluator and its
+    /// scratch, the per-column bitmap slots and the combined buffer. Non-null is
+    /// what makes this a drain-side read: [#hasNext] then iterates via
+    /// [#nextSetBit] over [#combinedWords] instead of the plain `rowIndex++`
+    /// cursor. `null` when the read has no drain-side filter.
+    private final BatchMatchMerger matchMerger;
+    /// The current batch's survivor bitmap, as [BatchMatchMerger#merge] returned
+    /// it when the batch loaded. Cached in the reader so the per-row
+    /// [#nextSetBit] and run walk read the array through one field rather than
+    /// reaching through the merger. `null` when there is no drain-side filter.
     private long[] combinedWords;
-    /// Plan describing how to merge the per-column [BatchExchange.Batch#matches]
-    /// bitmaps into [#combinedWords]. `null` when `!drainSide`.
-    private final MergePlan mergePlan;
-    /// Evaluator that walks [#mergePlan] each batch. Owns the scratch pool;
-    /// reused across batches (zero allocations after warm-up). `null` when the
-    /// single-column fast path applies (no merge to do).
-    private final MergePlanEvaluator mergeEvaluator;
-    /// Per-column matches bitmaps for the current batch, indexed by projected
-    /// column index. Repopulated each batch from `previousBatches[i].matches`;
-    /// passed to [#mergeEvaluator]. `null` when the single-column fast path
-    /// applies.
-    private final long[][] perColumnMatches;
-    /// Projected indices of the columns [#mergePlan] actually reads, computed
-    /// once at construction. [#intersectMatches] reseats only these entries of
-    /// [#perColumnMatches] each batch, so the per-batch cost scales with the
-    /// filter width rather than the full projection width. `null` when the
-    /// single-column fast path applies.
-    private final int[] referencedColumns;
     private int pendingRowIndex = -1;
     /// Cap on the number of *matching* rows yielded (SQL LIMIT over the filtered
     /// relation). [ColumnWorker#UNLIMITED] means no cap. Enforced on both filtering
@@ -152,9 +133,9 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// filter and nothing evaluates records.
     private final RecordFilterTally tally;
 
-    public FlatRowReader(BatchExchange<BatchExchange.Batch>[] exchanges, FlatColumnWorker[] columnWorkers,
+    private FlatRowReader(BatchExchange<BatchExchange.Batch>[] exchanges, FlatColumnWorker[] columnWorkers,
                          FileSchema fileSchema, ProjectedSchema projectedSchema,
-                         boolean drainSide, int wordsLen, MergePlan mergePlan, long maxMatchedRows,
+                         BatchMatchMerger matchMerger, long maxMatchedRows,
                          RowMatcher recordMatcher, RecordFilterTally tally) {
         this.maxMatchedRows = maxMatchedRows;
         this.recordMatcher = recordMatcher;
@@ -167,17 +148,7 @@ public final class FlatRowReader implements FileAwareRowReader {
         this.flatValueArrays = new Object[columnCount];
         this.flatValidity = new long[columnCount][];
         this.previousBatches = new BatchExchange.Batch[columnCount];
-        this.drainSide = drainSide;
-        // Multi-column drain needs a private buffer for the combined words plus
-        // an evaluator that owns the depth-indexed scratch pool. A top-level
-        // Column aliases the batch's matches array directly (see
-        // intersectMatches) so neither buffer nor evaluator is needed.
-        boolean needsOwnedBuffer = drainSide && !(mergePlan instanceof MergePlan.Column);
-        this.combinedWords = needsOwnedBuffer ? new long[wordsLen] : null;
-        this.mergePlan = mergePlan;
-        this.mergeEvaluator = needsOwnedBuffer ? new MergePlanEvaluator(wordsLen) : null;
-        this.perColumnMatches = needsOwnedBuffer ? new long[columnCount][] : null;
-        this.referencedColumns = needsOwnedBuffer ? referencedColumns(mergePlan, columnCount) : null;
+        this.matchMerger = matchMerger;
 
         // Build name-to-index map and cache column metadata
         this.nameToIndex = new StringToIntMap(columnCount);
@@ -269,7 +240,7 @@ public final class FlatRowReader implements FileAwareRowReader {
             compiledFilter = BatchFilterCompiler.tryCompile(filter, schema, projectedSchema::toProjectedIndex);
         }
         ColumnBatchMatcher[] columnBatchMatchers = compiledFilter != null ? compiledFilter.columnMatchers() : null;
-        boolean drainSide = columnBatchMatchers != null;
+        final boolean drainSide = compiledFilter != null;
         final int wordsLen = (batchSize + 63) >>> 6;
 
         FlatColumnWorker[] workers = new FlatColumnWorker[projectedColumnCount];
@@ -306,10 +277,11 @@ public final class FlatRowReader implements FileAwareRowReader {
             worker.start();
         }
 
-        MergePlan mergePlan = compiledFilter != null ? compiledFilter.mergePlan() : null;
-        if (mergePlan == null) {
-            drainSide = false;
-        }
+        // The merger *is* the drain-side path in the reader: present exactly when the
+        // predicate compiled to one, absent when the record matcher takes over.
+        BatchMatchMerger matchMerger = drainSide
+                ? BatchMatchMerger.aliasing(compiledFilter.mergePlan(), projectedColumnCount, wordsLen)
+                : null;
 
         // Whatever the drain side could not compile, the reader evaluates a record at a
         // time. Indexed compile path: for flat schemas every leaf column is also a
@@ -326,7 +298,7 @@ public final class FlatRowReader implements FileAwareRowReader {
         // boundaries as it loads batches.
         RecordFilterTally tally = filter != null ? new RecordFilterTally() : null;
         FlatRowReader reader = new FlatRowReader(buffers, workers, schema, projectedSchema,
-                drainSide, wordsLen, mergePlan, readerMatchLimit, recordMatcher, tally);
+                matchMerger, readerMatchLimit, recordMatcher, tally);
         reader.initialize();
         return reader;
     }
@@ -338,7 +310,7 @@ public final class FlatRowReader implements FileAwareRowReader {
         if (exhausted) {
             return false;
         }
-        if (drainSide) {
+        if (matchMerger != null) {
             if (maxMatchedRows != ColumnWorker.UNLIMITED && matchedRowsYielded >= maxMatchedRows) {
                 exhausted = true;
                 return false;
@@ -419,7 +391,7 @@ public final class FlatRowReader implements FileAwareRowReader {
     public void next() throws IOException {
         // Both filtering modes park the row they picked in `pendingRowIndex`; this only
         // commits it. They differ in how `hasNext` finds the row, not in what `next` does.
-        if (drainSide || activeMatcher != null) {
+        if (matchMerger != null || activeMatcher != null) {
             if (pendingRowIndex < 0) {
                 throw new NoSuchElementException("No matching row available. Call hasNext() first.");
             }
@@ -915,8 +887,8 @@ public final class FlatRowReader implements FileAwareRowReader {
             }
         }
         rowIndex = -1;
-        if (drainSide) {
-            intersectMatches();
+        if (matchMerger != null) {
+            combinedWords = matchMerger.merge(previousBatches, batchSize);
             // pendingRowIndex is already -1 here: hasNext() only calls loadNextBatch
             // after nextSetBit returns -1, which happens only when pendingRowIndex < 0;
             // next() clears it before any further hasNext(); initialize() runs with the
@@ -927,7 +899,7 @@ public final class FlatRowReader implements FileAwareRowReader {
             // Ahead of any record of this batch being counted, so the counts land
             // on the file the batch came from. Batches never straddle files.
             tally.switchFile(currentFileName);
-            if (drainSide) {
+            if (matchMerger != null) {
                 // The whole batch was decided on the drain thread — count it here
                 // rather than as rows are yielded, so an early exit does not leave
                 // the batch reported as all-skipped.
@@ -944,38 +916,8 @@ public final class FlatRowReader implements FileAwareRowReader {
         return true;
     }
 
-    /// Combines per-column [BatchExchange.Batch.matches] arrays into [combinedWords]
-    /// by delegating to [#mergeEvaluator].
-    ///
-    /// Only the words covering `[0, batchSize)` are touched — bits past
-    /// `batchSize` are not read by the consumer (`nextSetBit` is bounded by
-    /// `batchSize`), so leaving them stale is safe and avoids the trailing
-    /// zero-fill the previous shape paid every batch.
-    ///
-    /// **Single-column fast path**: when the whole predicate is a single
-    /// [MergePlan.Column] there is nothing to merge, so [combinedWords] is
-    /// aliased directly to the batch's own `matches` array — no copy, no owned
-    /// buffer, no evaluator call. The alias is reseated each batch; the array
-    /// stays valid until the batch is recycled in the next [#loadNextBatch].
-    private void intersectMatches() {
-        if (mergePlan instanceof MergePlan.Column c) {
-            combinedWords = previousBatches[c.projectedIndex()].matches;
-            return;
-        }
-        // Snapshot the matches references the plan reads for this batch and hand
-        // off to the shared evaluator. Only the plan-referenced columns are
-        // reseated (one pointer each); the indirection is negligible vs. the
-        // per-row merge work.
-        for (int i = 0; i < referencedColumns.length; i++) {
-            int c = referencedColumns[i];
-            perColumnMatches[c] = previousBatches[c].matches;
-        }
-        int activeWords = (batchSize + 63) >>> 6;
-        mergeEvaluator.eval(mergePlan, combinedWords, activeWords, perColumnMatches);
-    }
-
     /// Counts the set bits of `words` below `limit`. The words past `limit` hold
-    /// stale bits from an earlier, longer batch (see [#intersectMatches]), so the
+    /// stale bits from an earlier, longer batch (see [BatchMatchMerger#merge]), so the
     /// partial tail word is masked rather than counted whole.
     private static int countMatches(long[] words, int limit) {
         int fullWords = limit >>> 6;
@@ -988,39 +930,6 @@ public final class FlatRowReader implements FileAwareRowReader {
             count += Long.bitCount(words[fullWords] & (~0L >>> (64 - tailBits)));
         }
         return count;
-    }
-
-    /// Collects the projected column indices referenced by `plan`, so
-    /// [#intersectMatches] can reseat only those entries of [#perColumnMatches]
-    /// instead of all `columnCount` columns each batch.
-    private static int[] referencedColumns(MergePlan plan, int columnCount) {
-        boolean[] seen = new boolean[columnCount];
-        markReferenced(plan, seen);
-        int count = 0;
-        for (int i = 0; i < columnCount; i++) {
-            if (seen[i]) {
-                count++;
-            }
-        }
-        int[] result = new int[count];
-        int idx = 0;
-        for (int i = 0; i < columnCount; i++) {
-            if (seen[i]) {
-                result[idx++] = i;
-            }
-        }
-        return result;
-    }
-
-    private static void markReferenced(MergePlan node, boolean[] seen) {
-        switch (node) {
-            case MergePlan.Column c -> seen[c.projectedIndex()] = true;
-            case MergePlan.Compound compound -> {
-                for (MergePlan child : compound.children()) {
-                    markReferenced(child, seen);
-                }
-            }
-        }
     }
 
     // ==================== Close ====================

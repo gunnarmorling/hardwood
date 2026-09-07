@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.util.Objects;
+
 /// Result of compiling an eligible [ResolvedPredicate] for the drain-side
 /// filter path.
 ///
@@ -17,4 +19,9 @@ package dev.hardwood.internal.predicate;
 ///   [dev.hardwood.internal.reader.FlatRowReader] to combine the per-column
 ///   bitmaps into one per-batch survivor mask.
 public record CompiledBatchFilter(ColumnBatchMatcher[] columnMatchers, MergePlan mergePlan) {
+
+    public CompiledBatchFilter {
+        Objects.requireNonNull(columnMatchers, "columnMatchers");
+        Objects.requireNonNull(mergePlan, "mergePlan");
+    }
 }

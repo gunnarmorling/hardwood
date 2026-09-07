@@ -27,7 +27,14 @@ public sealed interface MergePlan {
         MergePlan[] children();
     }
 
-    record Column(int projectedIndex) implements MergePlan {}
+    record Column(int projectedIndex) implements MergePlan {
+        public Column {
+            if (projectedIndex < 0) {
+                throw new IllegalArgumentException(
+                        "Column requires a projected index, got " + projectedIndex);
+            }
+        }
+    }
 
     record And(MergePlan[] children) implements Compound {
         public And {

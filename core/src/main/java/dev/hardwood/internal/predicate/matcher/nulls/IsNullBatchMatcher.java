@@ -30,7 +30,7 @@ public final class IsNullBatchMatcher implements NullBatchMatcher {
             outWords[w] = ~validity[w];
         }
         // Bits past `n` in the last live word are intentionally left as-is —
-        // the consumer (FlatRowReader#intersectMatches) only touches the words
-        // covering `[0, n)`, so masking would be dead work.
+        // the consumer (BatchMatchMerger#merge) only touches the words covering
+        // `[0, n)`, so masking would be dead work.
     }
 }
