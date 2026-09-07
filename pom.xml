@@ -406,35 +406,72 @@
             <configuration>
               <strictCheck>true</strictCheck>
               <aggregate>true</aggregate>
+              <!-- `#`-commented formats the plugin does not know by extension. -->
               <mapping>
                 <txt>SCRIPT_STYLE</txt>
+                <tape>SCRIPT_STYLE</tape>
+                <dockerignore>SCRIPT_STYLE</dockerignore>
               </mapping>
               <licenseSets>
                 <licenseSet>
                   <header>${maven.multiModuleProjectDirectory}/etc/license.txt</header>
+                  <!-- Bounds the walk. `**` here costs 13s instead of 0.3s in a
+                       working clone: the scanner descends into directories it is about
+                       to exclude, and no exclusion prevents that. Patterns, not an
+                       inventory — `*/src/**` covers any new module; a new top-level
+                       directory needs a line. -->
+                  <includes>
+                    <include>*</include>
+                    <include>.github/**</include>
+                    <include>_demos/**</include>
+                    <include>docs/**</include>
+                    <include>etc/**</include>
+                    <include>tools/**</include>
+                    <include>*/pom.xml</include>
+                    <include>*/.flattened-pom.xml</include>
+                    <include>*/src/**</include>
+                    <include>*/*.sh</include>
+                    <include>*/.dockerignore</include>
+                    <include>*/docker/**</include>
+                    <include>performance-testing/*</include>
+                    <include>performance-testing/*/pom.xml</include>
+                    <include>performance-testing/*/src/**</include>
+                    <include>performance-testing/*/*.py</include>
+                    <!-- Cancels the same-named default exclusions, which otherwise hide
+                         the workflows and the `dev.hardwood.build.errorprone` package.
+                         Spelling must match the default exactly; stripped from the walk. -->
+                    <include>**/.github</include>
+                    <include>**/.github/**</include>
+                    <include>**/build/**</include>
+                  </includes>
                   <excludes>
-                    <exclude>.claude/**</exclude>
-                    <exclude>.serena/**</exclude>
+                    <!-- Scratch, build and vendored directories, kept identical in the
+                         other set: each set prunes from its own list. -->
                     <exclude>.agents/**</exclude>
+                    <exclude>.claude/**</exclude>
                     <exclude>.codex/**</exclude>
-                    <exclude>_tmp/**</exclude>
-                    <exclude>.venv/**</exclude>
                     <exclude>.docker-venv/**</exclude>
+                    <exclude>.git/**</exclude>
+                    <exclude>.serena/**</exclude>
+                    <exclude>.venv/**</exclude>
                     <exclude>_tmp/**</exclude>
+                    <exclude>docs/site/**</exclude>
+                    <exclude>hardwood-cli-early-access-*/**</exclude>
                     <exclude>japicmp-report/**</exclude>
+                    <!-- Carry no header, or one this set does not own. -->
+                    <exclude>*.html</exclude>
+                    <exclude>**/*.ftl</exclude>
+                    <exclude>**/*.cast</exclude>
+                    <exclude>**/*.parquet</exclude>
+                    <exclude>**/resources/variant/**</exclude>
+                    <exclude>**/.dontdelete</exclude>
+                    <exclude>**/.jfr</exclude>
                     <exclude>**/__pycache__/**</exclude>
+                    <exclude>**/license-merges.txt</exclude>
                     <exclude>.release-env</exclude>
                     <exclude>LICENSE.txt</exclude>
                     <exclude>etc/license-cc-by-sa.txt</exclude>
-                    <exclude>**/.jfr</exclude>
-                    <exclude>**/.dontdelete</exclude>
-                    <exclude>*.html</exclude>
-                    <exclude>**/*.parquet</exclude>
-                    <exclude>**/license-merges.txt</exclude>
-                    <exclude>**/*.ftl</exclude>
                     <exclude>docs/content/**</exclude>
-                    <exclude>docs/site/**</exclude>
-                    <exclude>hardwood-cli-early-access-*/**</exclude>
                   </excludes>
                 </licenseSet>
                 <licenseSet>
@@ -442,6 +479,21 @@
                   <includes>
                     <include>docs/content/**</include>
                   </includes>
+                  <!-- Same directories as above: without them this set walks the
+                       whole repository to select one file. -->
+                  <excludes>
+                    <exclude>.agents/**</exclude>
+                    <exclude>.claude/**</exclude>
+                    <exclude>.codex/**</exclude>
+                    <exclude>.docker-venv/**</exclude>
+                    <exclude>.git/**</exclude>
+                    <exclude>.serena/**</exclude>
+                    <exclude>.venv/**</exclude>
+                    <exclude>_tmp/**</exclude>
+                    <exclude>docs/site/**</exclude>
+                    <exclude>hardwood-cli-early-access-*/**</exclude>
+                    <exclude>japicmp-report/**</exclude>
+                  </excludes>
                 </licenseSet>
               </licenseSets>
             </configuration>
