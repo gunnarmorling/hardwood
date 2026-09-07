@@ -8,7 +8,6 @@
 package dev.hardwood.internal.reader;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -19,7 +18,6 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
-import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.predicate.RecordFilterCompiler;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.predicate.RowMatcher;
@@ -84,7 +82,6 @@ public final class NestedRowReader implements FileAwareRowReader {
     private boolean exhausted;
     private boolean closed;
 
-
     NestedRowReader(BatchExchange<NestedBatch>[] exchanges, NestedColumnWorker[] columnWorkers,
                     FileSchema fileSchema, ProjectedSchema projectedSchema,
                     long maxMatchedRows, RowMatcher recordMatcher, RecordFilterTally tally) {
@@ -108,7 +105,7 @@ public final class NestedRowReader implements FileAwareRowReader {
     }
 
     /// Eagerly loads the first batch. Must be called after construction.
-    void initialize() {
+    void initialize() throws IOException {
         if (!loadNextBatch()) {
             exhausted = true;
         }
@@ -142,7 +139,7 @@ public final class NestedRowReader implements FileAwareRowReader {
                             boolean fixedListFastPathEnabled,
                             ResolvedPredicate filter,
                             long maxRows,
-                            List<RowGroup> rowGroups) {
+                            List<RowGroup> rowGroups) throws IOException {
         int batchSize = BatchSizing.computeOptimalBatchSize(projectedSchema,
                 BatchSizing.valuesPerRow(projectedSchema, rowGroups));
         int projectedColumnCount = projectedSchema.getProjectedColumnCount();
@@ -243,19 +240,6 @@ public final class NestedRowReader implements FileAwareRowReader {
 
     @Override
     public boolean hasNext() throws IOException {
-        try {
-            return hasNextImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            // This is the boundary the contract is stated at, so it is unwrapped
-            // here and reported as what it is.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private boolean hasNextImpl() {
         if (exhausted) {
             return false;
         }
@@ -271,7 +255,7 @@ public final class NestedRowReader implements FileAwareRowReader {
     /// Loads the next batch and says whether it yields a row. Kept out of [#hasNext] so
     /// that method stays loop-free and small enough to inline into a caller's row loop,
     /// which is worth more than the call this costs once per batch.
-    private boolean loadAndDecide() {
+    private boolean loadAndDecide() throws IOException {
         if (!loadNextBatch()) {
             return false;
         }
@@ -281,7 +265,7 @@ public final class NestedRowReader implements FileAwareRowReader {
     /// Advances to the next record the matcher accepts, evaluating one at a time.
     /// Returns to [#hasNext]'s plain cursor as soon as a batch loads that statistics
     /// decided, so a proven batch never pays for the per-row protocol.
-    private boolean hasNextMatching() {
+    private boolean hasNextMatching() throws IOException {
         if (maxMatchedRows != ColumnWorker.UNLIMITED && matchedRowsYielded >= maxMatchedRows) {
             exhausted = true;
             return false;
@@ -313,19 +297,6 @@ public final class NestedRowReader implements FileAwareRowReader {
 
     @Override
     public void next() throws IOException {
-        try {
-            nextImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            // This is the boundary the contract is stated at, so it is unwrapped
-            // here and reported as what it is.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private void nextImpl() {
         // hasNext parks the row it picked in `pendingRowIndex`; this only commits it.
         if (activeMatcher != null) {
             if (pendingRowIndex < 0) {
@@ -350,7 +321,7 @@ public final class NestedRowReader implements FileAwareRowReader {
 
     // ==================== Batch Loading ====================
 
-    private boolean loadNextBatch() {
+    private boolean loadNextBatch() throws IOException {
         // Poll columns sequentially with manual recycling and error checking.
         // Each poll is non-blocking when its exchange has a batch ready; the
         // pipeline runs ahead of the consumer in steady state, so the per-call
@@ -481,19 +452,6 @@ public final class NestedRowReader implements FileAwareRowReader {
 
     @Override
     public void close() throws IOException {
-        try {
-            closeImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            // This is the boundary the contract is stated at, so it is unwrapped
-            // here and reported as what it is.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private void closeImpl() {
         if (closed) {
             return;
         }
@@ -514,4 +472,5 @@ public final class NestedRowReader implements FileAwareRowReader {
             exchanges[i].drainReady();
         }
     }
+
 }

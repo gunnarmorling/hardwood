@@ -9,7 +9,6 @@ package dev.hardwood.reader;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.Arrays;
 
 import dev.hardwood.Experimental;
@@ -183,17 +182,6 @@ public class ColumnReader implements Closeable {
     ///         them. In a multi-file read this covers a later file that is not Parquet at
     ///         all, or whose schema cannot be reconciled with the first file's
     public boolean nextBatch() throws IOException {
-        try {
-            return nextBatchImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private boolean nextBatchImpl() {
         if (coordinator != null) {
             // Filtered path: a single [FilterCoordinator] advances every reader
             // in the projection together so the per-batch selection is computed
@@ -214,7 +202,7 @@ public class ColumnReader implements Closeable {
     /// Advances this reader to its next decoded batch without applying any
     /// record selection. The unfiltered public entry point and the filtered
     /// [FilterCoordinator] both funnel through here.
-    boolean rawNextBatch() {
+    boolean rawNextBatch() throws IOException {
         if (exhausted) {
             return false;
         }
@@ -267,7 +255,7 @@ public class ColumnReader implements Closeable {
         cachedStrings = null;
     }
 
-    private BatchExchange.Batch pollFlatBatch() {
+    private BatchExchange.Batch pollFlatBatch() throws IOException {
         try {
             return flatBuffer.poll();
         }
@@ -277,7 +265,7 @@ public class ColumnReader implements Closeable {
         }
     }
 
-    private NestedBatch pollNestedBatch() {
+    private NestedBatch pollNestedBatch() throws IOException {
         try {
             return nestedBuffer.poll();
         }
@@ -508,15 +496,6 @@ public class ColumnReader implements Closeable {
     /// than once has no further effect.
     @Override
     public void close() throws IOException {
-        try {
-            closeImpl();
-        }
-        catch (UncheckedIOException e) {
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private void closeImpl() throws IOException {
         // When a coordinator owns this reader, closing any single reader tears
         // down the whole projection (all sibling readers plus the shared
         // iterator). This keeps `try (ColumnReader r = ...filter(...).build())`

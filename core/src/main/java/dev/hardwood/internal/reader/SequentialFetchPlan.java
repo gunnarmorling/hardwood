@@ -7,8 +7,8 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 
@@ -137,7 +137,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
     }
 
     @Override
-    public Iterator<PageInfo> pages() {
+    public PageIterator pages() {
         return new SequentialPageIterator();
     }
 
@@ -272,7 +272,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
     /// A single `ChunkHandle` serves both header scanning and page data
     /// resolution. As scanning advances past the current chunk, a new
     /// handle is created and chained for one-ahead pre-fetch.
-    private class SequentialPageIterator implements Iterator<PageInfo> {
+    private class SequentialPageIterator implements PageIterator {
         private final ColumnMetaData metaData = columnChunk.metaData();
         private Dictionary dictionary;
         private boolean initialized;
@@ -300,7 +300,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         private int handleEnd;   // relative position where current handle ends (exclusive)
 
         @Override
-        public boolean hasNext() {
+        public boolean hasNext() throws IOException {
             if (nextPageComputed) {
                 return nextPage != null;
             }
@@ -317,7 +317,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         }
 
         @Override
-        public PageInfo next() {
+        public PageInfo next() throws IOException {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
@@ -331,7 +331,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// peek buffer on EOF. Needed because `DataPageHeader.statistics` may
         /// carry long `min_value`/`max_value` binaries that push the header
         /// past the initial peek size.
-        private ParsedHeader readPageHeader(int relPos) {
+        private ParsedHeader readPageHeader(int relPos) throws IOException {
             int remaining = columnChunkLength - relPos;
             int peekSize = Math.min(PageFormatProbe.INITIAL_PEEK_SIZE, remaining);
             while (true) {
@@ -362,7 +362,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// chunks as needed. If the range fits in the current chunk,
         /// returns a zero-copy slice. If it spans multiple chunks,
         /// assembles from each.
-        private ByteBuffer readBytes(int relPos, int length) {
+        private ByteBuffer readBytes(int relPos, int length) throws IOException {
             if (currentHandle == null || relPos < handleStart || relPos >= handleEnd) {
                 advanceChunk(relPos);
             }
@@ -378,7 +378,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// pre-fetched next handle that covers `relPos`, it is reused.
         /// Otherwise a new handle is created at `relPos`. The next
         /// chunk is always chained for one-ahead pre-fetch.
-        private void advanceChunk(int relPos) {
+        private void advanceChunk(int relPos) throws IOException {
             ChunkHandle prefetched = currentHandle != null ? currentHandle.nextChunk() : null;
 
             if (currentHandle == null && relPos == 0 && firstChunkHandle != null) {
@@ -418,7 +418,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         }
 
         /// Scans past the dictionary page (if present) on first access.
-        private void initialize() {
+        private void initialize() throws IOException {
             initialized = true;
             if (position >= columnChunkLength) {
                 return;
@@ -460,7 +460,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// even with masked drops because `valuesRead` accumulates each
         /// page's `header.num_values` regardless of whether the page was
         /// kept, dropped, or replaced with a null-placeholder.
-        private PageInfo findNextEmittablePage() {
+        private PageInfo findNextEmittablePage() throws IOException {
             if (!initialized) {
                 initialize();
             }
@@ -573,7 +573,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// v1 nested page would require decompression to count records and
         /// is rejected here — the row-group-wide gate is responsible for
         /// promoting `matchingRows` to ALL before we ever reach this branch.
-        private int computeRecordsInPage(PageHeader header, int headerSize, int numValues) {
+        private int computeRecordsInPage(PageHeader header, int headerSize, int numValues) throws IOException {
             if (columnSchema.maxRepetitionLevel() == 0) {
                 return numValues;
             }
@@ -598,7 +598,7 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         /// handles and concatenating. Uses a direct buffer so the result is
         /// usable from FFM-based decompressors (e.g. libdeflate), which
         /// require native MemorySegments.
-        private ByteBuffer assembleFromChunks(int relPos, int length) {
+        private ByteBuffer assembleFromChunks(int relPos, int length) throws IOException {
             ByteBuffer combined = ByteBuffer.allocateDirect(length);
             int remaining = length;
             while (remaining > 0) {

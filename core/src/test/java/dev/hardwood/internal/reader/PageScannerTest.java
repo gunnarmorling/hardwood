@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -185,7 +184,7 @@ public class PageScannerTest {
         return iterator;
     }
 
-    private static List<PageInfo> collectPages(Iterator<PageInfo> iter) {
+    private static List<PageInfo> collectPages(PageIterator iter) throws IOException {
         List<PageInfo> pages = new ArrayList<>();
         while (iter.hasNext()) {
             pages.add(iter.next());

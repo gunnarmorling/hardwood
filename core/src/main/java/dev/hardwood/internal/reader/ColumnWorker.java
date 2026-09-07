@@ -510,10 +510,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     /// exception a caller will see. A `RuntimeException` — including the
     /// `ParquetReadException` most decoder failures have just become — is enriched via
     /// [ExceptionContext#addFileContext], which preserves whatever type it arrived as.
-    /// `IOException` is wrapped in a fresh [UncheckedIOException] carrying the prefix, the
-    /// form a transport failure takes across a task boundary and the one the readers unwrap
-    /// at their `hasNext`/`next`/`nextBatch` boundary. `Error` and other throwables propagate
-    /// unchanged.
+    /// `IOException` is restated as a fresh `IOException` carrying the prefix: the pipeline
+    /// carries a failure across its thread boundary as a `Throwable`, so it stays checked the
+    /// whole way and the readers declare it rather than unwrapping anything. `Error` and other
+    /// throwables propagate unchanged.
     private static Throwable enrichWithFileName(Throwable t, String fileName) {
         Throwable typed = asReadFailure(t);
         if (fileName == null || fileName.isEmpty()) {
@@ -523,7 +523,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
             return ExceptionContext.addFileContext(fileName, re);
         }
         if (typed instanceof IOException ioe) {
-            return new UncheckedIOException(
+            // Stays checked. The pipeline carries a failure across its thread
+            // boundary as a `Throwable`, so nothing between here and the reader
+            // needs it wrapped, and the reader's own signature can declare it.
+            return new IOException(
                     ExceptionContext.filePrefix(fileName)
                             + (ioe.getMessage() != null ? ioe.getMessage() : "I/O failure"),
                     ioe);
@@ -542,8 +545,11 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     ///
     /// Four things pass through. [Error] is neither the file's fault nor
     /// something to retry. An [IOException] is the transport, as is an
-    /// [UncheckedIOException] — the form a fetch failure takes when it crosses a
-    /// task boundary, and a `RuntimeException` only for that reason. A
+    /// [UncheckedIOException]: nothing under this reader raises one — every wrap
+    /// made to leave a lambda is undone by the method enclosing it — but an
+    /// [dev.hardwood.InputFile] is implementable from outside, and one that
+    /// answers a failed `readRange` with the unchecked form is still describing
+    /// the transport, so it must not be relabelled as the file being wrong. A
     /// [ParquetReadException] already says what it is — including a
     /// [dev.hardwood.reader.SchemaIncompatibleException]. And an
     /// [UnsupportedOperationException] is a codec library that is absent or an

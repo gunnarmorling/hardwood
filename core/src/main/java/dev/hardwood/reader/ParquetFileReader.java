@@ -486,7 +486,7 @@ public class ParquetFileReader implements Closeable {
     /// so a schema that cannot state that encoding fails here, before the read is
     /// planned. The file name is added the same way the decode paths add it, so both
     /// report the same file for the same malformed column.
-    private ResolvedPredicate resolveFilter(FilterPredicate filter) {
+    private ResolvedPredicate resolveFilter(FilterPredicate filter) throws IOException {
         if (filter == null) {
             return null;
         }
@@ -552,7 +552,7 @@ public class ParquetFileReader implements Closeable {
                             HardwoodContextImpl context,
                             ResolvedPredicate filter,
                             long maxRows,
-                            List<RowGroup> rowGroups) {
+                            List<RowGroup> rowGroups) throws IOException {
         if (schema.isFlatSchema()) {
             return FlatRowReader.create(rowGroupIterator, schema, projectedSchema, context, filter, maxRows);
         }

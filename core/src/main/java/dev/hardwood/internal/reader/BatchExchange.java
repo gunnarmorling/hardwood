@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -184,7 +185,7 @@ public class BatchExchange<B> {
     /// empty the method falls through to a timed poll loop. The `finished` flag
     /// is only checked **after** a timed poll returns null, guaranteeing that any
     /// batch published before `finish()` is visible.
-    public B poll() throws InterruptedException {
+    public B poll() throws InterruptedException, IOException {
         B batch = readyQueue.poll();
         if (batch != null) {
             return batch;
@@ -238,15 +239,18 @@ public class BatchExchange<B> {
     /// Checks if the pipeline encountered an error and throws if so.
     /// Call this after detecting a finished/null batch to surface pipeline errors.
     ///
-    /// A `RuntimeException` and an [Error] are rethrown as they stand. [ColumnWorker] has
-    /// already said what a failure means by the time it reaches here — a decode failure is a
-    /// `ParquetReadException`, a fetch failure an `UncheckedIOException` — and an `Error` is
-    /// neither the file's fault nor something a caller retries. Relabelling either would
-    /// undo that one frame below the reader, and an `OutOfMemoryError` reported as a
-    /// `RuntimeException` is catchable by handlers that must never see it.
-    public void checkError() {
+    /// An [IOException], a `RuntimeException` and an [Error] are all rethrown as they stand.
+    /// [ColumnWorker] has already said what a failure means by the time it reaches here — a
+    /// decode failure is a `ParquetReadException`, a fetch failure the `IOException` it was —
+    /// and an `Error` is neither the file's fault nor something a caller retries. Relabelling
+    /// any of them would undo that one frame below the reader, and an `OutOfMemoryError`
+    /// reported as a `RuntimeException` is catchable by handlers that must never see it.
+    public void checkError() throws IOException {
         Throwable t = error;
         if (t != null) {
+            if (t instanceof IOException io) {
+                throw io;
+            }
             if (t instanceof RuntimeException re) {
                 throw re;
             }

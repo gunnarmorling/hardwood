@@ -8,7 +8,6 @@
 package dev.hardwood.internal.reader;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
@@ -69,7 +68,7 @@ public final class SharedRegion {
     /// otherwise surface as a generic [IndexOutOfBoundsException] from
     /// the underlying buffer with no context about which region or
     /// handle was misaligned.
-    public ByteBuffer slice(long absoluteOffset, int sliceLength) {
+    public ByteBuffer slice(long absoluteOffset, int sliceLength) throws IOException {
         if (absoluteOffset < fileOffset
                 || sliceLength < 0
                 || absoluteOffset + sliceLength > (long) fileOffset + length) {
@@ -86,7 +85,7 @@ public final class SharedRegion {
     /// Ensures the region's data is fetched. First call triggers
     /// `readRange`; subsequent calls return the cached buffer.
     /// After fetching, kicks off async pre-fetch of the next region.
-    public ByteBuffer ensureFetched() {
+    public ByteBuffer ensureFetched() throws IOException {
         ByteBuffer buf = data;
         if (buf != null) {
             return buf;
@@ -94,18 +93,24 @@ public final class SharedRegion {
         fetchData();
         SharedRegion next = nextRegion;
         if (next != null && next.data == null) {
-            CompletableFuture.runAsync(FetchReason.bind(next::fetchData))
-                    .exceptionally(t -> {
-                        LOG.log(System.Logger.Level.DEBUG,
-                                "Prefetch failed for region at offset {0} (length {1}) in {2}",
-                                next.fileOffset, next.length, next.inputFile.name(), t);
-                        return null;
-                    });
+            CompletableFuture.runAsync(FetchReason.bind(() -> {
+                try {
+                    next.fetchData();
+                }
+                catch (IOException e) {
+                    // Speculative: nothing is waiting on this, and a failed prefetch
+                    // leaves the region unfetched, so the demand path fetches it again
+                    // and reports the failure to a caller that is waiting for it.
+                    LOG.log(System.Logger.Level.DEBUG,
+                            "Prefetch failed for region at offset {0} (length {1}) in {2}",
+                            next.fileOffset, next.length, next.inputFile.name(), e);
+                }
+            }));
         }
         return data;
     }
 
-    private void fetchData() {
+    private void fetchData() throws IOException {
         if (data != null) {
             return;
         }
@@ -119,7 +124,7 @@ public final class SharedRegion {
                 data = inputFile.readRange(fileOffset, length);
             }
             catch (IOException e) {
-                throw new UncheckedIOException(
+                throw new IOException(
                         ExceptionContext.filePrefix(inputFile.name())
                         + "Failed to fetch region at offset " + fileOffset
                         + " (length " + length + ")", e);

@@ -8,7 +8,6 @@
 package dev.hardwood.internal.reader;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 
@@ -97,7 +96,7 @@ public class ChunkHandle {
     /// does not chain further).
     ///
     /// @return the fetched data buffer
-    public ByteBuffer ensureFetched() {
+    public ByteBuffer ensureFetched() throws IOException {
         ByteBuffer buf = data;
         if (buf != null) {
             return buf;
@@ -116,19 +115,22 @@ public class ChunkHandle {
         if (next != null) {
             // Carry the caller's FetchReason across the thread handoff;
             // otherwise the next-chunk readRange would log as `unattributed`.
-            CompletableFuture.runAsync(FetchReason.bind(next::fetchData))
-                    .exceptionally(t -> {
-                        // The demand-path fetch will re-attempt and surface a
-                        // fresh exception if the error is sustained, so we log
-                        // at DEBUG rather than WARN to avoid flooding logs
-                        // during a real backend outage. Logged here so
-                        // transient failures (which the retry would hide) are
-                        // still diagnosable.
-                        LOG.log(System.Logger.Level.DEBUG,
-                                "Prefetch failed for chunk at offset {0} (length {1}) in {2}",
-                                next.fileOffset, next.length, next.inputFile.name(), t);
-                        return null;
-                    });
+            CompletableFuture.runAsync(FetchReason.bind(() -> {
+                try {
+                    next.fetchData();
+                }
+                catch (IOException e) {
+                    // Speculative: nothing is waiting on this, and a failed prefetch
+                    // leaves the handle unfetched, so the demand path fetches it again
+                    // and reports the failure to a caller that is waiting for it.
+                    // DEBUG rather than WARN so a sustained backend outage does not
+                    // emit one line per chunk for failures that are about to be
+                    // reported properly.
+                    LOG.log(System.Logger.Level.DEBUG,
+                            "Prefetch failed for chunk at offset {0} (length {1}) in {2}",
+                            next.fileOffset, next.length, next.inputFile.name(), e);
+                }
+            }));
         }
         return data;
     }
@@ -139,7 +141,7 @@ public class ChunkHandle {
     /// When the handle is region-backed (`region != null`), this slices
     /// the shared region's buffer — the underlying `readRange` happens
     /// at the region level, once, no matter how many columns share it.
-    private void fetchData() {
+    private void fetchData() throws IOException {
         if (data != null) {
             return;
         }
@@ -159,7 +161,7 @@ public class ChunkHandle {
                 data = inputFile.readRange(fileOffset, length);
             }
             catch (IOException e) {
-                throw new UncheckedIOException(
+                throw new IOException(
                         ExceptionContext.filePrefix(inputFile.name())
                         + "Failed to fetch chunk at offset " + fileOffset
                         + " (length " + length + ")", e);
@@ -172,7 +174,7 @@ public class ChunkHandle {
     /// @param absoluteOffset absolute file offset of the region
     /// @param regionLength length of the region in bytes
     /// @return a ByteBuffer slice covering the requested region
-    public ByteBuffer slice(long absoluteOffset, int regionLength) {
+    public ByteBuffer slice(long absoluteOffset, int regionLength) throws IOException {
         ByteBuffer buf = ensureFetched();
         int relOffset = Math.toIntExact(absoluteOffset - fileOffset);
         return buf.slice(relOffset, regionLength);

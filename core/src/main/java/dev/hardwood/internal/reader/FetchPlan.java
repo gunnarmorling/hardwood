@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.util.Collections;
-import java.util.Iterator;
 
 /// Plan for fetching and iterating pages of a single projected column in a row group.
 ///
@@ -30,8 +28,8 @@ public interface FetchPlan {
         }
 
         @Override
-        public Iterator<PageInfo> pages() {
-            return Collections.emptyIterator();
+        public PageIterator pages() {
+            return PageIterator.empty();
         }
     };
 
@@ -39,9 +37,9 @@ public interface FetchPlan {
     boolean isEmpty();
 
     /// Returns an iterator over the pages for this column.
-    /// Pages are yielded in file order. Accessing `pageData()` on a `PageInfo`
-    /// may trigger lazy I/O via the underlying [ChunkHandle].
-    Iterator<PageInfo> pages();
+    /// Pages are yielded in file order. Advancing it, and accessing `pageData()`
+    /// on a `PageInfo`, may reach the file through the underlying [ChunkHandle].
+    PageIterator pages();
 
     /// Triggers async pre-fetch of this plan's first chunk.
     /// No-op for sequential plans or empty plans.

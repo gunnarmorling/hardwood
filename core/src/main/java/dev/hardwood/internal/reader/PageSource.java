@@ -8,7 +8,6 @@
 package dev.hardwood.internal.reader;
 
 import java.io.IOException;
-import java.util.Iterator;
 
 /// Per-column iterator that yields [PageInfo] objects across all row groups and files.
 ///
@@ -30,7 +29,7 @@ public class PageSource {
     private int workItemCursor;
 
     // Current row group's page iterator
-    private Iterator<PageInfo> currentPlan;
+    private PageIterator currentPlan;
 
     // Work item the current plan was built from. Tracked so that we can call
     // RowGroupIterator#releaseWorkItem when this column advances past it,

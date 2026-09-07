@@ -7,9 +7,9 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Iterator;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -108,7 +108,7 @@ class SequentialFetchPlanEarlyExitTest extends AbstractJfrRecorderTest {
                 .isLessThan(allPages / 4);
     }
 
-    private static void drain(Iterator<PageInfo> iterator) {
+    private static void drain(PageIterator iterator) throws IOException {
         while (iterator.hasNext()) {
             iterator.next();
         }
