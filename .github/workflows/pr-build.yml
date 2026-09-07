@@ -443,6 +443,7 @@ jobs:
 
       - name: 'Build Native Image'
         # -DskipSurefire=true skips the JVM unit test suite (already run in the
-        # `build-cli` job); Failsafe still runs the native smoke ITs during
-        # integration-test.
+        # `build-cli` job). Failsafe still runs during integration-test, and
+        # -Dnative clears the `native` tag exclusion, so this covers the native
+        # smoke ITs plus the JVM S3 command ITs the `build-cli` job also ran.
         run: ./mvnw -ntp -B -Dnative verify -pl :hardwood-cli -DskipSurefire=true

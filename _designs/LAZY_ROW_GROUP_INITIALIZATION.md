@@ -50,7 +50,7 @@ With batch size determined by `computeOptimalBatchSize()` (targets 6 MB of L2 ca
 - **`FileManager`** — `scanFirstRowGroup()` replaces `scanAllProjectedColumns()`; `PerFileRowGroupContext` stores per-file state for lazy access; `getRowGroupPages()` / `getRowGroupCount()` methods for `PageCursor`
 - **`ColumnReader`** — `create()` scans only the first row group; `scanRowGroup()` extracted as `RowGroupPageSource`
 - **`TestParquetGenerator`** — pure Java Parquet file generator (Thrift compact protocol writer) for generating test files on the fly, avoiding large committed binaries
-- **`S3SelectiveReadJfrTest`** — 4 new tests: partial read for RowReader and ColumnReader (assert fewer RowGroupScanned events), full read correctness, and incremental scanning verification
+- **`S3SelectiveReadJfrIT`** — 4 new tests: partial read for RowReader and ColumnReader (assert fewer RowGroupScanned events), full read correctness, and incremental scanning verification
 
 ## Phase 2: Lazy page fetching within a row group
 
@@ -220,7 +220,7 @@ All existing reader tests (flat, nested, filtered, projected, multi-file, S3) mu
 - `core/src/main/java/dev/hardwood/internal/reader/FileManager.java` — `scanFirstRowGroup()`, `PerFileRowGroupContext`, `getRowGroupPages()`, `getRowGroupCount()`, `scanRowGroupForColumn()`
 - `core/src/main/java/dev/hardwood/reader/ColumnReader.java` — `create()` scans first row group only; `scanRowGroup()` as `RowGroupPageSource`
 - `s3/src/test/java/dev/hardwood/s3/TestParquetGenerator.java` — pure Java Parquet file generator
-- `s3/src/test/java/dev/hardwood/s3/S3SelectiveReadJfrTest.java` — 4 new tests
+- `s3/src/test/java/dev/hardwood/s3/S3SelectiveReadJfrIT.java` — 4 new tests
 
 ### Phase 2
 
@@ -229,7 +229,7 @@ All existing reader tests (flat, nested, filtered, projected, multi-file, S3) mu
 - `core/src/main/java/dev/hardwood/reader/SingleFileRowReader.java` — `getPagesForRowGroup()` returns lazy scanner
 - `core/src/main/java/dev/hardwood/internal/reader/FileManager.java` — `scanRowGroupForColumn()` returns lazy scanner
 - `core/src/main/java/dev/hardwood/reader/ColumnReader.java` — `scanRowGroup()` returns lazy scanner
-- `s3/src/test/java/dev/hardwood/s3/S3SelectiveReadJfrTest.java` — add intra-row-group lazy fetch test
+- `s3/src/test/java/dev/hardwood/s3/S3SelectiveReadJfrIT.java` — add intra-row-group lazy fetch test
 
 ### Phase 3
 

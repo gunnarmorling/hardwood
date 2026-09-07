@@ -16,9 +16,10 @@ Every change should be linked to a GitHub issue. If one doesn't exist for what y
 
 ## Making changes
 
-- Run `./mvnw clean verify` locally before pushing. Docker must be running (the test suite uses Testcontainers).
+- Run `./mvnw clean verify` locally before pushing. Docker must be running (the integration tests use Testcontainers); without it, `./mvnw clean verify -DskipITs` runs the unit test suite on its own.
 - Run `./mvnw process-sources` to apply the project's formatting and import ordering.
 - Cover behavior changes with tests. Bug fixes should start with a failing test that reproduces the bug.
+- Name a test `*Test` if it needs nothing beyond the JVM and the checkout, and `*IT` if it needs a Docker daemon, a compiled native binary, or the packaged JAR. The name is what puts it in the right phase, and what lets `-DskipITs` skip it; see [_designs/INTEGRATION_TESTS.md](_designs/INTEGRATION_TESTS.md).
 - If your change adds or modifies a user-facing API (factory method, record, enum, configuration option, CLI option), update the documentation under `docs/content/` in the same PR.
 - Keep the public API surface small. Put anything that doesn't need to be user-facing in an `internal` package.
 

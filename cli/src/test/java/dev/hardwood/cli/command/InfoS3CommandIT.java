@@ -7,7 +7,7 @@
  */
 package dev.hardwood.cli.command;
 
-class InspectColumnsS3CommandTest extends AbstractS3CommandTest implements InspectColumnsCommandContract {
+class InfoS3CommandIT extends AbstractS3CommandIT implements InfoCommandContract {
 
     @Override
     public String plainFile() {
@@ -15,12 +15,12 @@ class InspectColumnsS3CommandTest extends AbstractS3CommandTest implements Inspe
     }
 
     @Override
-    public String pageIndexFile() {
-        return S3_PAGE_INDEX_FILE;
+    public String nonexistentFile() {
+        return S3_NONEXISTENT_FILE;
     }
 
     @Override
-    public String nonexistentFile() {
-        return S3_NONEXISTENT_FILE;
+    public String kvMetadataFile() {
+        return S3_KV_METADATA_FILE;
     }
 }

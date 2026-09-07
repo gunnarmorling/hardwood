@@ -18,9 +18,10 @@
       <screenshots.castFile>${project.build.directory}/dive-screenshots.cast</screenshots.castFile>
       <aesh.version>3.16.6</aesh.version>
       <aesh-readline.version>3.16.2</aesh-readline.version>
-      <!-- Integration tests require a native binary; skip by default.
-           The native profile overrides this to false. -->
-      <skipITs>true</skipITs>
+      <!-- Both test phases run CLI code in the test JVM — the S3 ITs drive the same
+           commands the unit tests do, only against a bucket — so both need the same
+           JVM configuration. Kept in one property so the two cannot drift apart. -->
+      <cli.test.argLine>--add-modules jdk.incubator.vector --add-opens java.base/java.lang=ALL-UNNAMED</cli.test.argLine>
       <!-- Defaults to ${skipTests} so -Dquick (skipTests=true) also skips
            Surefire here; the native-image CI job overrides via -DskipSurefire=true
            to skip only the JVM unit test suite while keeping Failsafe. -->
@@ -344,7 +345,9 @@
         </property>
       </activation>
       <properties>
-        <skipITs>false</skipITs>
+        <!-- This build produces the binary the `native`-tagged ITs spawn, so drop
+             the exclusion that keeps them out of an ordinary build. -->
+        <failsafe.excludedGroups />
       </properties>
       <build>
         <plugins>
@@ -656,37 +659,26 @@
         </configuration>
       </plugin>
 
-      <!-- Run unit tests with Vector API module -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <skipTests>${skipSurefire}</skipTests>
-          <argLine>--add-modules jdk.incubator.vector --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+          <argLine>${cli.test.argLine}</argLine>
         </configuration>
       </plugin>
 
-      <!-- Run native integration tests during the integration-test phase.
-           Skipped by default; enabled when the native profile sets skipITs=false.
-           native.image.path tells the native ITs where to find the compiled
-           binary. -->
+      <!-- native.image.path tells the `native`-tagged ITs where to find the
+           compiled binary. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>native-integration-test</id>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
-            <configuration>
-              <systemPropertyVariables>
-                <native.image.path>${project.build.directory}/hardwood-cli${executable-suffix}</native.image.path>
-              </systemPropertyVariables>
-            </configuration>
-          </execution>
-        </executions>
+        <configuration>
+          <argLine>${cli.test.argLine}</argLine>
+          <systemPropertyVariables>
+            <native.image.path>${project.build.directory}/hardwood-cli${executable-suffix}</native.image.path>
+          </systemPropertyVariables>
+        </configuration>
       </plugin>
     </plugins>
   </build>

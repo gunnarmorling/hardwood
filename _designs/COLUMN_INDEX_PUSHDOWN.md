@@ -209,7 +209,7 @@ Each call site attempts page-range I/O per column when filtering is active. Fall
 - `core/src/main/java/dev/hardwood/internal/reader/FileManager.java` (modify)
 - `core/src/test/java/dev/hardwood/internal/reader/PageRangeIoTest.java` (new)
 - `core/src/test/java/dev/hardwood/internal/reader/PageRangeDataTest.java` (new)
-- `s3/src/test/java/dev/hardwood/s3/S3InputFileTest.java` (modify)
+- `s3/src/test/java/dev/hardwood/s3/S3InputFileIT.java` (modify)
 
 ---
 
@@ -233,7 +233,7 @@ Each call site attempts page-range I/O per column when filtering is active. Fall
 | New | test: `PageRangeDataTest.java` | 5 unit tests |
 | New | test: `PageRangeIoTest.java` | 4 integration tests (byte counting) |
 | New | test: `PageFilterBenchmarkTest.java` | Performance benchmark with synthetic data |
-| Modify | test: `S3InputFileTest.java` | S3 byte counting assertion |
+| Modify | test: `S3InputFileIT.java` | S3 byte counting assertion |
 
 ## Future optimizations (out of scope)
 
@@ -242,6 +242,6 @@ Each call site attempts page-range I/O per column when filtering is active. Fall
 ## Verification
 
 1. `./mvnw verify -pl core` — all tests pass
-2. `./mvnw test -pl s3 -Dtest=S3InputFileTest` — S3 byte counting assertion confirms 88% I/O reduction
+2. `./mvnw verify -pl s3 -Dit.test=S3InputFileIT` — S3 byte counting assertion confirms 88% I/O reduction
 3. `./mvnw test -Pperformance-test -pl performance-testing/end-to-end -Dtest="PageFilterBenchmarkTest" -Dperf.runs=5` — benchmark validates page skipping under load
 4. Existing predicate push-down tests still pass (no regressions)

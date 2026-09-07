@@ -7,7 +7,7 @@
  */
 package dev.hardwood.cli.command;
 
-class SchemaS3CommandTest extends AbstractS3CommandTest implements SchemaCommandContract {
+class FooterS3CommandIT extends AbstractS3CommandIT implements FooterCommandContract {
 
     @Override
     public String plainFile() {

@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.MountableFile;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// into the native image can reach an S3 endpoint, authenticate, and read an
 /// object. AWS connection properties are passed as environment variables to
 /// the native binary subprocess.
+@Tag("native")
 class NativeBinaryS3SmokeIT {
 
     private static final String nativeBinary = System.getProperty("native.image.path");

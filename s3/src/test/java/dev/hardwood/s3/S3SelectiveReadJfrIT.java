@@ -46,9 +46,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// so that the generated test files stay small while still exercising multi-chunk
 /// behaviour.
 @Testcontainers
-public class S3SelectiveReadJfrTest extends AbstractJfrRecorderTest {
+public class S3SelectiveReadJfrIT extends AbstractJfrRecorderTest {
 
-    private static final System.Logger LOG = System.getLogger(S3SelectiveReadJfrTest.class.getName());
+    private static final System.Logger LOG = System.getLogger(S3SelectiveReadJfrIT.class.getName());
 
     /// 170 KB, 3 columns (id, value, category), many pages, offset indexes — larger than the 64 KB tail cache.
     private static final String PAGE_INDEX_FILE = "page_index_test.parquet";

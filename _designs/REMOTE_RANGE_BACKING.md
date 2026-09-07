@@ -275,14 +275,14 @@ prefetch). The cache must be thread-safe:
   counting in-memory `InputFile`: exact-match and enclosed-range
   repeat reads hit the mapping, a read spanning a hole fetches only
   the gap, and `close()` deletes the temp file.
-- **`S3RangeBackingTest`** (s3) — end-to-end against an S3 proxy
+- **`S3RangeBackingIT`** (s3) — end-to-end against an S3 proxy
   container with `RangeBacking.SPARSE_TEMPFILE`: an exact repeat
   `readRange` issues no new GET, and a second full pass with
   `ColumnReader` / `RowReader` over the same `S3InputFile` issues
   strictly fewer GETs and fetches strictly fewer bytes than the
   first. The counters carry the assertions, which is what pins the
   cache to network-only accounting.
-- **`S3InputFileTest`** (s3) — the same file under the default
+- **`S3InputFileIT`** (s3) — the same file under the default
   `RangeBacking.NONE`, including that the counters cover the
   `open()` tail fetch and every network `readRange` but not
   tail-cache hits.

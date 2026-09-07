@@ -75,6 +75,10 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <project.build.outputTimestamp>2026-08-31T14:51:58Z</project.build.outputTimestamp>
+    <!-- Integration tests tagged `native` need the compiled CLI binary, which only
+         exists under the `native` profile. That profile clears this exclusion, so a
+         native build runs every IT and an ordinary one runs every IT it can. -->
+    <failsafe.excludedGroups>native</failsafe.excludedGroups>
   </properties>
 
   <build>
@@ -175,6 +179,18 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-failsafe-plugin</artifactId>
           <version>3.5.4</version>
+          <configuration>
+            <excludedGroups>${failsafe.excludedGroups}</excludedGroups>
+          </configuration>
+          <executions>
+            <execution>
+              <id>integration-test</id>
+              <goals>
+                <goal>integration-test</goal>
+                <goal>verify</goal>
+              </goals>
+            </execution>
+          </executions>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -268,6 +284,13 @@
       </plugins>
     </pluginManagement>
     <plugins>
+      <!-- Bound for every module so that `*IT` classes run in the `integration-test`
+           phase wherever they live. Modules needing more than the defaults contribute
+           only a `<configuration>`; the execution above stays the single binding. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-antrun-plugin</artifactId>

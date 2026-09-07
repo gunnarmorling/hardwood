@@ -24,7 +24,7 @@ import dev.hardwood.reader.RowReader;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
-class S3MultiFileTest {
+class S3MultiFileIT {
 
     private static final Path TEST_RESOURCES = Path.of("").toAbsolutePath()
             .resolve("../core/src/test/resources").normalize();

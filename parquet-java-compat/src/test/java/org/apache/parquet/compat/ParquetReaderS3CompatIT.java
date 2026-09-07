@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /// Tests S3 support via the parquet-java compatible API.
 @Testcontainers
-class ParquetReaderS3CompatTest {
+class ParquetReaderS3CompatIT {
 
     private static final java.nio.file.Path TEST_RESOURCES = java.nio.file.Path.of("").toAbsolutePath()
             .resolve("../core/src/test/resources").normalize();

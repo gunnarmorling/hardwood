@@ -199,14 +199,6 @@
           <classesDirectory>${project.build.directory}/${project.build.finalName}.jar</classesDirectory>
           <argLine>--enable-native-access=ALL-UNNAMED --add-modules jdk.incubator.vector</argLine>
         </configuration>
-        <executions>
-          <execution>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>

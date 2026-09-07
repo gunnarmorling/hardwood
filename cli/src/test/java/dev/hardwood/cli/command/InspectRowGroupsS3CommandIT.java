@@ -7,7 +7,7 @@
  */
 package dev.hardwood.cli.command;
 
-class InfoS3CommandTest extends AbstractS3CommandTest implements InfoCommandContract {
+class InspectRowGroupsS3CommandIT extends AbstractS3CommandIT implements InspectRowGroupsCommandContract {
 
     @Override
     public String plainFile() {
@@ -17,10 +17,5 @@ class InfoS3CommandTest extends AbstractS3CommandTest implements InfoCommandCont
     @Override
     public String nonexistentFile() {
         return S3_NONEXISTENT_FILE;
-    }
-
-    @Override
-    public String kvMetadataFile() {
-        return S3_KV_METADATA_FILE;
     }
 }

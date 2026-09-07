@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.cli.internal.Version;
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// the compiled binary boots, parses arguments, loads a file from disk, and
 /// produces expected output. Per-command behavioural coverage lives in the
 /// JVM `*CommandTest` classes.
+@Tag("native")
 class NativeBinarySmokeIT {
 
     /// `hardwood <project-version> (<revision>)`, the same grammar `HardwoodCommandTest` pins
