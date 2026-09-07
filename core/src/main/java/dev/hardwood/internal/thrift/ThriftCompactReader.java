@@ -68,6 +68,20 @@ public class ThriftCompactReader {
     private final ByteBuffer buffer;
     private final int startPosition;
     private short lastFieldId = 0;
+
+    /// Offset of the field header the reader most recently stepped onto,
+    /// relative to where it was handed the buffer.
+    private int lastFieldStart = -1;
+
+    /// How many structs deep the reader currently is. Incremented by
+    /// [#pushFieldIdContext] and decremented by [#popFieldIdContext], so it
+    /// counts every nesting level the same way — a struct a reader parses and
+    /// one [#skipStruct] walks past alike.
+    ///
+    /// Carried on a parse failure so that the struct name a reader attaches can
+    /// be checked against the level the failure actually happened at. Without
+    /// it a reader names its own struct for a failure several levels below it.
+    private int structDepth;
     /// Per-decode cache of repeated column paths, created on first use so the page-header path —
     /// which has none — never allocates one.
     private RepeatedPathCache pathCache;
@@ -187,7 +201,9 @@ public class ThriftCompactReader {
             }
             shift += 7;
             if (shift > MAX_VARINT_SHIFT) {
-                throw new IOException("Malformed varint: more than " + MAX_VARINT_BYTES + " bytes");
+                throw ThriftParseException.onField(
+                        "Malformed varint: more than " + MAX_VARINT_BYTES + " bytes",
+                        lastFieldId, lastFieldStart, structDepth);
             }
         }
         throw new EOFException("Unexpected EOF while reading varint");
@@ -224,7 +240,8 @@ public class ThriftCompactReader {
         else if (b == TYPE_BOOLEAN_FALSE) {
             return false;
         }
-        throw new IOException("Invalid boolean value: " + b);
+        throw ThriftParseException.onField("Invalid boolean value: " + b, lastFieldId, lastFieldStart,
+                structDepth);
     }
 
     /// Read an i32 value (zigzag encoded).
@@ -313,6 +330,11 @@ public class ThriftCompactReader {
     /// escapes into [#acceptField], so it is allocated for real rather than scalarized.
     /// Unpack it with [#fieldId] and [#fieldType].
     public int readFieldHeader() throws IOException {
+        // Where this field starts, so a failure over it names its first byte
+        // rather than the position the reader stopped at, which is one past.
+        // One store beside the field id that is written here anyway, and only
+        // on the metadata path — no value is ever read through this method.
+        lastFieldStart = buffer.position() - startPosition;
         byte b = readByte();
 
         if (b == ThriftCompactConstants.STOP) {
@@ -669,7 +691,11 @@ public class ThriftCompactReader {
                 skipStruct();
                 break;
             default:
-                throw new IOException("Unknown field type: " + type);
+                // The field id travels with the failure rather than being read
+                // back later: skipping consumes further headers, so by the time
+                // a reader catches this, the current field is a different one.
+                throw ThriftParseException.onField("Unknown field type: " + type, lastFieldId, lastFieldStart,
+                        structDepth);
         }
     }
 
@@ -695,12 +721,23 @@ public class ThriftCompactReader {
     public short pushFieldIdContext() {
         short saved = lastFieldId;
         lastFieldId = 0;
+        structDepth++;
         return saved;
     }
 
     /// Restore the last field ID after reading a nested struct.
     public void popFieldIdContext(short savedFieldId) {
         lastFieldId = savedFieldId;
+        structDepth--;
+    }
+
+    /// How many structs deep the reader is right now.
+    ///
+    /// A reader records this before it starts, and its own fields are read one
+    /// level in from it; [ThriftParseException#at] compares the two so a struct
+    /// name is attached only by the reader the failure actually happened in.
+    int structDepth() {
+        return structDepth;
     }
 
     /// Decodes one element of a `list<struct>` from the reader it is given, which is positioned

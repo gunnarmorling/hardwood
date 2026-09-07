@@ -62,6 +62,16 @@ class PageEncodingStatsReader {
     /// count is negative. The struct is consumed either way, leaving the reader on the next
     /// element.
     private static PageEncodingStats readStats(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readStatsFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("PageEncodingStats", depth, e);
+        }
+    }
+
+    private static PageEncodingStats readStatsFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             PageType pageType = null;

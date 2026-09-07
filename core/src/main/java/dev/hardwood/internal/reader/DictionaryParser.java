@@ -68,7 +68,7 @@ public final class DictionaryParser {
         ByteBuffer compressedData = dictRegion.slice(headerSize, compressedSize);
 
         if (header.crc() != null) {
-            CrcValidator.assertCorrectCrc(header.crc(), compressedData, columnSchema.name());
+            CrcValidator.assertCorrectCrc(header.crc(), compressedData);
         }
 
         return decompress(compressedData, header.dictionaryPageHeader().numValues(),
@@ -107,8 +107,10 @@ public final class DictionaryParser {
             return Dictionary.parse(data, numValues, column.type(), column.typeLength());
         }
         catch (Exception e) {
-            throw new IOException("Failed to parse dictionary for column '" + column.name()
-                    + "' (type=" + column.type()
+            // The column is read context, added once on the way out; naming it
+            // here as well said it twice in one sentence.
+            throw new IOException("Failed to parse dictionary"
+                    + " (type=" + column.type()
                     + ", numValues=" + numValues
                     + ", uncompressedSize=" + uncompressedSize
                     + ", compressedSize=" + compressedData.remaining()

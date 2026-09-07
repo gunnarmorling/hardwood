@@ -20,6 +20,16 @@ import dev.hardwood.metadata.PageType;
 public class PageHeaderReader {
 
     public static PageHeader read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("PageHeader", depth, e);
+        }
+    }
+
+    private static PageHeader readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

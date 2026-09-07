@@ -19,6 +19,16 @@ import dev.hardwood.metadata.RowGroup;
 public class RowGroupReader {
 
     public static RowGroup read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("RowGroup", depth, e);
+        }
+    }
+
+    private static RowGroup readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

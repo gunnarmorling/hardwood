@@ -23,6 +23,16 @@ public class ColumnOrderReader {
     private static final short IEEE_754_TOTAL_ORDER = 2;
 
     public static ColumnOrder read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("ColumnOrder", depth, e);
+        }
+    }
+
+    private static ColumnOrder readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             ColumnOrder order = ColumnOrder.UNKNOWN;

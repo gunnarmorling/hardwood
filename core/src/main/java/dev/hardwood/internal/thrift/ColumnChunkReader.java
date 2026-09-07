@@ -17,6 +17,16 @@ import dev.hardwood.metadata.ColumnMetaData;
 public class ColumnChunkReader {
 
     public static ColumnChunk read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("ColumnChunk", depth, e);
+        }
+    }
+
+    private static ColumnChunk readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

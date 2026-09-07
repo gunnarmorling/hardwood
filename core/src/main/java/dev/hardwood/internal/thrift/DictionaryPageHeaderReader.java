@@ -17,6 +17,16 @@ import dev.hardwood.metadata.Encoding;
 public class DictionaryPageHeaderReader {
 
     public static DictionaryPageHeader read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("DictionaryPageHeader", depth, e);
+        }
+    }
+
+    private static DictionaryPageHeader readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

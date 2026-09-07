@@ -24,6 +24,16 @@ import dev.hardwood.metadata.SchemaElement;
 public class FileMetaDataReader {
 
     public static FileMetaData read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("FileMetaData", depth, e);
+        }
+    }
+
+    private static FileMetaData readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

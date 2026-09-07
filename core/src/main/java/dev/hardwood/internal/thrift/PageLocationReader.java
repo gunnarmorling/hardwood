@@ -16,6 +16,16 @@ import dev.hardwood.metadata.PageLocation;
 public class PageLocationReader {
 
     public static PageLocation read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("PageLocation", depth, e);
+        }
+    }
+
+    private static PageLocation readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

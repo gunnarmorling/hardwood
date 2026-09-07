@@ -9,6 +9,8 @@ package dev.hardwood.internal.reader;
 
 import java.util.Iterator;
 
+import dev.hardwood.internal.ExceptionContext;
+
 /// Per-column iterator that yields [PageInfo] objects across all row groups and files.
 ///
 /// For each row group, obtains a [FetchPlan] from [RowGroupIterator#getColumnPlan]
@@ -52,6 +54,15 @@ public class PageSource {
     /// is active. Only valid on the retriever thread.
     public String getCurrentFileName() {
         return currentWorkItem != null ? currentWorkItem.inputFile().name() : null;
+    }
+
+    /// Index of the row group currently being read, or
+    /// [dev.hardwood.internal.ExceptionContext.ReadContext#UNKNOWN_ROW_GROUP]
+    /// if no work item is active. Only valid on the retriever thread.
+    public int getCurrentRowGroupIndex() {
+        return currentWorkItem != null
+                ? currentWorkItem.rowGroupIndex()
+                : ExceptionContext.ReadContext.UNKNOWN_ROW_GROUP;
     }
 
     /// Whether statistics proved the current work item's row group matches the filter

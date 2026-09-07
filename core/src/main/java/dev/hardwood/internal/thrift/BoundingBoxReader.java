@@ -16,6 +16,16 @@ import dev.hardwood.metadata.BoundingBox;
 public class BoundingBoxReader {
 
     public static BoundingBox read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("BoundingBox", depth, e);
+        }
+    }
+
+    private static BoundingBox readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

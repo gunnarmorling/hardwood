@@ -19,6 +19,16 @@ import dev.hardwood.metadata.Statistics;
 public class StatisticsReader {
 
     public static Statistics read(ThriftCompactReader reader) throws IOException {
+        int depth = reader.structDepth();
+        try {
+            return readFields(reader);
+        }
+        catch (IOException e) {
+            throw ThriftParseException.at("Statistics", depth, e);
+        }
+    }
+
+    private static Statistics readFields(ThriftCompactReader reader) throws IOException {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);

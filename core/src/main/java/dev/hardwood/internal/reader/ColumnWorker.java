@@ -7,8 +7,7 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,7 +17,10 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.LockSupport;
 
 import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext.Region;
 import dev.hardwood.internal.compression.DecompressorFactory;
+import dev.hardwood.internal.thrift.ThriftParseException;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.schema.ColumnSchema;
 
@@ -94,6 +96,11 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     // row group was proven by statistics to match the filter in full.
     private final boolean[] filterAlwaysMatchesBuffer;
 
+    // Per-slot row group index, written by the retriever alongside
+    // fileNameBuffer[slot] under the same happens-before chain. Read only when a
+    // page fails, to say which row group of the column it was in.
+    private final int[] rowGroupBuffer;
+
     // === Drain position (only modified by drain thread, read by retriever for throttle) ===
     private volatile int consumePosition;
 
@@ -140,6 +147,15 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     /// Written only by the drain thread.
     String currentBatchFileName;
 
+    /// Row group of the page currently being assembled. Written only by the
+    /// drain thread.
+    ///
+    /// Per page rather than per batch: batches are flushed on file boundaries,
+    /// not row-group ones, so one batch routinely spans several row groups and
+    /// has no single row group to name. A failure, though, happens while
+    /// assembling one particular page, and that page has one.
+    int currentPageRowGroup = ReadContext.UNKNOWN_ROW_GROUP;
+
     /// Whether every page of the current batch comes from a row group whose statistics
     /// prove the filter matches all rows. Only maintained (with batch flushes on
     /// transitions) when [#flushOnFilterAlwaysMatchesTransition] is `true`.
@@ -181,6 +197,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         }
         this.fileNameBuffer = new String[MAX_INFLIGHT_PAGES];
         this.filterAlwaysMatchesBuffer = new boolean[MAX_INFLIGHT_PAGES];
+        this.rowGroupBuffer = new int[MAX_INFLIGHT_PAGES];
     }
 
     /// Initializes subclass-specific drain state (called at the start of `runDrain`).
@@ -330,6 +347,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
                 int slot = seq % MAX_INFLIGHT_PAGES;
                 fileNameBuffer[slot] = pageSource.getCurrentFileName();
                 filterAlwaysMatchesBuffer[slot] = pageSource.isCurrentFilterAlwaysMatches();
+                rowGroupBuffer[slot] = pageSource.getCurrentRowGroupIndex();
                 PageInfo pi = pageInfo;
                 PageDecoder rdr = pageDecoder;
                 CompletableFuture<Void> f = CompletableFuture.runAsync(
@@ -359,7 +377,8 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
                     sourceNanos / 1_000_000.0, throttleNanos / 1_000_000.0, throttleParks);
         }
         catch (Throwable t) {
-            signalError(enrichWithFileName(t, pageSource.getCurrentFileName()));
+            signalError(enrich(t, pageSource.getCurrentFileName(),
+                    pageSource.getCurrentRowGroupIndex(), Region.PAGE_FETCH));
         }
     }
 
@@ -375,7 +394,15 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
             reorderBuffer.set(slot, new DecodedPage(page, pageInfo.mask()));
         }
         catch (Throwable t) {
-            signalError(enrichWithFileName(t, fileNameBuffer[slot]));
+            // A Thrift failure inside a page is a page-header failure: nothing
+            // else in a page is Thrift-encoded. It is also the only failure
+            // that knows its own byte, so one fact settles both the region and
+            // whether the offset is the byte or only the page holding it.
+            int bytesRead = ThriftParseException.bytesReadOf(t);
+            boolean located = bytesRead >= 0;
+            signalError(enrich(t, fileNameBuffer[slot], rowGroupBuffer[slot],
+                    located ? Region.PAGE_HEADER : Region.DATA_PAGE, failureOffset(pageInfo, bytesRead),
+                    located && pageInfo.fileOffset().isPresent()));
         }
         LockSupport.unpark(drainThread);
     }
@@ -420,7 +447,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
                     publishBlockNanos / 1_000_000.0);
         }
         catch (Throwable t) {
-            signalError(enrichWithFileName(t, currentBatchFileName));
+            signalError(enrich(t, currentBatchFileName, currentPageRowGroup, Region.BATCH_ASSEMBLY));
         }
     }
 
@@ -441,6 +468,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
 
             // Detect file boundary: flush the current batch when the file changes
             // so that each batch is attributed to a single file.
+            currentPageRowGroup = rowGroupBuffer[slot];
             String pageFileName = fileNameBuffer[slot];
             if (pageFileName != null) {
                 if (currentBatchFileName != null
@@ -503,28 +531,52 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         LockSupport.unpark(drainThread);
     }
 
-    /// Enriches a throwable with file-name context if possible.
+    /// Enriches a throwable caught by one of this worker's tasks with where the
+    /// read was: the file, this worker's column, and which stage was running.
     ///
-    /// `RuntimeException` is enriched in-place via [ExceptionContext#addFileContext],
-    /// preserving the original type. `IOException` is wrapped in a fresh
-    /// [UncheckedIOException] carrying the prefix; this prevents
-    /// [BatchExchange#checkError] from later wrapping it in a generic
-    /// `RuntimeException("Error in pipeline for column 'X'")` that would lose the
-    /// file context. `Error` and other throwables propagate unchanged.
-    private static Throwable enrichWithFileName(Throwable t, String fileName) {
+    /// A `RuntimeException` keeps its type and an `IOException` becomes an
+    /// [java.io.UncheckedIOException] carrying the same context — the latter
+    /// stops [BatchExchange#checkError] wrapping it in a generic
+    /// `RuntimeException("Error in pipeline for column 'X'")` that would lose
+    /// everything this added. `Error` and anything else propagate unchanged.
+    ///
+    /// Only ever called from a `catch`, so the context it assembles costs a
+    /// read that does not fail nothing at all.
+    private Throwable enrich(Throwable t, String fileName, int rowGroup, Region region) {
+        return enrich(t, fileName, rowGroup, region, ReadContext.UNKNOWN_OFFSET, false);
+    }
+
+    /// Where in the file the failure was, to whatever precision is available:
+    /// the byte the read stopped on when it knows it, and otherwise the start
+    /// of the page it was in.
+    ///
+    /// Which of the two this is is not recoverable from the number, so it is
+    /// not left to be guessed — the caller passes the same fact to the context
+    /// as `exact`, and that is what decides whether a reader may go and look at
+    /// the bytes there.
+    ///
+    /// A position only ever comes from a Thrift parse, and the only
+    /// Thrift-encoded thing in a page is the header at its front, so adding it
+    /// to the page's offset lands inside that header. It never addresses the
+    /// page's body, which for a compressed column is not readable as it stands
+    /// and for any column has no position a decoder could report.
+    private static long failureOffset(PageInfo pageInfo, int bytesRead) {
+        OptionalLong pageOffset = pageInfo.fileOffset();
+        if (pageOffset.isEmpty()) {
+            return ReadContext.UNKNOWN_OFFSET;
+        }
+        return bytesRead >= 0 ? pageOffset.getAsLong() + bytesRead : pageOffset.getAsLong();
+    }
+
+    private Throwable enrich(Throwable t, String fileName, int rowGroup, Region region,
+            long fileOffset, boolean exact) {
         if (fileName == null || fileName.isEmpty()) {
             return t;
         }
-        if (t instanceof RuntimeException re) {
-            return ExceptionContext.addFileContext(fileName, re);
-        }
-        if (t instanceof IOException ioe) {
-            return new UncheckedIOException(
-                    ExceptionContext.filePrefix(fileName)
-                            + (ioe.getMessage() != null ? ioe.getMessage() : "I/O failure"),
-                    ioe);
-        }
-        return t;
+        return ExceptionContext.enrich(
+                new ReadContext(fileName, rowGroup, column.fieldPath().toString(), region,
+                        fileOffset, exact),
+                t);
     }
 
     private void unparkRetriever() {
