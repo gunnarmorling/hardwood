@@ -60,11 +60,16 @@ class MultiFilePlanningTest {
         }
     }
 
+    /// The cap is what bounds planning, not the caller walking away after one row. An
+    /// abandoned loop leaves the retriever free to run on, so without `head` this asserts
+    /// only that the calling thread reached the assertion first — which on a loaded
+    /// machine it does not. See [#anUncappedFilteredReadYieldsWithoutPlanningTheWholeRead],
+    /// which is the same read without a cap and therefore asserts no bound at all.
     @Test
     void aReadThatStopsEarlyDoesNotOpenEveryFile() throws IOException {
         List<CountingInputFile> files = countingFiles();
         try (ParquetFileReader reader = ParquetFileReader.openAll(files);
-             RowReader rows = reader.buildRowReader().build()) {
+             RowReader rows = reader.buildRowReader().head(1).build()) {
             if (rows.hasNext()) {
                 rows.next();
             }
