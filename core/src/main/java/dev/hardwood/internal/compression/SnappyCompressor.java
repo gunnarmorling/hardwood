@@ -12,6 +12,8 @@ import java.util.Arrays;
 
 import org.xerial.snappy.Snappy;
 
+import dev.hardwood.writer.ParquetWriteException;
+
 /// [Compressor] for the SNAPPY codec, the inverse of [SnappyDecompressor].
 ///
 /// Produces the raw Snappy block Parquet specifies, not the framed stream `SnappyOutputStream`
@@ -20,9 +22,16 @@ import org.xerial.snappy.Snappy;
 public class SnappyCompressor implements Compressor {
 
     @Override
-    public byte[] compress(byte[] data, int offset, int length) throws IOException {
+    public byte[] compress(byte[] data, int offset, int length) {
         byte[] output = new byte[Snappy.maxCompressedLength(length)];
-        int written = Snappy.rawCompress(data, offset, length, output, 0);
+        int written;
+        try {
+            // Declared by the codec, which compresses an array and reaches nothing.
+            written = Snappy.rawCompress(data, offset, length, output, 0);
+        }
+        catch (IOException e) {
+            throw new ParquetWriteException("Snappy compression failed", e);
+        }
         return Arrays.copyOf(output, written);
     }
 

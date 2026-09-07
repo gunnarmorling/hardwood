@@ -9,7 +9,6 @@ package dev.hardwood.writer;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +25,6 @@ import java.util.function.Supplier;
 import dev.hardwood.Experimental;
 import dev.hardwood.OutputFile;
 import dev.hardwood.internal.BuildInfo;
-import dev.hardwood.internal.ExceptionContext;
 import dev.hardwood.internal.compression.Compressor;
 import dev.hardwood.internal.compression.CompressorFactory;
 import dev.hardwood.internal.thrift.FileMetaDataWriter;
@@ -466,26 +464,12 @@ public final class ParquetFileWriter implements Closeable {
         out.close();
     }
 
-    /// Writes the buffered row group out, unwrapping the one exception that cannot be
-    /// declared where it is raised.
-    ///
-    /// Compression happens under here and nowhere else, and a codec failure leaves
-    /// [dev.hardwood.internal.writer.ColumnChunkBuffer] as an [UncheckedIOException] because the
-    /// [RecordShredder.LevelSink] callback it sits inside cannot declare a checked one. This is
-    /// the innermost frame that can, and every public method that flushes — `writeBatch`,
-    /// `writeRow` and `close` — reaches the codec through here, so unwrapping once here is what
-    /// keeps all three reporting a failed write as the [IOException] their signatures promise.
+    /// Writes the buffered row group out.
     private void flushRowGroup() throws IOException {
         if (current.isEmpty()) {
             return;
         }
-        RowGroup rowGroup;
-        try {
-            rowGroup = current.flushTo(out);
-        }
-        catch (UncheckedIOException e) {
-            throw ExceptionContext.unwrap(e);
-        }
+        RowGroup rowGroup = current.flushTo(out);
         rowGroups.add(rowGroup);
         numRows += rowGroup.numRows();
         current.reset();

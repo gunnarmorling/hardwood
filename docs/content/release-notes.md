@@ -36,6 +36,7 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
     - A corrupt file now raises the new unchecked `ParquetReadException` rather than `IOException`: bad magic, a corrupt footer, a malformed page index, a misplaced dictionary page, a failed checksum, values that will not decode. `SchemaIncompatibleException` extends it. **This one is silent** — a `catch (IOException)` written for corruption keeps compiling and stops catching. It is released alongside the `throws` clauses deliberately, so the compile error brings you to the error handling the silent change would otherwise slip past.
     - A row group whose page-index region exceeds 2 GB now raises `UnsupportedOperationException` where it used to raise `IOException`. **Silent, like the one above** — a `catch (IOException)` written for it keeps compiling and stops catching.
     - `RowReader` and `ColumnReader` implement `Closeable`, as `ParquetFileWriter` and `InputFile` already did.
+    - The writer raises the new unchecked `ParquetWriteException` when a compression codec rejects a page body, where it used to raise `IOException`. Nothing you passed was wrong and the destination is not involved, so retrying cannot help. **Silent.**
 
 ## 1.1.0.Beta1 (2026-08-31)
 
