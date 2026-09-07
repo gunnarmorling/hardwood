@@ -52,12 +52,15 @@ import dev.hardwood.reader.RowReader;
 /// cutoff satisfies the boundary group's min as well, which would leave every
 /// surviving group fully matching and collapse the scenario back onto `full`.
 ///
-/// Each selectivity runs on two read paths: `rowReaderString` filters on the
-/// string column through the record-matcher path (where per-row evaluation is
-/// most expensive), `columnReaderLong` filters on `id` while draining `value`.
-/// The latter reads through `SelectionEngine`, which does not yet consume the
-/// always-match proof (a #795 follow-up), so it stands as a control rather than
-/// a scenario expected to improve.
+/// Each selectivity runs on three read paths, one per way a filter reaches the
+/// rows: `rowReaderLong` filters on `id`, which the batch compiler accepts, so
+/// the row reader iterates the drain-side survivor bitmap; `rowReaderString`
+/// filters on the string column, which it does not, so the row reader falls back
+/// to the record-matcher path (where per-row evaluation is most expensive);
+/// `columnReaderLong` filters on `id` while draining `value`. The last reads
+/// through `SelectionEngine`, which does not yet consume the always-match proof
+/// (a #795 follow-up), so it stands as a control rather than a scenario expected
+/// to improve.
 ///
 /// Run:
 /// ```shell
@@ -115,6 +118,32 @@ public class AlwaysMatchReadBenchmark {
         }
     }
 
+    /// The drain-side path: `id` is a long compared with `>=`, which the batch
+    /// filter compiler accepts, so the workers mark matches per batch and the
+    /// reader walks the merged bitmap.
+    @Benchmark
+    public void rowReaderLong(Blackhole blackhole) throws IOException {
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
+            ParquetFileReader.RowReaderBuilder builder = reader.buildRowReader();
+            if (longFilter != null) {
+                builder.filter(longFilter);
+            }
+            try (RowReader rows = builder.build()) {
+                long idSum = 0;
+                int labelLengthSum = 0;
+                while (rows.hasNext()) {
+                    rows.next();
+                    idSum += rows.getLong("id");
+                    labelLengthSum += rows.getString("label").length();
+                }
+                blackhole.consume(idSum);
+                blackhole.consume(labelLengthSum);
+            }
+        }
+    }
+
+    /// The record-matcher path: a string comparison the batch filter compiler
+    /// rejects, so the reader evaluates the predicate a record at a time.
     @Benchmark
     public void rowReaderString(Blackhole blackhole) throws IOException {
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(path))) {
