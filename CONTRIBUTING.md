@@ -22,6 +22,17 @@ Every change should be linked to a GitHub issue. If one doesn't exist for what y
 - If your change adds or modifies a user-facing API (factory method, record, enum, configuration option, CLI option), update the documentation under `docs/content/` in the same PR.
 - Keep the public API surface small. Put anything that doesn't need to be user-facing in an `internal` package.
 
+## Raising exceptions
+
+A failure answers one question for the caller: try again, or stop. The type is what answers it, so pick by category rather than by whatever is convenient to throw. `_designs/EXCEPTION_MODEL.md` has the full model and `docs/content/reference/error-handling.md` is the version users read.
+
+- **`IOException`** — reading or writing the file failed, and another attempt may succeed. Declare it on every method that can reach the file, and only on those. A method that parses a buffer or decodes a page cannot fail at I/O, so it must not say it can; declaring it there makes a corrupt file look like a failed read.
+- **`ParquetReadException`** — the bytes arrived and are not valid Parquet. Unchecked, raised where the invalidity is detected rather than at some boundary further out.
+- **`ParquetWriteException`** — the writer could not produce the file and neither the caller nor the destination is at fault, such as a codec rejecting a page body. Unchecked.
+- **`UnsupportedOperationException`** — the file is correct and Hardwood cannot read it: encryption, an unimplemented encoding, an absent codec library. Let it travel untouched; its message usually names the remedy.
+- Misuse of the API keeps its own type — `IllegalArgumentException`, `IllegalStateException`, `NullPointerException`. The caller's code is wrong and no file is involved.
+- **`UncheckedIOException`** only where the language forbids declaring: inside a `Runnable`, a `Supplier`, or a `computeIfAbsent` mapping function. Unwrap it in the method enclosing that lambda — the nearest one that can declare — so the wrap lasts a single call. It must never reach a user.
+
 ## Adding an encoding
 
 An encoding is a read-side decoder, a write-side encoder, or both. Work through the table for the
