@@ -137,7 +137,9 @@ public class S3SelectiveReadJfrIT extends AbstractJfrRecorderTest {
     static void setup() throws Exception {
         pageIndexFileSize = Files.size(TEST_RESOURCES.resolve(PAGE_INDEX_FILE));
 
-        // Override sequential chunk size for this test class
+        // Override sequential chunk size for this test class. Every assertion below
+        // is calibrated against it, so it has to hold for this class regardless of
+        // what else has already run in this JVM.
         System.setProperty("hardwood.internal.sequentialChunkSize", String.valueOf(TEST_CHUNK_SIZE));
 
         source = S3Source.builder()
