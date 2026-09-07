@@ -26,27 +26,22 @@ public class ParquetTestingRepoCloner {
     /// @return path to the cloned repository
     /// @throws IOException if cloning fails
     public static Path ensureCloned() throws IOException {
-        if (Files.exists(TARGET_DIR) && Files.isDirectory(TARGET_DIR)) {
-            // Already cloned
-            return TARGET_DIR;
-        }
-
-        System.out.println("Cloning parquet-testing repository (shallow clone)...");
-
-        try {
-            Git.cloneRepository()
-                    .setURI(REPO_URL)
-                    .setDirectory(TARGET_DIR.toFile())
-                    .setDepth(1) // Shallow clone for speed
-                    .call()
-                    .close();
-
+        return SharedFixture.produceOnce(TARGET_DIR, temporary -> {
+            System.out.println("Cloning parquet-testing repository (shallow clone)...");
+            try {
+                Git.cloneRepository()
+                        .setURI(REPO_URL)
+                        .setDirectory(temporary.toFile())
+                        .setDepth(1) // Shallow clone for speed
+                        .call()
+                        .close();
+            }
+            catch (GitAPIException e) {
+                throw new IOException(
+                        "Failed to clone parquet-testing repository: " + e.getMessage(), e);
+            }
             System.out.println("Successfully cloned to: " + TARGET_DIR.toAbsolutePath());
-            return TARGET_DIR;
-        }
-        catch (GitAPIException e) {
-            throw new IOException("Failed to clone parquet-testing repository: " + e.getMessage(), e);
-        }
+        });
     }
 
     /// Get the path to a test file within the parquet-testing repository.
