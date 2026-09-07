@@ -130,6 +130,6 @@ class DictionaryPushDownTest {
 
     private static boolean statisticsDrop(FilterPredicate filter) {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
-        return RowGroupFilterEvaluator.canDropRowGroup(resolved, rowGroup);
+        return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }
 }

@@ -112,7 +112,8 @@ static int compareBinary(byte[] a, byte[] b); // unsigned lexicographic
 Given a `FilterPredicate` and a `RowGroup` + `FileSchema`, determines whether the row group can be skipped.
 
 ```java
-static boolean canDropRowGroup(FilterPredicate predicate, RowGroup rowGroup, FileSchema schema);
+static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
+        BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries);
 ```
 
 Logic per operator:
@@ -234,7 +235,7 @@ Parses fields 6 (column_index_offset) and 7 (column_index_length).
 ### New file: `core/src/test/java/dev/hardwood/FilterPredicateTest.java`
 - Unit tests for each predicate type and operator
 - Tests for And/Or/Not composition
-- Tests for row group filter evaluation (canDropRowGroup) with constructed RowGroup/Statistics objects
+- Tests for row group filter evaluation (decideRowGroup) with constructed RowGroup/Statistics objects
 - Edge cases: negative ranges, boundary values, missing statistics, single-value ranges
 
 ### New file: `core/src/test/java/dev/hardwood/PredicatePushDownTest.java`

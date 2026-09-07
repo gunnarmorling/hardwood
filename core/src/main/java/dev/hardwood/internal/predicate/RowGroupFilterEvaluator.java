@@ -37,44 +37,6 @@ import dev.hardwood.reader.FilterPredicate;
 /// All three sources are independent: whichever proves no match first drops the row group.
 public class RowGroupFilterEvaluator {
 
-    /// Determines whether a row group can be skipped using statistics only (no bloom filters and no
-    /// dictionaries).
-    ///
-    /// @param predicate the resolved predicate to evaluate
-    /// @param rowGroup the row group to check
-    /// @return `true` if the row group can be safely skipped (no matching rows),
-    ///         `false` if it may contain matching rows
-    public static boolean canDropRowGroup(ResolvedPredicate predicate, RowGroup rowGroup) {
-        return canDropRowGroup(predicate, rowGroup, null);
-    }
-
-    /// Determines whether a row group can be skipped based on the given resolved predicate,
-    /// consulting bloom filters but no dictionaries.
-    ///
-    /// @param predicate the resolved predicate to evaluate
-    /// @param rowGroup the row group to check
-    /// @param bloomFilters source of the row group's bloom filters, or `null` to evaluate
-    ///        statistics only
-    /// @return `true` if the row group can be safely skipped (no matching rows),
-    ///         `false` if it may contain matching rows
-    public static boolean canDropRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
-            BloomFilterSource bloomFilters) {
-        return decideRowGroup(predicate, rowGroup, bloomFilters) == FilterDecision.CANNOT_MATCH;
-    }
-
-    /// Evaluates the predicate against the row group's statistics and bloom filters as a
-    /// three-valued [FilterDecision], without consulting dictionaries.
-    ///
-    /// @param predicate the resolved predicate to evaluate
-    /// @param rowGroup the row group to check
-    /// @param bloomFilters source of the row group's bloom filters, or `null` to evaluate
-    ///        statistics only
-    /// @return the statistics decision for the row group
-    public static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
-            BloomFilterSource bloomFilters) {
-        return decideRowGroup(predicate, rowGroup, bloomFilters, null);
-    }
-
     /// Evaluates the predicate against the row group's statistics, bloom filters and dictionaries
     /// as a three-valued [FilterDecision].
     ///

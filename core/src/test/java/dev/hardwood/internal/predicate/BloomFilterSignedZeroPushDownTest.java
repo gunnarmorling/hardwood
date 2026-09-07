@@ -71,12 +71,12 @@ class BloomFilterSignedZeroPushDownTest {
 
     private static boolean bloomDrop(FilterPredicate filter) {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
-        return RowGroupFilterEvaluator.canDropRowGroup(resolved, rowGroup,
-                new RowGroupBloomFilterSource(inputFile, rowGroup));
+        return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup,
+                new RowGroupBloomFilterSource(inputFile, rowGroup), null) == FilterDecision.CANNOT_MATCH;
     }
 
     private static boolean statisticsDrop(FilterPredicate filter) {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
-        return RowGroupFilterEvaluator.canDropRowGroup(resolved, rowGroup);
+        return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }
 }

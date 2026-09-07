@@ -50,7 +50,7 @@ A `bloomFilterOffset` that is present but non-positive cannot name a real filter
 
 ### `RowGroupFilterEvaluator`
 
-`canDropRowGroup` gains a `BloomFilterSource` parameter, threaded unchanged through the `And` / `Or` recursion. The existing two-argument overload delegates with a `null` source (statistics only), preserving current callers and tests.
+The decision gains a `BloomFilterSource` parameter, threaded unchanged through the `And` / `Or` recursion. A `null` source evaluates statistics only.
 
 For each eligible leaf the evaluator yields `statisticsDrop || bloomDrop`:
 
@@ -61,7 +61,7 @@ A `null` source short-circuits every bloom check to "cannot drop", so the bloom 
 
 ### Callers
 
-Bloom pruning is wired in a single place. `RowGroupIterator.filterRowGroups` constructs a `RowGroupBloomFilterSource` for each row group under test and passes it to `canDropRowGroup`. This is the only statistics/bloom evaluation site: both multi-file scans and the single-file reader path run through the same iterator, so the single-file path reaches it there too. `ParquetFileReader.filterRowGroups` applies only the byte-range `RowGroupPredicate` (split selection) and never constructs a bloom source or evaluates statistics.
+Bloom pruning is wired in a single place. `RowGroupIterator.filterRowGroups` constructs a `RowGroupBloomFilterSource` for each row group under test and passes it to `decideRowGroup`. This is the only statistics/bloom evaluation site: both multi-file scans and the single-file reader path run through the same iterator, so the single-file path reaches it there too. `ParquetFileReader.filterRowGroups` applies only the byte-range `RowGroupPredicate` (split selection) and never constructs a bloom source or evaluates statistics.
 
 Row groups dropped by a bloom filter are counted in the existing `RowGroupFilterEvent.rowGroupsSkipped`, alongside statistics drops.
 
