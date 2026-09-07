@@ -1,9 +1,10 @@
-# SPDX-License-Identifier: Apache-2.0
 #
-# Copyright The original authors
+#  SPDX-License-Identifier: Apache-2.0
 #
-# Licensed under the Apache Software License version 2.0, available at
-# http://www.apache.org/licenses/LICENSE-2.0
+#  Copyright The original authors
+#
+#  Licensed under the Apache Software License version 2.0, available at http://www.apache.org/licenses/LICENSE-2.0
+#
 
 # The recording output (.cast), terminal size, and fps are supplied by the
 # `screenshots` Maven profile via -Dtamboui.record* system properties; this
