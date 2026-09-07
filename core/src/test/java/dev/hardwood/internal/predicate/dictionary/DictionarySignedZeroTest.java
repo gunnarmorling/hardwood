@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate.dictionary;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -58,24 +59,24 @@ class DictionarySignedZeroTest {
     }
 
     @Test
-    void positiveZeroIsProvenAbsent() {
+    void positiveZeroIsProvenAbsent() throws IOException {
         // The dictionary holds -0.0 and no +0.0. Rows holding -0.0 would not match a +0.0
         // predicate either, so proving +0.0 absent is exact, not merely permissible.
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, FLOAT_COLUMN, 0.0f)).isTrue();
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, DOUBLE_COLUMN, 0.0)).isTrue();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(FLOAT_COLUMN), 0.0f)).isTrue();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(DOUBLE_COLUMN), 0.0)).isTrue();
     }
 
     @Test
-    void negativeZeroIsPresent() {
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, FLOAT_COLUMN, -0.0f)).isFalse();
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, DOUBLE_COLUMN, -0.0)).isFalse();
+    void negativeZeroIsPresent() throws IOException {
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(FLOAT_COLUMN), -0.0f)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(DOUBLE_COLUMN), -0.0)).isFalse();
     }
 
     @Test
-    void nonZeroValuesAreDecidedTheSameWay() {
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, FLOAT_COLUMN, 2.5f)).isFalse();
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, FLOAT_COLUMN, 4.5f)).isTrue();
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, DOUBLE_COLUMN, 2.5)).isFalse();
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries, DOUBLE_COLUMN, 4.5)).isTrue();
+    void nonZeroValuesAreDecidedTheSameWay() throws IOException {
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(FLOAT_COLUMN), 2.5f)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(FLOAT_COLUMN), 4.5f)).isTrue();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(DOUBLE_COLUMN), 2.5)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries.forColumn(DOUBLE_COLUMN), 4.5)).isTrue();
     }
 }

@@ -15,29 +15,29 @@ import dev.hardwood.internal.bloomfilter.XxHash64;
 ///
 /// Used by [RowGroupFilterEvaluator] alongside [StatisticsFilterSupport]: statistics prove a value
 /// out of range, while a bloom filter proves an in-range value definitely absent — either one is
-/// sufficient to drop the row group. Every check resolves the column's filter before hashing, so
-/// the statistics-only path (no [BloomFilterSource]) never pays for the probe hash.
+/// sufficient to drop the row group.
+///
+/// Every method here is a pure test against a filter already in hand: the caller resolves it, so
+/// the read stays in [RowGroupFilterEvaluator] where the guards that decide whether it is worth
+/// doing already are.
 final class BloomFilterSupport {
 
     private BloomFilterSupport() {
     }
 
     /// Whether the column's bloom filter proves the `INT32` `value` is absent. Returns `false`
-    /// (cannot prove absence) when no source is supplied or the column carries no filter.
-    static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, int value) {
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
+    /// (cannot prove absence) when the column carries no filter.
+    static boolean valueAbsent(BloomFilter bloomFilter, int value) {
         return bloomFilter != null && !bloomFilter.mightContain(XxHash64.hash(value));
     }
 
     /// Single-value bloom check for `INT64` values; see the `INT32` overload.
-    static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, long value) {
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
+    static boolean valueAbsent(BloomFilter bloomFilter, long value) {
         return bloomFilter != null && !bloomFilter.mightContain(XxHash64.hash(value));
     }
 
     /// Single-value bloom check for binary values; see the `INT32` overload.
-    static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, byte[] value) {
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
+    static boolean valueAbsent(BloomFilter bloomFilter, byte[] value) {
         return bloomFilter != null && !bloomFilter.mightContain(XxHash64.hash(value));
     }
 
@@ -47,29 +47,26 @@ final class BloomFilterSupport {
     /// so both distinguish `-0.0f` from `+0.0f` and signed zeros are safe to probe. NaN values are
     /// not: the matcher treats different NaN payloads as equal while raw-bit hashing distinguishes
     /// them, so a bloom miss cannot prove a NaN absent.
-    static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, float value) {
+    static boolean valueAbsent(BloomFilter bloomFilter, float value) {
         if (Float.isNaN(value)) {
             return false;
         }
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
         return bloomFilter != null && !bloomFilter.mightContain(XxHash64.hash(value));
     }
 
     /// Single-value bloom check for `DOUBLE` values. See the `FLOAT` overload for signed-zero and
     /// NaN behavior.
-    static boolean valueAbsent(BloomFilterSource bloomFilters, int columnIndex, double value) {
+    static boolean valueAbsent(BloomFilter bloomFilter, double value) {
         if (Double.isNaN(value)) {
             return false;
         }
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
         return bloomFilter != null && !bloomFilter.mightContain(XxHash64.hash(value));
     }
 
     /// Whether the column's bloom filter proves every listed `INT32` value is absent, so an `IN`
-    /// list matches no rows. Returns `false` when no source is supplied or the column carries no
-    /// filter — and as soon as any value might be present.
-    static boolean absentAll(BloomFilterSource bloomFilters, int columnIndex, int[] values) {
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
+    /// list matches no rows. Returns `false` when the column carries no filter,
+    /// and as soon as any value might be present.
+    static boolean absentAll(BloomFilter bloomFilter, int[] values) {
         if (bloomFilter == null) {
             return false;
         }
@@ -81,9 +78,8 @@ final class BloomFilterSupport {
         return true;
     }
 
-    /// `IN`-list bloom check for `INT64` values. See [#absentAll(BloomFilterSource, int, int[])].
-    static boolean absentAll(BloomFilterSource bloomFilters, int columnIndex, long[] values) {
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
+    /// `IN`-list bloom check for `INT64` values. See [#absentAll(BloomFilter, int[])].
+    static boolean absentAll(BloomFilter bloomFilter, long[] values) {
         if (bloomFilter == null) {
             return false;
         }
@@ -95,9 +91,8 @@ final class BloomFilterSupport {
         return true;
     }
 
-    /// `IN`-list bloom check for binary values. See [#absentAll(BloomFilterSource, int, int[])].
-    static boolean absentAll(BloomFilterSource bloomFilters, int columnIndex, byte[][] values) {
-        BloomFilter bloomFilter = filterFor(bloomFilters, columnIndex);
+    /// `IN`-list bloom check for binary values. See [#absentAll(BloomFilter, int[])].
+    static boolean absentAll(BloomFilter bloomFilter, byte[][] values) {
         if (bloomFilter == null) {
             return false;
         }
@@ -109,10 +104,4 @@ final class BloomFilterSupport {
         return true;
     }
 
-    /// Resolves the column's bloom filter, or `null` when no source is supplied or the column
-    /// carries no filter. Looking the filter up before hashing lets the callers above skip the
-    /// probe-value hash entirely on the statistics-only path, where no source is present.
-    private static BloomFilter filterFor(BloomFilterSource bloomFilters, int columnIndex) {
-        return bloomFilters == null ? null : bloomFilters.forColumn(columnIndex);
-    }
 }

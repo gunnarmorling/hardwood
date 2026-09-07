@@ -260,7 +260,7 @@ public class RowGroupIterator {
 
     /// Rows to discard from the first kept row group after whole row groups
     /// before the physical skip target have been dropped from the work list.
-    public long firstRowGroupSkip() {
+    public long firstRowGroupSkip() throws IOException {
         if (physicalSkip == 0) {
             return 0;
         }
@@ -299,7 +299,7 @@ public class RowGroupIterator {
     /// @param projection column projection
     /// @param filter resolved predicate, or `null` for no filtering
     /// @return the projected schema
-    public ProjectedSchema initialize(ColumnProjection projection, ResolvedPredicate filter) {
+    public ProjectedSchema initialize(ColumnProjection projection, ResolvedPredicate filter) throws IOException {
         return initialize(projection, filter, true);
     }
 
@@ -314,7 +314,7 @@ public class RowGroupIterator {
     ///        predicate is evaluated against every decoded row
     /// @return the projected schema
     public ProjectedSchema initialize(ColumnProjection projection, ResolvedPredicate filter,
-                                      boolean metadataFilteringEnabled) {
+                                      boolean metadataFilteringEnabled) throws IOException {
         return initialize(ProjectedSchema.create(referenceSchema, projection), filter,
                 metadataFilteringEnabled);
     }
@@ -325,7 +325,7 @@ public class RowGroupIterator {
     /// @param projected pre-built projected schema
     /// @param filter resolved predicate, or `null` for no filtering
     /// @return the projected schema (same as input)
-    public ProjectedSchema initialize(ProjectedSchema projected, ResolvedPredicate filter) {
+    public ProjectedSchema initialize(ProjectedSchema projected, ResolvedPredicate filter) throws IOException {
         return initialize(projected, filter, true);
     }
 
@@ -338,7 +338,7 @@ public class RowGroupIterator {
     ///        every decoded row (see the sibling three-arg overload)
     /// @return the projected schema (same as input)
     public ProjectedSchema initialize(ProjectedSchema projected, ResolvedPredicate filter,
-                                      boolean metadataFilteringEnabled) {
+                                      boolean metadataFilteringEnabled) throws IOException {
         if (referenceSchema == null) {
             throw new IllegalStateException("openFirst() must be called before initialize()");
         }
@@ -361,7 +361,7 @@ public class RowGroupIterator {
     }
 
     /// Returns the ordered work list of (file, rowGroup) pairs.
-    public List<WorkItem> getWorkItems() {
+    public List<WorkItem> getWorkItems() throws IOException {
         ensureFullyPlanned();
         synchronized (this) {
             return List.copyOf(workItems);
@@ -483,7 +483,7 @@ public class RowGroupIterator {
     ///
     /// @throws IllegalStateException if the iterator was constructed with
     ///         more than one input file
-    public boolean canFastSkipAllRowGroups() {
+    public boolean canFastSkipAllRowGroups() throws IOException {
         if (inputFiles.size() != 1) {
             throw new IllegalStateException(
                     "canFastSkipAllRowGroups requires a single-file iterator, got "
@@ -506,7 +506,7 @@ public class RowGroupIterator {
     /// @param workItem the work item identifying the row group
     /// @param projectedColumnIndex the projected column index
     /// @return a fetch plan for iterating pages with lazy byte fetching
-    public FetchPlan getColumnPlan(WorkItem workItem, int projectedColumnIndex) {
+    public FetchPlan getColumnPlan(WorkItem workItem, int projectedColumnIndex) throws IOException {
         int workItemIndex = workItem.workItemIndex();
         FetchPlan[] plans = fetchPlanCache.get(workItemIndex);
         if (plans != null) {
@@ -568,7 +568,7 @@ public class RowGroupIterator {
     ///
     /// Called by [#getColumnPlan] after its `computeIfAbsent` returns, never from inside
     /// it: this blocks, and a mapping function holds a bin lock for its whole duration.
-    private void prefetchNextRowGroup(WorkItem currentWorkItem) {
+    private void prefetchNextRowGroup(WorkItem currentWorkItem) throws IOException {
         WorkItem nextWorkItem = workItemAt(currentWorkItem.workItemIndex() + 1);
         if (nextWorkItem == null) {
             return;
@@ -1098,7 +1098,7 @@ public class RowGroupIterator {
     /// against the reference, and with a filter probes its bloom filters and
     /// dictionaries, so a file is planned when the read reaches it rather than
     /// when the reader was built. See #1107.
-    private synchronized boolean planNextFile() {
+    private synchronized boolean planNextFile() throws IOException {
         if (nextFileToPlan >= inputFiles.size() || planRowBudget <= 0) {
             return false;
         }
@@ -1185,13 +1185,13 @@ public class RowGroupIterator {
     /// retriever thread, and a step past the planned end plans another file.
     /// Planning mutates shared state, so exactly one column may do it at a time;
     /// the others see the finished result.
-    public synchronized WorkItem workItemAt(int index) {
+    public synchronized WorkItem workItemAt(int index) throws IOException {
         ensurePlannedThrough(index);
         return index < workItems.size() ? workItems.get(index) : null;
     }
 
     /// Plans until `index` exists in the work list, or nothing is left to plan.
-    private synchronized void ensurePlannedThrough(int index) {
+    private synchronized void ensurePlannedThrough(int index) throws IOException {
         while (workItems.size() <= index && planNextFile()) {
             // planNextFile appends
         }
@@ -1200,7 +1200,7 @@ public class RowGroupIterator {
     /// Plans every remaining file. Needed by the questions that are about the
     /// whole read rather than the next row group — whether statistics satisfied
     /// the filter outright, and where a physical skip lands.
-    private synchronized void ensureFullyPlanned() {
+    private synchronized void ensureFullyPlanned() throws IOException {
         while (planNextFile()) {
             // planNextFile appends
         }
@@ -1217,8 +1217,12 @@ public class RowGroupIterator {
 
     /// Gets or loads file-wide metadata. Projection-specific validation remains
     /// local to [#buildWorkList].
-    private PreparedFile getPreparedFile(int fileIndex) {
-        return fileMetadataCache.getFile(fileIndex);
+    private PreparedFile getPreparedFile(int fileIndex) throws IOException {
+        // The checked accessor, because the one caller — [#planNextFile] — can say so. Its
+        // sibling exists for the callers that cannot: a mapping function, a `Runnable`, a
+        // `CompletableFuture` body. Nothing about a footer read is different on this path,
+        // only what the frame above it is allowed to declare.
+        return fileMetadataCache.getFileChecked(fileIndex);
     }
 
     /// Triggers async loading of the file at the given index.
@@ -1293,7 +1297,7 @@ public class RowGroupIterator {
     private record FilteredRowGroup(RowGroup rowGroup, boolean alwaysMatches) {}
 
     private List<FilteredRowGroup> filterRowGroups(List<RowGroup> rowGroups, InputFile inputFile,
-                                                   FileSchema fileSchema, FileColumnOrdinals columnOrdinals) {
+                                                   FileSchema fileSchema, FileColumnOrdinals columnOrdinals) throws IOException {
         // The metadata-filtering opt-out (#797) disables every metadata-driven prune,
         // dictionary membership included — with it off, no row group is dropped without
         // reading rows.

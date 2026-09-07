@@ -8,7 +8,6 @@
 package dev.hardwood.internal.predicate.dictionary;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.InputFile;
@@ -55,7 +54,7 @@ public final class RowGroupDictionaryFilterSource {
         this.read = new boolean[columnCount];
     }
 
-    public Dictionary forColumn(int columnIndex) {
+    public Dictionary forColumn(int columnIndex) throws IOException {
         if (columnIndex < 0 || columnIndex >= dictionaries.length) {
             return null;
         }
@@ -99,7 +98,7 @@ public final class RowGroupDictionaryFilterSource {
         return hasDictionaryPage && hasDataPage;
     }
 
-    private Dictionary readDictionary(int columnIndex) {
+    private Dictionary readDictionary(int columnIndex) throws IOException {
         ColumnChunk columnChunk = rowGroup.columns().get(columnIndex);
         ColumnMetaData metaData = columnChunk.metaData();
 
@@ -143,17 +142,12 @@ public final class RowGroupDictionaryFilterSource {
         int availableBytes = Math.toIntExact(chunkEnd - chunkStart);
 
         ColumnSchema columnSchema = fileSchema.getColumn(columnIndex);
-        try {
-            ByteBuffer region = readDictionaryPage(columnIndex, chunkStart,
-                    dataPageOffset > chunkStart
-                            ? Math.toIntExact(dataPageOffset - chunkStart)
-                            : DICTIONARY_PROBE_BYTES,
-                    availableBytes);
-            return region == null ? null : DictionaryParser.parse(region, columnSchema, metaData, context);
-        } catch (IOException e) {
-            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
-                    + "Failed to read dictionary for column " + columnIndex, e);
-        }
+        ByteBuffer region = readDictionaryPage(columnIndex, chunkStart,
+                dataPageOffset > chunkStart
+                        ? Math.toIntExact(dataPageOffset - chunkStart)
+                        : DICTIONARY_PROBE_BYTES,
+                availableBytes);
+        return region == null ? null : DictionaryParser.parse(region, columnSchema, metaData, context);
     }
 
     /// Reads the bytes of the dictionary page beginning at `dictionaryStart`, or `null` when no
@@ -190,14 +184,15 @@ public final class RowGroupDictionaryFilterSource {
 
     /// Fails unless this chunk stores its data in the file being read.
     ///
-    /// Unchecked because the pruning path this sits on cannot throw a checked exception; the
-    /// cause is the [IOException] the metadata contract advertises for the split-file layout.
-    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) {
+    /// Checked, because reading a filter is a read like any other and every frame above this
+    /// one says so; the cause is the [IOException] the metadata contract advertises for the
+    /// split-file layout.
+    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) throws IOException {
         try {
             columnChunk.requireSameFile();
         }
         catch (IOException e) {
-            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
                     + "Cannot read column " + columnIndex + ": " + e.getMessage(), e);
         }
     }

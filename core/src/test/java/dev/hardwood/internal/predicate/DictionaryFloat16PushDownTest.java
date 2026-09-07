@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -68,7 +69,7 @@ class DictionaryFloat16PushDownTest {
     }
 
     @Test
-    void absentHalfIsDroppedOnlyByTheDictionary() {
+    void absentHalfIsDroppedOnlyByTheDictionary() throws IOException {
         FilterPredicate absent = FilterPredicate.eq("half", 3.0f);
 
         assertThat(statisticsDrop(absent)).as("3.0 lies within [1.0, 8.0]").isFalse();
@@ -78,7 +79,7 @@ class DictionaryFloat16PushDownTest {
     }
 
     @Test
-    void aProbeBinary16CannotRepresentMatchesNothing() {
+    void aProbeBinary16CannotRepresentMatchesNothing() throws IOException {
         // 2.0005 is not a binary16 value. Narrowing the probe would round it to a neighbouring
         // half — 2.0 among them — and wrongly report it present; widening the entries instead
         // compares it against the stored values exactly, and none of them equal it.
@@ -89,13 +90,13 @@ class DictionaryFloat16PushDownTest {
         return new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context);
     }
 
-    private static boolean dictionaryDrop(FilterPredicate filter) {
+    private static boolean dictionaryDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, dictionaries())
                 == FilterDecision.CANNOT_MATCH;
     }
 
-    private static boolean statisticsDrop(FilterPredicate filter) {
+    private static boolean statisticsDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }

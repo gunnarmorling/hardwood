@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -37,7 +38,7 @@ class RowGroupDecideTest {
     private static final int COL = 0;
 
     @Test
-    void rangePredicateOverFullySatisfyingRowGroup() {
+    void rangePredicateOverFullySatisfyingRowGroup() throws IOException {
         // Rows [10, 20], no nulls; GT 5 is satisfied by the whole interval.
         RowGroup rg = intRowGroup(10, 20, 0L);
         assertThat(decide(intGt(5), rg)).isEqualTo(ALWAYS_MATCHES);
@@ -46,19 +47,19 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void nullsInRowGroupPreventAlwaysMatches() {
+    void nullsInRowGroupPreventAlwaysMatches() throws IOException {
         RowGroup rg = intRowGroup(10, 20, 5L);
         assertThat(decide(intGt(5), rg)).isEqualTo(MIGHT_MATCH);
     }
 
     @Test
-    void missingStatisticsYieldMightMatch() {
+    void missingStatisticsYieldMightMatch() throws IOException {
         RowGroup rg = rowGroup(PhysicalType.INT32, null, 100);
         assertThat(decide(intGt(5), rg)).isEqualTo(MIGHT_MATCH);
     }
 
     @Test
-    void andComposition() {
+    void andComposition() throws IOException {
         RowGroup rg = intRowGroup(10, 20, 0L);
         assertThat(decide(and(intGt(5), intLt(25)), rg)).isEqualTo(ALWAYS_MATCHES);
         assertThat(decide(and(intGt(5), intLt(15)), rg)).isEqualTo(MIGHT_MATCH);
@@ -66,7 +67,7 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void orComposition() {
+    void orComposition() throws IOException {
         RowGroup rg = intRowGroup(10, 20, 0L);
         // One always-matching branch decides the disjunction.
         assertThat(decide(or(intGt(25), intGt(5)), rg)).isEqualTo(ALWAYS_MATCHES);
@@ -75,7 +76,7 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void isNotNullDecisions() {
+    void isNotNullDecisions() throws IOException {
         assertThat(decide(isNotNull(), intRowGroup(10, 20, 0L))).isEqualTo(ALWAYS_MATCHES);
         assertThat(decide(isNotNull(), intRowGroup(10, 20, 5L))).isEqualTo(MIGHT_MATCH);
         // All 100 rows null
@@ -84,7 +85,7 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void isNullNeverPromisesAlwaysMatches() {
+    void isNullNeverPromisesAlwaysMatches() throws IOException {
         // Even a fully-null row group is not promised: null counts tally values, not rows.
         assertThat(decide(isNull(), rowGroup(PhysicalType.INT32,
                 new Statistics(null, null, 100L, null, false), 100))).isEqualTo(MIGHT_MATCH);
@@ -92,7 +93,7 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void bloomFilterSourceDoesNotAffectAlwaysMatches() {
+    void bloomFilterSourceDoesNotAffectAlwaysMatches() throws IOException {
         // A bloom filter proves absence only; its presence must not change the
         // always-matching decision derived from statistics.
         RowGroup rg = intRowGroup(10, 20, 0L);
@@ -102,7 +103,7 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void oneCutoffPerDecisionAgainstTheSameRowGroup() {
+    void oneCutoffPerDecisionAgainstTheSameRowGroup() throws IOException {
         // Above the maximum, inside the range, below the minimum: the three answers a row
         // group's statistics can give. Asserted as decisions rather than through a boolean,
         // which could not tell the last two apart.
@@ -113,7 +114,7 @@ class RowGroupDecideTest {
     }
 
     @Test
-    void deprecatedMinMaxNeverPromisesAlwaysMatches() {
+    void deprecatedMinMaxNeverPromisesAlwaysMatches() throws IOException {
         Statistics deprecated = new Statistics(intBytes(10), intBytes(20), 0L, null, true);
         RowGroup rg = rowGroup(PhysicalType.INT32, deprecated, 100);
         assertThat(decide(intGt(5), rg)).isEqualTo(MIGHT_MATCH);
@@ -121,7 +122,8 @@ class RowGroupDecideTest {
 
     // ==================== Fixtures ====================
 
-    private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
+    private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup)
+            throws IOException {
         return RowGroupFilterEvaluator.decideRowGroup(predicate, rowGroup, null, null);
     }
 

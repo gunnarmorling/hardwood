@@ -232,7 +232,7 @@ class BinaryDecimalFilterTest {
     /// The row-group decision for an `EQ` against a bloom filter whose bitset is all zeroes, so
     /// every probe misses and the filter proves any value absent.
     private static FilterDecision decideWithEmptyBloomFilter(RowGroup rowGroup, byte[] literal,
-            Comparison comparison) {
+            Comparison comparison) throws IOException {
         ResolvedPredicate predicate = new ResolvedPredicate.BinaryPredicate(0,
                 FilterPredicate.Operator.EQ, literal, comparison);
         BloomFilterSource empty = columnIndex -> new BloomFilter(

@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -50,32 +51,32 @@ class BloomFilterSignedZeroPushDownTest {
     }
 
     @Test
-    void floatSignedZeroUsesBloomFilter() {
+    void floatSignedZeroUsesBloomFilter() throws IOException {
         assertThat(statisticsDrop(FilterPredicate.eq("float_value", 0.0f))).isFalse();
         assertThat(bloomDrop(FilterPredicate.eq("float_value", 0.0f))).isTrue();
         assertThat(bloomDrop(FilterPredicate.eq("float_value", -0.0f))).isFalse();
     }
 
     @Test
-    void doubleSignedZeroUsesBloomFilter() {
+    void doubleSignedZeroUsesBloomFilter() throws IOException {
         assertThat(statisticsDrop(FilterPredicate.eq("double_value", 0.0))).isFalse();
         assertThat(bloomDrop(FilterPredicate.eq("double_value", 0.0))).isTrue();
         assertThat(bloomDrop(FilterPredicate.eq("double_value", -0.0))).isFalse();
     }
 
     @Test
-    void nanRemainsConservative() {
+    void nanRemainsConservative() throws IOException {
         assertThat(bloomDrop(FilterPredicate.eq("float_value", Float.NaN))).isFalse();
         assertThat(bloomDrop(FilterPredicate.eq("double_value", Double.NaN))).isFalse();
     }
 
-    private static boolean bloomDrop(FilterPredicate filter) {
+    private static boolean bloomDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup,
                 new RowGroupBloomFilterSource(inputFile, rowGroup), null) == FilterDecision.CANNOT_MATCH;
     }
 
-    private static boolean statisticsDrop(FilterPredicate filter) {
+    private static boolean statisticsDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }

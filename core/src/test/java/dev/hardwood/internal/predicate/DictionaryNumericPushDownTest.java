@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -62,7 +63,7 @@ class DictionaryNumericPushDownTest {
     }
 
     @Test
-    void absentInt32IsDroppedOnlyByTheDictionary() {
+    void absentInt32IsDroppedOnlyByTheDictionary() throws IOException {
         FilterPredicate absent = FilterPredicate.eq("i32", 5);
 
         assertThat(statisticsDrop(absent)).as("5 lies within [0, 9]").isFalse();
@@ -71,7 +72,7 @@ class DictionaryNumericPushDownTest {
     }
 
     @Test
-    void absentInt64IsDroppedOnlyByTheDictionary() {
+    void absentInt64IsDroppedOnlyByTheDictionary() throws IOException {
         FilterPredicate absent = FilterPredicate.eq("i64", 1500L);
 
         assertThat(statisticsDrop(absent)).as("1500 lies within [0, 3000]").isFalse();
@@ -80,7 +81,7 @@ class DictionaryNumericPushDownTest {
     }
 
     @Test
-    void absentFloatIsDroppedOnlyByTheDictionary() {
+    void absentFloatIsDroppedOnlyByTheDictionary() throws IOException {
         FilterPredicate absent = FilterPredicate.eq("f32", 3.5f);
 
         assertThat(statisticsDrop(absent)).as("3.5 lies within [1.5, 4.5]").isFalse();
@@ -89,7 +90,7 @@ class DictionaryNumericPushDownTest {
     }
 
     @Test
-    void absentDoubleIsDroppedOnlyByTheDictionary() {
+    void absentDoubleIsDroppedOnlyByTheDictionary() throws IOException {
         FilterPredicate absent = FilterPredicate.eq("f64", 3.5);
 
         assertThat(statisticsDrop(absent)).as("3.5 lies within [1.5, 4.5]").isFalse();
@@ -98,7 +99,7 @@ class DictionaryNumericPushDownTest {
     }
 
     @Test
-    void naNIsReportedPresentByADictionaryHoldingIt() {
+    void naNIsReportedPresentByADictionaryHoldingIt() throws IOException {
         // Equality runs through Float.compare / Double.compare, the IEEE 754 total order, which
         // treats all NaNs as equal — unlike `==`, under which no NaN matches anything. Both float
         // columns carry NaN, so a NaN probe must find it.
@@ -106,22 +107,22 @@ class DictionaryNumericPushDownTest {
         // Asserted against the dictionary arm directly rather than through the row-group decision:
         // the format keeps NaN out of min/max, so statistics judge a NaN probe to fall outside
         // [1.5, 4.5] and drop the row group before any dictionary is read.
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries(), F32_COLUMN, 3.5f))
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries().forColumn(F32_COLUMN), 3.5f))
                 .as("an absent value is still absent, so the arm under test is live")
                 .isTrue();
 
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries(), F32_COLUMN, Float.NaN)).isFalse();
-        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries(), F64_COLUMN, Double.NaN)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries().forColumn(F32_COLUMN), Float.NaN)).isFalse();
+        assertThat(DictionaryFilterSupport.valueAbsent(dictionaries().forColumn(F64_COLUMN), Double.NaN)).isFalse();
     }
 
     @Test
-    void int32InListDropsOnlyWhenEveryValueIsAbsent() {
+    void int32InListDropsOnlyWhenEveryValueIsAbsent() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.in("i32", 5, 7))).isTrue();
         assertThat(dictionaryDrop(FilterPredicate.in("i32", 5, 6))).isFalse();
     }
 
     @Test
-    void int64InListDropsOnlyWhenEveryValueIsAbsent() {
+    void int64InListDropsOnlyWhenEveryValueIsAbsent() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.in("i64", 1500L, 2500L))).isTrue();
         assertThat(dictionaryDrop(FilterPredicate.in("i64", 1500L, 2000L))).isFalse();
     }
@@ -130,13 +131,13 @@ class DictionaryNumericPushDownTest {
         return new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context);
     }
 
-    private static boolean dictionaryDrop(FilterPredicate filter) {
+    private static boolean dictionaryDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, dictionaries())
                 == FilterDecision.CANNOT_MATCH;
     }
 
-    private static boolean statisticsDrop(FilterPredicate filter) {
+    private static boolean statisticsDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }

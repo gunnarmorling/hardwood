@@ -28,9 +28,8 @@ public final class DictionaryFilterSupport {
     private DictionaryFilterSupport() {
     }
 
-    public static boolean valueAbsent(RowGroupDictionaryFilterSource dictionaries, int columnIndex, int value) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.IntDictionary dict)) {
+    public static boolean valueAbsent(Dictionary dictionary, int value) {
+        if (!(dictionary instanceof Dictionary.IntDictionary dict)) {
             return false;
         }
 
@@ -43,9 +42,8 @@ public final class DictionaryFilterSupport {
         return true;
     }
 
-    public static boolean valueAbsent(RowGroupDictionaryFilterSource dictionaries, int columnIndex, long value) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.LongDictionary dict)) {
+    public static boolean valueAbsent(Dictionary dictionary, long value) {
+        if (!(dictionary instanceof Dictionary.LongDictionary dict)) {
             return false;
         }
         for (long entry : dict.values()) {
@@ -61,9 +59,8 @@ public final class DictionaryFilterSupport {
     /// A dictionary holds the column chunk's exact stored values, so `Float.compare` — the same
     /// total order every `FLOAT` matcher applies — decides membership exactly. `±0` needs no
     /// carve-out: a dictionary holding only `-0.0f` proves `+0.0f` absent.
-    public static boolean valueAbsent(RowGroupDictionaryFilterSource dictionaries, int columnIndex, float value) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.FloatDictionary dict)) {
+    public static boolean valueAbsent(Dictionary dictionary, float value) {
+        if (!(dictionary instanceof Dictionary.FloatDictionary dict)) {
             return false;
         }
         for (float entry : dict.values()) {
@@ -76,9 +73,8 @@ public final class DictionaryFilterSupport {
 
     /// Single-value dictionary check for `DOUBLE` values. See the `FLOAT` overload for why `±0` and
     /// `NaN` need no special handling.
-    public static boolean valueAbsent(RowGroupDictionaryFilterSource dictionaries, int columnIndex, double value) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.DoubleDictionary dict)) {
+    public static boolean valueAbsent(Dictionary dictionary, double value) {
+        if (!(dictionary instanceof Dictionary.DoubleDictionary dict)) {
             return false;
         }
         for (double entry : dict.values()) {
@@ -106,10 +102,8 @@ public final class DictionaryFilterSupport {
     /// `ByteArrayDictionary` here) instead of resting on `FilterPredicateResolver` never pairing a
     /// probe with the wrong arm — an invariant two layers away whose breach would otherwise show up
     /// as wrong results rather than a compile error.
-    public static boolean valueAbsentFloat16(RowGroupDictionaryFilterSource dictionaries, int columnIndex,
-                                             float value) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.ByteArrayDictionary dict)) {
+    public static boolean valueAbsentFloat16(Dictionary dictionary, float value) {
+        if (!(dictionary instanceof Dictionary.ByteArrayDictionary dict)) {
             return false;
         }
         for (byte[] entry : dict.values()) {
@@ -120,9 +114,8 @@ public final class DictionaryFilterSupport {
         return true;
     }
 
-    public static boolean valueAbsent(RowGroupDictionaryFilterSource dictionaries, int columnIndex, byte[] value) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.ByteArrayDictionary dict)) {
+    public static boolean valueAbsent(Dictionary dictionary, byte[] value) {
+        if (!(dictionary instanceof Dictionary.ByteArrayDictionary dict)) {
             return false;
         }
         for (byte[] entry : dict.values()) {
@@ -133,9 +126,8 @@ public final class DictionaryFilterSupport {
         return true;
     }
 
-    public static boolean absentAll(RowGroupDictionaryFilterSource dictionaries, int columnIndex, int[] values) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.IntDictionary dict)) {
+    public static boolean absentAll(Dictionary dictionary, int[] values) {
+        if (!(dictionary instanceof Dictionary.IntDictionary dict)) {
             return false;
         }
         // Sorted copy, not the predicate's own array: the resolved predicate is shared across
@@ -150,9 +142,8 @@ public final class DictionaryFilterSupport {
         return true;
     }
 
-    public static boolean absentAll(RowGroupDictionaryFilterSource dictionaries, int columnIndex, long[] values) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.LongDictionary dict)) {
+    public static boolean absentAll(Dictionary dictionary, long[] values) {
+        if (!(dictionary instanceof Dictionary.LongDictionary dict)) {
             return false;
         }
         long[] probes = values.clone();
@@ -165,9 +156,8 @@ public final class DictionaryFilterSupport {
         return true;
     }
 
-    public static boolean absentAll(RowGroupDictionaryFilterSource dictionaries, int columnIndex, byte[][] values) {
-        if (dictionaries == null
-                || !(dictionaries.forColumn(columnIndex) instanceof Dictionary.ByteArrayDictionary dict)) {
+    public static boolean absentAll(Dictionary dictionary, byte[][] values) {
+        if (!(dictionary instanceof Dictionary.ByteArrayDictionary dict)) {
             return false;
         }
         // Unsigned lexicographic order compares equal exactly when the arrays are equal, so the

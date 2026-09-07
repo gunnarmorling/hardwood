@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -65,7 +66,7 @@ class DictionaryFixedLenByteArrayPushDownTest {
     }
 
     @Test
-    void absentCodeIsDroppedOnlyByTheDictionary() {
+    void absentCodeIsDroppedOnlyByTheDictionary() throws IOException {
         FilterPredicate absent = FilterPredicate.eq("code", "aa05");
 
         assertThat(statisticsDrop(absent)).as("aa05 sorts within [aa00, aa09]").isFalse();
@@ -74,7 +75,7 @@ class DictionaryFixedLenByteArrayPushDownTest {
     }
 
     @Test
-    void codeInListDropsOnlyWhenEveryValueIsAbsent() {
+    void codeInListDropsOnlyWhenEveryValueIsAbsent() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.inStrings("code", "aa05", "aa07"))).isTrue();
         assertThat(dictionaryDrop(FilterPredicate.inStrings("code", "aa05", "aa06"))).isFalse();
     }
@@ -83,13 +84,13 @@ class DictionaryFixedLenByteArrayPushDownTest {
         return new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context);
     }
 
-    private static boolean dictionaryDrop(FilterPredicate filter) {
+    private static boolean dictionaryDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, dictionaries())
                 == FilterDecision.CANNOT_MATCH;
     }
 
-    private static boolean statisticsDrop(FilterPredicate filter) {
+    private static boolean statisticsDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }

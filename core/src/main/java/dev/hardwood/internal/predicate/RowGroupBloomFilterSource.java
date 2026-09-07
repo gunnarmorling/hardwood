@@ -8,7 +8,6 @@
 package dev.hardwood.internal.predicate;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.InputFile;
@@ -56,7 +55,7 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
     }
 
     @Override
-    public BloomFilter forColumn(int columnIndex) {
+    public BloomFilter forColumn(int columnIndex) throws IOException {
         // Mirror RowGroupFilterEvaluator.getStatistics: an index past this row group's column count
         // (a narrower/corrupt footer reached via a predicate resolved against the reference schema)
         // yields "no filter" — conservatively keeping the row group — rather than throwing.
@@ -70,7 +69,7 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
         return filters[columnIndex];
     }
 
-    private BloomFilter readFilter(int columnIndex) {
+    private BloomFilter readFilter(int columnIndex) throws IOException {
         ColumnChunk columnChunk = rowGroup.columns().get(columnIndex);
         ColumnMetaData metaData = columnChunk.metaData();
         Long offset = metaData.bloomFilterOffset();
@@ -90,13 +89,7 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
                     + "; keeping the row group (statistics still apply)");
             return null;
         }
-        try {
-            return readFilter(offset, metaData.bloomFilterLength());
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
-                    + "Failed to read bloom filter for column " + columnIndex, e);
-        }
+        return readFilter(offset, metaData.bloomFilterLength());
     }
 
     /// Reads the filter at `offset`. When `length` is known the whole region is read in one call;
@@ -136,14 +129,15 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
 
     /// Fails unless this chunk stores its data in the file being read.
     ///
-    /// Unchecked because the pruning path this sits on cannot throw a checked exception; the
-    /// cause is the [IOException] the metadata contract advertises for the split-file layout.
-    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) {
+    /// Checked, because reading a filter is a read like any other and every frame above this
+    /// one says so; the cause is the [IOException] the metadata contract advertises for the
+    /// split-file layout.
+    private void requireSameFile(ColumnChunk columnChunk, int columnIndex) throws IOException {
         try {
             columnChunk.requireSameFile();
         }
         catch (IOException e) {
-            throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+            throw new IOException(ExceptionContext.filePrefix(inputFile.name())
                     + "Cannot read column " + columnIndex + ": " + e.getMessage(), e);
         }
     }
