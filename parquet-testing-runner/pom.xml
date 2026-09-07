@@ -46,6 +46,17 @@
   </dependencyManagement>
 
   <dependencies>
+    <!-- Not used by any code here. Declared so the reactor builds the Error Prone checks
+         before this module compiles: they reach javac through the compiler plugin's
+         annotationProcessorPaths, which the reactor does not read when ordering modules,
+         so under `-T` there is otherwise nothing stopping the two running at once. -->
+    <dependency>
+      <groupId>dev.hardwood</groupId>
+      <artifactId>hardwood-error-prone-checks</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <!-- Hardwood (module under test) -->
     <dependency>
       <groupId>dev.hardwood</groupId>
