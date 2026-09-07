@@ -40,6 +40,7 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
     - A codec library that is absent, or a native one that will not load, now reaches you as the `UnsupportedOperationException` it always was on other paths. On the dictionary path it was being caught and reported as a failed read, which buried the message naming the dependency to add.
     - A column chunk stored in a separate file (the legacy split-file layout) and a file over 2 GB opened with the mmap-backed range cache now raise `UnsupportedOperationException` rather than `IOException`. Both files are correct; it is Hardwood that will not read them. **Silent.**
     - The writer raises the new unchecked `ParquetWriteException` when a compression codec rejects a page body, where it used to raise `IOException`. Nothing you passed was wrong and the destination is not involved, so retrying cannot help. **Silent.**
+    - A corrupt value inside the metadata — a malformed bloom filter header, a geospatial bounding box missing a required field, a decimal scale or precision that cannot be, an unknown physical type, repetition type, codec or time unit — now raises `ParquetReadException` rather than `IllegalArgumentException` or `IllegalStateException`. These are the file being wrong, not your call being wrong. **Silent.** Both types keep their meaning for calls that really are mistakes, such as asking for a column outside the projection.
 
 ## 1.1.0.Beta1 (2026-08-31)
 

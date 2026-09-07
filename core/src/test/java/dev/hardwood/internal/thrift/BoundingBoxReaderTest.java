@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
 import dev.hardwood.metadata.BoundingBox;
+import dev.hardwood.reader.ParquetReadException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,7 +54,7 @@ class BoundingBoxReaderTest {
                 .stop().build();
 
         assertThatThrownBy(() -> BoundingBoxReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift))))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("ymax");
     }
 
@@ -65,7 +66,7 @@ class BoundingBoxReaderTest {
                 .stop().build();
 
         assertThatThrownBy(() -> BoundingBoxReader.read(new ThriftCompactReader(ByteBuffer.wrap(thrift))))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("xmin");
     }
 

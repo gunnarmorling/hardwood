@@ -14,6 +14,7 @@ import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Maps Thrift integer values to public enum constants.
 /// Keeps the Thrift-specific mapping out of the public API types.
@@ -127,7 +128,7 @@ class ThriftEnumLookup {
         if (value >= 0 && value < PHYSICAL_TYPES.length) {
             return PHYSICAL_TYPES[value];
         }
-        throw new IllegalArgumentException("Invalid or corrupt physical type value: " + value
+        throw new ParquetReadException("Invalid or corrupt physical type value: " + value
                 + " (expected 0-7). File metadata may be corrupted");
     }
 
@@ -135,7 +136,7 @@ class ThriftEnumLookup {
         if (value >= 0 && value < REPETITION_TYPES.length) {
             return REPETITION_TYPES[value];
         }
-        throw new IllegalArgumentException("Unknown repetition type: " + value);
+        throw new ParquetReadException("Unknown repetition type: " + value);
     }
 
     static ConvertedType convertedType(int value) {
@@ -170,7 +171,7 @@ class ThriftEnumLookup {
         if (value >= 0 && value < COMPRESSION_CODECS.length) {
             return COMPRESSION_CODECS[value];
         }
-        throw new IllegalArgumentException("Unknown compression codec: " + value);
+        throw new ParquetReadException("Unknown compression codec: " + value);
     }
 
     static int thriftValue(PhysicalType type) {
