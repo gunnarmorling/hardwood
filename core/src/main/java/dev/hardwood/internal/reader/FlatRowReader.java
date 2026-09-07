@@ -83,6 +83,19 @@ public final class FlatRowReader implements FileAwareRowReader {
     private Object[] flatValueArrays;
     private long[][] flatValidity;
     private BatchExchange.Batch[] previousBatches;
+    /// Whether statistics proved every row of the batch being served matches the filter,
+    /// so [#recordMatcher] need not be run over it.
+    private boolean currentRowsAlwaysMatch;
+    /// The matcher in force for the batch being served: [#recordMatcher], or `null` when
+    /// statistics decided the batch and there is no cap to count matches against. A
+    /// proven batch is then an unfiltered batch, served by the plain cursor with no
+    /// per-row state to consult — which is the whole of what the proof is worth.
+    private RowMatcher activeMatcher;
+
+    /// Record-level predicate for filters the drain side cannot compile, or `null` when
+    /// the read has no filter or filters on the drain side. Present or absent purely by
+    /// whether the caller asked for a filter — never by what any file turned out to hold.
+    private final RowMatcher recordMatcher;
     private int rowIndex = -1;
     private int batchSize = 0;
     private boolean exhausted;
@@ -117,12 +130,11 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// single-column fast path applies.
     private final int[] referencedColumns;
     private int pendingRowIndex = -1;
-    /// Drain-side cap on the number of *matching* rows yielded (SQL LIMIT over
-    /// the filtered relation). [ColumnWorker#UNLIMITED] means no cap. Enforced
-    /// only on the drain-side path — the FilteredRowReader wrapper and the worker
-    /// handle the other paths.
+    /// Cap on the number of *matching* rows yielded (SQL LIMIT over the filtered
+    /// relation). [ColumnWorker#UNLIMITED] means no cap. Enforced on both filtering
+    /// paths; without a filter the worker already capped scanned == matched rows.
     private final long maxMatchedRows;
-    /// Count of matching rows yielded so far on the drain-side path.
+    /// Count of matching rows yielded so far.
     private long matchedRowsYielded;
     /// Exclusive upper bound of the current run of consecutive-1 bits in
     /// [#combinedWords] starting at or before `rowIndex + 1`. While
@@ -142,8 +154,9 @@ public final class FlatRowReader implements FileAwareRowReader {
     public FlatRowReader(BatchExchange<BatchExchange.Batch>[] exchanges, FlatColumnWorker[] columnWorkers,
                          FileSchema fileSchema, ProjectedSchema projectedSchema,
                          boolean drainSide, int wordsLen, MergePlan mergePlan, long maxMatchedRows,
-                         RecordFilterTally tally) {
+                         RowMatcher recordMatcher, RecordFilterTally tally) {
         this.maxMatchedRows = maxMatchedRows;
+        this.recordMatcher = recordMatcher;
         this.tally = tally;
         this.exchanges = exchanges;
         this.columnWorkers = columnWorkers;
@@ -214,8 +227,9 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// Creates a flat v3 pipeline and returns a [RowReader].
     ///
     /// Wires up `RowGroupIterator → PageSource → ColumnWorker → BatchExchange → FlatRowReader`,
-    /// starts all column workers, initializes the reader, and wraps with
-    /// [FilteredRowReader] if a filter is present.
+    /// starts all column workers and initializes the reader. A filter is installed on
+    /// whichever path can carry it — per batch on the drain side, per record otherwise —
+    /// which is decided by the predicate's shape alone, never by what a file holds.
     ///
     /// @param rowGroupIterator pre-configured iterator (file opened, first file set, initialized)
     /// @param schema the file schema
@@ -224,33 +238,31 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// @param filter resolved predicate, or `null` for no filtering
     /// @param maxRows maximum rows (0 = unlimited). Without a filter this caps scanned
     ///                rows at the [ColumnWorker] drain. With a filter it caps *matching*
-    ///                rows (SQL LIMIT), enforced over matches by the reader or wrapper.
-    /// @return a [FlatRowReader] or [FilteredRowReader]
+    ///                rows (SQL LIMIT): the drain holds it over the row groups statistics
+    ///                prove match in full, and the reader counts matches from the first
+    ///                row group they do not.
+    /// @return a [FlatRowReader]
     public static RowReader create(RowGroupIterator rowGroupIterator,
                                    FileSchema schema,
                                    ProjectedSchema projectedSchema,
                                    HardwoodContextImpl context,
                                    ResolvedPredicate filter,
                                    long maxRows) {
-        // When statistics prove every surviving row group matches the filter in
-        // full, the read is equivalent to an unfiltered read: skip matcher
-        // compilation and per-row evaluation entirely, and let maxRows cap
-        // scanned rows directly (scanned == matching).
-        if (filter != null && rowGroupIterator.isFilterSatisfiedByStatistics()) {
-            filter = null;
-        }
-
         int batchSize = BatchSizing.computeOptimalBatchSize(projectedSchema);
         int projectedColumnCount = projectedSchema.getProjectedColumnCount();
 
-        // A row-level filter changes what `maxRows` counts: under SQL LIMIT
-        // semantics the cap is on *matching* rows, not scanned rows. Let the
-        // workers scan unbounded and enforce the cap over matches downstream —
-        // either in the drain-side reader or in the FilteredRowReader wrapper.
-        long workerMaxRows = filter != null ? ColumnWorker.UNLIMITED : maxRows;
+        // A row-level filter changes what `maxRows` counts: under SQL LIMIT semantics
+        // the cap is on *matching* rows, not scanned rows. The workers still take it —
+        // they hold it only while statistics prove every row they assemble matches, and
+        // drop it at the first row group that is not proven, from where the drain-side
+        // reader counts matches instead.
+        //
+        // Nothing here asks a question about the read as a whole, so nothing here plans
+        // beyond the first file: statistics reach both filtering paths per row group,
+        // on Batch.filterAlwaysMatches (see #1107).
 
         // Try the drain-side path first. tryCompile returns null for any non-eligible
-        // predicate; null falls through to the existing FilteredRowReader path below.
+        // predicate; null falls through to the record-matcher path below.
         CompiledBatchFilter compiledFilter = null;
         if (filter != null) {
             compiledFilter = BatchFilterCompiler.tryCompile(filter, schema, projectedSchema::toProjectedIndex);
@@ -285,8 +297,8 @@ public final class FlatRowReader implements FileAwareRowReader {
             ColumnBatchMatcher columnFilter = allocateMatches ? columnBatchMatchers[i] : null;
             FlatColumnWorker worker = new FlatColumnWorker(
                     pageSource, buffer, columnSchema, batchSize,
-                    context.decompressorFactory(), context.executor(), workerMaxRows,
-                    columnFilter, drainSide);
+                    context.decompressorFactory(), context.executor(), maxRows,
+                    columnFilter);
 
             buffers[i] = buffer;
             workers[i] = worker;
@@ -298,33 +310,25 @@ public final class FlatRowReader implements FileAwareRowReader {
             drainSide = false;
         }
 
-        // On the drain-side path filtering happens here, so the reader itself caps
-        // matched rows. On the FilteredRowReader path the wrapper caps; on the
-        // no-filter path the worker already capped scanned == matched rows.
-        long readerMatchLimit = drainSide ? maxRows : ColumnWorker.UNLIMITED;
-        // The tally spans both filtered paths: the drain-side reader feeds it whole
-        // batches, the wrapper feeds it single records, and either way the reader
-        // marks the file boundaries as it loads batches.
+        // Whatever the drain side could not compile, the reader evaluates a record at a
+        // time. Indexed compile path: for flat schemas every leaf column is also a
+        // top-level field, and the reader's `getInt(int)` etc. take a projected
+        // leaf-column index, so the projection maps them directly.
+        RowMatcher recordMatcher = !drainSide && filter != null
+                ? RecordFilterCompiler.compile(filter, schema, projectedSchema::toProjectedIndex)
+                : null;
+        // Filtering happens in the reader on both paths, so the reader caps matched
+        // rows. Without a filter the worker already capped scanned == matched rows.
+        long readerMatchLimit = filter != null ? maxRows : ColumnWorker.UNLIMITED;
+        // The tally spans both filtered paths: the drain side feeds it whole batches,
+        // the record matcher single records, and either way the reader marks the file
+        // boundaries as it loads batches.
         RecordFilterTally tally = filter != null ? new RecordFilterTally() : null;
         FlatRowReader reader = new FlatRowReader(buffers, workers, schema, projectedSchema,
-                drainSide, wordsLen, mergePlan, readerMatchLimit, tally);
+                drainSide, wordsLen, mergePlan, readerMatchLimit, recordMatcher, tally);
         reader.initialize();
-
-        if (drainSide) {
-            // Drain-side path filters per-batch on the worker threads and iterates via
-            // nextSetBit; no consumer-side wrapper.
-            return reader;
-        }
-        if (filter != null) {
-            // Indexed compile path: for flat schemas, every leaf column is also
-            // a top-level field, and the reader's `getInt(int)` etc. take a
-            // projected leaf-column index. Map directly through the projection.
-            RowMatcher matcher = RecordFilterCompiler.compile(filter, schema, projectedSchema::toProjectedIndex);
-            return new FilteredRowReader(reader, matcher, maxRows, tally);
-        }
         return reader;
     }
-
 
     // ==================== Iteration ====================
 
@@ -359,15 +363,62 @@ public final class FlatRowReader implements FileAwareRowReader {
                 }
             }
         }
+        if (activeMatcher != null) {
+            return hasNextMatching();
+        }
         if (rowIndex + 1 < batchSize) {
             return true;
         }
-        return loadNextBatch();
+        return loadAndDecide();
+    }
+
+    /// Loads the next batch and says whether it yields a row. Kept out of [#hasNext] so
+    /// that method stays loop-free and small enough to inline into a caller's row loop,
+    /// which is worth more than the call this costs once per batch.
+    private boolean loadAndDecide() {
+        if (!loadNextBatch()) {
+            return false;
+        }
+        return activeMatcher == null || hasNextMatching();
+    }
+
+    /// Advances to the next record the matcher accepts, evaluating one at a time.
+    /// Returns to [#hasNext]'s plain cursor as soon as a batch loads that statistics
+    /// decided, so a proven batch never pays for the per-row protocol.
+    private boolean hasNextMatching() {
+        if (maxMatchedRows != ColumnWorker.UNLIMITED && matchedRowsYielded >= maxMatchedRows) {
+            exhausted = true;
+            return false;
+        }
+        if (pendingRowIndex >= 0) {
+            return true;
+        }
+        while (true) {
+            if (rowIndex + 1 >= batchSize) {
+                if (!loadNextBatch()) {
+                    return false;
+                }
+                if (activeMatcher == null) {
+                    return true;
+                }
+            }
+            rowIndex++;
+            // Statistics already decided this batch's row group in full — reachable only
+            // under a cap, which needs every match counted as it goes.
+            boolean matched = currentRowsAlwaysMatch || activeMatcher.test(this);
+            tally.record(matched);
+            if (matched) {
+                pendingRowIndex = rowIndex;
+                return true;
+            }
+        }
     }
 
     @Override
     public void next() {
-        if (drainSide) {
+        // Both filtering modes park the row they picked in `pendingRowIndex`; this only
+        // commits it. They differ in how `hasNext` finds the row, not in what `next` does.
+        if (drainSide || activeMatcher != null) {
             if (pendingRowIndex < 0) {
                 throw new NoSuchElementException("No matching row available. Call hasNext() first.");
             }
@@ -852,6 +903,14 @@ public final class FlatRowReader implements FileAwareRowReader {
             if (i == 0) {
                 batchSize = batch.recordCount;
                 currentFileName = batch.fileName;
+                // Uniform across columns: the flag comes from the work item, and the
+                // workers flush on its transitions, so no batch mixes the two.
+                currentRowsAlwaysMatch = batch.filterAlwaysMatches;
+                // A batch statistics decided, with no cap to count matches against, needs
+                // nothing evaluated and nothing counted per row: hand it to the plain cursor
+                // and tally it whole.
+                activeMatcher = currentRowsAlwaysMatch && maxMatchedRows == ColumnWorker.UNLIMITED
+                        ? null : recordMatcher;
             }
         }
         rowIndex = -1;
@@ -872,6 +931,13 @@ public final class FlatRowReader implements FileAwareRowReader {
                 // rather than as rows are yielded, so an early exit does not leave
                 // the batch reported as all-skipped.
                 tally.recordBatch(batchSize, countMatches(combinedWords, batchSize));
+            }
+            else if (activeMatcher == null) {
+                // Statistics decided this batch and there is no cap, so no row of it is
+                // evaluated or counted individually: count it whole, for the same reason.
+                // A non-drain-side read with a tally always has a record matcher, so a
+                // null `activeMatcher` here means the proof, never the absence of a filter.
+                tally.recordBatch(batchSize, batchSize);
             }
         }
         return true;

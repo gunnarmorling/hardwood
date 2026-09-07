@@ -19,8 +19,8 @@ import dev.hardwood.reader.SchemaIncompatibleException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// Tests that [FileManager] validates logical type and repetition type
-/// compatibility across files in multi-file reading (issue #202).
+/// Tests that multi-file reading validates logical type and repetition type
+/// compatibility across files (issue #202).
 class SchemaCompatibilityTest {
 
     @Test
@@ -31,8 +31,17 @@ class SchemaCompatibilityTest {
         try (Hardwood hardwood = Hardwood.create();
              ParquetFileReader parquet = hardwood.openAll(InputFile.ofPaths(micros, millis))) {
             assertThat(parquet.getFileMetaData(1).numRows()).isEqualTo(2);
-            assertThatThrownBy(parquet::rowReader)
-                    .isInstanceOf(SchemaIncompatibleException.class);
+            // The second file is planned when the read arrives at it, so the mismatch is
+            // raised by the reading loop rather than by the call that builds the reader.
+            // Asserting on rowReader() alone would pass only while the first file is small
+            // enough that no batch is published before the second file is planned.
+            assertThatThrownBy(() -> {
+                try (RowReader reader = parquet.rowReader()) {
+                    while (reader.hasNext()) {
+                        reader.next();
+                    }
+                }
+            }).isInstanceOf(SchemaIncompatibleException.class);
         }
     }
 

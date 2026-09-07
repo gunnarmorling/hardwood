@@ -217,7 +217,7 @@ public class NestedColumnWorker extends ColumnWorker<NestedBatch> {
                         return;
                     }
                 }
-                if (maxRows > 0 && totalRowsAssembled >= maxRows) {
+                if (activeMaxRows > 0 && totalRowsAssembled >= activeMaxRows) {
                     if (rowsInCurrentBatch > 0) {
                         publishCurrentBatch();
                     }
@@ -226,8 +226,8 @@ public class NestedColumnWorker extends ColumnWorker<NestedBatch> {
                 }
 
                 int records = Math.min(rangeEnd - r, batchCapacity - rowsInCurrentBatch);
-                if (maxRows > 0) {
-                    records = (int) Math.min(records, maxRows - totalRowsAssembled);
+                if (activeMaxRows > 0) {
+                    records = (int) Math.min(records, activeMaxRows - totalRowsAssembled);
                 }
                 int span = records * k;
                 int destStart = nestedValueCount;
@@ -321,8 +321,8 @@ public class NestedColumnWorker extends ColumnWorker<NestedBatch> {
                     }
                 }
 
-                // Check maxRows after publishing
-                if (maxRows > 0 && totalRowsAssembled >= maxRows) {
+                // Check the active row cap after publishing
+                if (activeMaxRows > 0 && totalRowsAssembled >= activeMaxRows) {
                     if (rowsInCurrentBatch > 0) {
                         publishCurrentBatch();
                     }
@@ -394,7 +394,7 @@ public class NestedColumnWorker extends ColumnWorker<NestedBatch> {
                     runStartPage = i;
                     runStartDest = 0;
                 }
-                if (maxRows > 0 && totalRowsAssembled >= maxRows) {
+                if (activeMaxRows > 0 && totalRowsAssembled >= activeMaxRows) {
                     flushRun(page, pageRepLevels, runStartPage, i, runStartDest);
                     if (rowsInCurrentBatch > 0) {
                         publishCurrentBatch();
@@ -451,6 +451,7 @@ public class NestedColumnWorker extends ColumnWorker<NestedBatch> {
         currentBatch.valueCount = nestedValueCount;
         currentBatch.fixedListK = batchFixedK;
         currentBatch.allPresent = currentBatchAllPresent;
+        currentBatch.filterAlwaysMatches = currentBatchFilterAlwaysMatches;
         if (batchFixedK > 0 || indexMode == IndexMode.REAL_VIEW) {
             // Fixed-width batches omit levels (boundaries are implicit); the
             // unfiltered real-view path derives the view from the accumulators in

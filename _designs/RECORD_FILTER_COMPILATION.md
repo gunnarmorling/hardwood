@@ -47,7 +47,7 @@ Two concrete decisions that follow from the JIT-inlining argument:
 
 Path resolution: `pathSegments` extracts the intermediate struct names as a `String[]`; for top-level columns (`elements().size() ≤ 1`) the path is the shared `EMPTY_PATH` and the resolve loop is a no-op.
 
-### Modify `internal/reader/FilteredRowReader.java`
+### Modify the row readers' record-matcher path
 
 Replace the `(ResolvedPredicate, FileSchema)` pair with a single `RowMatcher`. Inside `hasNext()`:
 
@@ -63,7 +63,7 @@ while (delegate.hasNext()) {
 
 ### Modify `internal/reader/FlatRowReader.java` and `internal/reader/NestedRowReader.java`
 
-Compile the predicate at reader-construction time and pass the resulting matcher to `FilteredRowReader`.
+Compile the predicate at reader-construction time and hand the resulting matcher to the reader, which evaluates it in its own `hasNext()`.
 
 ### Equivalence
 
@@ -72,7 +72,6 @@ Compile the predicate at reader-construction time and pass the resulting matcher
 **Files:**
 - `core/src/main/java/dev/hardwood/internal/predicate/RowMatcher.java` (new)
 - `core/src/main/java/dev/hardwood/internal/predicate/RecordFilterCompiler.java` (new)
-- `core/src/main/java/dev/hardwood/internal/reader/FilteredRowReader.java` (modify — accept `RowMatcher`)
 - `core/src/main/java/dev/hardwood/internal/reader/FlatRowReader.java` (modify — compile at construction)
 - `core/src/main/java/dev/hardwood/internal/reader/NestedRowReader.java` (modify — compile at construction)
 - `core/src/test/java/dev/hardwood/internal/predicate/RecordFilterCompilerTest.java` (new — equivalence with legacy oracle)

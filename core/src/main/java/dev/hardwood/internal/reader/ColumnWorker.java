@@ -116,7 +116,22 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     static final long UNLIMITED = 0L;
 
     // === Drain assembly state (drain thread only) ===
-    final long maxRows;
+
+    /// Whether a filter is installed, so that the reader downstream returns a subset of
+    /// what the drain assembles. Two things follow: `maxRows` counts matching rows rather
+    /// than scanned ones (see [#activeMaxRows]), and batches are kept homogeneous in
+    /// whether statistics decided them, so a reader can act on a whole batch at a time.
+    /// Read from the page source when the drain starts, which is where it first matters.
+    boolean filterActive;
+
+    /// The cap the drain is enforcing. Starts at the constructor's `maxRows`, except that when
+    /// [#filterActive] it drops to [#UNLIMITED] — for the remainder of the read —
+    /// at the first page whose row group statistics did not prove to match the filter in
+    /// full. Up to that point every assembled row is a matching row, so the drain can
+    /// count them against the cap; past it only the filtering reader downstream can.
+    /// Written and read on the drain thread only.
+    long activeMaxRows;
+
     long totalRowsAssembled;
     B currentBatch;
     int rowsInCurrentBatch;
@@ -144,6 +159,9 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     /// @param decodeExecutor executor for decode tasks
     /// @param maxRows maximum rows to assemble (0 = unlimited). The drain stops
     ///        after assembling this many rows and publishes the partial batch.
+    ///        With a filter installed the cap is on matching rows, and the drain
+    ///        applies it only as far as statistics prove every row it assembles
+    ///        matches — see [#activeMaxRows].
     protected ColumnWorker(PageSource pageSource, BatchExchange<B> exchange, ColumnSchema column,
                            int batchCapacity, DecompressorFactory decompressorFactory,
                            Executor decodeExecutor, long maxRows) {
@@ -155,7 +173,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         this.maxDefinitionLevel = column.maxDefinitionLevel();
         this.decompressorFactory = decompressorFactory;
         this.decodeExecutor = decodeExecutor;
-        this.maxRows = maxRows;
+        this.activeMaxRows = maxRows;
         this.reorderBuffer = new AtomicReferenceArray<>(MAX_INFLIGHT_PAGES);
         this.levelScratchBuffer = new PageDecoder.LevelScratch[MAX_INFLIGHT_PAGES];
         for (int i = 0; i < levelScratchBuffer.length; i++) {
@@ -178,11 +196,12 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     abstract void publishCurrentBatch();
 
     /// Whether the drain should flush the current batch when crossing a row-group
-    /// boundary that changes the filter-always-matches flag. Only workers that
-    /// evaluate a per-batch filter benefit; for the rest the extra flushes would
-    /// shrink batches for nothing.
+    /// boundary that changes the filter-always-matches flag. Only worth it when a
+    /// filter is installed — a homogeneous batch lets a reader skip evaluating the
+    /// whole of it — and for an unfiltered read the extra flushes would shrink
+    /// batches for nothing.
     boolean flushOnFilterAlwaysMatchesTransition() {
-        return false;
+        return filterActive;
     }
 
     /// Starts both virtual threads. Must be called once.
@@ -370,6 +389,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
 
     private void runDrain() {
         try {
+            filterActive = pageSource.isFilterActive();
             currentBatch = exchange.takeBatch();
             initDrainState();
 
@@ -431,12 +451,21 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
                 currentBatchFileName = pageFileName;
             }
 
+            boolean pageAlwaysMatches = filterAlwaysMatchesBuffer[slot];
+
+            // Statistics did not prove this page's row group matches in full, so from
+            // here on the drain can no longer tell a scanned row from a matching one.
+            // Give up the cap and leave it to the filtering reader downstream, which
+            // counts matches.
+            if (filterActive && !pageAlwaysMatches) {
+                activeMaxRows = UNLIMITED;
+            }
+
             // Detect a filter-always-matches boundary: flush so that each batch is
             // homogeneous and the per-batch filter can be skipped for batches whose
             // row groups are proven to match in full. Row groups only ever share a
             // batch within one file, so this composes with the file flush above.
             if (flushOnFilterAlwaysMatchesTransition()) {
-                boolean pageAlwaysMatches = filterAlwaysMatchesBuffer[slot];
                 if (pageAlwaysMatches != currentBatchFilterAlwaysMatches && rowsInCurrentBatch > 0) {
                     publishCurrentBatch();
                 }

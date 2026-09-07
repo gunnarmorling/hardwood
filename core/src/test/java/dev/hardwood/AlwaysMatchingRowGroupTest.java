@@ -95,6 +95,42 @@ class AlwaysMatchingRowGroupTest {
     }
 
     @Test
+    void cappedReadHandsTheCapBackAtTheFirstUndecidedRowGroup() throws Exception {
+        // lt(250) fully matches RG1 (1-100) and RG2 (101-200) and splits RG3 (201-300).
+        // While the groups are proven, scanned rows are matching rows and the drain holds
+        // the cap itself; at RG3 it can no longer tell them apart and the reader counts
+        // matches from there. A cap that spans the boundary is the case where the two have
+        // to agree: 200 rows counted by the drain, the remaining 20 by the reader.
+        assertHeadUnderPartlyProvenFilter(220, 220);
+        // The same cap satisfied before the boundary is reached, so the drain alone
+        // enforces it and RG3 is never planned.
+        assertHeadUnderPartlyProvenFilter(150, 150);
+        // Every matching row, so the cap never binds — the handoff still has to yield
+        // exactly the 249 rows below the threshold.
+        assertHeadUnderPartlyProvenFilter(500, 249);
+    }
+
+    /// Reads `head(head)` under `lt(id, 250)` and asserts it yields ids `1..expectedRows`.
+    private static void assertHeadUnderPartlyProvenFilter(long head, long expectedRows) throws Exception {
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(FIXTURE));
+             RowReader rows = reader.buildRowReader()
+                     .filter(FilterPredicate.lt("id", 250L))
+                     .head(head)
+                     .build()) {
+            long expected = 1;
+            while (rows.hasNext()) {
+                rows.next();
+                assertThat(rows.getLong("id")).isEqualTo(expected);
+                assertThat(rows.getLong("value")).isEqualTo(expected);
+                expected++;
+            }
+            assertThat(expected - 1)
+                    .as("head(%d) under a partly proven filter yields matching rows, not scanned ones", head)
+                    .isEqualTo(expectedRows);
+        }
+    }
+
+    @Test
     void multiFileReadWithFullyMatchingAndDroppedRowGroups() throws Exception {
         // Files hold id 0–149 and 150–249 in row groups of 50: lt(200) fully matches
         // every surviving row group and drops the last one entirely.

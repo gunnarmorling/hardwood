@@ -60,6 +60,12 @@ public class PageSource {
         return currentWorkItem != null && currentWorkItem.filterAlwaysMatches();
     }
 
+    /// Whether a filter predicate is installed on the underlying iterator, so that the
+    /// rows this source yields can outnumber the rows a reader returns.
+    public boolean isFilterActive() {
+        return rowGroupIterator.hasFilter();
+    }
+
     public PageInfo next() {
         while (true) {
             if (currentPlan != null && currentPlan.hasNext()) {

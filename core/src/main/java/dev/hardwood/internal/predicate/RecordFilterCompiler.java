@@ -463,9 +463,8 @@ public final class RecordFilterCompiler {
     // ==================== Indexed leaf factories ====================
     //
     // Used when the row is known to be a [RowReader] and the leaf operates
-    // on a top-level column. The cast is safe by construction — only
-    // [dev.hardwood.internal.reader.FilteredRowReader] invokes the matcher,
-    // and it always passes a [RowReader] delegate. The compiler emits these
+    // on a top-level column. The cast is safe by construction — the matcher is
+    // invoked only by a row reader, which passes itself. The compiler emits these
     // leaves only when the caller passes a `topLevelFieldIndex` callback,
     // which today is done by both [dev.hardwood.internal.reader.FlatRowReader]
     // and [dev.hardwood.internal.reader.NestedRowReader].

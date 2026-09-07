@@ -1,10 +1,10 @@
 ## Drain-Side Record Filtering (#250)
 
-**Status: Implemented and on by default** for any query that decomposes into column-local leaves on distinct top-level columns. The path trades single-threaded predicate throughput for cross-core parallelism: in end-to-end multi-column AND scenarios it beats the compiled per-row path (1.5–5× on the measured workloads, scaling with leaf count); in single-threaded JMH microbenchmarks it is 3.8–6.9× slower per row than the compiled path. The end-to-end wins come from running per-column matchers on the existing drain threads in parallel rather than serially on the consumer thread — see [Performance](#performance--end-to-end-full-coverage-recordfilterscenariosbenchmarktest--dperfruns5) for the full picture. It is taken even for single-leaf queries (the early leaf-count gate from v1 has been removed — see the rationale under [Eligibility](#eligibility)). Ineligible shapes fall back automatically to `FilteredRowReader` via a `null` return from `BatchFilterCompiler.tryCompile`. There is no opt-in flag.
+**Status: Implemented and on by default** for any query that decomposes into column-local leaves on distinct top-level columns. The path trades single-threaded predicate throughput for cross-core parallelism: in end-to-end multi-column AND scenarios it beats the compiled per-row path (1.5–5× on the measured workloads, scaling with leaf count); in single-threaded JMH microbenchmarks it is 3.8–6.9× slower per row than the compiled path. The end-to-end wins come from running per-column matchers on the existing drain threads in parallel rather than serially on the consumer thread — see [Performance](#performance--end-to-end-full-coverage-recordfilterscenariosbenchmarktest--dperfruns5) for the full picture. It is taken even for single-leaf queries (the early leaf-count gate from v1 has been removed — see the rationale under [Eligibility](#eligibility)). Ineligible shapes fall back automatically to the row reader's own record matcher, via a `null` return from `BatchFilterCompiler.tryCompile`. There is no opt-in flag.
 
 ## Context
 
-Record-level filter predicates on the flat reader run on the consumer thread. `FlatRowReader` polls one fully-decoded batch per column from each `BatchExchange`, then `FilteredRowReader` advances `rowIndex` and calls the compiled `RowMatcher` per row. The compiled per-row path produced by `RecordFilterCompiler` (#193) is very tight — fixed-arity matchers, indexed-leaf accessors, JIT-inlined short-circuit AND — but its work is serial and proportional to the number of leaves.
+Record-level filter predicates on the flat reader run on the consumer thread. `FlatRowReader` polls one fully-decoded batch per column from each `BatchExchange`, then advances `rowIndex` and calls the compiled `RowMatcher` per row. The compiled per-row path produced by `RecordFilterCompiler` (#193) is very tight — fixed-arity matchers, indexed-leaf accessors, JIT-inlined short-circuit AND — but its work is serial and proportional to the number of leaves.
 
 Two structural facts about the pipeline make a different placement plausible:
 
@@ -16,11 +16,11 @@ This design moves the eligible part of record-level filtering from the consumer 
 The architecture has four pieces:
 
 1. A `ColumnBatchMatcher` interface and per-`(type, op)` concrete classes that operate on a column's typed array + null `BitSet` and write a per-batch matches `long[]`.
-2. A `BatchFilterCompiler` that decomposes an eligible `ResolvedPredicate` into per-column `ColumnBatchMatcher`s and returns `null` for any non-eligible shape (full fallback to `FilteredRowReader`).
+2. A `BatchFilterCompiler` that decomposes an eligible `ResolvedPredicate` into per-column `ColumnBatchMatcher`s and returns `null` for any non-eligible shape (full fallback to the reader's record matcher).
 3. A `matches` field on `BatchExchange.Batch` and an extra step at the end of `FlatColumnWorker.publishCurrentBatch` to evaluate the column's matcher.
-4. Eligibility-gated changes in `FlatRowReader` to intersect per-column matches into a `combinedWords` array and iterate via `Long.numberOfTrailingZeros` instead of wrapping in `FilteredRowReader`.
+4. Eligibility-gated changes in `FlatRowReader` to intersect per-column matches into a `combinedWords` array and iterate via `Long.numberOfTrailingZeros` instead of evaluating a `RowMatcher` per row.
 
-Eligible queries take the drain-side path; ineligible queries fall back to `FilteredRowReader` with no behavioural change. The eligibility decision is made once at `FlatRowReader.create` time via `BatchFilterCompiler.tryCompile`.
+Eligible queries take the drain-side path; ineligible queries fall back to the record matcher with no behavioural change. The eligibility decision is made once at `FlatRowReader.create` time via `BatchFilterCompiler.tryCompile`.
 
 ---
 
@@ -139,7 +139,7 @@ Cost is paid on the drain thread, on hot data, in parallel with peer drains. Whe
 
 ## Combine and iteration in `FlatRowReader`
 
-`FlatRowReader.create` calls `BatchFilterCompiler.tryCompile`. A non-null `CompiledBatchFilter` drives the drain-side path; otherwise the existing branch (`FilteredRowReader` if a filter is set, plain reader if not) is used.
+`FlatRowReader.create` calls `BatchFilterCompiler.tryCompile`. A non-null `CompiledBatchFilter` drives the drain-side path; otherwise the reader's record-matcher mode is used when a filter is set, and the plain cursor when not.
 
 The reader gains:
 
@@ -213,7 +213,7 @@ What this maps:
 - **Drain wins everywhere it's eligible.** Every two-or-more-column AND beats compiled, with the ratio scaling roughly with leaf count: `and2` 1.46×, `and3` 1.94×, `and4` 5.06× — compiled's per-row work is linear in leaves, drain's is parallel across drain threads.
 - **`and4` is the cleanest signal.** A four-leaf AND that compiled has to evaluate serially on the consumer thread (114 ms) costs only 22 ms when the leaves run on four drain threads in parallel. That's the parallelism story in pure form.
 - **Selectivity matters.** Selective `and2` (~0.1%) is only 1.16× because the consumer-side iteration cost (`nextSetBit`) shrinks alongside compiled's per-row cost — both paths get cheap together. Mid-selectivity `and2` (~50%) widens to 2.36× because compiled still pays per-row work on every survivor while drain's bitmap-iteration cost per survivor is roughly the same.
-- **The four fallback rows (`single`, `or`, `range`, `intIn5`) all sit at ~1.0×** — the gate fires, drain returns null, the query takes the same `FilteredRowReader` path on both runs. Confirms the gate works and that drain-side adds no overhead on ineligible queries.
+- **The four fallback rows (`single`, `or`, `range`, `intIn5`) all sit at ~1.0×** — the gate fires, drain returns null, the query takes the same record-matcher path on both runs. Confirms the gate works and that drain-side adds no overhead on ineligible queries.
 - **`range` (`id BETWEEN x AND y AND value < c`)** would benefit from drain if the compiler fused same-column comparisons into a `LongRangeBatchMatcher`. Currently it falls back. That's the most realistic eligibility expansion.
 
 Predicate-only overhead per row, compound match-all (`and2`):

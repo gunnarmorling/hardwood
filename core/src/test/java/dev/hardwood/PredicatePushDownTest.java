@@ -233,7 +233,7 @@ class PredicatePushDownTest {
 
     @Test
     void testHeadWithFilterOnNestedSchemaLimitsMatchingRows() throws Exception {
-        // Record-level filtering on a nested schema routes through FilteredRowReader.
+        // Record-level filtering on a nested schema runs in NestedRowReader.
         // RG2 holds id 4-6; gt(id, 4) skips id 4 and matches 5, 6. head(2) must yield
         // the first two matches (id 5, 6), not scan two rows and return only id 5.
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(NESTED_FILE))) {
@@ -247,6 +247,50 @@ class PredicatePushDownTest {
                 }
                 assertThat(ids).containsExactly(5, 6);
             }
+        }
+    }
+
+    @Test
+    void testNestedSchemaProvenRowGroupSkipsEvaluationAndHandsBackTheCap() throws Exception {
+        // lt(id, 5) fully matches RG1 (id 1-3), splits RG2 (id 4-6) and drops RG3 (id 7-9).
+        // The nested reader has no drain-side path, so this is the record matcher reading
+        // NestedBatch.filterAlwaysMatches: RG1's batch is proven and served without the
+        // predicate being evaluated on any of its rows, RG2's is evaluated a row at a time.
+        try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(NESTED_FILE))) {
+            FilterPredicate filter = FilterPredicate.lt("id", 5);
+
+            // Uncapped: the proven batch clears the active matcher and runs on the plain
+            // cursor, then the undecided batch installs it again.
+            assertNestedIdsUnderFilter(reader, filter, 0, List.of(1, 2, 3, 4));
+            // Capped across the boundary: the drain holds the cap over RG1's three proven
+            // rows and hands it back at RG2, where the reader counts the fourth match.
+            assertNestedIdsUnderFilter(reader, filter, 4, List.of(1, 2, 3, 4));
+            // Capped inside the proven group: the drain alone enforces it, and the rows it
+            // yields are matches because statistics already proved them.
+            assertNestedIdsUnderFilter(reader, filter, 2, List.of(1, 2));
+        }
+    }
+
+    /// Reads `NESTED_FILE` under `filter`, with `head(maxRows)` when positive, and asserts
+    /// the ids returned. Also reads the nested `address.zip` leaf, so a proven batch taking
+    /// a different cursor than an evaluated one would show up as a misaligned struct.
+    private static void assertNestedIdsUnderFilter(ParquetFileReader reader, FilterPredicate filter,
+                                                   long maxRows, List<Integer> expectedIds) {
+        ParquetFileReader.RowReaderBuilder builder = reader.buildRowReader().filter(filter);
+        if (maxRows > 0) {
+            builder = builder.head(maxRows);
+        }
+        try (RowReader rows = builder.build()) {
+            List<Integer> ids = new ArrayList<>();
+            while (rows.hasNext()) {
+                rows.next();
+                int id = rows.getInt("id");
+                assertThat(rows.getStruct("address").getInt("zip"))
+                        .as("address stays aligned with id %d", id)
+                        .isEqualTo(id <= 3 ? 70000 + (id - 1) * 1000 : 80000 + (id - 4) * 1000);
+                ids.add(id);
+            }
+            assertThat(ids).containsExactlyElementsOf(expectedIds);
         }
     }
 
@@ -358,7 +402,7 @@ class PredicatePushDownTest {
 
     @Test
     void testSkipWithFilterOnNestedSchemaIsLogicalOffset() throws Exception {
-        // Record-level filtering on a nested schema routes through FilteredRowReader.
+        // Record-level filtering on a nested schema runs in NestedRowReader.
         // RG2 holds id 4-6, RG3 id 7-9. gt(id, 4) matches 5,6,7,8,9; skip(2) discards
         // the first two matches (5, 6) and yields 7, 8, 9, crossing the RG2/RG3 boundary.
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(NESTED_FILE))) {

@@ -37,6 +37,11 @@ public final class NestedBatch {
     // File name of the originating file (set by drain before publish)
     public String fileName;
 
+    /// Whether statistics proved every record of this batch matches the filter
+    /// predicate, so a filtering reader can return the batch without evaluating it.
+    /// Only set when a filter is installed; `false` is always safe.
+    public boolean filterAlwaysMatches;
+
     /// Elements per row when this batch was assembled via the fixed-size-list
     /// fast path (every record a present list of exactly this many elements),
     /// or `0` for a regular batch. When set, `definitionLevels` /

@@ -126,9 +126,9 @@ Two independent `final` reader classes consume from the pipeline:
 
 Both are intentionally separate classes despite similar iteration structure. The flat path avoids all indirection for JIT inlining; the nested path requires delegation for struct/list/map traversal. Sharing a base class would pollute the flat fast path.
 
-**`FilteredRowReader`** wraps any `RowReader` (flat or nested) for record-level predicate filtering. Advances the delegate row-by-row via `RecordFilterEvaluator.matchesRow()`, which navigates nested struct paths automatically using the `FileSchema` field paths, so predicates on nested leaf columns (e.g. `address.zip`) are supported. Implemented as a separate wrapper so the unfiltered path pays zero overhead.
+**Record-level filtering** is a mode of each row reader rather than a wrapper around it: a compiled `RowMatcher` is held by `FlatRowReader` / `NestedRowReader`, which skip non-matching rows inside their own `hasNext()`. The matcher navigates nested struct paths using the `FileSchema` field paths, so predicates on nested leaf columns (e.g. `address.zip`) are supported. A batch whose row-group statistics prove the predicate is served on the plain cursor instead, so the unfiltered path and the decided-batch path pay the same.
 
-**`RowReader.create()`** is a static factory on the `RowReader` interface that dispatches to `FlatRowReader.create()` or `NestedRowReader.create()` based on `schema.isFlatSchema()`, then wraps with `FilteredRowReader` if a filter is present. Both `ParquetFileReader` and `MultiFileParquetReader` delegate to this factory.
+**Reader selection** dispatches to `FlatRowReader.create()` or `NestedRowReader.create()` based on `schema.isFlatSchema()`; each installs the filter itself when one is present.
 
 **`ColumnReader`** (column-oriented API) also uses the v2 pipeline with `BatchExchange` in detaching mode, so callers retain array ownership between batches. For nested columns, index structures are pre-computed by the drain and read directly from the `NestedBatch`.
 
@@ -362,8 +362,7 @@ When the consumer calls `close()`:
 | `BatchExchange` | Generic exchange buffer between drain and consumer. Recycling mode (RowReader) or detaching mode (ColumnReader). `poll()` encapsulates the consumer-side protocol with correct `finished`-flag ordering. One per column. |
 | `FlatRowReader` | Direct primitive array access, monomorphic JIT path. |
 | `NestedRowReader` | Assembles `NestedBatchIndex` from pre-computed `NestedBatch` fields, delegates to `NestedBatchDataView`. |
-| `FilteredRowReader` | Record-level predicate filtering via `RecordFilterEvaluator.matchesRow()`. Wraps any `RowReader`. |
-| `RowReader.create()` | Static factory dispatching flat vs nested based on `schema.isFlatSchema()`. |
+| Record-matcher mode | Record-level predicate filtering inside `FlatRowReader` / `NestedRowReader`, via a compiled `RowMatcher`. |
 | `ColumnReader` | Column-oriented API, detaching mode, reads pre-computed index from `NestedBatch`. |
 
 ### Sizing

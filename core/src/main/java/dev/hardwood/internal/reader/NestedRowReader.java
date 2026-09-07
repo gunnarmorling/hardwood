@@ -57,6 +57,25 @@ public final class NestedRowReader implements FileAwareRowReader {
     private NestedBatch[] previousBatches;
     /// File name from the current batch — used for exception enrichment
     private String currentFileName;
+    /// Whether statistics proved every row of the batch being served matches the filter,
+    /// so [#recordMatcher] need not be run over it.
+    private boolean currentRowsAlwaysMatch;
+    /// The matcher in force for the batch being served: [#recordMatcher], or `null` when
+    /// statistics decided the batch and there is no cap to count matches against. A
+    /// proven batch is then an unfiltered batch, served by the plain cursor with no
+    /// per-row state to consult — which is the whole of what the proof is worth.
+    private RowMatcher activeMatcher;
+
+    /// Record-level predicate, or `null` when the read has no filter. Present or absent
+    /// purely by whether the caller asked for a filter — never by what a file holds.
+    private final RowMatcher recordMatcher;
+    /// Cap on matching rows yielded (SQL LIMIT over the filtered relation);
+    /// [ColumnWorker#UNLIMITED] means no cap.
+    private final long maxMatchedRows;
+    private long matchedRowsYielded;
+    /// Row [#hasNext] picked for [#next] to hand out, or `-1` when none is parked.
+    /// Only the record-matcher path parks; without a filter the cursor advances in `next`.
+    private int pendingRowIndex = -1;
     private int rowIndex = -1;
     private int batchSize = 0;
     private boolean exhausted;
@@ -64,7 +83,10 @@ public final class NestedRowReader implements FileAwareRowReader {
 
 
     NestedRowReader(BatchExchange<NestedBatch>[] exchanges, NestedColumnWorker[] columnWorkers,
-                    FileSchema fileSchema, ProjectedSchema projectedSchema, RecordFilterTally tally) {
+                    FileSchema fileSchema, ProjectedSchema projectedSchema,
+                    long maxMatchedRows, RowMatcher recordMatcher, RecordFilterTally tally) {
+        this.maxMatchedRows = maxMatchedRows;
+        this.recordMatcher = recordMatcher;
         this.tally = tally;
         this.exchanges = exchanges;
         this.columnWorkers = columnWorkers;
@@ -95,7 +117,7 @@ public final class NestedRowReader implements FileAwareRowReader {
     ///
     /// Wires up `RowGroupIterator → PageSource → NestedColumnWorker → BatchExchange →
     /// NestedRowReader`, starts all column workers, and initializes the reader.
-    /// When a filter is present, wraps in [FilteredRowReader] for record-level filtering.
+    /// When a filter is present, the reader evaluates it a record at a time.
     ///
     /// @param rowGroupIterator pre-configured iterator
     /// @param schema the file schema
@@ -105,9 +127,11 @@ public final class NestedRowReader implements FileAwareRowReader {
     /// @param filter resolved predicate, or `null` for no filtering
     /// @param maxRows maximum rows (0 = unlimited). Without a filter this caps scanned
     ///                rows at the [ColumnWorker] drain. With a filter it caps *matching*
-    ///                rows (SQL LIMIT), enforced over matches by the FilteredRowReader wrapper.
+    ///                rows (SQL LIMIT): the drain holds it over the row groups statistics
+    ///                prove match in full, and the reader counts matches from the first
+    ///                row group they do not.
     /// @param rowGroups first-file row groups, for fan-out-aware batch sizing
-    /// @return a [NestedRowReader] or [FilteredRowReader]
+    /// @return a [NestedRowReader]
     public static RowReader create(RowGroupIterator rowGroupIterator,
                             FileSchema schema,
                             ProjectedSchema projectedSchema,
@@ -116,20 +140,17 @@ public final class NestedRowReader implements FileAwareRowReader {
                             ResolvedPredicate filter,
                             long maxRows,
                             List<RowGroup> rowGroups) {
-        // When statistics prove every surviving row group matches the filter in
-        // full, the read is equivalent to an unfiltered read: skip matcher
-        // compilation and per-row evaluation entirely, and let maxRows cap
-        // scanned rows directly (scanned == matching).
-        if (filter != null && rowGroupIterator.isFilterSatisfiedByStatistics()) {
-            filter = null;
-        }
-
         int batchSize = BatchSizing.computeOptimalBatchSize(projectedSchema,
                 BatchSizing.valuesPerRow(projectedSchema, rowGroups));
         int projectedColumnCount = projectedSchema.getProjectedColumnCount();
-        // With a row-level filter, `maxRows` caps *matching* rows (SQL LIMIT), so the
-        // workers scan unbounded, and the FilteredRowReader wrapper enforces the cap.
-        long workerMaxRows = filter != null ? ColumnWorker.UNLIMITED : maxRows;
+        // With a row-level filter, `maxRows` caps *matching* rows (SQL LIMIT). The
+        // workers still take it — they hold it only while statistics prove every row
+        // they assemble matches, and drop it at the first row group that is not proven,
+        // from where the reader counts matches instead.
+        //
+        // Nothing here asks a question about the read as a whole, so nothing here plans
+        // beyond the first file: statistics reach the reader per row group, on
+        // NestedBatch.filterAlwaysMatches (see #1107).
         NestedColumnWorker[] workers = new NestedColumnWorker[projectedColumnCount];
         @SuppressWarnings("unchecked")
         BatchExchange<NestedBatch>[] buffers = new BatchExchange[projectedColumnCount];
@@ -150,7 +171,7 @@ public final class NestedRowReader implements FileAwareRowReader {
                     schema.getRootNode(), columnSchema.columnIndex());
             NestedColumnWorker worker = new NestedColumnWorker(
                     pageSource, buffer, columnSchema, batchSize,
-                    context.decompressorFactory(), context.executor(), workerMaxRows,
+                    context.decompressorFactory(), context.executor(), maxRows,
                     layers, NestedColumnWorker.IndexMode.ALL_ITEMS, fixedListFastPathEnabled);
 
             buffers[i] = buffer;
@@ -159,18 +180,19 @@ public final class NestedRowReader implements FileAwareRowReader {
         }
 
         RecordFilterTally tally = filter != null ? new RecordFilterTally() : null;
-        NestedRowReader reader = new NestedRowReader(buffers, workers, schema, projectedSchema, tally);
-        reader.initialize();
+        // Indexed compile path: for nested schemas the reader's `getInt(int)` etc. take a
+        // *projected top-level field index* rather than a leaf-column index, so the
+        // mapping from each file leaf-column to its projected top-level field (or `-1`
+        // for nested-leaf columns and unprojected fields) is precomputed.
+        RowMatcher recordMatcher = null;
         if (filter != null) {
-            // Indexed compile path: for nested schemas, the reader's
-            // `getInt(int)` etc. take a *projected top-level field index*
-            // rather than a leaf-column index, so we precompute the mapping
-            // from each file leaf-column to its projected top-level field
-            // (or `-1` for nested-leaf columns and unprojected fields).
             int[] topLevelLookup = buildTopLevelFieldIndexLookup(schema, projectedSchema);
-            RowMatcher matcher = RecordFilterCompiler.compile(filter, schema, col -> topLevelLookup[col]);
-            return new FilteredRowReader(reader, matcher, maxRows, tally);
+            recordMatcher = RecordFilterCompiler.compile(filter, schema, col -> topLevelLookup[col]);
         }
+        long readerMatchLimit = filter != null ? maxRows : ColumnWorker.UNLIMITED;
+        NestedRowReader reader = new NestedRowReader(buffers, workers, schema, projectedSchema,
+                readerMatchLimit, recordMatcher, tally);
+        reader.initialize();
         return reader;
     }
 
@@ -221,14 +243,71 @@ public final class NestedRowReader implements FileAwareRowReader {
         if (exhausted) {
             return false;
         }
+        if (activeMatcher != null) {
+            return hasNextMatching();
+        }
         if (rowIndex + 1 < batchSize) {
             return true;
         }
-        return loadNextBatch();
+        return loadAndDecide();
+    }
+
+    /// Loads the next batch and says whether it yields a row. Kept out of [#hasNext] so
+    /// that method stays loop-free and small enough to inline into a caller's row loop,
+    /// which is worth more than the call this costs once per batch.
+    private boolean loadAndDecide() {
+        if (!loadNextBatch()) {
+            return false;
+        }
+        return activeMatcher == null || hasNextMatching();
+    }
+
+    /// Advances to the next record the matcher accepts, evaluating one at a time.
+    /// Returns to [#hasNext]'s plain cursor as soon as a batch loads that statistics
+    /// decided, so a proven batch never pays for the per-row protocol.
+    private boolean hasNextMatching() {
+        if (maxMatchedRows != ColumnWorker.UNLIMITED && matchedRowsYielded >= maxMatchedRows) {
+            exhausted = true;
+            return false;
+        }
+        if (pendingRowIndex >= 0) {
+            return true;
+        }
+        while (true) {
+            if (rowIndex + 1 >= batchSize) {
+                if (!loadNextBatch()) {
+                    return false;
+                }
+                if (activeMatcher == null) {
+                    return true;
+                }
+            }
+            rowIndex++;
+            dataView.setRowIndex(rowIndex);
+            // Statistics already decided this batch's row group in full — reachable only
+            // under a cap, which needs every match counted as it goes.
+            boolean matched = currentRowsAlwaysMatch || activeMatcher.test(this);
+            tally.record(matched);
+            if (matched) {
+                pendingRowIndex = rowIndex;
+                return true;
+            }
+        }
     }
 
     @Override
     public void next() {
+        // hasNext parks the row it picked in `pendingRowIndex`; this only commits it.
+        if (activeMatcher != null) {
+            if (pendingRowIndex < 0) {
+                throw new NoSuchElementException("No matching row available. Call hasNext() first.");
+            }
+            rowIndex = pendingRowIndex;
+            pendingRowIndex = -1;
+            dataView.setRowIndex(rowIndex);
+            matchedRowsYielded++;
+            return;
+        }
         // Fail early on an unguarded next() past the batch rather than letting
         // rowIndex point into the capacity tail and expose phantom/stale rows.
         // After any hasNext() == true this check never trips (a freshly loaded
@@ -282,10 +361,23 @@ public final class NestedRowReader implements FileAwareRowReader {
 
         // Index structures are pre-computed by the drain — just assemble the view
         currentFileName = batches[0].fileName;
+        // Uniform across columns: the flag comes from the work item, and the workers
+        // flush on its transitions, so no batch mixes the two.
+        currentRowsAlwaysMatch = batches[0].filterAlwaysMatches;
+        // A batch statistics decided, with no cap to count matches against, needs
+        // nothing evaluated and nothing counted per row: hand it to the plain cursor
+        // and tally it whole.
+        activeMatcher = currentRowsAlwaysMatch && maxMatchedRows == ColumnWorker.UNLIMITED
+                ? null : recordMatcher;
         if (tally != null) {
             // Ahead of any record of this batch being counted, so the counts land
             // on the file the batch came from. Batches never straddle files.
             tally.switchFile(currentFileName);
+            if (activeMatcher == null) {
+                // Statistics decided this batch and there is no cap, so no row of it is
+                // evaluated or counted individually: count it whole.
+                tally.recordBatch(batchSize, batchSize);
+            }
         }
         dataView.setBatchData(batches, columnSchemas, currentFileName);
         rowIndex = -1;

@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// - **Drain-eligible compound ANDs** (2/3/4 leaves across `id`, `value`, `tag`, `flag`):
 ///   exercise the column-local AND fast path.
 /// - **Fallback shapes** (single-leaf, OR, same-column range, IN-list): trip the
-///   drain-eligibility gate so [FilteredRowReader] handles them. See [BatchFilterCompiler].
+///   drain-eligibility gate so the record matcher handles them. See [BatchFilterCompiler].
 /// - **Page+record**: id range that prunes ~99% of pages via column-index min/max,
 ///   then a per-row `value<500` filter on the survivors.
 ///

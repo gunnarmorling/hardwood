@@ -64,7 +64,7 @@ import dev.hardwood.schema.FileSchema;
 ///
 /// Anything else (intermediate-struct paths, `BinaryPredicate`,
 /// `GeospatialPredicate`, unsupported `(type, op)`) returns `null` and the
-/// caller falls back to [dev.hardwood.internal.reader.FilteredRowReader].
+/// caller falls back to the row reader's record-level matcher.
 public final class BatchFilterCompiler {
 
     private BatchFilterCompiler() {}

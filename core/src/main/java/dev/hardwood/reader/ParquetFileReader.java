@@ -532,7 +532,8 @@ public class ParquetFileReader implements AutoCloseable {
     ///
     /// Selects [dev.hardwood.internal.reader.FlatRowReader] for flat schemas and
     /// [dev.hardwood.internal.reader.NestedRowReader] for nested schemas.
-    /// Wraps with [dev.hardwood.internal.reader.FilteredRowReader] when a filter is present.
+    /// Either evaluates a filter per batch on the drain side or per record in the
+    /// reader, by the predicate's shape.
     ///
     /// @param rowGroupIterator initialized iterator over row groups
     /// @param schema file schema
