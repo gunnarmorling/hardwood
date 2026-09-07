@@ -19,12 +19,15 @@ import dev.hardwood.metadata.FieldPath;
 import dev.hardwood.metadata.PhysicalType;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// Unit tests for `SequentialFetchPlan.computeChunkSize`, focused on the
 /// "fetch the whole column when small enough" threshold introduced for #382.
 class SequentialFetchPlanChunkSizeTest {
 
     private static final int ONE_MIB = 1024 * 1024;
+
+    private static final String CHUNK_SIZE_PROPERTY = SequentialFetchPlan.CHUNK_SIZE_PROPERTY;
 
     @Test
     void smallColumnUnderHeadFetchesEntireChunk() {
@@ -90,6 +93,52 @@ class SequentialFetchPlanChunkSizeTest {
         // computeChunkSize returns the ceiling; the build() caller
         // applies `Math.min(columnChunkLength, ceiling)`.
         assertThat(chunk).isGreaterThanOrEqualTo(columnLength);
+    }
+
+    @Test
+    void chunkSizeOverrideAppliesAfterTheClassIsAlreadyInUse() {
+        // Put the class into use before touching the property, so this holds
+        // whatever order the methods run in.
+        assertThat(chunkSizeWithoutRowLimit())
+                .as("baseline before any override")
+                .isEqualTo(128 * ONE_MIB);
+
+        // A caller setting the property cannot know, or control, whether some
+        // earlier read path already used this class. Reading the property once
+        // at class-initialisation broke exactly that: the override was silently
+        // dropped and callers kept the 128 MB default.
+        System.setProperty(CHUNK_SIZE_PROPERTY, String.valueOf(ONE_MIB));
+        try {
+            assertThat(chunkSizeWithoutRowLimit())
+                    .as("override set after the class is already in use")
+                    .isEqualTo(ONE_MIB);
+        }
+        finally {
+            System.clearProperty(CHUNK_SIZE_PROPERTY);
+        }
+
+        assertThat(chunkSizeWithoutRowLimit())
+                .as("clearing the override restores the default")
+                .isEqualTo(128 * ONE_MIB);
+    }
+
+    @Test
+    void unparseableChunkSizeOverrideIsRejected() {
+        System.setProperty(CHUNK_SIZE_PROPERTY, "128k");
+        try {
+            assertThatThrownBy(SequentialFetchPlanChunkSizeTest::chunkSizeWithoutRowLimit)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(CHUNK_SIZE_PROPERTY)
+                    .hasMessageContaining("128k");
+        }
+        finally {
+            System.clearProperty(CHUNK_SIZE_PROPERTY);
+        }
+    }
+
+    private static int chunkSizeWithoutRowLimit() {
+        return SequentialFetchPlan.computeChunkSize(
+                64 * ONE_MIB, fakeMetaData(64 * ONE_MIB, 1_000_000), 0);
     }
 
     private static ColumnMetaData fakeMetaData(long totalCompressedSize, long numValues) {

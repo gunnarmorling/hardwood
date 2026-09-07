@@ -70,11 +70,37 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
     /// down 50 MB. See #382.
     private static final int FETCH_WHOLE_COLUMN_THRESHOLD = 4 * MAX_ROWS_CHUNK_FLOOR;
 
-    /// Chunk size when reading without a row limit (128 MB). Also used as
-    /// the ceiling for the `maxRows` dynamic estimate.
-    /// Overridable via the `hardwood.internal.sequentialChunkSize` system property (bytes).
-    private static final int DEFAULT_CHUNK_SIZE =
-            Integer.getInteger("hardwood.internal.sequentialChunkSize", 128 * 1024 * 1024);
+    static final String CHUNK_SIZE_PROPERTY = "hardwood.internal.sequentialChunkSize";
+
+    /// Chunk size when reading without a row limit. Also used as the ceiling
+    /// for the `maxRows` dynamic estimate.
+    private static final int DEFAULT_CHUNK_SIZE = 128 * 1024 * 1024;
+
+    /// The chunk size in bytes, [#DEFAULT_CHUNK_SIZE] unless overridden through
+    /// [#CHUNK_SIZE_PROPERTY].
+    ///
+    /// Read on each call rather than cached in a static final, so that the override
+    /// holds whenever it is set. Caching it would tie the value to whichever code
+    /// path happened to initialise this class first, which is not something a caller
+    /// setting the property can see or control. [#computeChunkSize] runs once per
+    /// column chunk of a plan, so the lookup is nowhere near a hot path.
+    ///
+    /// An unparseable value is rejected rather than quietly replaced by the default:
+    /// a chunk size that does not take effect produces a plausible read with the
+    /// wrong fetch behaviour, which is exactly what makes it hard to notice.
+    private static int defaultChunkSize() {
+        String override = System.getProperty(CHUNK_SIZE_PROPERTY);
+        if (override == null) {
+            return DEFAULT_CHUNK_SIZE;
+        }
+        try {
+            return Integer.parseInt(override);
+        }
+        catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    CHUNK_SIZE_PROPERTY + " must be a byte count, but was: " + override, e);
+        }
+    }
 
     private final InputFile inputFile;
     private final long columnChunkOffset;
@@ -239,13 +265,14 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
     /// ```
     ///
     /// The estimate is floored at [MAX_ROWS_CHUNK_FLOOR] to avoid sub-page
-    /// round-trips during header scanning and capped at [DEFAULT_CHUNK_SIZE].
+    /// round-trips during header scanning and capped at [#defaultChunkSize].
     /// Columns whose entire chunk is below [FETCH_WHOLE_COLUMN_THRESHOLD]
     /// short-circuit to the full chunk length so they remain coalesce-safe
     /// (#382).
     static int computeChunkSize(int columnChunkLength, ColumnMetaData metaData, long maxRows) {
+        int defaultChunkSize = defaultChunkSize();
         if (maxRows <= 0) {
-            return DEFAULT_CHUNK_SIZE;
+            return defaultChunkSize;
         }
         if (columnChunkLength <= FETCH_WHOLE_COLUMN_THRESHOLD) {
             return columnChunkLength;
@@ -260,10 +287,10 @@ public final class SequentialFetchPlan implements FetchPlan, RowGroupIterator.Co
         long effectiveRows = Math.min(maxRows, numValues);
         long estimate = Math.ceilDiv(
                 effectiveRows * totalCompressedSize * MAX_ROWS_CHUNK_SAFETY_FACTOR, numValues);
-        // Cap the floor at the ceiling so an override of `DEFAULT_CHUNK_SIZE`
+        // Cap the floor at the ceiling so an override of the default chunk size
         // below the floor does not produce an invalid clamp range.
-        long floor = Math.min(MAX_ROWS_CHUNK_FLOOR, DEFAULT_CHUNK_SIZE);
-        long bounded = Math.clamp(estimate, floor, DEFAULT_CHUNK_SIZE);
+        long floor = Math.min(MAX_ROWS_CHUNK_FLOOR, defaultChunkSize);
+        long bounded = Math.clamp(estimate, floor, defaultChunkSize);
         return Math.toIntExact(bounded);
     }
 
