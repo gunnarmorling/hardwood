@@ -15,10 +15,10 @@ This design moves the eligible part of record-level filtering from the consumer 
 
 The architecture has four pieces:
 
-1. A `ColumnBatchMatcher` interface and per-`(type, op)` concrete classes that operate on a column's typed array + null `BitSet` and write a per-batch matches `long[]`.
+1. A `ColumnBatchMatcher` interface and per-`(type, op)` concrete classes that operate on a column's typed array + validity bitmap and write a per-batch matches `long[]`.
 2. A `BatchFilterCompiler` that decomposes an eligible `ResolvedPredicate` into per-column `ColumnBatchMatcher`s and returns `null` for any non-eligible shape (full fallback to the reader's record matcher).
 3. A `matches` field on `BatchExchange.Batch` and an extra step at the end of `FlatColumnWorker.publishCurrentBatch` to evaluate the column's matcher.
-4. Eligibility-gated changes in `FlatRowReader` to intersect per-column matches into a `combinedWords` array and iterate via `Long.numberOfTrailingZeros` instead of evaluating a `RowMatcher` per row.
+4. A `BatchMatchMerger` that combines the per-column matches into one per-batch survivor bitmap, which the consumer iterates via `Long.numberOfTrailingZeros` instead of evaluating a `RowMatcher` per row.
 
 Eligible queries take the drain-side path; ineligible queries fall back to the record matcher with no behavioural change. The eligibility decision is made once at `FlatRowReader.create` time via `BatchFilterCompiler.tryCompile`.
 
@@ -62,120 +62,60 @@ There is no separate leaf-count gate. The v1 prototype carried an `if (leaves.si
 
 ## `ColumnBatchMatcher` and per-`(type, op)` classes
 
-Sealed interface representing a per-column fragment over a single batch:
+A sealed interface representing a per-column fragment over a single batch: `test(Batch, long[] outWords)`, with one final implementation per `(type, op)` pair.
 
-```java
-public sealed interface ColumnBatchMatcher
-        permits LongBatchMatcher, DoubleBatchMatcher, IntBatchMatcher,
-                FloatBatchMatcher, BooleanBatchMatcher, NullBatchMatcher,
-                AndBatchMatcher, OrBatchMatcher {
-    void test(BatchExchange.Batch batch, long[] outWords);
-}
-```
+`outWords` is a `long[]` sized `(batchCapacity + 63) >>> 6`, owned by the caller. A bit at index `i` is set iff row `i` definitely matches (NULL → unset). The matcher overwrites every word it touches; the caller does not pre-clear.
 
-`outWords` is a `long[]` sized `(batchCapacity + 63) >>> 6`, owned by the `Batch`. A bit at index `i` is set iff row `i` definitely matches (NULL → unset). The matcher overwrites every word it touches; the caller does not pre-clear.
-
-Per-`(type, op)` final classes implement the typed body. The optimised inner loop uses a per-word accumulator pattern:
-
-```java
-final class LongGtBatchMatcher implements LongBatchMatcher {
-    private final long literal;
-    // ...
-
-    @Override
-    public void test(BatchExchange.Batch batch, long[] outWords) {
-        long[] vals = (long[]) batch.values;
-        BitSet nulls = batch.nulls;
-        int n = batch.recordCount;
-        long lit = literal;
-        int fullWords = n >>> 6;
-        int tail = n & 63;
-
-        if (nulls == null) {
-            for (int w = 0; w < fullWords; w++) {
-                int base = w << 6;
-                long word = 0L;
-                for (int b = 0; b < 64; b++) {
-                    word |= ((vals[base + b] > lit) ? 1L : 0L) << b;
-                }
-                outWords[w] = word;
-            }
-            // tail-word handling; bits past recordCount are left stale (see below)
-        }
-        // BitSet-null branch is structurally identical
-    }
-}
-```
-
-Key shape choices:
+Key shape choices in the typed inner loop:
 
 - **No `Arrays.fill`.** Each output word is written exactly once, in full, at the end of a 64-element block. Bits past `recordCount` in the tail word, and stale slots in words past `(recordCount + 63) >>> 6`, are intentionally left untouched — `nextSetBit` / `scanRunEnd` in `FlatRowReader` are bounded by `batchSize`, so any stale set bit at index `>= batchSize` is filtered by the `bit < limit` check.
 - **Branchless inner loop.** `(cond ? 1L : 0L) << b` lowers to `csel` on AArch64 / `setcc` on x86-64; the per-element cost stops depending on selectivity.
 - **Word-level accumulator.** `long word` lives in a register for 64 iterations — one store per 64 elements, not 64 read-modify-writes.
 - **Hoisted `literal`, `recordCount`, `fullWords`, `tail`.** The inner `for (b = 0; b < 64; b++)` is a constant-bound loop that the JIT unrolls.
-- **`nulls == null` specialised outside the per-word loops.** One branch per call, not per element.
+- **Presence specialised outside the per-word loops.** A batch whose leaves are all present takes a branch chosen once per call, not once per element. Presence is a packed `long[] validity` on the batch (set bit = present), so the null check is a load and a mask rather than a virtual call.
 
 NULL semantics: each fragment writes "definitely matches" — false on NULL. Word-wise AND of per-column matches gives SQL three-valued AND because any `unknown` conjunct unsets the bit; the same contract handles OR cleanly via word-wise OR (see the truth table under [Why `Or` is safe](#why-or-is-safe-under-definitely-matches-semantics)).
 
-`Null*BatchMatcher` short-circuits the per-bit loop entirely — `IsNullBatchMatcher.test` bulk-copies `nulls.toLongArray()`; `IsNotNullBatchMatcher.test` bulk-inverts the same. Like the typed matchers, bits past `recordCount` are left as-is and filtered by the consumer's `bit < limit` check.
+`Null*BatchMatcher` short-circuits the per-bit loop entirely — `IsNotNullBatchMatcher.test` bulk-copies the validity words; `IsNullBatchMatcher.test` bulk-inverts them. Like the typed matchers, bits past `recordCount` are left as-is and filtered by the consumer's `bit < limit` check.
 
 ---
 
 ## `Batch.matches` and drain-side evaluation
 
-`BatchExchange.Batch` gains a `long[] matches` field. Allocated once at construction (sized to `(batchCapacity + 63) >>> 6`) **only** for columns that actually have a fragment installed — other columns leave `matches == null`, which `FlatRowReader` interprets as "all-ones" during intersection.
+`BatchExchange.Batch` gains a `long[] matches` field. Allocated once at construction (sized to `(batchCapacity + 63) >>> 6`) **only** for columns that actually have a fragment installed — other columns leave `matches == null`, and the merge never reads them, because it visits exactly the columns its plan references.
 
-`FlatColumnWorker` gains a `final ColumnBatchMatcher columnFilter` field, constructor-injected so the contract is enforced by the type system rather than a "set before start" call order. At the end of `publishCurrentBatch`, immediately before pushing the batch onto the `readyQueue`:
-
-```java
-if (columnFilter != null) {
-    columnFilter.test(currentBatch, currentBatch.matches);
-}
-```
-
-Cost is paid on the drain thread, on hot data, in parallel with peer drains. When `columnFilter == null`, `publishCurrentBatch` is unchanged.
+`FlatColumnWorker` gains a `final ColumnBatchMatcher columnFilter` field, constructor-injected so the contract is enforced by the type system rather than a "set before start" call order. It runs the fragment into the batch's own `matches` array at the end of `publishCurrentBatch`, immediately before the batch goes onto the `readyQueue`. Cost is paid on the drain thread, on hot data, in parallel with peer drains. When statistics have already proved the batch's row group matches in full, the worker fills all-ones instead of running the fragment. With no fragment installed, `publishCurrentBatch` is unchanged.
 
 ---
 
-## Combine and iteration in `FlatRowReader`
+## Combine and iteration
 
 `FlatRowReader.create` calls `BatchFilterCompiler.tryCompile`. A non-null `CompiledBatchFilter` drives the drain-side path; otherwise the reader's record-matcher mode is used when a filter is set, and the plain cursor when not.
 
-The reader gains:
+### `BatchMatchMerger`
 
-- `long[] combinedWords` — the per-batch combined match mask.
-- `MergePlan mergePlan` — the consumer-side plan returned by the compiler. A top-level `MergePlan.Column` is the single-column fast path; everything else is evaluated by a shared evaluator (below).
-- `MergePlanEvaluator mergeEvaluator` — owns the depth-indexed scratch pool used by compound subtrees. Constructed once per reader; reused across all batches (zero allocations after warm-up).
-- `long[][] perColumnMatches` — preallocated `long[columnCount][]` whose entries are reseated each batch from `previousBatches[i].matches` and passed to the evaluator. Avoids coupling `MergePlanEvaluator` to the reader's `BatchExchange.Batch` type.
+One collaborator owns the whole per-batch merge: the plan, the `MergePlanEvaluator` and its scratch pool, the per-column bitmap slots and the combined buffer. Two axes are decided once at construction.
 
-`loadNextBatch`, after polling all column batches and when `drainSide` is true, calls `intersectMatches`:
+**Where the per-column bitmaps come from.** In *aliasing* mode the consumer's column workers have already run the fragments into each batch's own `matches` array, so the merge reseats pointers and copies nothing. In *owning* mode there are no workers, so the merger runs the fragments itself into buffers it allocates. `FlatRowReader` takes the first, `SelectionEngine` (the column-reader filter path, see [EXACT_COLUMN_READER_FILTERING.md](EXACT_COLUMN_READER_FILTERING.md)) the second; nothing else differs between them.
 
-```java
-private void intersectMatches() {
-    // Single-column fast path: alias the batch's matches array directly.
-    // No copy, no evaluator call, no owned combinedWords buffer needed.
-    if (mergePlan instanceof MergePlan.Column c) {
-        combinedWords = previousBatches[c.projectedIndex()].matches;
-        return;
-    }
-    // Multi-column: snapshot per-column matches references for this batch
-    // (one pointer per column — references shared, no data copied), then
-    // hand off to the shared evaluator.
-    for (int i = 0; i < columnCount; i++) {
-        perColumnMatches[i] = previousBatches[i].matches;
-    }
-    int activeWords = (batchSize + 63) >>> 6;
-    mergeEvaluator.eval(mergePlan, combinedWords, activeWords, perColumnMatches);
-}
-```
+**Plan shape.** A top-level `MergePlan.Column` has nothing to combine, so the merge yields that one column's bitmap directly — no combined buffer, no evaluator, no scratch pool. Any other plan goes to the evaluator, which populates the combined buffer in place.
 
-`MergePlanEvaluator.eval` is a recursive walk: a `Column` node arraycopies the column's bitmap into the output; an `And` node merges its children word-wise with the same all-zero short-circuit the previous shape used (skipping later children once the intersection collapses); an `Or` node word-ORs. Column children of an And/Or bypass scratch and merge directly from their `matches` array; only compound children get a depth-indexed scratch buffer. Sibling frames at the same depth reuse one buffer (their lives don't overlap), but a frame at depth+1 gets a distinct buffer (depth's is still in use). Pool entries persist across calls.
+The merger visits only the projected columns its plan references, collected once at construction by walking the plan. That set is the merge's contract with its caller: those are the only entries of the batch array it dereferences, so a consumer that stages that array itself need keep only those current. It is derived in one place, so the two consumers cannot disagree about which columns the plan reads.
 
-The evaluator is also used by `DrainSideOracleTest`'s drain-side path so the two implementations of the merge semantics can't drift; the oracle's independence comes from the **per-row** compile path (`RecordFilterCompiler` + `RowMatcher.test`), not from a duplicate evaluator.
+`merge` runs once per batch, never per row.
 
-Only the words covering `[0, batchSize)` are touched — bits past `batchSize` are not read by the consumer (`nextSetBit` is bounded), so leaving them stale is safe and avoids the trailing zero-fill the original shape paid every batch.
+### `MergePlanEvaluator`
 
-`hasNext()` / `next()` advance via a `nextSetBit` helper using `Long.numberOfTrailingZeros` over `combinedWords`. Accessors (`getLong(int)`, `isNull(int)`, etc.) are unchanged — they still index `flatValueArrays[idx][rowIndex]`; the only difference is which rows `rowIndex` visits.
+A recursive walk of the plan: a `Column` node arraycopies the column's bitmap into the output; an `And` node merges its children word-wise with an all-zero short-circuit (skipping later children once the intersection collapses); an `Or` node word-ORs. Column children of an And/Or merge directly from their bitmap; only compound children get a depth-indexed scratch buffer. Sibling frames at the same depth reuse one buffer (their lives don't overlap), while a frame at depth+1 gets a distinct buffer (depth's is still in use). Pool entries persist across calls, so the merge allocates nothing after warm-up.
+
+`DrainSideOracleTest` merges the bitmaps itself rather than through the merger; its independence comes from the **per-row** compile path (`RecordFilterCompiler` + `RowMatcher.test`) it compares against, not from a duplicate evaluator.
+
+Only the words covering `[0, batchSize)` are written — bits past `batchSize` are not read by the consumer, so leaving them stale is safe and avoids a trailing zero-fill every batch.
+
+### Iteration
+
+The reader caches the bitmap the merge returned and advances through it with a `nextSetBit` helper over `Long.numberOfTrailingZeros`, plus a run walk that skips the bit scan while inside a run of consecutive 1s. Accessors (`getLong(int)`, `isNull(int)`, etc.) are unchanged — they still index the batch's typed array; the only difference is which rows the cursor visits.
+
 
 ---
 
@@ -237,7 +177,7 @@ JMH, fork=1, warmup=3×1s, measurement=5×1s, single-threaded. `ns/op` is per-ro
 | intIn5   | 1.364          | gated → fallback | n/a              | Single-fragment IN-list.           |
 | intIn32  | 3.126          | gated → fallback | n/a              | Same.                              |
 
-The drain-side path is still slower single-threaded across every eligible shape — the codegen claim from v1 (that a hand-written batch loop would beat the inlined indexed-accessor leaf) does not hold even with the rewritten matchers. **But the gap shrinks as leaf count grows**: `and2` is 6.9× slower, `and4` is 3.8×. Larger leaf counts amortise the per-batch overhead (`Arrays.fill`-free output, per-word accumulator, `intersectMatches`) over more comparison work, while the compiled path's cost grows linearly in leaves. The per-leaf cost of drain-side has dropped to roughly half what v1 measured.
+The drain-side path is still slower single-threaded across every eligible shape — the codegen claim from v1 (that a hand-written batch loop would beat the inlined indexed-accessor leaf) does not hold even with the rewritten matchers. **But the gap shrinks as leaf count grows**: `and2` is 6.9× slower, `and4` is 3.8×. Larger leaf counts amortise the per-batch overhead (`Arrays.fill`-free output, per-word accumulator, the merge itself) over more comparison work, while the compiled path's cost grows linearly in leaves. The per-leaf cost of drain-side has dropped to roughly half what v1 measured.
 
 Why drain-side stays slower single-threaded:
 
@@ -287,6 +227,8 @@ One read of `vals[]`, one bitmap, no intersect. Strictly cheaper than two single
 **Difficulty.** Low. Two new matcher classes plus a grouping pass in `BatchFilterCompiler.tryCompile`. No changes to drain plumbing or intersect logic.
 
 ### `BitSet nulls` → `long[] notNullWords`
+
+**Status: done.** Landed as `BatchExchange.Batch.validity: long[]` (set bit = present), which is the `notNullWords` polarity described here. The rest of this entry is kept for the reasoning it records; the migration itself is no longer outstanding.
 
 **Why it matters.** The biggest remaining drag on single-threaded drain-side throughput. `BitSet.get(int)` is a virtual call into a non-final method that does its own shift, mask, bounds check, and array load — HotSpot will not autovectorise around it. Even though the value comparison in every matcher is now branchless (`(cond ? 1L : 0L) << b`), the null check inside that comparison blocks SIMD lowering. Compiled per-row doesn't have this problem because it uses indexed accessors the JIT inlines through.
 

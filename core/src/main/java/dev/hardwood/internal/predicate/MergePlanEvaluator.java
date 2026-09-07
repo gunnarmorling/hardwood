@@ -16,9 +16,9 @@ package dev.hardwood.internal.predicate;
 /// gets a distinct buffer (the depth's buffer is still in use). Pool entries
 /// persist across calls — zero per-call allocations after warm-up.
 ///
-/// The same instance is used by [dev.hardwood.internal.reader.FlatRowReader]
-/// on the hot path and by `DrainSideOracleTest` to verify equivalence with the
-/// per-row compile path.
+/// Instances are owned by [dev.hardwood.internal.reader.BatchMatchMerger] on
+/// the hot path and by `DrainSideOracleTest`, which merges the bitmaps itself
+/// to verify equivalence with the per-row compile path.
 public final class MergePlanEvaluator {
 
     private final int wordsLen;

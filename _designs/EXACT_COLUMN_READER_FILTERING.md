@@ -92,11 +92,13 @@ selection through one of two backends, chosen once at construction by
 `BatchFilterCompiler.tryCompile`:
 
 **Eligible backend (fast).** When `tryCompile` returns a `CompiledBatchFilter`
-(flat, top-level, supported `(type, op)`), the predicate columns' workers run
-their `ColumnBatchMatcher` on the drain thread and write `Batch.matches`, exactly
-as for the row reader. The engine merges the per-column bitmaps with the
-`MergePlan` via `MergePlanEvaluator`. This is the existing
-`FlatRowReader.intersectMatches` logic, extracted so both readers share it.
+(flat, top-level, supported `(type, op)`), the engine drives a `BatchMatchMerger`
+— the same collaborator the row reader's drain-side path uses, described in
+[DRAIN_SIDE_RECORD_FILTERING.md](DRAIN_SIDE_RECORD_FILTERING.md). It takes the
+merger in its *owning* mode: there are no worker threads here to have run the
+`ColumnBatchMatcher` fragments, so the merger runs them over the decoded batches
+itself, into buffers it owns, before combining them with the `MergePlan`. That
+mode is the only thing the two readers do differently at the merge.
 
 **Fallback backend (parity).** When `tryCompile` returns `null` — nested
 predicate paths, binary, geospatial, unsupported `(type, op)` — the engine

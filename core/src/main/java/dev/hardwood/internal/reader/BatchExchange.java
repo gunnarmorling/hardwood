@@ -60,9 +60,9 @@ public class BatchExchange<B> {
         public String fileName;
         /// Per-batch matches mask, populated by [dev.hardwood.internal.predicate.ColumnBatchMatcher]
         /// on the drain thread when drain-side filtering is enabled. `null` means "no
-        /// fragment for this column" — interpreted as all-ones during intersection.
-        /// When non-null, sized to `(batchCapacity + 63) >>> 6` and overwritten on every
-        /// drain-side test call.
+        /// fragment for this column" — [BatchMatchMerger] never reads those columns, since
+        /// it visits exactly the ones its plan references. When non-null, sized to
+        /// `(batchCapacity + 63) >>> 6` and overwritten on every drain-side test call.
         public long[] matches;
 
         /// Whether statistics proved every record of this batch matches the filter

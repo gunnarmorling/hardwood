@@ -22,13 +22,12 @@ import java.util.UUID;
 
 import dev.hardwood.Validity;
 import dev.hardwood.internal.predicate.BatchFilterCompiler;
-import dev.hardwood.internal.predicate.ColumnBatchMatcher;
 import dev.hardwood.internal.predicate.CompiledBatchFilter;
-import dev.hardwood.internal.predicate.MergePlan;
-import dev.hardwood.internal.predicate.MergePlanEvaluator;
 import dev.hardwood.internal.predicate.RecordFilterCompiler;
 import dev.hardwood.internal.predicate.ResolvedPredicate;
 import dev.hardwood.internal.predicate.RowMatcher;
+import dev.hardwood.internal.reader.BatchExchange;
+import dev.hardwood.internal.reader.BatchMatchMerger;
 import dev.hardwood.internal.reader.BinaryBatchValues;
 import dev.hardwood.internal.reader.NestedBatch;
 import dev.hardwood.internal.reader.NestedBatchDataView;
@@ -52,31 +51,30 @@ import dev.hardwood.schema.FileSchema;
 /// Two backends, chosen once at construction:
 ///
 /// - **Drain-side** — when [BatchFilterCompiler] accepts the predicate (flat,
-///   top-level, supported `(type, op)`), the per-column [ColumnBatchMatcher]
-///   fragments run directly on the flat batches and are merged via the
-///   [MergePlan]. This reuses the row reader's drain-side machinery without
-///   the worker threads.
+///   top-level, supported `(type, op)`), a [BatchMatchMerger] runs the
+///   per-column matcher fragments over the flat batches and combines them into
+///   one survivor bitmap. This is the row reader's drain-side merge, in the
+///   mode where the merger runs the matchers itself because there are no
+///   worker threads to have run them already.
 /// - **Record matcher** — otherwise (nested paths, binary/string, unsupported
 ///   operators) the compiled [RowMatcher] is evaluated per record over a
 ///   batch-backed [StructAccessor] view of the predicate columns, giving full
 ///   parity with the row reader's filtered result.
 final class SelectionEngine {
 
-    private final int wordsLen;
-
     // Drain-side backend (null when the record-matcher backend is used).
-    private final ColumnBatchMatcher[] columnMatchers;
-    private final MergePlan mergePlan;
-    private final MergePlanEvaluator mergeEvaluator;
-    private final long[][] perColumn;
-    private final long[] combined;
+    private final BatchMatchMerger merger;
+    /// The batches [#merger] reads, indexed by projected column index. Staged
+    /// here rather than passed straight through because the merger takes the
+    /// batches, and this engine holds readers. `null` on the record-matcher
+    /// backend.
+    private final BatchExchange.Batch[] stagedBatches;
+    /// The projected indices [#merger] reads — its own set, read once at
+    /// construction, so nothing here re-derives which columns the plan touches.
+    /// `null` on the record-matcher backend.
+    private final int[] stagedColumns;
+
     private final ColumnReader[] readersByProjectedIndex;
-    /// Projected indices the multi-column [#mergePlan] actually reads, computed
-    /// once at construction so [#computeDrainSide] touches only the predicate
-    /// columns each batch rather than scanning all `schema.getColumnCount()`
-    /// matcher slots. `null` on the single-column fast path and the
-    /// record-matcher backend.
-    private final int[] referencedColumns;
 
     // Record-matcher backend (null when the drain-side backend is used).
     private final RowMatcher rowMatcher;
@@ -88,42 +86,16 @@ final class SelectionEngine {
     /// before the next [#computeSelection]. Sized to the batch capacity.
     private final int[] selection;
 
-    private SelectionEngine(int wordsLen,
-                            ColumnBatchMatcher[] columnMatchers, MergePlan mergePlan,
-                            MergePlanEvaluator mergeEvaluator, long[][] perColumn, long[] combined,
+    private SelectionEngine(BatchMatchMerger merger, int columnCount,
                             ColumnReader[] readersByProjectedIndex,
                             RowMatcher rowMatcher, PredicateRowView predicateView, int[] selection) {
-        this.wordsLen = wordsLen;
-        this.columnMatchers = columnMatchers;
-        this.mergePlan = mergePlan;
-        this.mergeEvaluator = mergeEvaluator;
-        this.perColumn = perColumn;
-        this.combined = combined;
+        this.merger = merger;
+        this.stagedBatches = merger != null ? new BatchExchange.Batch[columnCount] : null;
+        this.stagedColumns = merger != null ? merger.referencedColumns() : null;
         this.readersByProjectedIndex = readersByProjectedIndex;
         this.rowMatcher = rowMatcher;
         this.predicateView = predicateView;
         this.selection = selection;
-        this.referencedColumns = mergeEvaluator != null ? referencedColumns(columnMatchers) : null;
-    }
-
-    /// Collects the projected indices with an installed matcher — exactly the
-    /// columns the cross-column [MergePlan] references — so the per-batch merge
-    /// loop iterates only those.
-    private static int[] referencedColumns(ColumnBatchMatcher[] matchers) {
-        int count = 0;
-        for (ColumnBatchMatcher matcher : matchers) {
-            if (matcher != null) {
-                count++;
-            }
-        }
-        int[] referenced = new int[count];
-        int idx = 0;
-        for (int p = 0; p < matchers.length; p++) {
-            if (matchers[p] != null) {
-                referenced[idx++] = p;
-            }
-        }
-        return referenced;
     }
 
     /// Builds an engine for `resolved` over the augmented projection, reading
@@ -138,13 +110,11 @@ final class SelectionEngine {
                 resolved, schema, augProjected::toProjectedIndex);
 
         if (compiled != null) {
-            ColumnBatchMatcher[] matchers = compiled.columnMatchers();
-            MergePlan plan = compiled.mergePlan();
-            boolean single = plan instanceof MergePlan.Column;
-            MergePlanEvaluator evaluator = single ? null : new MergePlanEvaluator(wordsLen);
-            long[][] perColumn = new long[matchers.length][];
-            long[] combined = single ? null : new long[wordsLen];
-            return new SelectionEngine(wordsLen, matchers, plan, evaluator, perColumn, combined,
+            // Owning mode: no column workers ran the matchers, so the merger runs
+            // them itself into buffers it allocates.
+            BatchMatchMerger merger = BatchMatchMerger.owning(
+                    compiled, readersByProjectedIndex.length, wordsLen);
+            return new SelectionEngine(merger, readersByProjectedIndex.length,
                     readersByProjectedIndex, null, null, selection);
         }
 
@@ -154,7 +124,7 @@ final class SelectionEngine {
         RowMatcher matcher = RecordFilterCompiler.compile(resolved, schema);
         PredicateRowView view = PredicateRowView.create(
                 schema, augProjected, resolved, readersByProjectedIndex);
-        return new SelectionEngine(wordsLen, null, null, null, null, null,
+        return new SelectionEngine(null, readersByProjectedIndex.length,
                 readersByProjectedIndex, matcher, view, selection);
     }
 
@@ -163,7 +133,7 @@ final class SelectionEngine {
     /// matches (the no-compaction fast path). The indices live in
     /// `selection()[0, count)` until the next call.
     int computeSelection(int recordCount) {
-        return columnMatchers != null
+        return merger != null
                 ? computeDrainSide(recordCount)
                 : computeRecordMatcher(recordCount);
     }
@@ -175,31 +145,11 @@ final class SelectionEngine {
     }
 
     private int computeDrainSide(int recordCount) {
-        long[] result;
-        if (mergePlan instanceof MergePlan.Column c) {
-            int p = c.projectedIndex();
-            result = ensureWords(p);
-            columnMatchers[p].test(readersByProjectedIndex[p].currentFlatBatch(), result);
+        for (int i = 0; i < stagedColumns.length; i++) {
+            int p = stagedColumns[i];
+            stagedBatches[p] = readersByProjectedIndex[p].currentFlatBatch();
         }
-        else {
-            for (int p : referencedColumns) {
-                long[] words = ensureWords(p);
-                columnMatchers[p].test(readersByProjectedIndex[p].currentFlatBatch(), words);
-            }
-            int activeWords = (recordCount + 63) >>> 6;
-            mergeEvaluator.eval(mergePlan, combined, activeWords, perColumn);
-            result = combined;
-        }
-        return collectSetBits(result, recordCount);
-    }
-
-    private long[] ensureWords(int projectedIndex) {
-        long[] words = perColumn[projectedIndex];
-        if (words == null) {
-            words = new long[wordsLen];
-            perColumn[projectedIndex] = words;
-        }
-        return words;
+        return collectSetBits(merger.merge(stagedBatches, recordCount), recordCount);
     }
 
     private int computeRecordMatcher(int recordCount) {

@@ -25,9 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// End-to-end coverage for the drain-side path in `FlatRowReader`: reads a real
 /// Parquet file via the public API with a drain-eligible predicate and asserts
 /// the surviving rows match what the predicate semantically demands. Exercises
-/// `intersectMatches` (multi-column AND-merge and single-column alias), the
-/// `nextSetBit` / `scanRunEnd` helpers, and the `combinedWords` lifecycle across
-/// `loadNextBatch` — none of which the in-memory `DrainSideOracleTest` touches.
+/// `BatchMatchMerger` in its aliasing mode (compound merge and single-column
+/// alias), the `nextSetBit` / `scanRunEnd` helpers, and the `combinedWords`
+/// lifecycle across `loadNextBatch` — none of which the in-memory
+/// `DrainSideOracleTest` touches, since it merges the bitmaps itself.
 class DrainSideRowReaderTest {
 
     /// 3 row groups × 5 rows. Columns: id (INT32, 1..15), price (FLOAT64, sorted
@@ -52,7 +53,7 @@ class DrainSideRowReaderTest {
     @Test
     void singleColumnDrainEligible_aliasesBatchMatches_returnsExpectedRows() throws Exception {
         // Single-leaf drain-eligible — exercises the `combinedWords` aliasing branch
-        // in intersectMatches where no AND-merge is required.
+        // in BatchMatchMerger where there is no merge to do.
         FilterPredicate filter = FilterPredicate.gt("id", 10);
 
         List<Integer> expected = idsMatching(row -> row.id > 10);
@@ -74,6 +75,27 @@ class DrainSideRowReaderTest {
         List<Integer> actual = idsWithFilter(filter);
 
         assertThat(actual).containsExactlyElementsOf(expected);
+    }
+
+    @Test
+    void nestedCompound_drainSidePath_returnsExpectedRows() throws Exception {
+        // A compound whose child is itself a compound: the plan is
+        // Or[Column(rating), And[Column(id), Column(price)]]. Every other case here
+        // is one level deep, so this is the only one where BatchMatchMerger's plan
+        // walk has to recurse to find a referenced column — a column it missed
+        // would leave that bitmap slot unseated for the evaluator.
+        FilterPredicate filter = FilterPredicate.or(
+                FilterPredicate.and(
+                        FilterPredicate.gt("id", 5),
+                        FilterPredicate.lt("price", 100.0)),
+                FilterPredicate.gt("rating", 5.0f));
+
+        List<Integer> expected = idsMatching(
+                row -> (row.id > 5 && row.price < 100.0) || row.rating > 5.0f);
+        List<Integer> actual = idsWithFilter(filter);
+
+        assertThat(actual).containsExactlyElementsOf(expected);
+        assertThat(actual).containsExactly(6, 7, 8, 9, 10, 15);
     }
 
     @Test
@@ -103,7 +125,7 @@ class DrainSideRowReaderTest {
         assertThat(actual).containsExactlyElementsOf(expected);
     }
 
-    private record Row(int id, double price) {}
+    private record Row(int id, double price, float rating) {}
 
     private static List<Integer> idsMatching(Predicate<Row> p) throws Exception {
         List<Integer> out = new ArrayList<>();
@@ -111,7 +133,7 @@ class DrainSideRowReaderTest {
              RowReader rows = reader.buildRowReader().build()) {
             while (rows.hasNext()) {
                 rows.next();
-                Row r = new Row(rows.getInt("id"), rows.getDouble("price"));
+                Row r = new Row(rows.getInt("id"), rows.getDouble("price"), rows.getFloat("rating"));
                 if (p.test(r)) {
                     out.add(r.id);
                 }
