@@ -37,6 +37,7 @@ import dev.hardwood.internal.reader.FixedSizeListDetector;
 import dev.hardwood.internal.reader.FixedSizeListShape;
 import dev.hardwood.internal.reader.HardwoodContextImpl;
 import dev.hardwood.internal.reader.PageInfo;
+import dev.hardwood.internal.reader.PageIterator;
 import dev.hardwood.internal.reader.SequentialFetchPlan;
 import dev.hardwood.internal.thrift.PageHeaderReader;
 import dev.hardwood.internal.thrift.ThriftCompactReader;
@@ -203,7 +204,7 @@ public class FixedSizeListDecodeBenchmark {
                     ColumnSchema columnSchema = schema.getColumn(col);
                     SequentialFetchPlan plan = SequentialFetchPlan.build(
                             inputFile, columnSchema, chunk, context, rg, inputFile.name(), 0);
-                    Iterator<PageInfo> pages = plan.pages();
+                    PageIterator pages = plan.pages();
                     while (pages.hasNext()) {
                         PageInfo pageInfo = pages.next();
                         ByteBuffer pageBuffer = pageInfo.pageData();
