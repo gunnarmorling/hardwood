@@ -6,7 +6,7 @@ follow-up, see "Boundaries" below).
 ## Problem
 
 Statistics evaluation is drop-only: `StatisticsFilterSupport.canDropLeaf`,
-`RowGroupFilterEvaluator.canDropRowGroup`, and `PageDropPredicates.canDropPage` answer
+`RowGroupFilterEvaluator.decideRowGroup`, and `PageDropPredicates.canDropPage` answer
 only "can no rows match?". Every surviving unit is then evaluated row by row — the
 compiled `RowMatcher` on the record path, per-column `ColumnBatchMatcher`s on the
 drain-side path.
@@ -18,16 +18,17 @@ evaluation over those groups reproduces a foregone conclusion at full decode-sid
 
 ## The decision model
 
-`FilterDecision` (internal.predicate) is the three-valued extension of the boolean drop:
+`FilterDecision` (internal.predicate) is the three-valued extension of the boolean drop it
+replaced:
 
-| decision         | meaning                             | today's equivalent |
-|------------------|-------------------------------------|--------------------|
-| `CANNOT_MATCH`   | no row matches; skip the unit       | `canDrop == true`  |
-| `MIGHT_MATCH`    | undecided; evaluate rows            | `canDrop == false` |
-| `ALWAYS_MATCHES` | every row matches; skip evaluation  | — (new)            |
+| decision         | meaning                             |
+|------------------|-------------------------------------|
+| `CANNOT_MATCH`   | no row matches; skip the unit       |
+| `MIGHT_MATCH`    | undecided; evaluate rows            |
+| `ALWAYS_MATCHES` | every row matches; skip evaluation  |
 
-`canDropRowGroup` is now defined as `decideRowGroup(...) == CANNOT_MATCH`; there is one
-evaluation implementation, not two.
+`decideRowGroup` is the one way to ask. A boolean answer cannot carry the third decision, so
+there is no boolean form of it to fall back to.
 
 ### Leaf rule
 

@@ -30,8 +30,8 @@ import static dev.hardwood.internal.predicate.FilterDecision.MIGHT_MATCH;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /// [RowGroupFilterEvaluator#decideRowGroup] behavior over whole row groups: leaf decisions
-/// with row-group [Statistics], `AND`/`OR` composition, null predicates, and the
-/// equivalence of `canDropRowGroup` with the [FilterDecision#CANNOT_MATCH] decision.
+/// with row-group [Statistics], `AND`/`OR` composition, null predicates, and one cutoff per
+/// decision against a single row group.
 class RowGroupDecideTest {
 
     private static final int COL = 0;
@@ -97,16 +97,19 @@ class RowGroupDecideTest {
         // always-matching decision derived from statistics.
         RowGroup rg = intRowGroup(10, 20, 0L);
         BloomFilterSource noFilters = columnIndex -> null;
-        assertThat(RowGroupFilterEvaluator.decideRowGroup(intGt(5), rg, noFilters))
+        assertThat(RowGroupFilterEvaluator.decideRowGroup(intGt(5), rg, noFilters, null))
                 .isEqualTo(ALWAYS_MATCHES);
     }
 
     @Test
-    void canDropRowGroupIsTheCannotMatchDecision() {
+    void oneCutoffPerDecisionAgainstTheSameRowGroup() {
+        // Above the maximum, inside the range, below the minimum: the three answers a row
+        // group's statistics can give. Asserted as decisions rather than through a boolean,
+        // which could not tell the last two apart.
         RowGroup rg = intRowGroup(10, 20, 0L);
-        assertThat(RowGroupFilterEvaluator.canDropRowGroup(intGt(20), rg)).isTrue();
-        assertThat(RowGroupFilterEvaluator.canDropRowGroup(intGt(15), rg)).isFalse();
-        assertThat(RowGroupFilterEvaluator.canDropRowGroup(intGt(5), rg)).isFalse();
+        assertThat(decide(intGt(20), rg)).isEqualTo(CANNOT_MATCH);
+        assertThat(decide(intGt(15), rg)).isEqualTo(MIGHT_MATCH);
+        assertThat(decide(intGt(5), rg)).isEqualTo(ALWAYS_MATCHES);
     }
 
     @Test
@@ -119,7 +122,7 @@ class RowGroupDecideTest {
     // ==================== Fixtures ====================
 
     private static FilterDecision decide(ResolvedPredicate predicate, RowGroup rowGroup) {
-        return RowGroupFilterEvaluator.decideRowGroup(predicate, rowGroup, null);
+        return RowGroupFilterEvaluator.decideRowGroup(predicate, rowGroup, null, null);
     }
 
     private static ResolvedPredicate intGt(int value) {
