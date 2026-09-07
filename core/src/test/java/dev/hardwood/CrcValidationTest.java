@@ -102,11 +102,13 @@ class CrcValidationTest {
         Path source = Paths.get("src/test/resources/dictionary_with_crc.parquet");
         byte[] bytes = Files.readAllBytes(source);
 
-        // Read metadata to find the dictionary page corruption offset
+        // The last byte of the dictionary page, which ends where the first data page begins.
+        // Anything at or past dataPageOffset is a data page byte, and a flip there is caught by
+        // the data page's own checksum instead — which is what testCorruptedDataDetected covers.
         long corruptOffset;
         try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(ByteBuffer.wrap(bytes)))) {
             ColumnMetaData meta = reader.getFileMetaData().rowGroups().get(0).columns().get(1).metaData();
-            corruptOffset = meta.dictionaryPageOffset() + meta.totalCompressedSize() - 1;
+            corruptOffset = meta.dataPageOffset() - 1;
         }
 
         // Flip a byte to corrupt the dictionary page
