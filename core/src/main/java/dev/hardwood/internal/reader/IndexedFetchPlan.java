@@ -7,8 +7,8 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
@@ -26,6 +26,9 @@ import dev.hardwood.schema.ColumnSchema;
 /// maxRows already applied). Byte data and dictionary parsing are deferred
 /// until the iterator is first advanced — no I/O happens at plan time.
 final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableFirstChunk {
+
+    private static final System.Logger LOG =
+            System.getLogger(IndexedFetchPlan.class.getName());
 
     private final List<RowGroupIterator.NeededPage> neededPages;
     private final List<RowGroupIterator.PageGroup> pageGroups;
@@ -66,13 +69,30 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
             // FetchReason.bind carries the caller's reason (e.g.
             // "prefetch rg=2") to the worker thread; otherwise the
             // underlying readRange would log as `unattributed`.
-            CompletableFuture.runAsync(FetchReason.bind(chunkHandles.get(0)::ensureFetched));
+            ChunkHandle first = chunkHandles.get(0);
+            CompletableFuture.runAsync(FetchReason.bind(() -> {
+                try {
+                    first.ensureFetched();
+                }
+                catch (IOException e) {
+                    // Speculative: nothing is waiting on this, and a failed prefetch
+                    // leaves the handle unfetched, so the demand path fetches it again
+                    // and reports the failure to a caller that is waiting for it.
+                    // DEBUG rather than WARN so a sustained backend outage does not
+                    // emit one line per chunk for failures that are about to be
+                    // reported properly.
+                    LOG.log(System.Logger.Level.DEBUG,
+                            "Prefetch failed for the first chunk of column {0} in row group {1}"
+                                    + " of {2}",
+                            columnSchema.name(), rowGroupIndex, fileName, e);
+                }
+            }));
         }
     }
 
     @Override
-    public Iterator<PageInfo> pages() {
-        return new PageIterator();
+    public PageIterator pages() {
+        return new IndexedPageIterator();
     }
 
     @Override
@@ -142,7 +162,7 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
 
     /// Iterator that lazily parses the dictionary on first access and yields
     /// [PageInfo] objects with lazy byte resolution via [ChunkHandle].
-    private class PageIterator implements Iterator<PageInfo> {
+    private class IndexedPageIterator implements PageIterator {
         private Dictionary dictionary;
         private boolean dictionaryParsed;
         private boolean eventEmitted;
@@ -155,7 +175,7 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
         }
 
         @Override
-        public PageInfo next() {
+        public PageInfo next() throws IOException {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
@@ -195,7 +215,7 @@ final class IndexedFetchPlan implements FetchPlan, RowGroupIterator.CoalescableF
             return page;
         }
 
-        private Dictionary parseDictionary() {
+        private Dictionary parseDictionary() throws IOException {
             ColumnMetaData metaData = columnChunk.metaData();
 
             Long dictOffset = metaData.dictionaryPageOffset();

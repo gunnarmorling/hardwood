@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -569,7 +570,7 @@ class ColumnWorkerTest {
     }
 
     private static long consumeAllBatches(BatchExchange<BatchExchange.Batch> exchange)
-            throws InterruptedException {
+            throws InterruptedException, IOException {
         long totalRows = 0;
         BatchExchange.Batch batch;
         while ((batch = exchange.poll()) != null) {

@@ -59,7 +59,7 @@ final class FilterCoordinator {
     /// Advances to the next aligned batch, computes the selection, and compacts
     /// the payload readers. Returns `false` (without incrementing the
     /// generation) once the input is exhausted.
-    boolean advance() {
+    boolean advance() throws IOException {
         if (!allReaders[0].rawNextBatch()) {
             hasBatch = false;
             recordCount = 0;

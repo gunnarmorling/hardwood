@@ -289,7 +289,7 @@ public class RowGroupIterator {
 
     /// Opens the first file and returns its schema.
     public FileSchema openFirst() throws IOException {
-        PreparedFile prepared = fileMetadataCache.getFileChecked(0);
+        PreparedFile prepared = fileMetadataCache.getFile(0);
         referenceSchema = prepared.schema();
         return referenceSchema;
     }
@@ -391,7 +391,18 @@ public class RowGroupIterator {
     /// @param workItem the work item to get metadata for
     /// @return shared metadata (index buffers, filter-derived matching row
     ///         ranges, and the row-group-wide mask-applicability decision)
-    public SharedRowGroupMetadata getSharedMetadata(WorkItem workItem) {
+    public SharedRowGroupMetadata getSharedMetadata(WorkItem workItem) throws IOException {
+        try {
+            return computeSharedMetadata(workItem);
+        }
+        catch (UncheckedIOException e) {
+            // The mapping function below cannot declare it; this frame can, so the
+            // wrapper goes no further than the two of them.
+            throw ExceptionContext.unwrap(e);
+        }
+    }
+
+    private SharedRowGroupMetadata computeSharedMetadata(WorkItem workItem) {
         return metadataCache.computeIfAbsent(workItem.workItemIndex(), idx -> {
             try (FetchReason.Scope ignored = FetchReason.set(
                     "rg=" + workItem.rowGroupIndex() + " indexes")) {
@@ -433,7 +444,7 @@ public class RowGroupIterator {
     /// — [RowGroupIndexBuffers#fetch] spans the offsets of *all* the row group's columns, so one
     /// chunk pointing elsewhere misplaces the region for the rest.
     ///
-    /// @throws IOException if any chunk names another file
+    /// @throws UnsupportedOperationException if any chunk names another file
     private static void requireSameFile(WorkItem workItem) {
         List<ColumnChunk> columns = workItem.rowGroup().columns();
         for (int i = 0; i < columns.size(); i++) {
@@ -441,7 +452,12 @@ public class RowGroupIterator {
                 columns.get(i).requireSameFile();
             }
             catch (UnsupportedOperationException e) {
-                throw new UnsupportedOperationException("Cannot read column " + i + " in row group "
+                // Named here rather than by the catch around the caller, which only sees
+                // `IOException`: this is unchecked and travels past it, so the file it came
+                // from has to be added where it is raised.
+                throw new UnsupportedOperationException(
+                        ExceptionContext.filePrefix(workItem.inputFile().name())
+                        + "Cannot read column " + i + " in row group "
                         + workItem.rowGroupIndex() + ": " + e.getMessage(), e);
             }
         }
@@ -518,10 +534,22 @@ public class RowGroupIterator {
         // a filter, probes bloom filters and dictionaries; a ConcurrentHashMap holds a bin
         // lock for the whole of a mapping function, so that I/O must not run inside one.
         boolean[] planned = new boolean[1];
-        plans = fetchPlanCache.computeIfAbsent(workItemIndex, idx -> {
-            planned[0] = true;
-            return computeFetchPlans(workItem);
-        });
+        try {
+            plans = fetchPlanCache.computeIfAbsent(workItemIndex, idx -> {
+                planned[0] = true;
+                try {
+                    return computeFetchPlans(workItem);
+                }
+                catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+        }
+        catch (UncheckedIOException e) {
+            // Wrapped only to leave the mapping function, and undone in the frame
+            // that can declare what happened.
+            throw ExceptionContext.unwrap(e);
+        }
         if (planned[0]) {
             prefetchNextRowGroup(workItem);
         }
@@ -579,7 +607,24 @@ public class RowGroupIterator {
                     "prefetch rg=" + nextWorkItem.rowGroupIndex())) {
                 FetchPlan[] nextPlans = fetchPlanCache.computeIfAbsent(
                         nextWorkItem.workItemIndex(),
-                        idx -> computeFetchPlans(nextWorkItem));
+                        idx -> {
+                            try {
+                                return computeFetchPlans(nextWorkItem);
+                            }
+                            catch (IOException e) {
+                                // Speculative: nothing is waiting on this. Returning
+                                // null leaves the entry uncached, so the demand path
+                                // plans the row group again and reports the failure
+                                // to a caller that is waiting for it.
+                                LOG.log(System.Logger.Level.DEBUG,
+                                        "Prefetch failed for row group {0}",
+                                        nextWorkItem.rowGroupIndex(), e);
+                                return null;
+                            }
+                        });
+                if (nextPlans == null) {
+                    return;
+                }
                 // Pre-fetch the first non-empty plan's chunk
                 for (FetchPlan plan : nextPlans) {
                     if (!plan.isEmpty()) {
@@ -591,7 +636,7 @@ public class RowGroupIterator {
         });
     }
 
-    private FetchPlan[] computeFetchPlans(WorkItem workItem) {
+    private FetchPlan[] computeFetchPlans(WorkItem workItem) throws IOException {
         SharedRowGroupMetadata shared = getSharedMetadata(workItem);
         RowGroup rowGroup = workItem.rowGroup();
         RowRanges matchingRows = shared.matchingRows();
@@ -1223,7 +1268,7 @@ public class RowGroupIterator {
         // sibling exists for the callers that cannot: a mapping function, a `Runnable`, a
         // `CompletableFuture` body. Nothing about a footer read is different on this path,
         // only what the frame above it is allowed to declare.
-        return fileMetadataCache.getFileChecked(fileIndex);
+        return fileMetadataCache.getFile(fileIndex);
     }
 
     /// Triggers async loading of the file at the given index.

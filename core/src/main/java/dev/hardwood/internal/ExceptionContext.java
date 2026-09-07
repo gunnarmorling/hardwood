@@ -57,8 +57,17 @@ public final class ExceptionContext {
         String newMessage = prefix + (originalMessage != null ? originalMessage : e.getClass().getSimpleName());
 
         if (e instanceof UncheckedIOException uio) {
-            // UncheckedIOException requires an IOException cause, so we can't chain
-            // the original UncheckedIOException as the cause. Preserve it as suppressed.
+            // Not a case the reader produces: every wrap it makes to leave a lambda is
+            // undone by the method enclosing that lambda, and `InputFile.readRange`
+            // declares `IOException`, so an implementation has a checked channel and no
+            // reason to reach for the unchecked one. The arm is here because this method
+            // takes an arbitrary `RuntimeException` and must not silently change its type
+            // — `UncheckedIOException` declares (String, IOException) and not
+            // (String, Throwable), so the reflective path below cannot construct one and
+            // would hand the caller a plain `RuntimeException` instead.
+            //
+            // Its cause must be an IOException, so the original cannot be chained; it
+            // is kept as suppressed.
             IOException ioCause = uio.getCause();
             if (ioCause == null) {
                 ioCause = new IOException(originalMessage);

@@ -8,7 +8,6 @@
 package dev.hardwood.internal.reader;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -218,7 +217,7 @@ public final class FlatRowReader implements FileAwareRowReader {
     }
 
     /// Eagerly loads the first batch. Must be called after construction.
-    public void initialize() {
+    public void initialize() throws IOException {
         if (!loadNextBatch()) {
             exhausted = true;
         }
@@ -249,7 +248,7 @@ public final class FlatRowReader implements FileAwareRowReader {
                                    ProjectedSchema projectedSchema,
                                    HardwoodContextImpl context,
                                    ResolvedPredicate filter,
-                                   long maxRows) {
+                                   long maxRows) throws IOException {
         int batchSize = BatchSizing.computeOptimalBatchSize(projectedSchema);
         int projectedColumnCount = projectedSchema.getProjectedColumnCount();
 
@@ -336,19 +335,6 @@ public final class FlatRowReader implements FileAwareRowReader {
 
     @Override
     public boolean hasNext() throws IOException {
-        try {
-            return hasNextImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            // This is the boundary the contract is stated at, so it is unwrapped
-            // here and reported as what it is.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private boolean hasNextImpl() {
         if (exhausted) {
             return false;
         }
@@ -390,7 +376,7 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// Loads the next batch and says whether it yields a row. Kept out of [#hasNext] so
     /// that method stays loop-free and small enough to inline into a caller's row loop,
     /// which is worth more than the call this costs once per batch.
-    private boolean loadAndDecide() {
+    private boolean loadAndDecide() throws IOException {
         if (!loadNextBatch()) {
             return false;
         }
@@ -400,7 +386,7 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// Advances to the next record the matcher accepts, evaluating one at a time.
     /// Returns to [#hasNext]'s plain cursor as soon as a batch loads that statistics
     /// decided, so a proven batch never pays for the per-row protocol.
-    private boolean hasNextMatching() {
+    private boolean hasNextMatching() throws IOException {
         if (maxMatchedRows != ColumnWorker.UNLIMITED && matchedRowsYielded >= maxMatchedRows) {
             exhausted = true;
             return false;
@@ -431,19 +417,6 @@ public final class FlatRowReader implements FileAwareRowReader {
 
     @Override
     public void next() throws IOException {
-        try {
-            nextImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            // This is the boundary the contract is stated at, so it is unwrapped
-            // here and reported as what it is.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private void nextImpl() {
         // Both filtering modes park the row they picked in `pendingRowIndex`; this only
         // commits it. They differ in how `hasNext` finds the row, not in what `next` does.
         if (drainSide || activeMatcher != null) {
@@ -892,7 +865,7 @@ public final class FlatRowReader implements FileAwareRowReader {
 
     // ==================== Batch Loading ====================
 
-    private boolean loadNextBatch() {
+    private boolean loadNextBatch() throws IOException {
         if (exhausted) {
             return false;
         }
@@ -1054,19 +1027,6 @@ public final class FlatRowReader implements FileAwareRowReader {
 
     @Override
     public void close() throws IOException {
-        try {
-            closeImpl();
-        }
-        catch (UncheckedIOException e) {
-            // The decode pipeline crosses task boundaries a checked exception
-            // cannot travel through, so a transport failure arrives wrapped.
-            // This is the boundary the contract is stated at, so it is unwrapped
-            // here and reported as what it is.
-            throw ExceptionContext.unwrap(e);
-        }
-    }
-
-    private void closeImpl() {
         if (closed) {
             return;
         }

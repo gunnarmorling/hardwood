@@ -90,7 +90,7 @@ class FileMetadataCacheTest {
 
         assertThat(inputFile.openCount()).isZero();
         assertThat(inputFile.closeCount()).isZero();
-        assertThatThrownBy(() -> cache.getFileChecked(0))
+        assertThatThrownBy(() -> cache.getFile(0))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("FileMetadataCache is closed");
 

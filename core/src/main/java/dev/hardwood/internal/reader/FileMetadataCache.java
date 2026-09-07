@@ -56,22 +56,26 @@ public final class FileMetadataCache {
     }
 
     public FileMetaData getFileMetaData(int fileIndex) throws IOException {
-        return getFileChecked(fileIndex).metaData();
+        return getFile(fileIndex).metaData();
     }
 
     /// Gets or loads a prepared file, blocking if necessary.
     ///
-    /// Unwraps the [CompletionException] that [CompletableFuture#join] would
-    /// otherwise wrap around the load failure, so callers see the original
-    /// exception (e.g. [UncheckedIOException]) directly rather than as a
-    /// `CompletionException` cause.
-    PreparedFile getFile(int fileIndex) {
+    /// A failed load arrives twice-wrapped and leaves as neither. The loader runs
+    /// in a [java.util.function.Supplier], which cannot declare `IOException`, so
+    /// it wraps; [CompletableFuture#join] then wraps whatever it finds in a
+    /// [CompletionException]. This is the frame that can say what went wrong, so
+    /// both are undone here and the original failure is what a caller catches.
+    PreparedFile getFile(int fileIndex) throws IOException {
         CompletableFuture<PreparedFile> future = registerLoad(fileIndex, true);
         try {
             return future.join();
         }
         catch (CompletionException e) {
             Throwable cause = e.getCause();
+            if (cause instanceof UncheckedIOException unchecked) {
+                throw ExceptionContext.unwrap(unchecked);
+            }
             if (cause instanceof RuntimeException runtimeException) {
                 throw runtimeException;
             }
@@ -79,15 +83,6 @@ public final class FileMetadataCache {
                 throw error;
             }
             throw e;
-        }
-    }
-
-    PreparedFile getFileChecked(int fileIndex) throws IOException {
-        try {
-            return getFile(fileIndex);
-        }
-        catch (UncheckedIOException e) {
-            throw e.getCause();
         }
     }
 
