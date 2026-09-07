@@ -9,7 +9,6 @@ package dev.hardwood.internal.writer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -522,7 +521,7 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
             storedLength = uncompressedLength;
         }
         else {
-            storedArray = compress(body.array(), 0, uncompressedLength);
+            storedArray = compressor.compress(body.array(), 0, uncompressedLength);
             storedLength = storedArray.length;
         }
         // CRC-32 over the page body as stored on disk (compressed), matching what the reader
@@ -609,7 +608,9 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
     /// uncompressed size (header plus uncompressed body) for the chunk metadata.
     private byte[] buildDictionaryPage() {
         byte[] body = values.encodeDictionaryBody();
-        byte[] stored = codec == CompressionCodec.UNCOMPRESSED ? body : compress(body, 0, body.length);
+        byte[] stored = codec == CompressionCodec.UNCOMPRESSED
+                ? body
+                : compressor.compress(body, 0, body.length);
         CRC32 crc = new CRC32();
         crc.update(stored);
         ThriftCompactWriter header = new ThriftCompactWriter();
@@ -621,22 +622,6 @@ final class ColumnChunkBuffer implements RecordShredder.LevelSink {
         page.writeBytes(headerBytes);
         page.writeBytes(stored);
         return page.toByteArray();
-    }
-
-    /// Compresses a page body with the chunk's codec. Compressing an in-memory buffer that
-    /// fails is unrecoverable, so a codec error surfaces as an unchecked exception rather than
-    /// forcing a checked-exception path through the [RecordShredder.LevelSink] callback.
-    ///
-    /// `ParquetFileWriter.flushRowGroup` unwraps it: it is the innermost frame every public
-    /// write method flushes through, and each of them declares the [IOException] a caller
-    /// should see.
-    private byte[] compress(byte[] data, int offset, int length) {
-        try {
-            return compressor.compress(data, offset, length);
-        }
-        catch (IOException e) {
-            throw new UncheckedIOException("Failed to " + codec + "-compress a page body", e);
-        }
     }
 
     /// The deduplicated set of encodings the chunk actually uses: `RLE` for the level streams

@@ -26,14 +26,14 @@ final class BrotliLoader {
     /// Ensures brotli4j's native library is loaded. Every page body of a BROTLI file passes
     /// through here, so the loaded case reads the volatile flag rather than taking the lock.
     ///
-    /// @throws IOException if the native library cannot be loaded
-    static void ensureLoaded() throws IOException {
+    /// @throws UnsupportedOperationException if the native library cannot be loaded
+    static void ensureLoaded() {
         if (!loaded) {
             load();
         }
     }
 
-    private static synchronized void load() throws IOException {
+    private static synchronized void load() {
         if (loaded) {
             return;
         }
@@ -42,7 +42,12 @@ final class BrotliLoader {
             loaded = true;
         }
         catch (UnsatisfiedLinkError e) {
-            throw new IOException("Failed to load Brotli native library: " + e.getMessage(), e);
+            // The file is correct and this library cannot handle it, which is the
+            // same answer as an absent codec dependency: a remedy in the build,
+            // not a retry. See CodecLibraries#require.
+            throw new UnsupportedOperationException(
+                    "Cannot handle BROTLI-compressed Parquet file: native library failed to load. "
+                            + e.getMessage(), e);
         }
     }
 }

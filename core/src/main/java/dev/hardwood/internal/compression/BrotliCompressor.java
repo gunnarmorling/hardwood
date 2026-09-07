@@ -11,19 +11,21 @@ import java.io.IOException;
 
 import com.aayushatharva.brotli4j.encoder.Encoder;
 
+import dev.hardwood.writer.ParquetWriteException;
+
 /// [Compressor] for the BROTLI codec, the inverse of [BrotliDecompressor]. Compresses at
 /// brotli4j's default quality, which is the densest and slowest of the codecs the writer
 /// produces.
 public class BrotliCompressor implements Compressor {
 
     @Override
-    public byte[] compress(byte[] data, int offset, int length) throws IOException {
+    public byte[] compress(byte[] data, int offset, int length) {
         BrotliLoader.ensureLoaded();
         try {
             return Encoder.compress(data, offset, length);
         }
-        catch (RuntimeException e) {
-            throw new IOException("Brotli compression failed", e);
+        catch (IOException | RuntimeException e) {
+            throw new ParquetWriteException("Brotli compression failed", e);
         }
     }
 

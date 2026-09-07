@@ -7,7 +7,7 @@
  */
 package dev.hardwood.internal.compression;
 
-import java.io.IOException;
+import dev.hardwood.writer.ParquetWriteException;
 
 /// Compresses a page body on the write path, the inverse of [Decompressor].
 ///
@@ -22,8 +22,8 @@ public interface Compressor {
     /// @param offset the first byte to compress
     /// @param length the number of bytes to compress
     /// @return the compressed bytes, in an array whose length is the compressed size
-    /// @throws IOException if compression fails
-    byte[] compress(byte[] data, int offset, int length) throws IOException;
+    /// @throws ParquetWriteException if the codec rejects the buffer
+    byte[] compress(byte[] data, int offset, int length);
 
     /// The name of this compressor.
     String getName();

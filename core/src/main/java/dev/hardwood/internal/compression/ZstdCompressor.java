@@ -7,10 +7,11 @@
  */
 package dev.hardwood.internal.compression;
 
-import java.io.IOException;
 import java.util.Arrays;
 
 import com.github.luben.zstd.Zstd;
+
+import dev.hardwood.writer.ParquetWriteException;
 
 /// [Compressor] for the ZSTD codec, the inverse of [ZstdDecompressor]. Compresses at zstd's
 /// default level, the same trade-off point the reference implementations write.
@@ -19,11 +20,20 @@ public class ZstdCompressor implements Compressor {
     private final int level = Zstd.defaultCompressionLevel();
 
     @Override
-    public byte[] compress(byte[] data, int offset, int length) throws IOException {
+    public byte[] compress(byte[] data, int offset, int length) {
         byte[] output = new byte[Math.toIntExact(Zstd.compressBound(length))];
-        long written = Zstd.compressByteArray(output, 0, output.length, data, offset, length, level);
+        long written;
+        try {
+            written = Zstd.compressByteArray(output, 0, output.length, data, offset, length, level);
+        }
+        catch (RuntimeException e) {
+            // zstd-jni reports some failures by throwing rather than through the return code
+            // the check below covers, the same way it does on the decompress side.
+            throw new ParquetWriteException("ZSTD compression failed: " + e.getMessage(), e);
+        }
         if (Zstd.isError(written)) {
-            throw new IOException("ZSTD compression failed: " + Zstd.getErrorName(written));
+            throw new ParquetWriteException(
+                    "ZSTD compression failed: " + Zstd.getErrorName(written));
         }
         return Arrays.copyOf(output, Math.toIntExact(written));
     }

@@ -7,8 +7,6 @@
  */
 package dev.hardwood.writer;
 
-import java.io.IOException;
-
 import org.junit.jupiter.api.Test;
 
 import dev.hardwood.internal.compression.Compressor;
@@ -18,22 +16,23 @@ import dev.hardwood.metadata.CompressionCodec;
 import static dev.hardwood.writer.WriterTestSupport.oneColumn;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/// A codec that fails is reported as the [IOException] every public write method declares.
+/// A codec that fails is reported as a [ParquetWriteException], unchanged on the way out.
 ///
-/// Compression happens under `ParquetFileWriter.flushRowGroup` and nowhere else, and it is
-/// reached from a callback that cannot declare a checked exception — so the failure leaves
-/// `ColumnChunkBuffer` as an `UncheckedIOException`. All three public methods that flush reach
-/// it, and each of them promises an `IOException`, so each is asserted rather than the one that
-/// happened to be noticed. The wrapper's message is what names the codec and the page, so it is
-/// the message the caller is left with; the codec's own exception stays the cause.
+/// Compressing a buffer reaches nothing, so a codec failure is not an [IOException] and is not
+/// something a caller retries. It travels as it was raised: nothing wraps it on the way through
+/// the [RecordShredder.LevelSink] callback it is thrown inside, and nothing unwraps it after.
+///
+/// All three public methods that flush reach the codec, and each is asserted rather than the one
+/// that happened to be noticed. `IOException` stays on their signatures for the destination,
+/// which is the only thing about a write that a second attempt can change.
 class WriterCodecFailureTest {
 
     /// Fails on every page body. `getName` is answered so the writer is configured exactly as it
     /// would be for a working codec.
     private static final Compressor FAILING = new Compressor() {
         @Override
-        public byte[] compress(byte[] data, int offset, int length) throws IOException {
-            throw new IOException("codec unavailable");
+        public byte[] compress(byte[] data, int offset, int length) {
+            throw new ParquetWriteException("codec unavailable");
         }
 
         @Override
@@ -53,18 +52,17 @@ class WriterCodecFailureTest {
     }
 
     @Test
-    void writeBatchReportsACodecFailureAsIOException() throws Exception {
+    void writeBatchReportsACodecFailureAsParquetWriteException() throws Exception {
         ParquetFileWriter writer = ParquetFileWriter.create(
                 new ByteBufferOutputFile(), oneColumn(), flushPerRecord(), FAILING);
 
         assertThatThrownBy(() -> writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] {1, 2})))
-                .isInstanceOf(IOException.class)
-                .hasMessage("Failed to GZIP-compress a page body")
-                .hasRootCauseMessage("codec unavailable");
+                .isInstanceOf(ParquetWriteException.class)
+                .hasMessage("codec unavailable");
     }
 
     @Test
-    void writeRowReportsACodecFailureAsIOException() throws Exception {
+    void writeRowReportsACodecFailureAsParquetWriteException() throws Exception {
         ParquetFileWriter writer = ParquetFileWriter.create(
                 new ByteBufferOutputFile(), oneColumn(), flushPerRecord(), FAILING);
         RowWriter rows = writer.rowWriter();
@@ -77,21 +75,19 @@ class WriterCodecFailureTest {
                 rows.writeRow(row -> row.setInt(0, value));
             }
             writer.close();
-        }).isInstanceOf(IOException.class)
-          .hasMessage("Failed to GZIP-compress a page body")
-          .hasRootCauseMessage("codec unavailable");
+        }).isInstanceOf(ParquetWriteException.class)
+          .hasMessage("codec unavailable");
     }
 
     @Test
-    void closeReportsACodecFailureAsIOException() throws Exception {
+    void closeReportsACodecFailureAsParquetWriteException() throws Exception {
         // No row-group target reached while writing, so the only flush is the one close does.
         ParquetFileWriter writer = ParquetFileWriter.create(new ByteBufferOutputFile(), oneColumn(),
                 WriterConfig.builder().codec(CompressionCodec.GZIP).build(), FAILING);
         writer.columnWriter().writeBatch(batch -> batch.ints(0, new int[] {1, 2, 3}));
 
         assertThatThrownBy(writer::close)
-                .isInstanceOf(IOException.class)
-                .hasMessage("Failed to GZIP-compress a page body")
-                .hasRootCauseMessage("codec unavailable");
+                .isInstanceOf(ParquetWriteException.class)
+                .hasMessage("codec unavailable");
     }
 }
