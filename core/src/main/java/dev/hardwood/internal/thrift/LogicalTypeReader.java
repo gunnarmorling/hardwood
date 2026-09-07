@@ -7,18 +7,17 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.LogicalType.EdgeInterpolationAlgorithm;
 import dev.hardwood.metadata.LogicalType.TimeUnit;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for LogicalType union from Thrift Compact Protocol.
 /// LogicalType is a union with different variants for each type.
 public class LogicalTypeReader {
 
-    public static LogicalType read(ThriftCompactReader reader) throws IOException {
+    public static LogicalType read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -28,7 +27,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType readInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType readInternal(ThriftCompactReader reader) {
         LogicalType result = null;
 
         while (true) {
@@ -104,7 +103,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.DecimalType readDecimalType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.DecimalType readDecimalType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readDecimalTypeInternal(reader);
@@ -114,7 +113,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.DecimalType readDecimalTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.DecimalType readDecimalTypeInternal(ThriftCompactReader reader) {
         int scale = -1;
         int precision = -1;
 
@@ -150,7 +149,7 @@ public class LogicalTypeReader {
         return new LogicalType.DecimalType(scale, precision);
     }
 
-    private static LogicalType.TimeType readTimeType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.TimeType readTimeType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readTimeTypeInternal(reader);
@@ -160,7 +159,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.TimeType readTimeTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.TimeType readTimeTypeInternal(ThriftCompactReader reader) {
         boolean isAdjustedToUTC = true;
         LogicalType.TimeType.TimeUnit unit = LogicalType.TimeType.TimeUnit.MILLIS;
 
@@ -186,7 +185,7 @@ public class LogicalTypeReader {
         return new LogicalType.TimeType(isAdjustedToUTC, unit);
     }
 
-    private static LogicalType.TimestampType readTimestampType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.TimestampType readTimestampType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readTimestampTypeInternal(reader);
@@ -196,7 +195,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.TimestampType readTimestampTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.TimestampType readTimestampTypeInternal(ThriftCompactReader reader) {
         boolean isAdjustedToUTC = true;
         LogicalType.TimestampType.TimeUnit unit = LogicalType.TimestampType.TimeUnit.MILLIS;
 
@@ -222,7 +221,7 @@ public class LogicalTypeReader {
         return new LogicalType.TimestampType(isAdjustedToUTC, unit);
     }
 
-    private static LogicalType.IntType readIntType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.IntType readIntType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readIntTypeInternal(reader);
@@ -232,7 +231,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.IntType readIntTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.IntType readIntTypeInternal(ThriftCompactReader reader) {
         int bitWidth = 8;
         boolean isSigned = true;
 
@@ -260,7 +259,7 @@ public class LogicalTypeReader {
         return new LogicalType.IntType(bitWidth, isSigned);
     }
 
-    private static LogicalType.VariantType readVariantType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.VariantType readVariantType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readVariantTypeInternal(reader);
@@ -270,7 +269,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.VariantType readVariantTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.VariantType readVariantTypeInternal(ThriftCompactReader reader) {
         int specVersion = 1; // Per Parquet Variant spec: default when unset.
 
         while (true) {
@@ -294,7 +293,7 @@ public class LogicalTypeReader {
         return new LogicalType.VariantType(specVersion);
     }
 
-    private static TimeUnit readTimeUnit(ThriftCompactReader reader) throws IOException {
+    private static TimeUnit readTimeUnit(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             int fieldId = readUnionVariantId(reader, "TimeUnit");
@@ -310,7 +309,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.GeometryType readGeometryType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.GeometryType readGeometryType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readGeometryTypeInternal(reader);
@@ -320,7 +319,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.GeometryType readGeometryTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.GeometryType readGeometryTypeInternal(ThriftCompactReader reader) {
         String crs = null;
         while (true) {
             int header = reader.readFieldHeader();
@@ -347,7 +346,7 @@ public class LogicalTypeReader {
         return new LogicalType.GeometryType(crs);
     }
 
-    private static LogicalType.GeographyType readGeographyType(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.GeographyType readGeographyType(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readGeographyTypeInternal(reader);
@@ -357,7 +356,7 @@ public class LogicalTypeReader {
         }
     }
 
-    private static LogicalType.GeographyType readGeographyTypeInternal(ThriftCompactReader reader) throws IOException {
+    private static LogicalType.GeographyType readGeographyTypeInternal(ThriftCompactReader reader) {
         String crs = null;
         EdgeInterpolationAlgorithm edgeInterpolation = null;
         while (true) {
@@ -404,15 +403,15 @@ public class LogicalTypeReader {
     /// variant's value for a field of the enclosing struct and misparse the rest of it.
     ///
     /// @param unionName name of the union, for the error message
-    private static int readUnionVariantId(ThriftCompactReader reader, String unionName) throws IOException {
+    private static int readUnionVariantId(ThriftCompactReader reader, String unionName) {
         int variant = reader.readFieldHeader();
         if (variant == ThriftCompactReader.STOP_FIELD) {
-            throw new IOException("Malformed Parquet metadata: " + unionName
+            throw new ParquetReadException("Malformed Parquet metadata: " + unionName
                     + " union has no variant set");
         }
         reader.skipField(ThriftCompactReader.fieldType(variant));
         if (reader.readFieldHeader() != ThriftCompactReader.STOP_FIELD) {
-            throw new IOException("Malformed Parquet metadata: " + unionName
+            throw new ParquetReadException("Malformed Parquet metadata: " + unionName
                     + " union has more than one variant set");
         }
         return ThriftCompactReader.fieldId(variant);

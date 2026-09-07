@@ -13,6 +13,8 @@ import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 
+import dev.hardwood.reader.ParquetReadException;
+
 /// Decoder for DELTA_BINARY_PACKED encoding.
 ///
 /// This encoding stores integers as deltas from consecutive values, organized in blocks
@@ -111,7 +113,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// Reads the stream header at construction. It is what the buffer's size and every bound come
     /// from, so nothing this class does is meaningful before it: deferring it only buys a flag to
     /// test on every entry point, and every caller already reports an [IOException].
-    public DeltaBinaryPackedDecoder(byte[] data, int offset) throws IOException {
+    public DeltaBinaryPackedDecoder(byte[] data, int offset) {
         this.data = data;
         this.pos = offset;
         this.header = readHeader();
@@ -132,18 +134,18 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     }
 
     /// Read a single INT32 value from the stream.
-    public int readInt() throws IOException {
+    public int readInt() {
         return (int) readLongValue();
     }
 
     /// Read a single INT64 value from the stream.
-    public long readLong() throws IOException {
+    public long readLong() {
         return readLongValue();
     }
 
     /// Read INT64 values directly into a primitive long array.
     @Override
-    public void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             int out = 0;
             while (out < output.length) {
@@ -176,7 +178,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// The prefix sum is carried in a `long` and narrowed here, which is the wrap-around modulo
     /// 2^32 the format calls for.
     @Override
-    public void readInts(int[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readInts(int[] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             int out = 0;
             while (out < output.length) {
@@ -207,7 +209,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     }
 
     /// Read a single value as a primitive long (no boxing).
-    private long readLongValue() throws IOException {
+    private long readLongValue() {
         if (bufferPos >= bufferFill) {
             bufferFill = fillInto(buffer, 0);
             bufferPos = 0;
@@ -227,7 +229,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// which for a page read in one go is every block but the last.
     ///
     /// @return how many values were written
-    private int fillInto(long[] dest, int destOffset) throws IOException {
+    private int fillInto(long[] dest, int destOffset) {
         checkNotExhausted();
         int produced = startBlock(dest, destOffset);
         if (valuesProduced >= header.totalValueCount()) {
@@ -245,7 +247,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
 
     /// The `int[]` form of [#fillInto(long[],int)], so an INT32 column is written once rather than
     /// staged through a `long[]` and narrowed by a second pass over it.
-    private int fillInto(int[] dest, int destOffset) throws IOException {
+    private int fillInto(int[] dest, int destOffset) {
         checkNotExhausted();
         int produced = startBlock(dest, destOffset);
         if (valuesProduced >= header.totalValueCount()) {
@@ -267,9 +269,9 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// value is not exempt from the count: a stream declaring no values at all — which is what
     /// writers emit for an empty one — has no first value to hand out either, and the buffer sized
     /// from that count has no room to hold one.
-    private void checkNotExhausted() throws IOException {
+    private void checkNotExhausted() {
         if (valuesProduced >= header.totalValueCount()) {
-            throw new IOException("No more values to read");
+            throw new ParquetReadException("No more values to read");
         }
     }
 
@@ -298,7 +300,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// The checks live in [Header] itself and surface as [IllegalArgumentException]; they are
     /// translated here, because to this class a header that does not add up is a malformed file and
     /// not a programming error.
-    private Header readHeader() throws IOException {
+    private Header readHeader() {
         int blockSize = readUleb128();
         int miniblockCount = readUleb128();
         int totalValueCount = readUleb128();
@@ -307,21 +309,21 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
             return Header.of(blockSize, miniblockCount, totalValueCount, firstValue);
         }
         catch (IllegalArgumentException e) {
-            throw new IOException(e.getMessage(), e);
+            throw new ParquetReadException(e.getMessage(), e);
         }
     }
 
-    private void readBlockHeader() throws IOException {
+    private void readBlockHeader() {
         minDelta = readZigzagUleb128();
 
         // Read bit widths for all miniblocks in this block
         for (int i = 0; i < header.miniblockCount(); i++) {
             if (pos >= data.length) {
-                throw new IOException("Unexpected EOF reading bitwidths");
+                throw new ParquetReadException("Unexpected EOF reading bitwidths");
             }
             int bw = data[pos++] & 0xFF;
             if (bw > 64) {
-                throw new IOException("Invalid bit width: " + bw);
+                throw new ParquetReadException("Invalid bit width: " + bw);
             }
             bitWidths[i] = bw;
         }
@@ -332,7 +334,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     /// `pos` advances by the bytes the miniblock occupies in full, which is not the same as the
     /// bytes `count` values need: the encoder pads a partly-filled miniblock and those bytes are
     /// still there to step over.
-    private void decodeMiniblock(int miniblock, long[] dest, int destOffset, int count) throws IOException {
+    private void decodeMiniblock(int miniblock, long[] dest, int destOffset, int count) {
         int bitWidth = bitWidths[miniblock];
         if (bitWidth == 0) {
             long value = lastValue;
@@ -348,7 +350,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         pos += bytes;
     }
 
-    private void decodeMiniblock(int miniblock, int[] dest, int destOffset, int count) throws IOException {
+    private void decodeMiniblock(int miniblock, int[] dest, int destOffset, int count) {
         int bitWidth = bitWidths[miniblock];
         if (bitWidth == 0) {
             long value = lastValue;
@@ -368,10 +370,10 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
     ///
     /// Taken as a long because a file-controlled block size overflows the product, and a negative
     /// byte count would pass the bounds check rather than fail it.
-    private int miniblockBytes(int bitWidth) throws IOException {
+    private int miniblockBytes(int bitWidth) {
         long bytes = ((long) header.valuesPerMiniblock() * bitWidth + 7) / 8;
         if (bytes > data.length - pos) {
-            throw new IOException("Unexpected EOF reading miniblock data: expected " + bytes
+            throw new ParquetReadException("Unexpected EOF reading miniblock data: expected " + bytes
                     + " bytes, got " + (data.length - pos));
         }
         return (int) bytes;
@@ -450,13 +452,13 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         return tailBytes;
     }
 
-    private int readUleb128() throws IOException {
+    private int readUleb128() {
         int result = 0;
         int shift = 0;
         int b;
         do {
             if (pos >= data.length) {
-                throw new IOException("Unexpected EOF in ULEB128");
+                throw new ParquetReadException("Unexpected EOF in ULEB128");
             }
             b = data[pos++] & 0xFF;
             result |= (b & 0x7F) << shift;
@@ -465,13 +467,13 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         return result;
     }
 
-    private long readUleb128Long() throws IOException {
+    private long readUleb128Long() {
         long result = 0;
         int shift = 0;
         int b;
         do {
             if (pos >= data.length) {
-                throw new IOException("Unexpected EOF in ULEB128");
+                throw new ParquetReadException("Unexpected EOF in ULEB128");
             }
             b = data[pos++] & 0xFF;
             result |= (long) (b & 0x7F) << shift;
@@ -480,7 +482,7 @@ public class DeltaBinaryPackedDecoder implements ValueDecoder {
         return result;
     }
 
-    private long readZigzagUleb128() throws IOException {
+    private long readZigzagUleb128() {
         long encoded = readUleb128Long();
         // Zigzag decode: (n >>> 1) ^ -(n & 1)
         return (encoded >>> 1) ^ -(encoded & 1);

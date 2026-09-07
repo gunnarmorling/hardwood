@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -21,6 +20,7 @@ import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.SizeStatistics;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.reader.ParquetReadException;
 
 import static dev.hardwood.internal.thrift.ThriftCompactConstants.STOP;
 import static dev.hardwood.internal.thrift.ThriftStructBuilder.fieldHeader;
@@ -60,7 +60,7 @@ class MalformedMetadataValidationTest {
         assertThatThrownBy(() -> PageHeaderReader.read(
                 reader(NEXT_I32, 0x00, NEXT_I32, 0x14,
                         NEXT_I32, 0x01, STOP)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("compressed_page_size");
     }
 
@@ -69,7 +69,7 @@ class MalformedMetadataValidationTest {
         // PageHeader: field1 type=DATA_PAGE(0), field2 uncompressed=-1
         assertThatThrownBy(() -> PageHeaderReader.read(
                 reader(NEXT_I32, 0x00, NEXT_I32, 0x01, STOP)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("uncompressed_page_size");
     }
 
@@ -78,7 +78,7 @@ class MalformedMetadataValidationTest {
         // ColumnMetaData: field9 data_page_offset (i64) = -1
         assertThatThrownBy(() -> ColumnMetaDataReader.read(
                 reader(fieldHeader(9, FieldType.I64), 0x01, STOP)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("data_page_offset");
     }
 
@@ -89,7 +89,7 @@ class MalformedMetadataValidationTest {
         assertThatThrownBy(() -> PageHeaderReader.read(
                 reader(NEXT_I32, 0x08, NEXT_I32, 0x14,
                         NEXT_I32, 0x10, STOP)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("unknown page type: 4");
     }
 
@@ -101,7 +101,7 @@ class MalformedMetadataValidationTest {
                 .field(5, FieldType.I32).i32(-1)
                 .stop().build();
         assertThatThrownBy(() -> ColumnChunkReader.read(reader(chunk)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("ColumnChunk.offset_index_length");
     }
 
@@ -114,7 +114,7 @@ class MalformedMetadataValidationTest {
                 .field(4, FieldType.BINARY).raw(0x82, 0x80, 0x80, 0x80, 0x10)
                 .stop().build();
         assertThatThrownBy(() -> SchemaElementReader.read(reader(element)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("4294967298");
     }
 
@@ -127,7 +127,7 @@ class MalformedMetadataValidationTest {
                 .field(4, FieldType.BINARY).raw(0x80, 0x80, 0x80, 0x04)
                 .stop().build();
         assertThatThrownBy(() -> SchemaElementReader.read(reader(element)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("8388608");
     }
 
@@ -143,7 +143,7 @@ class MalformedMetadataValidationTest {
         ColumnChunk columnChunk = assertDoesNotThrow(() -> ColumnChunkReader.read(reader(chunk)));
         assertThat(columnChunk.filePath()).isEqualTo("data-2.parquet");
         assertThatThrownBy(columnChunk::requireSameFile)
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("data-2.parquet")
                 .hasMessageContaining("separate file");
     }
@@ -180,7 +180,7 @@ class MalformedMetadataValidationTest {
                 .field(2, FieldType.LIST).i32List(1, 2, 3)
                 .stop().build();
         assertThatThrownBy(() -> FileMetaDataReader.read(reader(footer)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("FileMetaData.schema");
     }
 
@@ -206,7 +206,7 @@ class MalformedMetadataValidationTest {
                 .field(100, FieldType.MAP).raw(0x82, 0x80, 0x80, 0x80, 0x10)
                 .stop().build();
         assertThatThrownBy(() -> ColumnMetaDataReader.read(reader(metaData)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("4294967298");
     }
 
@@ -221,7 +221,7 @@ class MalformedMetadataValidationTest {
                 .field(5, FieldType.LIST).i64List(0L)
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("ColumnIndex.null_counts")
                 .hasMessageContaining("2 pages");
     }
@@ -265,7 +265,7 @@ class MalformedMetadataValidationTest {
                 .field(7, FieldType.STRUCT).nested(timeType)
                 .stop().build();
         assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("TimeUnit");
     }
 
@@ -287,7 +287,7 @@ class MalformedMetadataValidationTest {
                 .field(7, FieldType.STRUCT).nested(timeType)
                 .stop().build();
         assertThatThrownBy(() -> LogicalTypeReader.read(reader(logicalType)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("TimeUnit")
                 .hasMessageContaining("more than one variant");
     }
@@ -349,7 +349,7 @@ class MalformedMetadataValidationTest {
                 .field(6, FieldType.LIST).i64List(0L, 1L, 2L, 3L, 4L)
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("ColumnIndex.repetition_level_histograms")
                 .hasMessageContaining("not a whole number of entries per page");
     }
@@ -364,7 +364,7 @@ class MalformedMetadataValidationTest {
                 .field(1, FieldType.LIST).i32List(0, 1)
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("ColumnIndex.null_pages")
                 .hasMessageContaining("bool");
     }

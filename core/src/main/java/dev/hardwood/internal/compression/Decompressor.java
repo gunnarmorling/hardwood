@@ -7,8 +7,9 @@
  */
 package dev.hardwood.internal.compression;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
+
+import dev.hardwood.reader.ParquetReadException;
 
 /// Interface for decompressing compressed page data.
 public interface Decompressor {
@@ -22,8 +23,8 @@ public interface Decompressor {
     /// @param compressed the buffer slice containing compressed data
     /// @param uncompressedSize the expected size of uncompressed data
     /// @return an array containing the uncompressed data in the first `uncompressedSize` bytes
-    /// @throws IOException if decompression fails
-    byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException;
+    /// @throws ParquetReadException if the bytes do not decode
+    byte[] decompress(ByteBuffer compressed, int uncompressedSize);
 
     /// Get the name of this decompressor.
     String getName();

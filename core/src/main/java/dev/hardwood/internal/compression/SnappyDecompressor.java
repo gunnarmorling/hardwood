@@ -12,6 +12,8 @@ import java.nio.ByteBuffer;
 
 import org.xerial.snappy.Snappy;
 
+import dev.hardwood.reader.ParquetReadException;
+
 /// Decompressor for Snappy compressed data.
 public class SnappyDecompressor implements Decompressor {
 
@@ -19,13 +21,20 @@ public class SnappyDecompressor implements Decompressor {
     private static final ThreadLocal<byte[]> OUTPUT_BUFFER = new ThreadLocal<>();
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         ByteBuffer directInput = DirectBuffers.ensureDirect(compressed);
         ByteBuffer directOutput = borrowDirectBuffer(uncompressedSize);
-        int actualSize = Snappy.uncompress(directInput, directOutput);
+        int actualSize;
+        try {
+            // Declared by the codec, which uncompresses a buffer and reaches nothing.
+            actualSize = Snappy.uncompress(directInput, directOutput);
+        }
+        catch (IOException e) {
+            throw new ParquetReadException("Snappy decompression failed", e);
+        }
 
         if (actualSize != uncompressedSize) {
-            throw new IOException(
+            throw new ParquetReadException(
                     "Snappy decompression size mismatch: expected " + uncompressedSize + ", got " + actualSize);
         }
 

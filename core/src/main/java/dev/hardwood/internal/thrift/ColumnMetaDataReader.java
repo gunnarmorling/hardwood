@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +28,7 @@ public class ColumnMetaDataReader {
     /// Stand-in for a `ColumnMetaData` that carries no `path_in_schema` at all.
     private static final FieldPath EMPTY_PATH = new FieldPath(List.of());
 
-    public static ColumnMetaData read(ThriftCompactReader reader) throws IOException {
+    public static ColumnMetaData read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -39,7 +38,7 @@ public class ColumnMetaDataReader {
         }
     }
 
-    private static ColumnMetaData readInternal(ThriftCompactReader reader) throws IOException {
+    private static ColumnMetaData readInternal(ThriftCompactReader reader) {
         PhysicalType type = null;
         List<Encoding> encodings = Collections.emptyList();
         FieldPath pathInSchema = EMPTY_PATH;
@@ -161,7 +160,7 @@ public class ColumnMetaDataReader {
 
     /// `Encoding` is a Thrift enum, so its list elements are `i32` on the wire and are mapped
     /// to the enum one by one.
-    private static List<Encoding> readEncodings(ThriftCompactReader reader) throws IOException {
+    private static List<Encoding> readEncodings(ThriftCompactReader reader) {
         long listHeader =
                 reader.requireListHeader(Codes.I32, "ColumnMetaData.encodings");
         Encoding[] encodings = new Encoding[ThriftCompactReader.listSize(listHeader)];

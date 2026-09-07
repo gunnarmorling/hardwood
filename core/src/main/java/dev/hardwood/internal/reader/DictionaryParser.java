@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.compression.Decompressor;
@@ -17,6 +16,7 @@ import dev.hardwood.internal.thrift.ThriftCompactReader;
 import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.CompressionCodec;
 import dev.hardwood.metadata.PageType;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 
 /// Parses dictionary pages from column chunk data.
@@ -36,7 +36,7 @@ public final class DictionaryParser {
     ///
     /// @param region buffer whose first bytes are a page header
     /// @return the page's total length in bytes, or `-1` if it is not a dictionary page
-    public static int pageLength(ByteBuffer region) throws IOException {
+    public static int pageLength(ByteBuffer region) {
         ThriftCompactReader reader = new ThriftCompactReader(region, 0);
         PageHeader header = PageHeaderReader.read(reader);
 
@@ -55,7 +55,7 @@ public final class DictionaryParser {
     /// @param context the hardwood context (for decompressor)
     /// @return the parsed dictionary, or `null` if no dictionary page is found
     public static Dictionary parse(ByteBuffer dictRegion, ColumnSchema columnSchema,
-                            ColumnMetaData metaData, HardwoodContextImpl context) throws IOException {
+                            ColumnMetaData metaData, HardwoodContextImpl context) {
         ThriftCompactReader probeReader = new ThriftCompactReader(dictRegion, 0);
         PageHeader header = PageHeaderReader.read(probeReader);
 
@@ -90,7 +90,7 @@ public final class DictionaryParser {
     static Dictionary parseFromBuffer(ByteBuffer buffer, long bufferFileOffset,
                                        long dictAreaStart, long firstDataPageOffset,
                                        ColumnSchema columnSchema, ColumnMetaData metaData,
-                                       HardwoodContextImpl context) throws IOException {
+                                       HardwoodContextImpl context) {
         int dictRelOffset = Math.toIntExact(dictAreaStart - bufferFileOffset);
         int dictRegionSize = Math.toIntExact(firstDataPageOffset - dictAreaStart);
         ByteBuffer dictRegion = buffer.slice(dictRelOffset, dictRegionSize);
@@ -100,14 +100,22 @@ public final class DictionaryParser {
     private static Dictionary decompress(ByteBuffer compressedData, int numValues,
                                           int uncompressedSize, ColumnSchema column,
                                           CompressionCodec codec,
-                                          HardwoodContextImpl context) throws IOException {
+                                          HardwoodContextImpl context) {
+        // An absent codec library leaves as it arrived. It names the dependency to
+        // add, which is the only actionable thing about it, and it is not the file
+        // being wrong — so it must not be caught and re-typed as one.
+        Decompressor decompressor = context.decompressorFactory().getDecompressor(codec);
         try {
-            Decompressor decompressor = context.decompressorFactory().getDecompressor(codec);
             byte[] data = decompressor.decompress(compressedData, uncompressedSize);
             return Dictionary.parse(data, numValues, column.type(), column.typeLength());
         }
-        catch (Exception e) {
-            throw new IOException("Failed to parse dictionary for column '" + column.name()
+        catch (UnsupportedOperationException e) {
+            // A decompressor that exists but will not run here — libdeflate below Java 22 —
+            // says the same thing an absent one does, so it leaves as it arrived.
+            throw e;
+        }
+        catch (RuntimeException e) {
+            throw new ParquetReadException("Failed to parse dictionary for column '" + column.name()
                     + "' (type=" + column.type()
                     + ", numValues=" + numValues
                     + ", uncompressedSize=" + uncompressedSize

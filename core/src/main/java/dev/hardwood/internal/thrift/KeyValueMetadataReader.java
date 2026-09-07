@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,7 +23,7 @@ class KeyValueMetadataReader {
     /// elements is skipped and reported as an empty map.
     ///
     /// @param fieldName fully-qualified name of the field being read, for the log message
-    static Map<String, String> read(ThriftCompactReader reader, String fieldName) throws IOException {
+    static Map<String, String> read(ThriftCompactReader reader, String fieldName) {
         long listHeader = reader.acceptListHeader(Codes.STRUCT, fieldName);
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return Map.of();
@@ -37,7 +36,7 @@ class KeyValueMetadataReader {
     }
 
     /// Reads a single KeyValue Thrift struct (field 1: key, field 2: value) and puts it into the map.
-    private static void readKeyValue(ThriftCompactReader reader, Map<String, String> target) throws IOException {
+    private static void readKeyValue(ThriftCompactReader reader, Map<String, String> target) {
         short saved = reader.pushFieldIdContext();
         try {
             String key = null;

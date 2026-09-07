@@ -7,8 +7,6 @@
  */
 package dev.hardwood.metadata;
 
-import java.io.IOException;
-
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,7 +26,7 @@ class ColumnChunkTest {
     void aChunkInAnotherFileCannotBeRead() {
         ColumnChunk chunk = new ColumnChunk(null, null, null, null, null, "part-1.parquet");
         assertThatThrownBy(chunk::requireSameFile)
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("part-1.parquet")
                 .hasMessageContaining("separate file");
     }

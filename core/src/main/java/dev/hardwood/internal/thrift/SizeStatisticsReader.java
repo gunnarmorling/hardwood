@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.SizeStatistics;
 
@@ -21,7 +19,7 @@ import dev.hardwood.metadata.SizeStatistics;
 /// - 3: definition_level_histogram (list<i64>, optional)
 public class SizeStatisticsReader {
 
-    public static SizeStatistics read(ThriftCompactReader reader) throws IOException {
+    public static SizeStatistics read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -31,7 +29,7 @@ public class SizeStatisticsReader {
         }
     }
 
-    private static SizeStatistics readInternal(ThriftCompactReader reader) throws IOException {
+    private static SizeStatistics readInternal(ThriftCompactReader reader) {
         Long unencodedByteArrayDataBytes = null;
         long[] repetitionLevelHistogram = null;
         long[] definitionLevelHistogram = null;

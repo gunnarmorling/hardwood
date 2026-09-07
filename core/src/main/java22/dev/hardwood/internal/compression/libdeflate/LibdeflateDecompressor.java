@@ -7,13 +7,13 @@
  */
 package dev.hardwood.internal.compression.libdeflate;
 
-import java.io.IOException;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.compression.Decompressor;
+import dev.hardwood.reader.ParquetReadException;
 
 /// High-performance GZIP decompressor using libdeflate via FFM API.
 ///
@@ -36,7 +36,7 @@ public final class LibdeflateDecompressor implements Decompressor {
     }
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         LibdeflatePool.DecompressorHandle decompressor = pool.acquire();
         try {
             LibdeflateBindings bindings = LibdeflateBindings.get();
@@ -75,11 +75,11 @@ public final class LibdeflateDecompressor implements Decompressor {
                             actualOutSizePtr);
                 }
                 catch (Throwable t) {
-                    throw new IOException("libdeflate invocation failed", t);
+                    throw new ParquetReadException("libdeflate invocation failed", t);
                 }
 
                 if (result != LibdeflateBindings.LIBDEFLATE_SUCCESS) {
-                    throw new IOException("libdeflate decompression failed: " +
+                    throw new ParquetReadException("libdeflate decompression failed: " +
                             LibdeflateBindings.errorMessage(result));
                 }
 
@@ -91,7 +91,7 @@ public final class LibdeflateDecompressor implements Decompressor {
             }
 
             if (outputOffset != uncompressedSize) {
-                throw new IOException(String.format(
+                throw new ParquetReadException(String.format(
                         "Decompressed size mismatch: expected %d, got %d",
                         uncompressedSize, outputOffset));
             }

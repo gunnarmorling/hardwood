@@ -7,11 +7,11 @@
  */
 package dev.hardwood.internal.encoding;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Decoder for BYTE_STREAM_SPLIT encoding.
 ///
@@ -65,7 +65,7 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
 
     /// Read DOUBLE values directly into a primitive double array.
     @Override
-    public void readDoubles(double[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readDoubles(double[] output, int[] definitionLevels, int maxDefLevel) {
         byte[] valueBytes = new byte[8];
         ByteBuffer buffer = ByteBuffer.wrap(valueBytes).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -89,7 +89,7 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
 
     /// Read INT64 values directly into a primitive long array.
     @Override
-    public void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readLongs(long[] output, int[] definitionLevels, int maxDefLevel) {
         byte[] valueBytes = new byte[8];
         ByteBuffer buffer = ByteBuffer.wrap(valueBytes).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -113,7 +113,7 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
 
     /// Read INT32 values directly into a primitive int array.
     @Override
-    public void readInts(int[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readInts(int[] output, int[] definitionLevels, int maxDefLevel) {
         byte[] valueBytes = new byte[4];
         ByteBuffer buffer = ByteBuffer.wrap(valueBytes).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -137,7 +137,7 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
 
     /// Read FLOAT values directly into a primitive float array.
     @Override
-    public void readFloats(float[] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readFloats(float[] output, int[] definitionLevels, int maxDefLevel) {
         byte[] valueBytes = new byte[4];
         ByteBuffer buffer = ByteBuffer.wrap(valueBytes).order(ByteOrder.LITTLE_ENDIAN);
 
@@ -161,7 +161,7 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
 
     /// Read FIXED_LEN_BYTE_ARRAY values directly into a byte[][] array.
     @Override
-    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) {
         if (definitionLevels == null) {
             for (int i = 0; i < output.length; i++) {
                 byte[] valueBytes = new byte[byteWidth];
@@ -181,9 +181,9 @@ public class ByteStreamSplitDecoder implements ValueDecoder {
     }
 
     /// Gather bytes for the current value from byte streams and advance the index.
-    private void gatherBytes(byte[] valueBytes) throws IOException {
+    private void gatherBytes(byte[] valueBytes) {
         if (currentIndex >= numValues) {
-            throw new IOException("No more values to read");
+            throw new ParquetReadException("No more values to read");
         }
         for (int k = 0; k < valueBytes.length; k++) {
             int streamOffset = k * numValues;

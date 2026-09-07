@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -19,7 +18,7 @@ import dev.hardwood.metadata.GeospatialStatistics;
 /// Reader for the Thrift GeospatialStatistics struct from Parquet metadata.
 public class GeospatialStatisticsReader {
 
-    public static GeospatialStatistics read(ThriftCompactReader reader) throws IOException {
+    public static GeospatialStatistics read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -29,7 +28,7 @@ public class GeospatialStatisticsReader {
         }
     }
 
-    private static GeospatialStatistics readInternal(ThriftCompactReader reader) throws IOException {
+    private static GeospatialStatistics readInternal(ThriftCompactReader reader) {
         BoundingBox bbox = null;
         List<Integer> geospatialTypes = List.of();
 
@@ -59,7 +58,7 @@ public class GeospatialStatisticsReader {
         return new GeospatialStatistics(bbox, geospatialTypes);
     }
 
-    private static List<Integer> readGeospatialTypes(ThriftCompactReader reader) throws IOException {
+    private static List<Integer> readGeospatialTypes(ThriftCompactReader reader) {
         long listHeader =
                 reader.acceptListHeader(Codes.I32, "GeospatialStatistics.geospatial_types");
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {

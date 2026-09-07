@@ -190,12 +190,7 @@ public final class ParquetModel implements AutoCloseable {
         ColumnIndexBuffers buffers = indexBuffersFor(rowGroupIndex).forColumn(columnIndex);
         ColumnIndex result = null;
         if (buffers != null && buffers.columnIndex() != null) {
-            try {
-                result = ColumnIndexReader.read(new ThriftCompactReader(buffers.columnIndex()));
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            result = ColumnIndexReader.read(new ThriftCompactReader(buffers.columnIndex()));
         }
         columnIndexCache.put(key, result);
         return result;
@@ -211,12 +206,7 @@ public final class ParquetModel implements AutoCloseable {
         ColumnIndexBuffers buffers = indexBuffersFor(rowGroupIndex).forColumn(columnIndex);
         OffsetIndex result = null;
         if (buffers != null && buffers.offsetIndex() != null) {
-            try {
-                result = OffsetIndexReader.read(new ThriftCompactReader(buffers.offsetIndex()));
-            }
-            catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+            result = OffsetIndexReader.read(new ThriftCompactReader(buffers.offsetIndex()));
         }
         offsetIndexCache.put(key, result);
         return result;

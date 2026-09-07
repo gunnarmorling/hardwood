@@ -7,10 +7,10 @@
  */
 package dev.hardwood.internal.compression.lz4;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import dev.hardwood.internal.compression.Decompressor;
+import dev.hardwood.reader.ParquetReadException;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
 
@@ -27,7 +27,7 @@ public class Lz4RawDecompressor implements Decompressor {
     }
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         try {
             // Decompress directly from ByteBuffer - no copying
             byte[] uncompressed = new byte[uncompressedSize];
@@ -37,7 +37,7 @@ public class Lz4RawDecompressor implements Decompressor {
             int consumedLength = decompressor.decompress(compressed, 0, dest, 0, uncompressedSize);
 
             if (consumedLength != compressedLength) {
-                throw new IOException(
+                throw new ParquetReadException(
                         "LZ4_RAW decompression did not consume all input: expected " + compressedLength +
                                 " bytes, consumed " + consumedLength);
             }
@@ -45,7 +45,7 @@ public class Lz4RawDecompressor implements Decompressor {
             return uncompressed;
         }
         catch (Exception e) {
-            throw new IOException("LZ4_RAW decompression failed: " + e.getMessage(), e);
+            throw new ParquetReadException("LZ4_RAW decompression failed: " + e.getMessage(), e);
         }
     }
 

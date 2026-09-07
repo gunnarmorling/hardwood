@@ -7,19 +7,18 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.metadata.DataPageHeaderV2;
 import dev.hardwood.internal.metadata.DictionaryPageHeader;
 import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.PageType;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for PageHeader from Thrift Compact Protocol.
 public class PageHeaderReader {
 
-    public static PageHeader read(ThriftCompactReader reader) throws IOException {
+    public static PageHeader read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -29,7 +28,7 @@ public class PageHeaderReader {
         }
     }
 
-    private static PageHeader readInternal(ThriftCompactReader reader) throws IOException {
+    private static PageHeader readInternal(ThriftCompactReader reader) {
         PageType type = null;
         int uncompressedPageSize = 0;
         int compressedPageSize = 0;
@@ -51,7 +50,7 @@ public class PageHeaderReader {
                         type = ThriftEnumLookup.pageType(rawType);
                         // A page whose header declares a type we do not know cannot be decoded.
                         if (type == PageType.UNKNOWN) {
-                            throw new IOException("PageHeader has unknown page type: " + rawType);
+                            throw new ParquetReadException("PageHeader has unknown page type: " + rawType);
                         }
                     }
                     break;
@@ -96,7 +95,7 @@ public class PageHeaderReader {
 
         // Validate required fields
         if (type == null) {
-            throw new IOException("PageHeader missing required field: type");
+            throw new ParquetReadException("PageHeader missing required field: type");
         }
 
         return new PageHeader(type, uncompressedPageSize, compressedPageSize,

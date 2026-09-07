@@ -7,8 +7,9 @@
  */
 package dev.hardwood.internal.encoding;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
+
+import dev.hardwood.reader.ParquetReadException;
 
 /// Decoder for DELTA_BYTE_ARRAY encoding.
 ///
@@ -60,7 +61,7 @@ public class DeltaByteArrayDecoder implements ValueDecoder {
     /// Initialize the decoder by reading all prefix lengths and preparing the suffix decoder.
     /// Must be called before reading values, with the total number of non-null values expected.
     @Override
-    public void initialize(int numNonNullValues) throws IOException {
+    public void initialize(int numNonNullValues) {
         this.totalValues = numNonNullValues;
         this.prefixLengths = new int[numNonNullValues];
 
@@ -83,13 +84,13 @@ public class DeltaByteArrayDecoder implements ValueDecoder {
     }
 
     /// Read a single byte array value.
-    public byte[] readValue() throws IOException {
+    public byte[] readValue() {
         if (!initialized) {
-            throw new IOException("Must call initialize() before reading values");
+            throw new ParquetReadException("Must call initialize() before reading values");
         }
 
         if (currentIndex >= totalValues) {
-            throw new IOException("No more values to read");
+            throw new ParquetReadException("No more values to read");
         }
 
         int prefixLength = prefixLengths[currentIndex];
@@ -111,9 +112,9 @@ public class DeltaByteArrayDecoder implements ValueDecoder {
     }
 
     @Override
-    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) {
         if (!initialized) {
-            throw new IOException("Must call initialize() before reading values");
+            throw new ParquetReadException("Must call initialize() before reading values");
         }
 
         if (definitionLevels == null) {

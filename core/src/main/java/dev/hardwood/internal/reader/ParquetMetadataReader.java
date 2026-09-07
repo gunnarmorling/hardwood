@@ -111,12 +111,10 @@ public final class ParquetMetadataReader {
             // encrypted. Re-throw with file context for an attributable error.
             throw encrypted(inputFile);
         }
-        catch (IOException e) {
-            // The footer is already in a buffer, so nothing here is transport:
-            // negative sizes, an unknown field type, EOF part way through a
-            // struct are all the file saying something it cannot say. The Thrift
-            // reader signals them as IOException because that is its channel;
-            // this is the boundary where they become what they are.
+        catch (ParquetReadException e) {
+            // Negative sizes, an unknown field type, a struct that ends early —
+            // the reader already types all of them as the file being wrong. What
+            // it cannot name is the file, which only this frame knows.
             throw new ParquetReadException(
                     ExceptionContext.filePrefix(inputFile.name()) + e.getMessage(), e);
         }

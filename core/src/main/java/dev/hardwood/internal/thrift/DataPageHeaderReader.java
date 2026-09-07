@@ -7,17 +7,16 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.Statistics;
+import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for DataPageHeader from Thrift Compact Protocol.
 public class DataPageHeaderReader {
 
-    public static DataPageHeader read(ThriftCompactReader reader) throws IOException {
+    public static DataPageHeader read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -27,7 +26,7 @@ public class DataPageHeaderReader {
         }
     }
 
-    private static DataPageHeader readInternal(ThriftCompactReader reader) throws IOException {
+    private static DataPageHeader readInternal(ThriftCompactReader reader) {
         int numValues = 0;
         Encoding encoding = null;
         int encodingValue = -1;
@@ -75,7 +74,7 @@ public class DataPageHeaderReader {
         }
 
         if (encoding == null) {
-            throw new IOException("DataPageHeader missing required field: encoding");
+            throw new ParquetReadException("DataPageHeader missing required field: encoding");
         }
 
         return new DataPageHeader(numValues, encoding, encodingValue,

@@ -21,12 +21,17 @@ type answers it.
 > **Trying again may help:** `IOException`
 > **Trying again will not:** `ParquetReadException`, `UnsupportedOperationException`
 
+`IOException` means the bytes did not arrive. Once they have, nothing about them
+changes on a second attempt, so parsing and decoding raise `ParquetReadException`
+instead — including for a page that will not decompress and a dictionary that will
+not decode.
+
 | Exception | When |
 |-----------|------|
 | `IOException` | Reading the file failed: a local-disk read error, an S3 transport failure (after retry exhaustion — see [Read from S3](../how-to/s3.md)), a file that cannot be opened. Checked, and declared by every method that reaches the file: `ParquetFileReader.open`/`openAll`; the reader factories and their builders' `build()` — `rowReader`, `columnReader`, `columnReaders`; `RowReader.hasNext`/`next`/`close`; `ColumnReader.nextBatch`/`close`; `ColumnReaders.nextBatch`/`close` |
 | `ParquetReadException` | The file was read and is not valid Parquet: a bad magic number, a corrupt footer, a malformed page index, a dictionary page the metadata places outside its column chunk, a page whose checksum fails, values that do not decode. Unchecked |
 | `SchemaIncompatibleException` | A `ParquetReadException`. In a multi-file read, a file whose schema cannot be reconciled with the first file's; or one file's footer disagreeing with itself about which leaf a column chunk holds |
-| `UnsupportedOperationException` | The file is correct and Hardwood cannot read it: Parquet Modular Encryption, an encoding not implemented, a compression codec whose library is absent — the message names the dependency to add — or a row group whose page-index region exceeds 2 GB |
+| `UnsupportedOperationException` | The file is correct and Hardwood cannot read it: Parquet Modular Encryption, an encoding not implemented, a compression codec whose library is absent — the message names the dependency to add — a column chunk stored in a separate file (the legacy split-file layout), a row group whose page-index region exceeds 2 GB, or a file over 2 GB opened with the mmap-backed range cache |
 | `IllegalArgumentException` | Accessing a column not in the projection, or an invalid column name |
 | `NullPointerException` | Calling a primitive accessor (`getInt`, `getLong`, etc.) on a null field without checking `isNull()` first |
 | `NoSuchElementException` | Calling `next()` on a `RowReader` when `hasNext()` returns `false` |

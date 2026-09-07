@@ -7,15 +7,13 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.BoundingBox;
 
 /// Reader for the Thrift BoundingBox struct from Parquet metadata.
 public class BoundingBoxReader {
 
-    public static BoundingBox read(ThriftCompactReader reader) throws IOException {
+    public static BoundingBox read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -25,7 +23,7 @@ public class BoundingBoxReader {
         }
     }
 
-    private static BoundingBox readInternal(ThriftCompactReader reader) throws IOException {
+    private static BoundingBox readInternal(ThriftCompactReader reader) {
         Double xmin = null;
         Double xmax = null;
         Double ymin = null;
@@ -66,8 +64,7 @@ public class BoundingBoxReader {
         return new BoundingBox(xmin, xmax, ymin, ymax, zmin, zmax, mmin, mmax);
     }
 
-    private static double readRequiredDouble(ThriftCompactReader reader, byte type, String name)
-            throws IOException {
+    private static double readRequiredDouble(ThriftCompactReader reader, byte type, String name) {
         if (type != Codes.DOUBLE) {
             throw new IllegalStateException(
                     "Invalid BoundingBox: required field '" + name
@@ -76,7 +73,7 @@ public class BoundingBoxReader {
         return reader.readDouble();
     }
 
-    private static Double readOptionalDouble(ThriftCompactReader reader, byte type) throws IOException {
+    private static Double readOptionalDouble(ThriftCompactReader reader, byte type) {
         if (type == Codes.DOUBLE) {
             return reader.readDouble();
         }

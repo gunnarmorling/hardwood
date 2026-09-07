@@ -7,8 +7,9 @@
  */
 package dev.hardwood.internal.encoding;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
+
+import dev.hardwood.reader.ParquetReadException;
 
 /// Decoder for DELTA_LENGTH_BYTE_ARRAY encoding.
 ///
@@ -43,7 +44,7 @@ public class DeltaLengthByteArrayDecoder implements ValueDecoder {
     }
 
     @Override
-    public void initialize(int numNonNullValues) throws IOException {
+    public void initialize(int numNonNullValues) {
         this.totalValues = numNonNullValues;
         this.lengths = new int[numNonNullValues];
 
@@ -61,13 +62,13 @@ public class DeltaLengthByteArrayDecoder implements ValueDecoder {
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
     /// Read a single byte array value as a zero-copy ByteBuffer view.
-    public ByteBuffer readValue() throws IOException {
+    public ByteBuffer readValue() {
         if (lengths == null) {
-            throw new IOException("Must call initialize() before reading values");
+            throw new ParquetReadException("Must call initialize() before reading values");
         }
 
         if (currentIndex >= totalValues) {
-            throw new IOException("No more values to read");
+            throw new ParquetReadException("No more values to read");
         }
 
         int length = lengths[currentIndex++];
@@ -77,7 +78,7 @@ public class DeltaLengthByteArrayDecoder implements ValueDecoder {
         }
 
         if (pos + length > data.length) {
-            throw new IOException("Unexpected EOF reading byte array: expected " + length
+            throw new ParquetReadException("Unexpected EOF reading byte array: expected " + length
                     + ", got " + (data.length - pos));
         }
         ByteBuffer result = ByteBuffer.wrap(data, pos, length);
@@ -86,9 +87,9 @@ public class DeltaLengthByteArrayDecoder implements ValueDecoder {
     }
 
     @Override
-    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) throws IOException {
+    public void readByteArrays(byte[][] output, int[] definitionLevels, int maxDefLevel) {
         if (lengths == null) {
-            throw new IOException("Must call initialize() before reading values");
+            throw new ParquetReadException("Must call initialize() before reading values");
         }
 
         if (definitionLevels == null) {

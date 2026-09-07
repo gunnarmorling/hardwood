@@ -47,6 +47,7 @@ import dev.hardwood.metadata.PageType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.metadata.RowGroup;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.reader.SchemaIncompatibleException;
 import dev.hardwood.schema.ColumnProjection;
 import dev.hardwood.schema.ColumnSchema;
@@ -433,14 +434,14 @@ public class RowGroupIterator {
     /// chunk pointing elsewhere misplaces the region for the rest.
     ///
     /// @throws IOException if any chunk names another file
-    private static void requireSameFile(WorkItem workItem) throws IOException {
+    private static void requireSameFile(WorkItem workItem) {
         List<ColumnChunk> columns = workItem.rowGroup().columns();
         for (int i = 0; i < columns.size(); i++) {
             try {
                 columns.get(i).requireSameFile();
             }
-            catch (IOException e) {
-                throw new IOException("Cannot read column " + i + " in row group "
+            catch (UnsupportedOperationException e) {
+                throw new UnsupportedOperationException("Cannot read column " + i + " in row group "
                         + workItem.rowGroupIndex() + ": " + e.getMessage(), e);
             }
         }
@@ -705,8 +706,8 @@ public class RowGroupIterator {
                         columnSchema, columnChunk,
                         context, workItem.rowGroupIndex(), inputFile.name());
             }
-            catch (IOException e) {
-                throw new UncheckedIOException(ExceptionContext.filePrefix(inputFile.name())
+            catch (ParquetReadException e) {
+                throw new ParquetReadException(ExceptionContext.filePrefix(inputFile.name())
                         + "Failed to compute fetch plan for column " + projCol
                         + " in row group " + workItem.rowGroupIndex() + ": " + e.getMessage(), e);
             }

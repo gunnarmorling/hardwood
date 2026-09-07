@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.reader;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -29,6 +28,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.schema.ColumnSchema;
 
 /// Decoder for individual Parquet data pages.
@@ -137,7 +137,7 @@ public class PageDecoder {
     /// @param pageBuffer buffer containing just this page (header + data)
     /// @param dictionary dictionary for this page, or null if not dictionary-encoded
     /// @return decoded page
-    public Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary) throws IOException {
+    public Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary) {
         // Standalone callers have no reorder slot to reuse across, so a throwaway
         // scratch (allocated fresh here, buffers grown lazily) matches the old
         // per-call allocation while keeping the decode path free of null handling.
@@ -147,7 +147,7 @@ public class PageDecoder {
     /// Decode a single data page, reusing the supplied slot-owned level scratch.
     /// `scratch` must not be null; standalone callers pass a throwaway instance via
     /// the two-argument overload.
-    Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary, LevelScratch scratch) throws IOException {
+    Page decodePage(ByteBuffer pageBuffer, Dictionary dictionary, LevelScratch scratch) {
         PageDecodedEvent event = new PageDecodedEvent();
         event.begin();
 
@@ -174,7 +174,7 @@ public class PageDecoder {
                 yield parseDataPageV2(pageHeader.dataPageHeaderV2(), pageData,
                         pageHeader.uncompressedPageSize(), dictionary, scratch);
             }
-            default -> throw new IOException("Unexpected page type for single-page decode: " + pageHeader.type());
+            default -> throw new ParquetReadException("Unexpected page type for single-page decode: " + pageHeader.type());
         };
 
         event.column = column.name();
@@ -271,8 +271,7 @@ public class PageDecoder {
         };
     }
 
-    private Page parseDataPage(DataPageHeader header, byte[] data, Dictionary dictionary, LevelScratch scratch)
-            throws IOException {
+    private Page parseDataPage(DataPageHeader header, byte[] data, Dictionary dictionary, LevelScratch scratch) {
         int numValues = header.numValues();
         int offset = 0;
 
@@ -331,7 +330,7 @@ public class PageDecoder {
     }
 
     private Page parseDataPageV2(DataPageHeaderV2 header, ByteBuffer pageData, int uncompressedPageSize,
-            Dictionary dictionary, LevelScratch scratch) throws IOException {
+            Dictionary dictionary, LevelScratch scratch) {
         int repLevelLen = header.repetitionLevelsByteLength();
         int defLevelLen = header.definitionLevelsByteLength();
         int valuesOffset = repLevelLen + defLevelLen;
@@ -391,7 +390,7 @@ public class PageDecoder {
     /// the page marks its values compressed. The level regions precede the
     /// values and are never compressed.
     private byte[] readValueRegion(DataPageHeaderV2 header, ByteBuffer pageData, int uncompressedPageSize,
-            int repLevelLen, int defLevelLen, int valuesOffset, int compressedValuesLen) throws IOException {
+            int repLevelLen, int defLevelLen, int valuesOffset, int compressedValuesLen) {
         if (header.isCompressed() && compressedValuesLen > 0) {
             ByteBuffer compressedValues = pageData.slice(valuesOffset, compressedValuesLen);
             Decompressor decompressor = decompressorFactory.getDecompressor(columnMetaData.codec());
@@ -407,7 +406,7 @@ public class PageDecoder {
     private Page decodeTypedValues(Encoding encoding, int encodingValue, byte[] data, int offset,
                                    int numValues,
                                    int[] definitionLevels, int[] repetitionLevels,
-                                   Dictionary dictionary) throws IOException {
+                                   Dictionary dictionary) {
         int maxDefLevel = column.maxDefinitionLevel();
         PhysicalType type = column.type();
 
@@ -507,11 +506,11 @@ public class PageDecoder {
             }
             case RLE_DICTIONARY, PLAIN_DICTIONARY -> {
                 if (dictionary == null) {
-                    throw new IOException("Dictionary page not found for " + encoding + " encoding");
+                    throw new ParquetReadException("Dictionary page not found for " + encoding + " encoding");
                 }
                 int bitWidth = data[offset++] & 0xFF;
                 if (bitWidth > 32) {
-                    throw new IOException("Invalid dictionary index bit width: " + bitWidth
+                    throw new ParquetReadException("Invalid dictionary index bit width: " + bitWidth
                             + " for column '" + column.name() + "'. Must be between 0 and 32");
                 }
                 RleBitPackingHybridDecoder indexDecoder = new RleBitPackingHybridDecoder(data, offset, data.length - offset, bitWidth);
@@ -524,7 +523,7 @@ public class PageDecoder {
                 // here. Refusing another type is the format's position, not a decoder this
                 // release has yet to write.
                 if (type != PhysicalType.BOOLEAN) {
-                    throw new IOException(
+                    throw new ParquetReadException(
                             "RLE encodes only boolean values in a data page, not " + type);
                 }
 
@@ -566,7 +565,7 @@ public class PageDecoder {
             }
             // BIT_PACKED encodes levels, never a page's values, so refusing it is the format's
             // position rather than a decoder this release has yet to write.
-            case BIT_PACKED -> throw new IOException(
+            case BIT_PACKED -> throw new ParquetReadException(
                     "BIT_PACKED encodes levels and is not valid for a data page's values");
             // UNKNOWN stands for every Thrift value this release cannot name, so on its own it
             // does not say which encoding was met; the raw value does. This is the one refusal
@@ -580,8 +579,8 @@ public class PageDecoder {
     /// Refusal for a page whose declared encoding is not defined over its column's physical type.
     ///
     /// The format names the physical types each encoding may carry, so such a page is a malformed
-    /// file rather than a gap in this release — which is why this is an [IOException] and not the
-    /// [UnsupportedOperationException] an unrecognized encoding raises. Decoding it anyway would
+    /// file rather than a gap in this release — which is why this is a [ParquetReadException] and
+    /// not the [UnsupportedOperationException] an unrecognized encoding raises. Decoding it anyway would
     /// build a page of the wrong shape rather than fail: wrong in the values, and wrong in the
     /// [Page] variant handed to the column reader.
     ///
@@ -589,7 +588,7 @@ public class PageDecoder {
     /// @param type the column's physical type
     /// @param definedOver the physical types the format defines `encoding` over
     /// @return the exception to throw
-    private static IOException undefinedOverType(Encoding encoding, PhysicalType type,
+    private static ParquetReadException undefinedOverType(Encoding encoding, PhysicalType type,
             PhysicalType... definedOver) {
         StringBuilder legalTypes = new StringBuilder();
         for (PhysicalType candidate : definedOver) {
@@ -598,13 +597,13 @@ public class PageDecoder {
             }
             legalTypes.append(candidate);
         }
-        return new IOException(encoding + " is not defined over " + type
+        return new ParquetReadException(encoding + " is not defined over " + type
                 + "; the format defines it over " + legalTypes + " only");
     }
 
     /// [#undefinedOverType] for `BYTE_STREAM_SPLIT`, whose legal types are named both before the
     /// decoder is constructed and by the value switch that follows it.
-    private static IOException byteStreamSplitUndefinedOverType(PhysicalType type) {
+    private static ParquetReadException byteStreamSplitUndefinedOverType(PhysicalType type) {
         return undefinedOverType(Encoding.BYTE_STREAM_SPLIT, type, PhysicalType.INT32,
                 PhysicalType.INT64, PhysicalType.FLOAT, PhysicalType.DOUBLE,
                 PhysicalType.FIXED_LEN_BYTE_ARRAY);

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import dev.hardwood.internal.thrift.ThriftCompactConstants.ElementType;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType;
+import dev.hardwood.reader.ParquetReadException;
 
 import static dev.hardwood.internal.thrift.ThriftCompactConstants.STOP;
 import static dev.hardwood.internal.thrift.ThriftStructBuilder.fieldHeader;
@@ -181,7 +182,7 @@ class ThriftCompactReaderTest {
         ThriftCompactReader reader = reader(longFormListHeader(ElementType.STRUCT), 0x64, STOP, STOP);
 
         assertThatThrownBy(reader::readListHeader)
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("declares 100 elements")
                 .hasMessageContaining("2 bytes remain");
     }
@@ -196,7 +197,7 @@ class ThriftCompactReaderTest {
                 longFormListHeader(ElementType.STRUCT), 0x80, 0x80, 0x80, 0x80, 0x08, STOP);
 
         assertThatThrownBy(reader::readListHeader)
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("2147483648 elements");
     }
 
@@ -233,7 +234,7 @@ class ThriftCompactReaderTest {
                 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01);
 
         assertThatThrownBy(reader::readVarint)
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("varint");
     }
 
@@ -256,7 +257,7 @@ class ThriftCompactReaderTest {
         ThriftCompactReader reader = reader(FieldType.Codes.I32, 0x82, 0x80, 0x08, STOP);
 
         assertThatThrownBy(reader::readFieldHeader)
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("65537");
     }
 
@@ -272,7 +273,7 @@ class ThriftCompactReaderTest {
             reader.readFieldHeader();
             reader.readFieldHeader();
         })
-                .isInstanceOf(IOException.class)
+                .isInstanceOf(ParquetReadException.class)
                 .hasMessageContaining("32768");
     }
 

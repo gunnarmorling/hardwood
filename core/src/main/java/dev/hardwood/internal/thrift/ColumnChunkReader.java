@@ -7,8 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
-
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -16,7 +14,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 /// Reader for ColumnChunk from Thrift Compact Protocol.
 public class ColumnChunkReader {
 
-    public static ColumnChunk read(ThriftCompactReader reader) throws IOException {
+    public static ColumnChunk read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -26,7 +24,7 @@ public class ColumnChunkReader {
         }
     }
 
-    private static ColumnChunk readInternal(ThriftCompactReader reader) throws IOException {
+    private static ColumnChunk readInternal(ThriftCompactReader reader) {
         ColumnMetaData metaData = null;
         Long offsetIndexOffset = null;
         Integer offsetIndexLength = null;

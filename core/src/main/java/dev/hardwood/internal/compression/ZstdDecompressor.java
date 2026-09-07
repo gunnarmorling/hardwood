@@ -7,10 +7,11 @@
  */
 package dev.hardwood.internal.compression;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import com.github.luben.zstd.Zstd;
+
+import dev.hardwood.reader.ParquetReadException;
 
 /// Decompressor for ZSTD compressed data.
 public class ZstdDecompressor implements Decompressor {
@@ -18,12 +19,20 @@ public class ZstdDecompressor implements Decompressor {
     private static final ThreadLocal<byte[]> OUTPUT_BUFFER = new ThreadLocal<>();
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         byte[] output = borrowOutputBuffer(uncompressedSize);
-        int actualSize = Zstd.decompress(output, DirectBuffers.ensureDirect(compressed));
+        int actualSize;
+        try {
+            actualSize = Zstd.decompress(output, DirectBuffers.ensureDirect(compressed));
+        }
+        catch (RuntimeException e) {
+            // zstd-jni reports a frame it cannot read by throwing rather than by the
+            // return code the size check below covers.
+            throw new ParquetReadException("ZSTD decompression failed: " + e.getMessage(), e);
+        }
 
         if (actualSize != uncompressedSize) {
-            throw new IOException(
+            throw new ParquetReadException(
                     "ZSTD decompression size mismatch: expected " + uncompressedSize + ", got " + actualSize);
         }
 

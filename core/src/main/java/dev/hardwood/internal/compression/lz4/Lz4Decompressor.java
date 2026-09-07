@@ -7,11 +7,11 @@
  */
 package dev.hardwood.internal.compression.lz4;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 import dev.hardwood.internal.compression.Decompressor;
+import dev.hardwood.reader.ParquetReadException;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
 import net.jpountz.lz4.LZ4SafeDecompressor;
@@ -36,7 +36,7 @@ public class Lz4Decompressor implements Decompressor {
     }
 
     @Override
-    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) throws IOException {
+    public byte[] decompress(ByteBuffer compressed, int uncompressedSize) {
         // Try raw LZ4 first (most common case), then fall back to Hadoop format
         try {
             return decompressRaw(compressed, uncompressedSize);
@@ -49,7 +49,7 @@ public class Lz4Decompressor implements Decompressor {
                 return decompressHadoopFormat(compressedBytes, uncompressedSize);
             }
             catch (Exception e2) {
-                throw new IOException("LZ4 decompression failed (tried both raw and Hadoop formats): " +
+                throw new ParquetReadException("LZ4 decompression failed (tried both raw and Hadoop formats): " +
                         e.getMessage(), e);
             }
         }
@@ -61,7 +61,7 @@ public class Lz4Decompressor implements Decompressor {
     ///
     /// Each block has both the uncompressed and compressed sizes in big-endian format,
     /// followed by the compressed data.
-    private byte[] decompressHadoopFormat(byte[] compressed, int uncompressedSize) throws IOException {
+    private byte[] decompressHadoopFormat(byte[] compressed, int uncompressedSize) {
         byte[] uncompressed = new byte[uncompressedSize];
         int srcOffset = 0;
         int destOffset = 0;
@@ -70,7 +70,7 @@ public class Lz4Decompressor implements Decompressor {
 
         while (destOffset < uncompressedSize && srcOffset < compressed.length) {
             if (srcOffset + 8 > compressed.length) {
-                throw new IOException("Truncated LZ4 Hadoop block header");
+                throw new ParquetReadException("Truncated LZ4 Hadoop block header");
             }
 
             // Read uncompressed block size (4 bytes, big-endian)
@@ -86,12 +86,12 @@ public class Lz4Decompressor implements Decompressor {
             }
 
             if (blockUncompressedSize < 0 || blockCompressedSize < 0) {
-                throw new IOException("Invalid LZ4 Hadoop block sizes: uncompressed=" +
+                throw new ParquetReadException("Invalid LZ4 Hadoop block sizes: uncompressed=" +
                         blockUncompressedSize + ", compressed=" + blockCompressedSize);
             }
 
             if (srcOffset + blockCompressedSize > compressed.length) {
-                throw new IOException("LZ4 compressed block extends beyond buffer");
+                throw new ParquetReadException("LZ4 compressed block extends beyond buffer");
             }
 
             if (blockCompressedSize == blockUncompressedSize) {
@@ -106,7 +106,7 @@ public class Lz4Decompressor implements Decompressor {
                         uncompressed, destOffset, blockUncompressedSize);
 
                 if (decompressedLen != blockUncompressedSize) {
-                    throw new IOException("LZ4 block size mismatch: expected " +
+                    throw new ParquetReadException("LZ4 block size mismatch: expected " +
                             blockUncompressedSize + ", got " + decompressedLen);
                 }
                 destOffset += decompressedLen;
@@ -116,7 +116,7 @@ public class Lz4Decompressor implements Decompressor {
         }
 
         if (destOffset != uncompressedSize) {
-            throw new IOException(
+            throw new ParquetReadException(
                     "LZ4 Hadoop decompression size mismatch: expected " + uncompressedSize +
                             ", got " + destOffset);
         }

@@ -7,7 +7,6 @@
  */
 package dev.hardwood.internal.thrift;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -23,7 +22,7 @@ import dev.hardwood.metadata.SchemaElement;
 /// Reader for FileMetaData from Thrift Compact Protocol.
 public class FileMetaDataReader {
 
-    public static FileMetaData read(ThriftCompactReader reader) throws IOException {
+    public static FileMetaData read(ThriftCompactReader reader) {
         short saved = reader.pushFieldIdContext();
         try {
             return readInternal(reader);
@@ -33,7 +32,7 @@ public class FileMetaDataReader {
         }
     }
 
-    private static FileMetaData readInternal(ThriftCompactReader reader) throws IOException {
+    private static FileMetaData readInternal(ThriftCompactReader reader) {
         int version = 0;
         List<SchemaElement> schema = Collections.emptyList();
         long numRows = 0;
@@ -102,7 +101,7 @@ public class FileMetaDataReader {
     /// The column orders are optional and only refine how statistics are compared, so a list
     /// this reader will not decode leaves them empty — the same shape as a writer that omits
     /// the field.
-    private static List<ColumnOrder> readColumnOrders(ThriftCompactReader reader) throws IOException {
+    private static List<ColumnOrder> readColumnOrders(ThriftCompactReader reader) {
         long listHeader =
                 reader.acceptListHeader(Codes.STRUCT, "FileMetaData.column_orders");
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
