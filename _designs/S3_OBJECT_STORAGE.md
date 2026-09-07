@@ -79,21 +79,21 @@ Key properties:
 
 ## Step 3: Integration Tests with Testcontainers + s3proxy
 
-`S3InputFileTest` — basic read operations: metadata, rows, row values, nulls,
+`S3InputFileIT` — basic read operations: metadata, rows, row values, nulls,
 file-not-found error, name formatting.
 
-`S3MultiFileTest` — multi-file reading over S3 via `Hardwood.openAll()`.
+`S3MultiFileIT` — multi-file reading over S3 via `Hardwood.openAll()`.
 
-`S3SelectiveReadJfrTest` — verifies that column projection and row group filtering
+`S3SelectiveReadJfrIT` — verifies that column projection and row group filtering
 reduce S3 I/O using JFR events:
 - `dev.hardwood.RowGroupScanned` — only projected columns are scanned
 - `dev.hardwood.RowGroupFilter` — row groups are skipped by predicate push-down
 - `jdk.SocketRead` — fewer bytes transferred with a projection
 
 **Files:**
-- `s3/src/test/java/dev/hardwood/s3/S3InputFileTest.java` (new)
-- `s3/src/test/java/dev/hardwood/s3/S3MultiFileTest.java` (new)
-- `s3/src/test/java/dev/hardwood/s3/S3SelectiveReadJfrTest.java` (new)
+- `s3/src/test/java/dev/hardwood/s3/S3InputFileIT.java` (new)
+- `s3/src/test/java/dev/hardwood/s3/S3MultiFileIT.java` (new)
+- `s3/src/test/java/dev/hardwood/s3/S3SelectiveReadJfrIT.java` (new)
 - `s3/src/test/resources/log4j2.xml` (new)
 
 ---
@@ -127,9 +127,9 @@ hardwood/
 │       ├── main/java/dev/hardwood/s3/
 │       │   └── S3InputFile.java
 │       └── test/java/dev/hardwood/s3/
-│           ├── S3InputFileTest.java
-│           ├── S3MultiFileTest.java
-│           └── S3SelectiveReadJfrTest.java
+│           ├── S3InputFileIT.java
+│           ├── S3MultiFileIT.java
+│           └── S3SelectiveReadJfrIT.java
 ├── pom.xml                     (add s3 module + AWS SDK BOM)
 ├── bom/pom.xml                 (add hardwood-s3)
 ├── test-bom/pom.xml            (add Testcontainers BOM, log4j-slf4j2-impl)

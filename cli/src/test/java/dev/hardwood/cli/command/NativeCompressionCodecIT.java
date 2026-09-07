@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Named;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -28,6 +29,7 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 /// decode fine on the JVM yet crash in the native image when the reachability /
 /// JNI config is missing — exactly the LZ4 failure that motivated this. A
 /// JVM-only test proves nothing about the shipped artifact. See issue #804.
+@Tag("native")
 class NativeCompressionCodecIT {
 
     private final String nativeBinary = System.getProperty("native.image.path");

@@ -7,11 +7,16 @@
  */
 package dev.hardwood.cli.command;
 
-class FooterS3CommandTest extends AbstractS3CommandTest implements FooterCommandContract {
+class InspectColumnsS3CommandIT extends AbstractS3CommandIT implements InspectColumnsCommandContract {
 
     @Override
     public String plainFile() {
         return S3_FILE;
+    }
+
+    @Override
+    public String pageIndexFile() {
+        return S3_PAGE_INDEX_FILE;
     }
 
     @Override

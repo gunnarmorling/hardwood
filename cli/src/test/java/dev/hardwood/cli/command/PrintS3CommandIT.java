@@ -7,7 +7,7 @@
  */
 package dev.hardwood.cli.command;
 
-class PrintS3CommandTest extends AbstractS3CommandTest implements PrintCommandContract {
+class PrintS3CommandIT extends AbstractS3CommandIT implements PrintCommandContract {
 
     @Override
     public String plainFile() {

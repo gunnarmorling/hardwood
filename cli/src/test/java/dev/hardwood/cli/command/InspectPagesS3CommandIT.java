@@ -7,7 +7,7 @@
  */
 package dev.hardwood.cli.command;
 
-class InspectPagesS3CommandTest extends AbstractS3CommandTest implements InspectPagesCommandContract {
+class InspectPagesS3CommandIT extends AbstractS3CommandIT implements InspectPagesCommandContract {
 
     @Override
     public String plainFile() {

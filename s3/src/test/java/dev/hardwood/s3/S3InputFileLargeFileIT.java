@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// The test object is sparse-truncated inside the s3proxy container so the
 /// 2 GB file costs kilobytes on disk and milliseconds to create.
 @Testcontainers
-class S3InputFileLargeFileTest {
+class S3InputFileLargeFileIT {
 
     private static final long TWO_GB = (long) Integer.MAX_VALUE + 1; // 2_147_483_648
 

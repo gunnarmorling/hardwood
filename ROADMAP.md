@@ -584,10 +584,10 @@ Remaining Failures by Category (7 total):
 - [x] Column projection tests (`ColumnProjectionTest` — 21 test methods)
 - [x] Multi-file reader tests (`MultiFileRowReaderTest` — 16 test methods)
 - [x] SIMD operations tests (`SimdOperationsTest` — 17 test methods)
-- [x] S3 integration tests (`S3InputFileTest` — 5 test methods, LocalStack)
+- [x] S3 integration tests (`S3InputFileIT` — 5 test methods, LocalStack)
 - [x] Avro GenericRecord tests (`AvroRowReaderTest` — 7 test methods)
 - [x] Parquet-java compat tests (`ParquetReaderCompatTest` — 12 test methods, including filter pushdown)
-- [x] Parquet-java compat S3 tests (`ParquetReaderS3CompatTest` — 5 test methods, LocalStack)
+- [x] Parquet-java compat S3 tests (`ParquetReaderS3CompatIT` — 5 test methods, LocalStack)
 
 ### Tools for Validation
 - [ ] Set up parquet-cli for metadata inspection

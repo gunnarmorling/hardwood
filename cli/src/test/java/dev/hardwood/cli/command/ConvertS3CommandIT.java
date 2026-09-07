@@ -7,7 +7,7 @@
  */
 package dev.hardwood.cli.command;
 
-class ConvertS3CommandTest extends AbstractS3CommandTest implements ConvertCommandContract {
+class ConvertS3CommandIT extends AbstractS3CommandIT implements ConvertCommandContract {
 
     @Override
     public String plainFile() {

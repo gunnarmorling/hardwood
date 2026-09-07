@@ -269,7 +269,7 @@ Parameterized `Aws4SignerTest` runs all 38 cases, asserting each intermediate re
 
 ### s3proxy integration tests
 
-`S3InputFileTest`, `S3MultiFileTest`, `S3SelectiveReadJfrTest` run against s3proxy via Testcontainers. Tests construct `S3Api` directly for upload setup and use `S3Source` for reading.
+`S3InputFileIT`, `S3MultiFileIT`, `S3SelectiveReadJfrIT` run against s3proxy via Testcontainers. Tests construct `S3Api` directly for upload setup and use `S3Source` for reading.
 
 ### `hardwood-aws-auth` tests
 

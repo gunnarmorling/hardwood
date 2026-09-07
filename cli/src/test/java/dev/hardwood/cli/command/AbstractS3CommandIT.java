@@ -23,7 +23,7 @@ import dev.hardwood.s3.S3ProxyContainers;
 /// Test parquet fixtures from `core/src/test/resources/` are copied into the
 /// container at startup as objects in bucket "test-bucket", so no upload step
 /// is needed in tests.
-abstract class AbstractS3CommandTest {
+abstract class AbstractS3CommandIT {
     protected static final String S3_FILE = "s3://test-bucket/plain_uncompressed.parquet";
     protected static final String S3_DICT_FILE = "s3://test-bucket/dictionary_uncompressed.parquet";
     protected static final String S3_BYTE_ARRAY_FILE = "s3://test-bucket/delta_byte_array_test.parquet";

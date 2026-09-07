@@ -225,7 +225,7 @@ The existing identity test (`scanPagesFromIndex()` vs `scanPagesSequential()`
 produce identical decoded values) validates correctness automatically — the I/O
 pattern changes but the results stay the same.
 
-### S3 integration tests (`S3SelectiveReadJfrTest`)
+### S3 integration tests (`S3SelectiveReadJfrIT`)
 
 - Projection byte comparison using `page_index_test.parquet` (170 KB > 64 KB
   tail cache, so socket-level differences are observable via `jdk.SocketRead`)

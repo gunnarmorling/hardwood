@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /// file hit the local mmap-backed cache instead of issuing fresh HTTP
 /// GETs to S3.
 @Testcontainers
-class S3RangeBackingTest {
+class S3RangeBackingIT {
 
     private static final Path TEST_RESOURCES = Path.of("").toAbsolutePath()
             .resolve("../core/src/test/resources").normalize();
