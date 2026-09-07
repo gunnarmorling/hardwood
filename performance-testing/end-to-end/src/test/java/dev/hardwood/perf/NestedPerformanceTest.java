@@ -764,7 +764,8 @@ class NestedPerformanceTest {
     /// Compute list sizes from a nested leaf column using the outermost
     /// REPEATED layer's offsets. Returns totalCount, and populates
     /// `sizes[0]`=totalCount, `sizes[1]`=maxCount.
-    private long computeListSizes(ParquetFileReader reader, int colIdx, long[] sizes) {
+    private long computeListSizes(ParquetFileReader reader, int colIdx, long[] sizes)
+            throws IOException {
         long totalCount = 0;
         int maxCount = 0;
 

@@ -24,7 +24,7 @@ import java.io.IOException;
 /// what had happened. Nothing above here needs it: [PageSource#next] already
 /// declares `IOException`, and the pipeline carries a failure across its thread
 /// boundary as a `Throwable`, which a checked exception is.
-interface PageIterator {
+public interface PageIterator {
 
     /// Whether another page is available, fetching whatever is needed to know.
     ///

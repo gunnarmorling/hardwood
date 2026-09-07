@@ -25,6 +25,7 @@ import dev.hardwood.internal.reader.MappedInputFile;
 import dev.hardwood.internal.reader.Page;
 import dev.hardwood.internal.reader.PageDecoder;
 import dev.hardwood.internal.reader.PageInfo;
+import dev.hardwood.internal.reader.PageIterator;
 import dev.hardwood.internal.reader.SequentialFetchPlan;
 import dev.hardwood.metadata.ColumnChunk;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -149,7 +150,7 @@ public class PageDecodeAllocationProfileTest {
                             inputFile, columnSchema, columnChunk,
                             context, rgIdx, inputFile.name(), 0);
                     List<PageInfo> pages = new ArrayList<>();
-                    java.util.Iterator<PageInfo> iter = plan.pages();
+                    PageIterator iter = plan.pages();
                     while (iter.hasNext()) {
                         pages.add(iter.next());
                     }
