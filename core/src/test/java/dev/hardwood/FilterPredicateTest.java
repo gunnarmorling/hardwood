@@ -7,6 +7,7 @@
  */
 package dev.hardwood;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -120,7 +121,7 @@ class FilterPredicateTest {
     // ==================== Row Group Filter Evaluation Tests ====================
 
     @Test
-    void testCanDropWithEq() {
+    void testCanDropWithEq() throws IOException {
         // Row group with int values min=10, max=20
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
@@ -147,7 +148,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithNotEq() {
+    void testCanDropWithNotEq() throws IOException {
         // Row group with single value: min=max=42
         RowGroup rg = createIntRowGroup(42, 42);
         FileSchema schema = createIntSchema();
@@ -167,7 +168,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithLt() {
+    void testCanDropWithLt() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -189,7 +190,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithLtEq() {
+    void testCanDropWithLtEq() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -203,7 +204,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithGt() {
+    void testCanDropWithGt() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -221,7 +222,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithGtEq() {
+    void testCanDropWithGtEq() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -235,7 +236,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithLongPredicate() {
+    void testCanDropWithLongPredicate() throws IOException {
         RowGroup rg = createLongRowGroup(100L, 200L);
         FileSchema schema = createLongSchema();
 
@@ -248,7 +249,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithDoublePredicate() {
+    void testCanDropWithDoublePredicate() throws IOException {
         RowGroup rg = createDoubleRowGroup(1.0, 10.0);
         FileSchema schema = createDoubleSchema();
 
@@ -261,7 +262,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithFloatPredicate() {
+    void testCanDropWithFloatPredicate() throws IOException {
         RowGroup rg = createFloatRowGroup(1.0f, 10.0f);
         FileSchema schema = createFloatSchema();
 
@@ -274,7 +275,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithBooleanPredicate() {
+    void testCanDropWithBooleanPredicate() throws IOException {
         // Row group with all true: min=true, max=true
         RowGroup allTrue = createBooleanRowGroup(true, true);
         FileSchema schema = createBooleanSchema();
@@ -293,7 +294,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithBinaryPredicate() {
+    void testCanDropWithBinaryPredicate() throws IOException {
         // Row group with strings "banana" to "date"
         RowGroup rg = createBinaryRowGroup("banana".getBytes(), "date".getBytes());
         FileSchema schema = createBinarySchema();
@@ -312,7 +313,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testAndEvaluation() {
+    void testAndEvaluation() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -339,7 +340,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testOrEvaluation() {
+    void testOrEvaluation() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -366,7 +367,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testMissingStatisticsNeverDrop() {
+    void testMissingStatisticsNeverDrop() throws IOException {
         // Row group with no statistics
         RowGroup rg = createRowGroupWithoutStatistics();
         FileSchema schema = createIntSchema();
@@ -410,7 +411,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithIntIn() {
+    void testCanDropWithIntIn() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -428,7 +429,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithLongIn() {
+    void testCanDropWithLongIn() throws IOException {
         RowGroup rg = createLongRowGroup(100L, 200L);
         FileSchema schema = createLongSchema();
 
@@ -439,7 +440,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithStringIn() {
+    void testCanDropWithStringIn() throws IOException {
         RowGroup rg = createBinaryRowGroup("banana".getBytes(), "date".getBytes());
         FileSchema schema = createBinarySchema();
 
@@ -451,7 +452,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithInMissingStatistics() {
+    void testCanDropWithInMissingStatistics() throws IOException {
         RowGroup rg = createRowGroupWithoutStatistics();
         FileSchema schema = createIntSchema();
 
@@ -480,7 +481,7 @@ class FilterPredicateTest {
     // ==================== IS NULL / IS NOT NULL Row Group Evaluation Tests ====================
 
     @Test
-    void testCanDropWithIsNull() {
+    void testCanDropWithIsNull() throws IOException {
         FileSchema schema = createIntSchema();
 
         // nullCount=0 -> can drop IS NULL (no nulls in this row group)
@@ -501,7 +502,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithIsNotNull() {
+    void testCanDropWithIsNotNull() throws IOException {
         FileSchema schema = createIntSchema();
 
         // nullCount=0 -> cannot drop IS NOT NULL (all values are non-null)
@@ -522,7 +523,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testIsNullWorksOnAnyColumnType() {
+    void testIsNullWorksOnAnyColumnType() throws IOException {
         // IS NULL / IS NOT NULL should work on any physical type without type validation errors
         for (PhysicalType type : new PhysicalType[] {
                 PhysicalType.INT32, PhysicalType.INT64, PhysicalType.FLOAT,
@@ -677,7 +678,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithUuidPredicate() {
+    void testCanDropWithUuidPredicate() throws IOException {
         UUID low   = new UUID(0L, 1L);
         UUID mid   = new UUID(0L, 50L);
         UUID high  = new UUID(0L, 100L);
@@ -701,7 +702,7 @@ class FilterPredicateTest {
     // ==================== Float/Double Edge Cases ====================
 
     @Test
-    void testCanDropWithDoubleNaN() {
+    void testCanDropWithDoubleNaN() throws IOException {
         // NaN is ordered after +Infinity by Double.compare
         RowGroup rg = createDoubleRowGroup(1.0, 10.0);
         FileSchema schema = createDoubleSchema();
@@ -714,7 +715,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithDoubleNaNInStatistics() {
+    void testCanDropWithDoubleNaNInStatistics() throws IOException {
         // Row group where max is NaN (can happen with some writers)
         RowGroup rg = createDoubleRowGroup(1.0, Double.NaN);
         FileSchema schema = createDoubleSchema();
@@ -723,7 +724,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithDoubleNegativeZero() {
+    void testCanDropWithDoubleNegativeZero() throws IOException {
         // -0.0 compares less than +0.0 via Double.compare
         RowGroup rg = createDoubleRowGroup(-0.0, 0.0);
         FileSchema schema = createDoubleSchema();
@@ -736,7 +737,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithDoubleInfinity() {
+    void testCanDropWithDoubleInfinity() throws IOException {
         RowGroup rg = createDoubleRowGroup(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY);
         FileSchema schema = createDoubleSchema();
         // Any finite value is in range
@@ -748,7 +749,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithFloatNaN() {
+    void testCanDropWithFloatNaN() throws IOException {
         RowGroup rg = createFloatRowGroup(1.0f, 10.0f);
         FileSchema schema = createFloatSchema();
         assertThat(canDropRowGroup(FilterPredicate.eq("col", Float.NaN), rg, schema)).isTrue();
@@ -757,7 +758,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testCanDropWithFloatNegativeZero() {
+    void testCanDropWithFloatNegativeZero() throws IOException {
         RowGroup rg = createFloatRowGroup(-0.0f, 0.0f);
         FileSchema schema = createFloatSchema();
         assertThat(canDropRowGroup(FilterPredicate.eq("col", -0.0f), rg, schema)).isFalse();
@@ -768,7 +769,7 @@ class FilterPredicateTest {
     // ==================== Compound NOT Tests ====================
 
     @Test
-    void testNotWrappingAndIsConservative() {
+    void testNotWrappingAndIsConservative() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
         // NOT(AND(GT 25, LT 5)) — both children would drop, but NOT is conservative
@@ -779,7 +780,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotWrappingOrIsConservative() {
+    void testNotWrappingOrIsConservative() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
         // NOT(OR(EQ 5, EQ 25)) — both children would drop, OR drops, but NOT is conservative
@@ -790,7 +791,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotWrappingLeafIsConservative() {
+    void testNotWrappingLeafIsConservative() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
         // NOT(GT 25) should ideally push down as LT_EQ 25, but currently conservative
@@ -919,7 +920,7 @@ class FilterPredicateTest {
 
     @ParameterizedTest(name = "NOT({0} col {1}) on int [{2},{3}] → canDrop={4}")
     @MethodSource
-    void testNotInversionOnIntRowGroup(FilterPredicate.Operator op, int value, int min, int max, boolean canDrop) {
+    void testNotInversionOnIntRowGroup(FilterPredicate.Operator op, int value, int min, int max, boolean canDrop) throws IOException {
         RowGroup rg = createIntRowGroup(min, max);
         FileSchema schema = createIntSchema();
 
@@ -967,7 +968,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotOnCompoundPredicateIsConservative() {
+    void testNotOnCompoundPredicateIsConservative() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -997,7 +998,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotOnInPredicateExpandsToAndNotEq() {
+    void testNotOnInPredicateExpandsToAndNotEq() throws IOException {
         FileSchema schema = createIntSchema();
 
         // NOT(IN(1, 2, 3)) → AND(NOT_EQ(1), NOT_EQ(2), NOT_EQ(3))
@@ -1016,7 +1017,7 @@ class FilterPredicateTest {
 
 
     @Test
-    void testNotOnIsNullInvertsToIsNotNull() {
+    void testNotOnIsNullInvertsToIsNotNull() throws IOException {
         FileSchema schema = createIntSchema();
 
         // All rows are null → NOT(isNull) → isNotNull → can drop (all are null)
@@ -1031,7 +1032,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotOnIsNotNullInvertsToIsNull() {
+    void testNotOnIsNotNullInvertsToIsNull() throws IOException {
         FileSchema schema = createIntSchema();
 
         // No nulls → NOT(isNotNull) → isNull → can drop (no nulls exist)
@@ -1046,7 +1047,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testDoubleNotIsEquivalentToOriginal() {
+    void testDoubleNotIsEquivalentToOriginal() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -1059,7 +1060,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testDeeplyNestedNotWithDeMorgan() {
+    void testDeeplyNestedNotWithDeMorgan() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -1078,7 +1079,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotAndWithInChildFallsBackToConservative() {
+    void testNotAndWithInChildFallsBackToConservative() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -1091,7 +1092,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testNotOrEquivalenceWithDeMorgan() {
+    void testNotOrEquivalenceWithDeMorgan() throws IOException {
         RowGroup rg = createIntRowGroup(10, 20);
         FileSchema schema = createIntSchema();
 
@@ -1108,7 +1109,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testRowGroupIsNotDroppedWithIntersectingBoundingBox() {
+    void testRowGroupIsNotDroppedWithIntersectingBoundingBox() throws IOException {
         FileSchema schema = createGeometrySchema();
         RowGroup rg = createGeospatialRowGroup(2.0, 10.0, -4.0, 6.0);
 
@@ -1142,7 +1143,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testRowGroupIsNotDroppedWhenGeospatialstatsAreNotAvailable() {
+    void testRowGroupIsNotDroppedWhenGeospatialstatsAreNotAvailable() throws IOException {
         FileSchema schema = createGeometrySchema();
         FilterPredicate query = FilterPredicate.intersects("col", 3.0, 0.0, 8.0, 4.0);
 
@@ -1156,7 +1157,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testRowGroupIsNotDroppedWithNaNBoundingBox() {
+    void testRowGroupIsNotDroppedWithNaNBoundingBox() throws IOException {
         FileSchema schema = createGeometrySchema();
         // No corpus fixture carries a NaN in its bbox bounds (spec-compliant writers exclude NaN),
         // so the NaN-bound case is pinned here. A NaN bound makes the box unusable for pruning: the
@@ -1172,7 +1173,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testRowGroupIsDroppedWithNonIntersectingBoundingBox() {
+    void testRowGroupIsDroppedWithNonIntersectingBoundingBox() throws IOException {
         FileSchema schema = createGeometrySchema();
         RowGroup rg = createGeospatialRowGroup(2.0, 10.0, -4.0, 6.0);
 
@@ -1198,7 +1199,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testAntimeridianWrapping() {
+    void testAntimeridianWrapping() throws IOException {
         FileSchema schema = createGeometrySchema();
 
         // chunk wraps, query doesn't with it's end to right of chunk's start
@@ -1221,7 +1222,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testIntersectingBoundingBoxIsNotDroppedForGeography() {
+    void testIntersectingBoundingBoxIsNotDroppedForGeography() throws IOException {
         RowGroup rg = createGeospatialRowGroup(2.0, 10.0, -4.0, 6.0);
         FileSchema schema = createGeographySchema();
 
@@ -1230,7 +1231,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testIntersectsComposedWithAnd() {
+    void testIntersectsComposedWithAnd() throws IOException {
         RowGroup rg = createGeospatialRowGroup(2.0, 10.0, -4.0, 6.0);
         FileSchema schema = createGeographySchema();
 
@@ -1243,7 +1244,7 @@ class FilterPredicateTest {
     }
 
     @Test
-    void testIntersectsComposedWithOr() {
+    void testIntersectsComposedWithOr() throws IOException {
         RowGroup rg = createGeospatialRowGroup(2.0, 10.0, -4.0, 6.0);
         FileSchema schema = createGeometrySchema();
 
@@ -1404,7 +1405,7 @@ class FilterPredicateTest {
 
     /// Helper that resolves a FilterPredicate and evaluates it against a row group.
     /// This mirrors the production code path: resolve first, then evaluate.
-    private static boolean canDropRowGroup(FilterPredicate filter, RowGroup rg, FileSchema schema) {
+    private static boolean canDropRowGroup(FilterPredicate filter, RowGroup rg, FileSchema schema) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rg, null, null) == FilterDecision.CANNOT_MATCH;
     }

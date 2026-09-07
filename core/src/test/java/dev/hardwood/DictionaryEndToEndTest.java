@@ -121,7 +121,7 @@ class DictionaryEndToEndTest {
     /// the chunk is fully dictionary-encoded and its page is locatable. The column is looked up by
     /// name so this does not depend on column ordering.
     private static void assertIsDictionaryEncoded(ParquetFileReader reader, InputFile inputFile,
-            String column) {
+            String column) throws IOException {
         RowGroup rowGroup = reader.getFileMetaData().rowGroups().getFirst();
         int columnIndex = IntStream.range(0, rowGroup.columns().size())
                 .filter(i -> rowGroup.columns().get(i).metaData().pathInSchema().toString().equals(column))

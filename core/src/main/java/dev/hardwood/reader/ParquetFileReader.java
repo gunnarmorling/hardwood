@@ -322,7 +322,7 @@ public class ParquetFileReader implements Closeable {
 
     /// Begin configuring a [RowReader] with optional projection, filter,
     /// and head/tail limit.
-    public RowReaderBuilder buildRowReader() throws IOException {
+    public RowReaderBuilder buildRowReader() {
         return new RowReaderBuilder(this);
     }
 
@@ -332,14 +332,14 @@ public class ParquetFileReader implements Closeable {
 
     /// Shortcut for [#buildColumnReader(String)].build() — read every row
     /// group of the named column with no filter. Single-file only.
-    public ColumnReader columnReader(String columnName) {
+    public ColumnReader columnReader(String columnName) throws IOException {
         return buildColumnReader(columnName).build();
     }
 
     /// Shortcut for [#buildColumnReader(int)].build() — read every row
     /// group of the column at the given index with no filter. Single-file
     /// only.
-    public ColumnReader columnReader(int columnIndex) {
+    public ColumnReader columnReader(int columnIndex) throws IOException {
         return buildColumnReader(columnIndex).build();
     }
 
@@ -360,7 +360,7 @@ public class ParquetFileReader implements Closeable {
 
     /// Shortcut for [#buildColumnReaders(ColumnProjection)].build() —
     /// every row group, no filter. Works for single- and multi-file.
-    public ColumnReaders columnReaders(ColumnProjection projection) {
+    public ColumnReaders columnReaders(ColumnProjection projection) throws IOException {
         return buildColumnReaders(projection).build();
     }
 
@@ -561,12 +561,12 @@ public class ParquetFileReader implements Closeable {
         }
     }
 
-    ColumnReader buildColumnReader(String columnName, FilterPredicate filter) {
+    ColumnReader buildColumnReader(String columnName, FilterPredicate filter) throws IOException {
         return buildColumnReader(columnName, filter, null, AUTO_BATCH_SIZE);
     }
 
     ColumnReader buildColumnReader(
-            String columnName, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize) {
+            String columnName, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize) throws IOException {
         ensureSingleFile("columnReader(String)");
         if (filter != null) {
             // Exact filtering routes through the shared filtered-projection
@@ -578,12 +578,12 @@ public class ParquetFileReader implements Closeable {
         return buildColumnReader(schema.getColumn(columnName), rowGroups, batchSize);
     }
 
-    ColumnReader buildColumnReader(int columnIndex, FilterPredicate filter) {
+    ColumnReader buildColumnReader(int columnIndex, FilterPredicate filter) throws IOException {
         return buildColumnReader(columnIndex, filter, null, AUTO_BATCH_SIZE);
     }
 
     ColumnReader buildColumnReader(
-            int columnIndex, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize) {
+            int columnIndex, FilterPredicate filter, RowGroupPredicate rowGroupFilter, int batchSize) throws IOException {
         ensureSingleFile("columnReader(int)");
         if (filter != null) {
             String columnName = schema.getColumn(columnIndex).fieldPath().toString();
@@ -595,7 +595,7 @@ public class ParquetFileReader implements Closeable {
     }
 
     private ColumnReader buildColumnReader(
-            ColumnSchema column, List<RowGroup> rowGroups, int batchSize) {
+            ColumnSchema column, List<RowGroup> rowGroups, int batchSize) throws IOException {
         ProjectedSchema projected = ProjectedSchema.create(schema,
                 ColumnProjection.columns(column.fieldPath().toString()));
         RowGroupIterator iterator = trackedIterator(0, 0, 0);
@@ -606,7 +606,7 @@ public class ParquetFileReader implements Closeable {
                 resolveBatchSize(batchSize, projected, rowGroups), NestedColumnWorker.IndexMode.REAL_VIEW);
     }
 
-    ColumnReaders buildColumnReaders(ColumnProjection projection, FilterPredicate filter) {
+    ColumnReaders buildColumnReaders(ColumnProjection projection, FilterPredicate filter) throws IOException {
         return buildColumnReaders(projection, filter, null, AUTO_BATCH_SIZE);
     }
 
@@ -614,7 +614,7 @@ public class ParquetFileReader implements Closeable {
             ColumnProjection projection,
             FilterPredicate filter,
             RowGroupPredicate rowGroupFilter,
-            int batchSize) {
+            int batchSize) throws IOException {
         ResolvedPredicate resolved = resolveFilter(filter);
         List<RowGroup> rowGroups = filterRowGroups(rowGroupFilter);
 
@@ -987,7 +987,7 @@ public class ParquetFileReader implements Closeable {
             return this;
         }
 
-        public ColumnReader build() {
+        public ColumnReader build() throws IOException {
             if (byName) {
                 return fileReader.buildColumnReader(columnName, filter, rowGroupFilter, batchSize);
             }
@@ -1059,7 +1059,7 @@ public class ParquetFileReader implements Closeable {
             return this;
         }
 
-        public ColumnReaders build() {
+        public ColumnReaders build() throws IOException {
             return fileReader.buildColumnReaders(projection, filter, rowGroupFilter, batchSize);
         }
     }

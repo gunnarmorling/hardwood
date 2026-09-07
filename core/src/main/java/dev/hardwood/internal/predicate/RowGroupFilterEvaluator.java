@@ -7,8 +7,12 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
+
+import dev.hardwood.internal.bloomfilter.BloomFilter;
 import dev.hardwood.internal.predicate.dictionary.DictionaryFilterSupport;
 import dev.hardwood.internal.predicate.dictionary.RowGroupDictionaryFilterSource;
+import dev.hardwood.internal.reader.Dictionary;
 import dev.hardwood.internal.util.Geospatial;
 import dev.hardwood.metadata.BoundingBox;
 import dev.hardwood.metadata.ColumnMetaData;
@@ -52,14 +56,14 @@ public class RowGroupFilterEvaluator {
     ///        checks
     /// @return the statistics decision for the row group
     public static FilterDecision decideRowGroup(ResolvedPredicate predicate, RowGroup rowGroup,
-            BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries) {
+            BloomFilterSource bloomFilters, RowGroupDictionaryFilterSource dictionaries) throws IOException {
         return switch (predicate) {
             case ResolvedPredicate.IntPredicate p -> {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
-                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
+                        && (BloomFilterSupport.valueAbsent(bloom(bloomFilters, p.columnIndex()), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionary(dictionaries, p.columnIndex()), p.value()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -68,8 +72,8 @@ public class RowGroupFilterEvaluator {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
-                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
+                        && (BloomFilterSupport.valueAbsent(bloom(bloomFilters, p.columnIndex()), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionary(dictionaries, p.columnIndex()), p.value()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -78,8 +82,11 @@ public class RowGroupFilterEvaluator {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
-                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
+                        // The NaN case is repeated from BloomFilterSupport so the filter is not
+                        // read for a value it could not decide either way.
+                        && ((!Float.isNaN(p.value())
+                                && BloomFilterSupport.valueAbsent(bloom(bloomFilters, p.columnIndex()), p.value()))
+                                || DictionaryFilterSupport.valueAbsent(dictionary(dictionaries, p.columnIndex()), p.value()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -92,7 +99,7 @@ public class RowGroupFilterEvaluator {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && DictionaryFilterSupport.valueAbsentFloat16(dictionaries, p.columnIndex(), p.value())) {
+                        && DictionaryFilterSupport.valueAbsentFloat16(dictionary(dictionaries, p.columnIndex()), p.value())) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -101,8 +108,11 @@ public class RowGroupFilterEvaluator {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
-                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
-                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
+                        // The NaN case is repeated from BloomFilterSupport so the filter is not
+                        // read for a value it could not decide either way.
+                        && ((!Double.isNaN(p.value())
+                                && BloomFilterSupport.valueAbsent(bloom(bloomFilters, p.columnIndex()), p.value()))
+                                || DictionaryFilterSupport.valueAbsent(dictionary(dictionaries, p.columnIndex()), p.value()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -118,8 +128,8 @@ public class RowGroupFilterEvaluator {
                 if (decision != FilterDecision.CANNOT_MATCH
                         && p.op() == FilterPredicate.Operator.EQ
                         && p.byteExact()
-                        && (BloomFilterSupport.valueAbsent(bloomFilters, p.columnIndex(), p.value())
-                                || DictionaryFilterSupport.valueAbsent(dictionaries, p.columnIndex(), p.value()))) {
+                        && (BloomFilterSupport.valueAbsent(bloom(bloomFilters, p.columnIndex()), p.value())
+                                || DictionaryFilterSupport.valueAbsent(dictionary(dictionaries, p.columnIndex()), p.value()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -127,8 +137,8 @@ public class RowGroupFilterEvaluator {
             case ResolvedPredicate.IntInPredicate p -> {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
-                        && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
-                                || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
+                        && (BloomFilterSupport.absentAll(bloom(bloomFilters, p.columnIndex()), p.values())
+                                || DictionaryFilterSupport.absentAll(dictionary(dictionaries, p.columnIndex()), p.values()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -136,8 +146,8 @@ public class RowGroupFilterEvaluator {
             case ResolvedPredicate.LongInPredicate p -> {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
-                        && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
-                                || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
+                        && (BloomFilterSupport.absentAll(bloom(bloomFilters, p.columnIndex()), p.values())
+                                || DictionaryFilterSupport.absentAll(dictionary(dictionaries, p.columnIndex()), p.values()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -145,8 +155,8 @@ public class RowGroupFilterEvaluator {
             case ResolvedPredicate.BinaryInPredicate p -> {
                 FilterDecision decision = statisticsDecision(p, p.columnIndex(), rowGroup);
                 if (decision != FilterDecision.CANNOT_MATCH
-                        && (BloomFilterSupport.absentAll(bloomFilters, p.columnIndex(), p.values())
-                                || DictionaryFilterSupport.absentAll(dictionaries, p.columnIndex(), p.values()))) {
+                        && (BloomFilterSupport.absentAll(bloom(bloomFilters, p.columnIndex()), p.values())
+                                || DictionaryFilterSupport.absentAll(dictionary(dictionaries, p.columnIndex()), p.values()))) {
                     yield FilterDecision.CANNOT_MATCH;
                 }
                 yield decision;
@@ -234,4 +244,21 @@ public class RowGroupFilterEvaluator {
         }
         return rowGroup.columns().get(columnIndex).metaData().statistics();
     }
+
+    /// Resolves the column's bloom filter, or `null` when no source is supplied or the column
+    /// carries none. The read lives here rather than in [BloomFilterSupport] because the guards
+    /// that decide whether it is worth doing — statistics did not already drop the row group, the
+    /// operator is one a filter can answer — are here, and the `||` below keeps it from running
+    /// when an earlier probe has already proved the value absent.
+    private static BloomFilter bloom(BloomFilterSource bloomFilters, int columnIndex) throws IOException {
+        return bloomFilters == null ? null : bloomFilters.forColumn(columnIndex);
+    }
+
+    /// Resolves the column's dictionary, or `null` when no source is supplied or the chunk has
+    /// none. See [#bloom] for why the read is here.
+    private static Dictionary dictionary(RowGroupDictionaryFilterSource dictionaries, int columnIndex)
+            throws IOException {
+        return dictionaries == null ? null : dictionaries.forColumn(columnIndex);
+    }
+
 }

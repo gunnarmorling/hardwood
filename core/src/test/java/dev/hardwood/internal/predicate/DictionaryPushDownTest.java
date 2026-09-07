@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -61,7 +62,7 @@ class DictionaryPushDownTest {
     }
 
     @Test
-    void fixtureIsDictionaryEncoded() {
+    void fixtureIsDictionaryEncoded() throws IOException {
         // A readable dictionary is exactly what the push-down precondition amounts to: the chunk is
         // fully dictionary-encoded and its page is locatable.
         assertThat(new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context)
@@ -69,7 +70,7 @@ class DictionaryPushDownTest {
     }
 
     @Test
-    void absentValueInsideStatisticsRangeIsDropped() {
+    void absentValueInsideStatisticsRangeIsDropped() throws IOException {
         // "cat_5x" sorts between the min "cat_0" and max "cat_9", so statistics cannot drop it.
         FilterPredicate absent = FilterPredicate.eq("category", "cat_5x");
 
@@ -78,19 +79,19 @@ class DictionaryPushDownTest {
     }
 
     @Test
-    void presentValueIsKept() {
+    void presentValueIsKept() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.eq("category", "cat_5"))).isFalse();
     }
 
     @Test
-    void inListDropsOnlyWhenAllValuesAreAbsent() {
+    void inListDropsOnlyWhenAllValuesAreAbsent() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.inStrings("category", "nope_a", "nope_b"))).isTrue();
         // One present value is enough to keep it.
         assertThat(dictionaryDrop(FilterPredicate.inStrings("category", "nope_a", "cat_3"))).isFalse();
     }
 
     @Test
-    void pruningAppliesInsideBooleanCombinators() {
+    void pruningAppliesInsideBooleanCombinators() throws IOException {
         assertThat(dictionaryDrop(FilterPredicate.or(
                 FilterPredicate.eq("category", "cat_5x"),
                 FilterPredicate.eq("category", "cat_7x")))).isTrue();
@@ -105,13 +106,13 @@ class DictionaryPushDownTest {
     }
 
     @Test
-    void outOfBoundsColumnIndexYieldsNoDictionary() {
+    void outOfBoundsColumnIndexYieldsNoDictionary() throws IOException {
         RowGroupDictionaryFilterSource source = dictionaries();
         assertThat(source.forColumn(-1)).isNull();
     }
 
     @Test
-    void dictionaryIsCachedPerColumn() {
+    void dictionaryIsCachedPerColumn() throws IOException {
         RowGroupDictionaryFilterSource source = dictionaries();
         assertThat(source.forColumn(CATEGORY_COLUMN))
                 .isNotNull()
@@ -122,13 +123,13 @@ class DictionaryPushDownTest {
         return new RowGroupDictionaryFilterSource(inputFile, rowGroup, schema, context);
     }
 
-    private static boolean dictionaryDrop(FilterPredicate filter) {
+    private static boolean dictionaryDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, dictionaries())
                 == FilterDecision.CANNOT_MATCH;
     }
 
-    private static boolean statisticsDrop(FilterPredicate filter) {
+    private static boolean statisticsDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }

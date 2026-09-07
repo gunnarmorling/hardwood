@@ -8,6 +8,7 @@
 package dev.hardwood.internal.predicate;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -79,7 +80,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void int32EqualityInsideRangeButAbsentIsDroppedOnlyByBloom() {
+    void int32EqualityInsideRangeButAbsentIsDroppedOnlyByBloom() throws IOException {
         // `code` holds multiples of 3; 1 is in [0, 189] (statistics keep) but never written.
         FilterPredicate absent = FilterPredicate.eq("code", 1);
         assertThat(statisticsDrop(absent)).isFalse();
@@ -92,7 +93,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void stringEqualityInsideRangeButAbsentIsDroppedByBloom() {
+    void stringEqualityInsideRangeButAbsentIsDroppedByBloom() throws IOException {
         // "w" sorts within ["", "x"*63] (statistics keep) but is not one of the stored names.
         FilterPredicate absent = FilterPredicate.eq("name", "w");
         assertThat(statisticsDrop(absent)).isFalse();
@@ -103,7 +104,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void floatEqualityInsideRangeButAbsentIsDroppedOnlyByBloom() {
+    void floatEqualityInsideRangeButAbsentIsDroppedOnlyByBloom() throws IOException {
         // `price` holds even multiples of 2; 1.0 is in [0.0, 126.0] (statistics keep) but never
         // written, so only the bloom filter proves its absence.
         FilterPredicate absent = FilterPredicate.eq("price", 1.0f);
@@ -117,7 +118,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void doubleEqualityInsideRangeButAbsentIsDroppedOnlyByBloom() {
+    void doubleEqualityInsideRangeButAbsentIsDroppedOnlyByBloom() throws IOException {
         // `ratio` holds multiples of 0.5; 0.25 is in [0.0, 31.5] (statistics keep) but never written.
         FilterPredicate absent = FilterPredicate.eq("ratio", 0.25);
         assertThat(statisticsDrop(absent)).isFalse();
@@ -128,7 +129,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void oppositeSignedZerosArePrunedByBloom() {
+    void oppositeSignedZerosArePrunedByBloom() throws IOException {
         // The fixture stores +0.0. Matchers and bloom hashes both distinguish its sign from -0.0.
         FilterPredicate negativeFloatZero = FilterPredicate.eq("price", -0.0f);
         assertThat(statisticsDrop(negativeFloatZero)).isFalse();
@@ -140,7 +141,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void fixedLenByteArrayDecimalEqualityInsideRangeButAbsentIsDroppedByBloom() {
+    void fixedLenByteArrayDecimalEqualityInsideRangeButAbsentIsDroppedByBloom() throws IOException {
         // `dec` is DECIMAL(38,0) stored as FIXED_LEN_BYTE_ARRAY(16) and holds even values; 1 is in
         // [0, 126] (statistics keep) but never written. Exercises the FLBA equality path with real
         // fixed-length bytes and cross-checks that the FLBA decimal encoding matches the writer's.
@@ -153,7 +154,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void timestampLogicalTypeEqualityUsesBloomOnThePhysicalLong() {
+    void timestampLogicalTypeEqualityUsesBloomOnThePhysicalLong() throws IOException {
         // `ts` is TIMESTAMP(us, UTC) — physically INT64 — at even-second offsets from 2024-01-01.
         // An Instant predicate resolves to the physical long (epoch micros), so an odd-second
         // instant lands in range but was never written: only the bloom filter, keyed on that
@@ -167,7 +168,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void columnWithoutBloomFilterFallsBackToStatistics() {
+    void columnWithoutBloomFilterFallsBackToStatistics() throws IOException {
         // `value` holds multiples of 10 and carries no bloom filter; an absent in-range value
         // cannot be dropped, so the row group is kept.
         FilterPredicate absentInRange = FilterPredicate.eq("value", 5L);
@@ -178,13 +179,13 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void inListIsDroppedOnlyWhenEveryValueIsAbsent() {
+    void inListIsDroppedOnlyWhenEveryValueIsAbsent() throws IOException {
         assertThat(bloomDrop(FilterPredicate.in("code", 1, 2))).isTrue();
         assertThat(bloomDrop(FilterPredicate.in("code", 1, 3))).isFalse();
     }
 
     @Test
-    void int64EqualityInsideRangeButAbsentIsDroppedOnlyByBloom() {
+    void int64EqualityInsideRangeButAbsentIsDroppedOnlyByBloom() throws IOException {
         // `sparse` holds multiples of 1000; 1 is in [0, 63000] (statistics keep) but never written,
         // so only the bloom filter proves its absence. (`id` is contiguous 0..63 — no in-range gap.)
         FilterPredicate absent = FilterPredicate.eq("sparse", 1L);
@@ -196,13 +197,13 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void int64InListIsDroppedOnlyWhenEveryValueIsAbsent() {
+    void int64InListIsDroppedOnlyWhenEveryValueIsAbsent() throws IOException {
         assertThat(bloomDrop(FilterPredicate.in("sparse", 1L, 2L))).isTrue();
         assertThat(bloomDrop(FilterPredicate.in("sparse", 1L, 1000L))).isFalse();
     }
 
     @Test
-    void binaryInListIsDroppedOnlyWhenEveryValueIsAbsent() {
+    void binaryInListIsDroppedOnlyWhenEveryValueIsAbsent() throws IOException {
         // `name` holds only runs of 'x' ("" … "x"*63). "w"/"v" are not stored, yet sort inside the
         // min/max range ["", "x"*63] ('v','w' < 'x'), so statistics keep but the bloom filter drops.
         assertThat(bloomDrop(FilterPredicate.inStrings("name", "w", "v"))).isTrue();
@@ -210,7 +211,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void andDropsWhenAnyBloomEligibleLeafIsAbsent() {
+    void andDropsWhenAnyBloomEligibleLeafIsAbsent() throws IOException {
         // code=1 is absent -> the conjunction matches nothing.
         FilterPredicate and = FilterPredicate.and(
                 FilterPredicate.eq("code", 1), FilterPredicate.eq("id", 5L));
@@ -218,7 +219,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void orDropsOnlyWhenEveryBranchIsAbsent() {
+    void orDropsOnlyWhenEveryBranchIsAbsent() throws IOException {
         FilterPredicate bothAbsent = FilterPredicate.or(
                 FilterPredicate.eq("code", 1), FilterPredicate.eq("code", 2));
         assertThat(bloomDrop(bothAbsent)).isTrue();
@@ -229,7 +230,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void readsBloomFilterWhenLengthIsAbsent() {
+    void readsBloomFilterWhenLengthIsAbsent() throws IOException {
         // Legacy writers omit bloom_filter_length, forcing the header-probe path. Blank the length
         // on the `name` chunk (keeping its offset) and confirm the filter is reconstructed from the
         // probe alone — a stored value must still report present (no false negatives).
@@ -280,7 +281,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void invalidBloomFilterOffsetIsTreatedAsAbsent() {
+    void invalidBloomFilterOffsetIsTreatedAsAbsent() throws IOException {
         // A present but non-positive bloom_filter_offset cannot name a real filter (it points at or
         // before the file's magic header). The source stays conservative — no filter, so the row
         // group is kept — rather than throwing or reading garbage.
@@ -289,7 +290,7 @@ class BloomFilterPushDownTest {
     }
 
     @Test
-    void rowGroupBloomFilterSourceExposesFiltersPerColumn() {
+    void rowGroupBloomFilterSourceExposesFiltersPerColumn() throws IOException {
         RowGroupBloomFilterSource source = new RowGroupBloomFilterSource(inputFile, rowGroup);
         assertThat(source.forColumn(NAME_COLUMN)).isNotNull();
         assertThat(source.forColumn(VALUE_COLUMN)).isNull();
@@ -298,13 +299,13 @@ class BloomFilterPushDownTest {
         assertThat(source.forColumn(rowGroup.columns().size())).isNull();
     }
 
-    private static boolean bloomDrop(FilterPredicate filter) {
+    private static boolean bloomDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup,
                 new RowGroupBloomFilterSource(inputFile, rowGroup), null) == FilterDecision.CANNOT_MATCH;
     }
 
-    private static boolean statisticsDrop(FilterPredicate filter) {
+    private static boolean statisticsDrop(FilterPredicate filter) throws IOException {
         ResolvedPredicate resolved = FilterPredicateResolver.resolve(filter, schema);
         return RowGroupFilterEvaluator.decideRowGroup(resolved, rowGroup, null, null) == FilterDecision.CANNOT_MATCH;
     }

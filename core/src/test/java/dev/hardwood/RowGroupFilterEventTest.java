@@ -150,6 +150,6 @@ class RowGroupFilterEventTest extends AbstractJfrRecorderTest {
 
     @FunctionalInterface
     private interface ColumnReadersFactory {
-        ColumnReaders create(ParquetFileReader reader);
+        ColumnReaders create(ParquetFileReader reader) throws Exception;
     }
 }

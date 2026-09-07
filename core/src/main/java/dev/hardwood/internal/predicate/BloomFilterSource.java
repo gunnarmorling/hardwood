@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.predicate;
 
+import java.io.IOException;
+
 import dev.hardwood.internal.bloomfilter.BloomFilter;
 
 /// Column-indexed access to a row group's bloom filters.
@@ -17,5 +19,5 @@ public interface BloomFilterSource {
 
     /// Returns the bloom filter for the given original column index, or `null` if the column chunk
     /// carries none. Implementations may read lazily and cache the result (including absence).
-    BloomFilter forColumn(int columnIndex);
+    BloomFilter forColumn(int columnIndex) throws IOException;
 }

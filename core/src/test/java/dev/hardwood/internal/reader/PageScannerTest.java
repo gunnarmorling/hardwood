@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -175,7 +176,7 @@ public class PageScannerTest {
 
     private static RowGroupIterator createIterator(InputFile inputFile, FileSchema schema,
                                                     FileMetaData metaData,
-                                                    HardwoodContextImpl context) {
+                                                    HardwoodContextImpl context) throws IOException {
         RowGroupIterator iterator = new RowGroupIterator(
                 List.of(inputFile), context, 0);
         iterator.setFirstFile(schema, metaData.rowGroups());

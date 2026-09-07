@@ -7,6 +7,7 @@
  */
 package dev.hardwood.internal.reader;
 
+import java.io.IOException;
 import java.util.Iterator;
 
 /// Per-column iterator that yields [PageInfo] objects across all row groups and files.
@@ -66,7 +67,7 @@ public class PageSource {
         return rowGroupIterator.hasFilter();
     }
 
-    public PageInfo next() {
+    public PageInfo next() throws IOException {
         while (true) {
             if (currentPlan != null && currentPlan.hasNext()) {
                 return currentPlan.next();

@@ -210,7 +210,7 @@ class RowGroupDictionaryFilterSourceTest {
 
     @FunctionalInterface
     private interface FixtureTest {
-        void run(Fixture fixture);
+        void run(Fixture fixture) throws Exception;
     }
 
     /// One fixture's row group, with helpers that rewrite the dictionary column's offsets so a

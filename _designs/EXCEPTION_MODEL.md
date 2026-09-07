@@ -14,8 +14,8 @@ alone without reading the message.
 
 | Category | Means | Trying again |
 |---|---|---|
-| **Transport** | the bytes did not arrive: a disk error, an S3 failure after its own retries have run out, a connection reset | may succeed |
-| **The file** | the bytes arrived and are wrong: a bad magic number, a corrupt footer, a dictionary page the metadata misplaces, values that do not decode | will fail the same way |
+| **Transport** | reading the file failed: a disk error, an S3 failure after its own retries have run out, a connection reset | may succeed |
+| **The file** | the file was read and is not valid Parquet: a bad magic number, a corrupt footer, a dictionary page the metadata misplaces, values that do not decode | will fail the same way |
 | **Unsupported** | the file is correct and Hardwood cannot read it: Parquet Modular Encryption, an encoding not implemented, a codec whose library is absent | will fail the same way, until something changes |
 
 The third is not a read failure at all. Nothing is wrong with the file or the
@@ -47,7 +47,7 @@ already has.
 > Trying again will not: `ParquetReadException`, `UnsupportedOperationException`
 
 The compiler enforces the first: a read cannot be written without deciding what
-to do when the bytes do not arrive. The two on the second line differ in what to
+to do when a read fails. The two on the second line differ in what to
 do instead — one means the file is beyond saving, the other that this library is
 the wrong tool or is missing a dependency.
 
@@ -118,6 +118,13 @@ An encrypted footer or encrypted columns raise `UnsupportedOperationException`,
 alongside the absent codec library and the unimplemented encoding.
 `EncryptedParquetException` is deleted: it lives in `dev.hardwood.internal`, is
 named in no public signature, and said only what the message says.
+
+A row group whose page-index region spans more than `Integer.MAX_VALUE` bytes joins
+them. The file is correct and another reader can open it; this one coalesces a row
+group's indexes into a single read and will not fetch a region it cannot address
+with an `int`, which is a limit of this library rather than a fault in the file.
+That it is a limit worth keeping is a separate question, tracked as #1113 — this
+design decides only which category it belongs to while it stands.
 
 ## Decode failures
 
@@ -193,9 +200,14 @@ written that way.
 
 `ColumnChunkBuffer.compress` raises an `UncheckedIOException` when a codec fails,
 from inside a `LevelSink` callback that cannot declare a checked exception. That
-is the right wrapper in the right place, but it then escapes `writeRow`, which
-declares `IOException` and should be what a caller sees. It is unwrapped at that
-boundary, the way `FileMetadataCache.getFileChecked` already unwraps its own.
+is the right wrapper in the right place, but it then escapes `writeBatch`,
+`writeRow` and `close`, each of which declares `IOException` and should be what a
+caller sees. Compression happens under `ParquetFileWriter.flushRowGroup` and
+nowhere else, and all three reach the codec through it, so that is where the
+wrapper is unwrapped — the innermost frame that can declare what it is, the way
+`FileMetadataCache.getFileChecked` already unwraps its own. Unwrapping in the
+three public methods instead would leave the same fix written three times and one
+more to write for the next method that flushes.
 
 ## Prior art
 
@@ -247,10 +259,43 @@ Adding a supertype to a released class is source- and binary-compatible, so
 waiting costs nothing and guessing early risks a parent shaped for a child that
 never arrives.
 
+## Where a read is declared, and where it is wrapped
+
+A checked exception cannot travel through a `Runnable`, a `Supplier`, a mapping
+function passed to `computeIfAbsent`, or an `Iterator` method. Those are the only
+places an I/O failure is wrapped in an `UncheckedIOException`. Everywhere else the
+method declares `IOException`, however far from the API boundary it sits.
+
+`FileMetadataCache` publishes the rule as a pair: `getFile` for the callers that
+cannot declare, `getFileChecked` for the ones that can. Planning is an ordinary
+method on an ordinary call path, so it takes the checked one — reading a footer is
+not different from reading a bloom filter on the same line, only what the frame
+above it is allowed to say about it is.
+
+The alternative — wrapping everywhere and unwrapping once at the API — was
+considered and is worse. It gives up the one thing the declaration buys: a
+signature that says walking the work list can reach the disk. `firstRowGroupSkip`
+and `buildColumnReaders` were each planning every file at a point nobody expected
+I/O, and both were found by inspection rather than by the compiler.
+
+## Which reads are on the path
+
+`BloomFilterSource` and `RowGroupDictionaryFilterSource` read the file, and say so.
+They are the last of the read path that claimed to be pure.
+
+Saying so is not the same as doing it in the right place. Resolving the column's
+filter belongs in `RowGroupFilterEvaluator`, with the guards that decide whether
+the read is worth doing at all: that statistics did not already drop the row group,
+that the operator is one a probe can answer, that an earlier probe has not already
+proved the value absent. `BloomFilterSupport` and `DictionaryFilterSupport` take
+what they test — given this filter, does it prove the value absent — and declare
+nothing.
+
+Both resolutions sit either side of the `||` that composes them, so a dictionary is
+not read once the bloom filter has decided, and the NaN case is guarded at the
+float call sites so a filter that could not decide a NaN is not read for one.
+
 ## Documentation
 
-`docs/content/reference/error-handling.md` is rewritten around the retry rule.
-Its present `IOException` row lists bad magic numbers and S3 transport failures
-together, which is the conflation this design removes; it also omits
-`UncheckedIOException` and `SchemaIncompatibleException`, both of which the reader
-raises today.
+`docs/content/reference/error-handling.md` is organised around the retry rule: one
+row per exception, saying whether another attempt can help.

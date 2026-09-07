@@ -18,6 +18,25 @@ See [GitHub Releases](https://github.com/hardwood-hq/hardwood/releases) for down
 - A multi-file read opens each file as it reaches it, rather than opening every file when the reader is built, so the time to the first row no longer grows with the number of files ([#1107](https://github.com/hardwood-hq/hardwood/issues/1107)).
     - A later file's I/O errors, and any `SchemaIncompatibleException` its schema raises, now surface from the reading loop rather than from `ParquetFileReader.openAll(...)` or `build()` — always before any row of that file is returned. Code that catches those around reader construction alone should catch them around iteration too.
 
+**Breaking Changes:**
+
+- The reader's exception model separates what the transport got wrong from what the file did, so a failure says whether trying again can help ([#1104](https://github.com/hardwood-hq/hardwood/issues/1104)).
+    - `IOException` now means the transport — a read that failed, a connection reset — and is declared where the reader reaches the file: `RowReader.hasNext`/`next`/`close` and `ColumnReader.nextBatch`/`close`, as `ParquetFileWriter` has always declared it. **The canonical idiom is unaffected**, because `ParquetFileReader.open(...)` already declared `IOException` and so the enclosing method already handles it:
+
+      ```java
+      try (ParquetFileReader reader = ParquetFileReader.open(file);
+           RowReader rows = reader.buildRowReader().build()) {
+          while (rows.hasNext()) {
+              rows.next();
+          }
+      }
+      ```
+
+      What does need a change is a method that receives an already-open reader and reads from it without otherwise touching `IOException` — a helper like `void print(RowReader rows)` — and any read inside a lambda whose functional interface forbids a checked exception, such as `forEach` or `Stream.map`.
+    - A corrupt file now raises the new unchecked `ParquetReadException` rather than `IOException`: bad magic, a corrupt footer, a malformed page index, a misplaced dictionary page, a failed checksum, values that will not decode. `SchemaIncompatibleException` extends it. **This one is silent** — a `catch (IOException)` written for corruption keeps compiling and stops catching. It is released alongside the `throws` clauses deliberately, so the compile error brings you to the error handling the silent change would otherwise slip past.
+    - A row group whose page-index region exceeds 2 GB now raises `UnsupportedOperationException` where it used to raise `IOException`. **Silent, like the one above** — a `catch (IOException)` written for it keeps compiling and stops catching.
+    - `RowReader` and `ColumnReader` implement `Closeable`, as `ParquetFileWriter` and `InputFile` already did.
+
 ## 1.1.0.Beta1 (2026-08-31)
 
 [Announcement blog post](https://www.morling.dev/blog/parquet-file-write-support-bloom-filters-improved-performance-hardwood-1-1-0-beta1/) ·

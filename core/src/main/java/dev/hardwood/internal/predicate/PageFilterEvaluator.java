@@ -224,12 +224,6 @@ public class PageFilterEvaluator {
     /// The page index is read per column chunk, outside the footer parse that
     /// [dev.hardwood.internal.reader.ParquetMetadataReader] attributes, so failures are named
     /// here: file, row group and column are all at hand.
-    private static String prefix(IndexLocation location, int columnIndex) {
-        return ExceptionContext.filePrefix(location.fileName())
-                + "Failed to parse the page index of column " + columnIndex
-                + " in row group " + location.rowGroupIndex() + ": ";
-    }
-
     private static IndexPair readIndexPair(ColumnIndexBuffers colBuffers, IndexLocation location,
             int columnIndex) {
         try {
@@ -251,6 +245,14 @@ public class PageFilterEvaluator {
             // file, not the transport.
             throw new ParquetReadException(prefix(location, columnIndex) + e.getMessage(), e);
         }
+    }
+
+    /// Names the column chunk whose page index failed to parse, for the message of every
+    /// failure [#readIndexPair] reports.
+    private static String prefix(IndexLocation location, int columnIndex) {
+        return ExceptionContext.filePrefix(location.fileName())
+                + "Failed to parse the page index of column " + columnIndex
+                + " in row group " + location.rowGroupIndex() + ": ";
     }
 
     /// The column chunk whose page index is being parsed, minus the column: file and row group
