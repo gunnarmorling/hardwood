@@ -33,7 +33,27 @@ public final class FetchReason {
     /// if no scope is on the stack.
     public static String current() {
         String value = CURRENT.get();
-        return value != null ? value : "unattributed";
+        if (value != null) {
+            return value;
+        }
+        ReadScope.Place place = ReadScope.current();
+        return place != null ? render(place) : "unattributed";
+    }
+
+    /// A place as a fetch log names it. The same facts the exception message
+    /// renders, in the form a log line wants.
+    private static String render(ReadScope.Place place) {
+        StringBuilder sb = new StringBuilder();
+        if (place.region() != null) {
+            sb.append(place.region());
+        }
+        if (place.rowGroup() != ExceptionContext.ReadContext.UNKNOWN_ROW_GROUP) {
+            sb.append(" rg=").append(place.rowGroup());
+        }
+        if (place.column() != null) {
+            sb.append(" col=").append(place.column());
+        }
+        return sb.isEmpty() ? "unattributed" : sb.toString();
     }
 
     /// Sets the reason for the current thread until [Scope#close] is called.

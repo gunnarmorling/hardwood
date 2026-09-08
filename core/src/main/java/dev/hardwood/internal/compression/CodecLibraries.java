@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.compression;
 
+import dev.hardwood.internal.UnsupportedFileException;
+
 /// Probes for the optional per-codec libraries (zstd-jni, snappy-java, lz4-java, …) on the
 /// classpath. These are optional dependencies, so both the read and write paths must confirm
 /// a codec's library is present before handing work to it, and fail with an actionable message
@@ -42,7 +44,7 @@ public final class CodecLibraries {
     /// @throws UnsupportedOperationException if the library is not on the classpath
     public static void require(String className, String codecName, String dependency, String action) {
         if (!isPresent(className)) {
-            throw new UnsupportedOperationException(
+            throw new UnsupportedFileException(
                     "Cannot " + action + " " + codecName + "-compressed Parquet file: required library not found. " +
                             "Add the following dependency to your project: " + dependency);
         }
