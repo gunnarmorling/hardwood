@@ -8,6 +8,8 @@
 package dev.hardwood;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -22,6 +24,7 @@ import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.reader.FilterPredicate;
 import dev.hardwood.reader.ParquetFileReader;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.schema.ColumnSchema;
 
@@ -32,6 +35,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class Float16LogicalTypeTest {
 
     private static final Path FILE = Paths.get("src/test/resources/float16_logical_type_test.parquet");
+
+    /// Offset of `duration`'s `LogicalType` union variant in `interval_logical_type_test.parquet`.
+    private static final int LOGICAL_TYPE_VARIANT_BYTE = 187;
 
     // Row 0: 0.0
     // Row 1: 1.0
@@ -118,9 +124,10 @@ class Float16LogicalTypeTest {
     }
 
     /// `getFloat` on a non-FLOAT column whose physical type is FLBA but is not
-    /// a half-precision payload (here: FLBA(12) annotated INTERVAL) routes
-    /// through `convertToFloat16`, whose 2-byte width check rejects the call
-    /// with `IllegalArgumentException` enriched with the source file name.
+    /// a half-precision payload (here: FLBA(12) annotated INTERVAL) is the caller
+    /// asking a column for a type it does not hold, so it keeps
+    /// `IllegalArgumentException` and names no file — the file is not at fault — and
+    /// says what the column actually is rather than the width FLOAT16 would need.
     @Test
     void testGetFloatOnNonFloat16FlbaColumnRaisesIllegalArgumentException() throws IOException {
         Path intervalFile = Paths.get("src/test/resources/interval_logical_type_test.parquet");
@@ -129,8 +136,8 @@ class Float16LogicalTypeTest {
             rowReader.next();
             assertThatThrownBy(() -> rowReader.getFloat("duration"))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("2 bytes")
-                    .hasMessageContaining("interval_logical_type_test.parquet");
+                    .hasMessage("Column 'duration' is FIXED_LEN_BYTE_ARRAY annotated INTERVAL,"
+                            + " which cannot be read as a float");
         }
     }
 
@@ -182,5 +189,67 @@ class Float16LogicalTypeTest {
         assertThat(filtered.get(2)).isNotNull();
         assertThat(Float.isNaN(filtered.get(2))).isTrue();
         assertThat(filtered.get(3)).isNull();
+    }
+
+    /// Byte 187 is the `LogicalType` union variant on `duration`, a `FIXED_LEN_BYTE_ARRAY(12)`
+    /// column the file annotates `INTERVAL` (variant 9). Relabelling it `FLOAT16` (variant 15)
+    /// leaves the values untouched and the annotation contradicting the width.
+    ///
+    /// The offsets are properties of the checked-in bytes, so regenerating the fixture moves
+    /// them; the test then fails with what it did produce, which is what a new offset is
+    /// derived from.
+    ///
+    /// The file contradicts itself and it is the file that is wrong, not the caller — who
+    /// asked a `FLOAT16` column for a float, exactly what it claims to be. So the failure is
+    /// a [ParquetReadException] naming the file and the column rather than an
+    /// `IllegalArgumentException` about a byte count.
+    ///
+    /// And only the accessor that converts raises it. The file opens, the schema reads, and
+    /// the column still yields its raw bytes: a reader that rejected the file outright would
+    /// refuse one that another reader can serve.
+    @Test
+    void testAnAnnotationTheWidthContradictsFailsOnlyTheConvertingAccessor() throws IOException {
+        byte[] relabelled = Files.readAllBytes(
+                Paths.get("src/test/resources/interval_logical_type_test.parquet"));
+        relabelled[LOGICAL_TYPE_VARIANT_BYTE] = (byte) 0xFC;
+
+        try (ParquetFileReader fileReader = ParquetFileReader.open(
+                     InputFile.of(ByteBuffer.wrap(relabelled)));
+             RowReader rowReader = fileReader.rowReader()) {
+            ColumnSchema duration = fileReader.getFileSchema().getColumn("duration");
+            assertThat(duration.logicalType()).isInstanceOf(LogicalType.Float16Type.class);
+            assertThat(duration.typeLength()).isEqualTo(12);
+
+            rowReader.next();
+            assertThat(rowReader.getBinary("duration")).hasSize(12);
+
+            assertThatThrownBy(() -> rowReader.getFloat("duration"))
+                    .isInstanceOf(ParquetReadException.class)
+                    .hasMessage("[<memory>] Column 'duration': FLOAT16 is exactly 2 bytes,"
+                            + " but the column declares 12");
+
+            // getValue converts too, and says the same thing — there it is the column's
+            // leaf kind rather than a check of its own.
+            assertThatThrownBy(() -> rowReader.getValue("duration"))
+                    .isInstanceOf(ParquetReadException.class)
+                    .hasMessage("[<memory>] Column 'duration': FLOAT16 is exactly 2 bytes,"
+                            + " but the column declares 12");
+        }
+    }
+
+    /// The nested reader answers a caller the same way the flat one does. The two decide it
+    /// from the same facts by different routes — the flat reader per projected column, the
+    /// nested view per primitive — so a test that only exercised one would not notice them
+    /// drifting apart.
+    @Test
+    void testNestedReaderRejectsAFloatReadTheSameWay() throws IOException {
+        Path nested = Paths.get("src/test/resources/nested_struct_test.parquet");
+        try (ParquetFileReader fileReader = ParquetFileReader.open(InputFile.of(nested));
+             RowReader rowReader = fileReader.rowReader()) {
+            rowReader.next();
+            assertThatThrownBy(() -> rowReader.getFloat("id"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("Column 'id' is INT32, which cannot be read as a float");
+        }
     }
 }

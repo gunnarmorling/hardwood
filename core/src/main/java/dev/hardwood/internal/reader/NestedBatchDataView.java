@@ -21,6 +21,7 @@ import dev.hardwood.internal.variant.PqVariantImpl;
 import dev.hardwood.internal.variant.VariantMetadata;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.row.PqInterval;
 import dev.hardwood.row.PqList;
 import dev.hardwood.row.PqMap;
@@ -28,6 +29,7 @@ import dev.hardwood.row.PqStruct;
 import dev.hardwood.row.PqVariant;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
+import dev.hardwood.schema.SchemaNode.PrimitiveNode;
 
 /// Batch data view for nested schemas.
 ///
@@ -37,6 +39,12 @@ public final class NestedBatchDataView {
 
     private final FileSchema schema;
     private final ProjectedSchema projectedSchema;
+    /// Indexed by projected column; `null` where the annotation is readable. See
+    /// [#conversionFaults].
+    private String[] columnFaults;
+    /// The schemas [#columnFaults] was derived from, so that a read whose batches all carry
+    /// the same reference schema derives it once rather than per batch.
+    private ColumnSchema[] faultsDerivedFrom;
     private final TopLevelFieldMap fieldMap;
 
     // Maps projected field index -> original field index in root children
@@ -90,7 +98,28 @@ public final class NestedBatchDataView {
         this.batchIndex = NestedBatchIndex.buildFromBatches(
                 batches, columnSchemas, schema, projectedSchema, fieldMap);
         this.currentFileName = fileName;
+        if (columnSchemas != faultsDerivedFrom) {
+            // Every batch of a read carries the same reference schema, so the answer is
+            // derived when that array first arrives rather than once per batch.
+            this.columnFaults = conversionFaults(columnSchemas);
+            this.faultsDerivedFrom = columnSchemas;
+        }
         cacheFieldArrays();
+    }
+
+    /// Why each projected column's annotation cannot be read from it, or `null` for a column
+    /// whose annotation is sound.
+    ///
+    /// Derived from the schemas that arrive with the batch rather than tested per value: what
+    /// the footer declares cannot change once it has been read.
+    private static String[] conversionFaults(ColumnSchema[] columnSchemas) {
+        String[] faults = new String[columnSchemas.length];
+        for (int i = 0; i < columnSchemas.length; i++) {
+            ColumnSchema column = columnSchemas[i];
+            faults[i] = column == null ? null : LogicalTypeConverter.conversionFault(
+                    column.type(), column.typeLength(), column.logicalType());
+        }
+        return faults;
     }
 
     private String prefix() {
@@ -217,14 +246,10 @@ public final class NestedBatchDataView {
         // FLOAT16 path: primitive convertToFloat16 keeps the value unboxed;
         // readLogicalType isn't reused because LogicalTypeConverter.convert
         // returns Object and would box.
-        try {
-            return LogicalTypeConverter.convertToFloat16(
-                    ((BinaryBatchValues) batchIndex.valueArrays[projCol]).byteArrayAt(valueIdx),
-                    p.schema().type());
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireFloatAccess(projCol, p.schema());
+        return LogicalTypeConverter.convertToFloat16(
+                ((BinaryBatchValues) batchIndex.valueArrays[projCol]).byteArrayAt(valueIdx),
+                p.schema().type());
     }
 
     public double getDouble(String name) {
@@ -512,16 +537,12 @@ public final class NestedBatchDataView {
         if (resultClass.isInstance(rawValue)) {
             return resultClass.cast(rawValue);
         }
-        try {
-            if (resultClass == Instant.class && p.schema().type() == PhysicalType.INT96) {
-                return resultClass.cast(LogicalTypeConverter.int96ToInstant((byte[]) rawValue));
-            }
-            Object converted = LogicalTypeConverter.convert(rawValue, p.schema().type(), p.schema().logicalType());
-            return resultClass.cast(converted);
+        if (resultClass == Instant.class && p.schema().type() == PhysicalType.INT96) {
+            return resultClass.cast(LogicalTypeConverter.int96ToInstant((byte[]) rawValue));
         }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireReadableAnnotation(projCol, p.schema().name());
+        return resultClass.cast(
+                LogicalTypeConverter.convert(rawValue, p.schema().type(), p.schema().logicalType()));
     }
 
     private PqList createList(TopLevelFieldMap.FieldDesc.ListOf listDesc) {
@@ -566,6 +587,38 @@ public final class NestedBatchDataView {
     }
 
     private final VariantShredReassembler variantReassembler = new VariantShredReassembler();
+
+    /// Fails when the column's annotation is one its physical type cannot carry.
+    ///
+    /// The file contradicts itself, so it is a [ParquetReadException] rather than the
+    /// [IllegalArgumentException] a caller gets for asking a column for a type it does not
+    /// hold. Consulted only by the accessors that convert — a `FLOAT16` column of the wrong
+    /// width still reads through the binary accessor.
+    /// Fails unless the column can be read as a float, distinguishing a caller asking a
+    /// column for a type it does not hold from a file contradicting itself about one.
+    ///
+    /// The flat reader decides this per column from the same facts; both readers answer a
+    /// caller the same way.
+    private void requireFloatAccess(int projCol, PrimitiveNode column) {
+        if (column.type() == PhysicalType.FLOAT
+                || column.logicalType() instanceof LogicalType.Float16Type) {
+            requireReadableAnnotation(projCol, column.name());
+            return;
+        }
+        LogicalType logicalType = column.logicalType();
+        throw new IllegalArgumentException("Column '" + column.name() + "' is " + column.type()
+                + (logicalType == null ? "" : " annotated " + logicalType)
+                + ", which cannot be read as a float");
+    }
+
+    private void requireReadableAnnotation(int projCol, String columnName) {
+        String fault = columnFaults == null || projCol >= columnFaults.length
+                ? null : columnFaults[projCol];
+        if (fault != null) {
+            throw new ParquetReadException(
+                    prefix() + "Column '" + columnName + "': " + fault);
+        }
+    }
 
     /// Single-byte Variant NULL value ("basic_type=primitive, primitive_header=null").
     private static final byte[] VARIANT_NULL_VALUE = new byte[] { 0x00 };
