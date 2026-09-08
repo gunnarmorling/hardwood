@@ -26,6 +26,50 @@
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
 
+  <profiles>
+    <!--
+      The verdict runs only when the module runs whole. `-Dtest=...` is a Surefire parameter for
+      the module, not for one execution: once it is set every execution drops its includes and
+      excludes and runs the named classes, so a verdict execution left in the build would re-run
+      the selection a second time and then judge a subset it was never given. Activating on the
+      absence of `test` takes the execution out of the build for exactly those runs.
+    -->
+    <profile>
+      <id>write-coverage-verdict</id>
+      <activation>
+        <property>
+          <name>!test</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>write-coverage-verdict</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>test</goal>
+                </goals>
+                <configuration>
+                  <includes>
+                    <include>**/WriteCoverageVerdictTest.java</include>
+                  </includes>
+                  <!-- Tells WriteCoverageListener not to clear the observations it is about to read -->
+                  <systemPropertyVariables>
+                    <hardwood.writeCoverage>verify</hardwood.writeCoverage>
+                  </systemPropertyVariables>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -221,7 +265,7 @@
             The write-path coverage verdict asserts what the whole run produced, so it cannot sit
             in the run it judges: it spans every test class, and the observations reach it through
             a file rather than through a static. The recording execution therefore leaves it out,
-            and a second execution runs it alone once the files are written.
+            and the `write-coverage-verdict` profile runs it alone once the files are written.
           -->
           <execution>
             <id>default-test</id>
@@ -229,24 +273,6 @@
               <excludes>
                 <exclude>**/WriteCoverageVerdictTest.java</exclude>
               </excludes>
-            </configuration>
-          </execution>
-          <execution>
-            <id>write-coverage-verdict</id>
-            <phase>test</phase>
-            <goals>
-              <goal>test</goal>
-            </goals>
-            <configuration>
-              <includes>
-                <include>**/WriteCoverageVerdictTest.java</include>
-              </includes>
-              <!-- Tells WriteCoverageListener not to clear the observations it is about to read -->
-              <systemPropertyVariables>
-                <hardwood.writeCoverage>verify</hardwood.writeCoverage>
-              </systemPropertyVariables>
-              <!-- So that an ad-hoc -Dtest=... run is not failed by this execution matching nothing -->
-              <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
             </configuration>
           </execution>
         </executions>
