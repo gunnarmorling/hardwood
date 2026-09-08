@@ -71,7 +71,12 @@ public class BatchExchange<B> {
         public boolean filterAlwaysMatches;
     }
 
-    private final ArrayBlockingQueue<B> readyQueue;
+    /// Handed to the consumer by [#finish()] so that a poll already waiting on the queue learns
+    /// of the end of the stream from the queue itself, rather than from the next expiry of its
+    /// timed poll. See [#finish()] for why offering it can be left to succeed or not.
+    private static final Object END_OF_STREAM = new Object();
+
+    private final ArrayBlockingQueue<Object> readyQueue;
     private final ArrayBlockingQueue<B> freeQueue;
     private final Supplier<B> batchFactory;
     private final String columnName;
@@ -79,7 +84,7 @@ public class BatchExchange<B> {
     private volatile Throwable error;
     private volatile boolean finished;
 
-    private BatchExchange(String columnName, ArrayBlockingQueue<B> readyQueue,
+    private BatchExchange(String columnName, ArrayBlockingQueue<Object> readyQueue,
                           ArrayBlockingQueue<B> freeQueue, Supplier<B> batchFactory) {
         this.columnName = columnName;
         this.readyQueue = readyQueue;
@@ -97,7 +102,7 @@ public class BatchExchange<B> {
     /// @param <B> the batch type
     /// @return a recycling [BatchExchange]
     public static <B> BatchExchange<B> recycling(String columnName, Supplier<B> batchFactory) {
-        ArrayBlockingQueue<B> readyQueue = new ArrayBlockingQueue<>(READY_QUEUE_CAPACITY);
+        ArrayBlockingQueue<Object> readyQueue = new ArrayBlockingQueue<>(READY_QUEUE_CAPACITY);
         ArrayBlockingQueue<B> freeQueue = new ArrayBlockingQueue<>(READY_QUEUE_CAPACITY + 1);
 
         for (int i = 0; i < READY_QUEUE_CAPACITY + 1; i++) {
@@ -118,7 +123,7 @@ public class BatchExchange<B> {
     /// @param <B> the batch type
     /// @return a detaching [BatchExchange]
     public static <B> BatchExchange<B> detaching(String columnName, Supplier<B> batchFactory) {
-        ArrayBlockingQueue<B> readyQueue = new ArrayBlockingQueue<>(READY_QUEUE_CAPACITY);
+        ArrayBlockingQueue<Object> readyQueue = new ArrayBlockingQueue<>(READY_QUEUE_CAPACITY);
         return new BatchExchange<>(columnName, readyQueue, null, batchFactory);
     }
 
@@ -162,17 +167,36 @@ public class BatchExchange<B> {
         return true;
     }
 
+    /// Marks the stream ended, and hands a waiting consumer the sentinel that says so.
+    ///
+    /// The flag alone is not enough. A consumer inside [#poll()]'s timed loop is waiting on the
+    /// queue, not on the flag, and reads the flag only when its 10 ms poll expires — the same
+    /// shape #1027 found on the teardown side, where a drain waiting inside the exchange could
+    /// not see `finished` until its own window elapsed.
+    ///
+    /// The offer is deliberately non-blocking and its result deliberately ignored. A consumer is
+    /// only ever left waiting when it found the queue empty, and in that state the offer has room
+    /// and succeeds. It fails only when the queue is full, and a consumer with batches still to
+    /// take is not waiting for anything: by the time it has taken them, `finished` is set and
+    /// [#poll()] returns without waiting at all. So the sentinel removes a delay where there is
+    /// one, and where it cannot be delivered there was none to remove.
+    ///
+    /// Nothing rests on it arriving. The timed poll remains the liveness guarantee.
     public void finish() {
         finished = true;
+        readyQueue.offer(END_OF_STREAM);
     }
 
     public boolean isFinished() {
         return finished;
     }
 
+    /// Ends the stream with a failure. Goes through [#finish()] so that a waiting consumer is
+    /// released as promptly as a clean end releases it, and raises the error on its way out
+    /// rather than after the next poll expires.
     public void signalError(Throwable t) {
         error = t;
-        finished = true;
+        finish();
     }
 
     // ==================== Consumer Side ====================
@@ -185,13 +209,24 @@ public class BatchExchange<B> {
     /// empty the method falls through to a timed poll loop. The `finished` flag
     /// is only checked **after** a timed poll returns null, guaranteeing that any
     /// batch published before `finish()` is visible.
+    ///
+    /// The end of the stream arrives twice over, and the ordering above is why that is safe. It
+    /// arrives as [#END_OF_STREAM] through the queue, which is what releases a poll already
+    /// waiting, and it arrives as the `finished` flag, which is what a poll entering later reads
+    /// before it waits at all. Both are behind every batch: the sentinel by queue order, the flag
+    /// because it is only read once a poll has come back empty.
+    @SuppressWarnings("unchecked")
     public B poll() throws InterruptedException, IOException {
-        B batch = readyQueue.poll();
+        Object batch = readyQueue.poll();
+        if (batch == END_OF_STREAM) {
+            checkError();
+            return null;
+        }
         if (batch != null) {
-            return batch;
+            return (B) batch;
         }
         if (finished) {
-            return readyQueue.poll();
+            return (B) drop(readyQueue.poll());
         }
         // Past this point the consumer is stalled on the pipeline: the ready
         // queue is empty and the drain has not finished. The event's duration
@@ -201,16 +236,25 @@ public class BatchExchange<B> {
         try {
             while ((batch = readyQueue.poll(10, TimeUnit.MILLISECONDS)) == null) {
                 if (finished) {
-                    return readyQueue.poll();
+                    return (B) drop(readyQueue.poll());
                 }
                 checkError();
             }
-            return batch;
+            if (batch == END_OF_STREAM) {
+                checkError();
+                return null;
+            }
+            return (B) batch;
         }
         finally {
             event.column = columnName;
             event.commit();
         }
+    }
+
+    /// The sentinel read as nothing, so that a queue holding only it reads as an empty one.
+    private static Object drop(Object element) {
+        return element == END_OF_STREAM ? null : element;
     }
 
     /// Returns a consumed batch to the free pool so it can be refilled by the drain.
@@ -230,9 +274,13 @@ public class BatchExchange<B> {
         if (freeQueue == null) {
             return;
         }
-        B leftover;
+        Object leftover;
         while ((leftover = readyQueue.poll()) != null) {
-            freeQueue.offer(leftover);
+            if (leftover != END_OF_STREAM) {
+                @SuppressWarnings("unchecked")
+                B batch = (B) leftover;
+                freeQueue.offer(batch);
+            }
         }
     }
 
