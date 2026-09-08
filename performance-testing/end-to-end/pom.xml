@@ -23,6 +23,20 @@
   <description>Performance comparison tests between Hardwood and parquet-java</description>
 
   <dependencies>
+    <!--
+      Not used by any code here. Declared so the reactor builds the fixtures before these tests
+      run: they read them out of `../test-data-setup/target` by relative path, which the reactor
+      cannot see when ordering modules, so under `-T` there is otherwise nothing stopping the two
+      running at once. Being listed after it in <modules> ordered them only while the build was
+      serial.
+    -->
+    <dependency>
+      <groupId>dev.hardwood</groupId>
+      <artifactId>hardwood-performance-testing-test-data-setup</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <!-- Hardwood (module under test) -->
     <dependency>
       <groupId>dev.hardwood</groupId>
