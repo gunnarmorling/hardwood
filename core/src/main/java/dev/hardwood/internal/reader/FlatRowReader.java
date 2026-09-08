@@ -29,6 +29,7 @@ import dev.hardwood.internal.schema.ProjectedSchema;
 import dev.hardwood.internal.util.StringToIntMap;
 import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.reader.ParquetReadException;
 import dev.hardwood.reader.RowReader;
 import dev.hardwood.row.PqInterval;
 import dev.hardwood.row.PqList;
@@ -73,6 +74,26 @@ public final class FlatRowReader implements FileAwareRowReader {
     /// column's fixed `(physicalType, logicalType)` so the hot path is a single
     /// table lookup instead of re-deriving the branch on every value.
     private final LeafKind[] kinds;
+    /// Why each column's annotation cannot be read from it, or `null` for a column whose
+    /// annotation is sound — which is every column of every file that is not contradicting
+    /// itself.
+    ///
+    /// Derived once from the schema rather than tested per value, and consulted only by the
+    /// accessors that convert: a `FLOAT16` column of the wrong width still reads through the
+    /// binary accessor, and a caller that never asks it for a float never meets this. The
+    /// reason is held rather than the exception because the file is not known until a batch
+    /// arrives, and a read spanning files should name the one it is on.
+    private final String[] columnFaults;
+    /// Per column, which of [#FLOAT_READABLE], [#NOT_A_FLOAT_COLUMN] and
+    /// [#ANNOTATION_FAULTED] it is, so that `getFloat` decides with one array read.
+    private final byte[] floatAccess;
+
+    /// The column holds floats, or holds a `FLOAT16` its width can carry.
+    private static final byte FLOAT_READABLE = 0;
+    /// The column holds something else, so asking it for a float is the caller's mistake.
+    private static final byte NOT_A_FLOAT_COLUMN = 1;
+    /// The column is annotated `FLOAT16` and the file contradicts itself about it.
+    private static final byte ANNOTATION_FAULTED = 2;
 
     // Hot fields — directly owned, no inheritance.
     // `flatValidity[col]` is a packed bitmap (set bit = leaf is present); the
@@ -155,14 +176,76 @@ public final class FlatRowReader implements FileAwareRowReader {
         this.physicalTypes = new PhysicalType[columnCount];
         this.columnSchemas = new ColumnSchema[columnCount];
         this.kinds = new LeafKind[columnCount];
+        this.columnFaults = new String[columnCount];
+        this.floatAccess = new byte[columnCount];
         for (int i = 0; i < columnCount; i++) {
             int originalIndex = projectedSchema.toOriginalIndex(i);
             ColumnSchema col = fileSchema.getColumn(originalIndex);
             nameToIndex.put(col.name(), i);
             physicalTypes[i] = col.type();
             columnSchemas[i] = col;
-            kinds[i] = classifyLeaf(col.type(), col.logicalType());
+            columnFaults[i] = LogicalTypeConverter.conversionFault(
+                    col.type(), col.typeLength(), col.logicalType());
+            kinds[i] = classifyLeaf(col.type(), col.logicalType(), columnFaults[i]);
+            floatAccess[i] = floatAccessOf(col, columnFaults[i]);
         }
+    }
+
+    /// Which of the three `getFloat` cases a column is, decided once from its schema.
+    private static byte floatAccessOf(ColumnSchema column, String fault) {
+        if (column.type() == PhysicalType.FLOAT) {
+            return FLOAT_READABLE;
+        }
+        if (!(column.logicalType() instanceof LogicalType.Float16Type)) {
+            return NOT_A_FLOAT_COLUMN;
+        }
+        return fault == null ? FLOAT_READABLE : ANNOTATION_FAULTED;
+    }
+
+    /// Fails unless the column can be read as a float, distinguishing the two ways it
+    /// cannot be.
+    ///
+    /// One array read and one comparison: which of the three a column is cannot change once
+    /// the footer has been read, so it is decided per column in [#floatAccess] and only the
+    /// message is built here, on the path that throws.
+    private void requireFloatAccess(int columnIndex) {
+        byte access = floatAccess[columnIndex];
+        if (access == FLOAT_READABLE) {
+            return;
+        }
+        if (access == NOT_A_FLOAT_COLUMN) {
+            // The caller's mistake rather than the file's, so it keeps
+            // IllegalArgumentException and names no file — and says what the column
+            // actually is, rather than the width FLOAT16 would have needed.
+            LogicalType logicalType = columnSchemas[columnIndex].logicalType();
+            throw new IllegalArgumentException("Column '"
+                    + columnSchemas[columnIndex].fieldPath() + "' is "
+                    + physicalTypes[columnIndex]
+                    + (logicalType == null ? "" : " annotated " + logicalType)
+                    + ", which cannot be read as a float");
+        }
+        throw annotationFault(columnIndex);
+    }
+
+    /// Fails when the column's annotation is one its physical type cannot carry.
+    ///
+    /// Called by the converting accessors before they convert. The file contradicts itself,
+    /// so it is a [ParquetReadException] rather than the [IllegalArgumentException] a
+    /// caller gets for asking a column for a type it does not hold — the caller did nothing
+    /// wrong here, and the difference is what tells them whether to fix their code or stop
+    /// trusting the file.
+    private void requireReadableAnnotation(int columnIndex) {
+        if (columnFaults[columnIndex] != null) {
+            throw annotationFault(columnIndex);
+        }
+    }
+
+    /// The column's annotation stated as the failure a caller sees, built only when one is
+    /// raised so that the file it names is the file being read.
+    private ParquetReadException annotationFault(int columnIndex) {
+        return new ParquetReadException(ExceptionContext.filePrefix(currentFileName)
+                + "Column '" + columnSchemas[columnIndex].fieldPath() + "': "
+                + columnFaults[columnIndex]);
     }
 
     /// Decode strategy for [#getValue(int)], selected by a column's physical and
@@ -173,10 +256,14 @@ public final class FlatRowReader implements FileAwareRowReader {
         STRING,
         INT96_TIMESTAMP,
         RAW,
-        CONVERT
+        CONVERT,
+        /// A column whose annotation its physical type cannot carry. Its own kind rather
+        /// than a check on the [#CONVERT] arm, because which one a column is follows from
+        /// the schema and is settled with the rest of the classification.
+        FAULTED
     }
 
-    private static LeafKind classifyLeaf(PhysicalType pt, LogicalType lt) {
+    private static LeafKind classifyLeaf(PhysicalType pt, LogicalType lt, String fault) {
         if (ValueConverter.isStringLeaf(pt, lt)) {
             return LeafKind.STRING;
         }
@@ -184,7 +271,12 @@ public final class FlatRowReader implements FileAwareRowReader {
             // INT96 has no LogicalType but is conventionally a TIMESTAMP.
             return LeafKind.INT96_TIMESTAMP;
         }
-        return lt == null ? LeafKind.RAW : LeafKind.CONVERT;
+        if (lt == null) {
+            return LeafKind.RAW;
+        }
+        // Only the converting arm is affected: a leaf served as a string, an INT96
+        // timestamp or a raw value reaches no conversion for the annotation to fail.
+        return fault == null ? LeafKind.CONVERT : LeafKind.FAULTED;
     }
 
     /// Eagerly loads the first batch. Must be called after construction.
@@ -511,16 +603,12 @@ public final class FlatRowReader implements FileAwareRowReader {
         if (physicalTypes[columnIndex] == PhysicalType.FLOAT) {
             return ((float[]) flatValueArrays[columnIndex])[rowIndex];
         }
-        // FLOAT16 surfaces as FIXED_LEN_BYTE_ARRAY(2) annotated Float16Type;
-        // convertToFloat16 owns the physical-type and 2-byte-width validation.
-        try {
-            return LogicalTypeConverter.convertToFloat16(
-                    ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex),
-                    physicalTypes[columnIndex]);
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        // FLOAT16 surfaces as FIXED_LEN_BYTE_ARRAY(2) annotated Float16Type; any other
+        // column is one the caller has asked for a float it does not hold.
+        requireFloatAccess(columnIndex);
+        return LogicalTypeConverter.convertToFloat16(
+                ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex),
+                physicalTypes[columnIndex]);
     }
 
     @Override
@@ -602,12 +690,8 @@ public final class FlatRowReader implements FileAwareRowReader {
             return null;
         }
         int rawValue = ((int[]) flatValueArrays[columnIndex])[rowIndex];
-        try {
-            return LogicalTypeConverter.convertToDate(rawValue, physicalTypes[columnIndex]);
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToDate(rawValue, physicalTypes[columnIndex]);
     }
 
     @Override
@@ -628,13 +712,9 @@ public final class FlatRowReader implements FileAwareRowReader {
         else {
             rawValue = ((long[]) flatValueArrays[columnIndex])[rowIndex];
         }
-        try {
-            return LogicalTypeConverter.convertToTime(rawValue, col.type(),
-                    (LogicalType.TimeType) col.logicalType());
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToTime(rawValue, col.type(),
+                (LogicalType.TimeType) col.logicalType());
     }
 
     @Override
@@ -648,19 +728,15 @@ public final class FlatRowReader implements FileAwareRowReader {
             return null;
         }
         ColumnSchema col = columnSchemas[columnIndex];
-        try {
-            if (col.type() == PhysicalType.INT96) {
-                byte[] rawValue = ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex);
-                return LogicalTypeConverter.int96ToInstant(rawValue);
-            }
-            TimestampAccessorKind.require(col.name(), col.logicalType(), true);
-            long rawValue = ((long[]) flatValueArrays[columnIndex])[rowIndex];
-            return LogicalTypeConverter.convertToTimestamp(rawValue, col.type(),
-                    (LogicalType.TimestampType) col.logicalType());
+        if (col.type() == PhysicalType.INT96) {
+            byte[] rawValue = ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex);
+            return LogicalTypeConverter.int96ToInstant(rawValue);
         }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        TimestampAccessorKind.require(col.name(), col.logicalType(), true);
+        long rawValue = ((long[]) flatValueArrays[columnIndex])[rowIndex];
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToTimestamp(rawValue, col.type(),
+                (LogicalType.TimestampType) col.logicalType());
     }
 
     @Override
@@ -674,15 +750,11 @@ public final class FlatRowReader implements FileAwareRowReader {
             return null;
         }
         ColumnSchema col = columnSchemas[columnIndex];
-        try {
-            TimestampAccessorKind.require(col.name(), col.logicalType(), false);
-            long rawValue = ((long[]) flatValueArrays[columnIndex])[rowIndex];
-            return LogicalTypeConverter.convertToLocalTimestamp(rawValue, col.type(),
-                    (LogicalType.TimestampType) col.logicalType());
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        TimestampAccessorKind.require(col.name(), col.logicalType(), false);
+        long rawValue = ((long[]) flatValueArrays[columnIndex])[rowIndex];
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToLocalTimestamp(rawValue, col.type(),
+                (LogicalType.TimestampType) col.logicalType());
     }
 
     @Override
@@ -704,13 +776,9 @@ public final class FlatRowReader implements FileAwareRowReader {
             default -> throw new IllegalArgumentException(prefix()
                     + "Unexpected physical type for DECIMAL: " + col.type());
         };
-        try {
-            return LogicalTypeConverter.convertToDecimal(rawValue, col.type(),
-                    (LogicalType.DecimalType) col.logicalType());
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToDecimal(rawValue, col.type(),
+                (LogicalType.DecimalType) col.logicalType());
     }
 
     @Override
@@ -723,14 +791,10 @@ public final class FlatRowReader implements FileAwareRowReader {
         if (isNull(columnIndex)) {
             return null;
         }
-        try {
-            return LogicalTypeConverter.convertToUuid(
-                    ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex),
-                    physicalTypes[columnIndex]);
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToUuid(
+                ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex),
+                physicalTypes[columnIndex]);
     }
 
     @Override
@@ -748,14 +812,10 @@ public final class FlatRowReader implements FileAwareRowReader {
         if (isNull(columnIndex)) {
             return null;
         }
-        try {
-            return LogicalTypeConverter.convertToInterval(
-                    ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex),
-                    physicalTypes[columnIndex]);
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        requireReadableAnnotation(columnIndex);
+        return LogicalTypeConverter.convertToInterval(
+                ((BinaryBatchValues) flatValueArrays[columnIndex]).byteArrayAt(rowIndex),
+                physicalTypes[columnIndex]);
     }
 
     @Override
@@ -778,6 +838,7 @@ public final class FlatRowReader implements FileAwareRowReader {
             case CONVERT -> LogicalTypeConverter.convert(
                     rawValueUnchecked(columnIndex), physicalTypes[columnIndex],
                     columnSchemas[columnIndex].logicalType());
+            case FAULTED -> throw annotationFault(columnIndex);
         };
     }
 

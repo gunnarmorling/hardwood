@@ -7,7 +7,8 @@
  */
 package dev.hardwood.internal.schema;
 
-import dev.hardwood.internal.ExceptionContext;
+import dev.hardwood.internal.ExceptionContext.ReadContext;
+import dev.hardwood.internal.ReadScope;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.reader.SchemaIncompatibleException;
 import dev.hardwood.schema.ColumnSchema;
@@ -54,15 +55,18 @@ public final class FixedWidthValidator {
     /// @throws SchemaIncompatibleException if the declared width is absent or not positive
     public static int requireWidth(String fileName, ColumnSchema column) {
         Integer width = column.typeLength();
-        if (width == null) {
-            throw new SchemaIncompatibleException(ExceptionContext.filePrefix(fileName)
-                    + "Column '" + column.fieldPath() + "' is a FIXED_LEN_BYTE_ARRAY that declares no type length");
+        if (width != null && width > 0) {
+            return width;
         }
-        if (width <= 0) {
-            throw new SchemaIncompatibleException(ExceptionContext.filePrefix(fileName)
-                    + "Column '" + column.fieldPath() + "' declares a FIXED_LEN_BYTE_ARRAY type length of "
-                    + width + ", which must be positive");
+        try (ReadScope.Scope file = ReadScope.file(fileName);
+             ReadScope.Scope scope = ReadScope.column(
+                     ReadContext.UNKNOWN_ROW_GROUP, column.fieldPath())) {
+            throw width == null
+                    ? new SchemaIncompatibleException("FIXED_LEN_BYTE_ARRAY declares no type length")
+                    : new SchemaIncompatibleException(String.format(
+                            "FIXED_LEN_BYTE_ARRAY declares a type length of %d,"
+                                    + " which must be positive", width));
         }
-        return width;
     }
+
 }
