@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.CorruptDeltaByteArrays;
 import org.apache.parquet.CorruptStatistics;
 import org.apache.parquet.VersionParser;
@@ -81,7 +80,7 @@ final class ParquetJavaReader {
         List<Group> rows = new ArrayList<>();
         try (ParquetReader<Group> reader = ParquetReader
                 .builder(new GroupReadSupport(), hadoopPath(file))
-                .withConf(new Configuration())
+                .withConf(HadoopConf.DEFAULTS)
                 .build()) {
 
             Group row;
@@ -101,7 +100,7 @@ final class ParquetJavaReader {
     static ParquetMetadata readFooter(Path file) throws IOException {
         observe(file);
         try (ParquetFileReader reader = ParquetFileReader
-                .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
+                .open(HadoopInputFile.fromPath(hadoopPath(file), HadoopConf.DEFAULTS))) {
             return reader.getFooter();
         }
     }
@@ -166,7 +165,7 @@ final class ParquetJavaReader {
         int count = 0;
         List<Set<Encoding>> chunkValueEncodings = new ArrayList<>();
         try (ParquetFileReader reader = ParquetFileReader
-                .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
+                .open(HadoopInputFile.fromPath(hadoopPath(file), HadoopConf.DEFAULTS))) {
 
             List<ColumnDescriptor> columns = reader.getFileMetaData().getSchema().getColumns();
             PageReadStore rowGroup;
@@ -201,7 +200,7 @@ final class ParquetJavaReader {
         observe(file);
         List<Integer> widths = new ArrayList<>();
         try (ParquetFileReader reader = ParquetFileReader
-                .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
+                .open(HadoopInputFile.fromPath(hadoopPath(file), HadoopConf.DEFAULTS))) {
 
             List<ColumnDescriptor> columns = reader.getFileMetaData().getSchema().getColumns();
             if (columns.size() != 1 || columns.get(0).getMaxDefinitionLevel() != 0
@@ -239,7 +238,7 @@ final class ParquetJavaReader {
         observe(file);
         List<Long> counts = new ArrayList<>();
         try (SeekableInputStream in = HadoopInputFile
-                .fromPath(hadoopPath(file), new Configuration()).newStream()) {
+                .fromPath(hadoopPath(file), HadoopConf.DEFAULTS).newStream()) {
             FileMetaData metaData = readThriftFooter(file, in);
             for (RowGroup rowGroup : metaData.getRow_groups()) {
                 for (ColumnChunk chunk : rowGroup.getColumns()) {
@@ -272,7 +271,7 @@ final class ParquetJavaReader {
             return;
         }
         try (ParquetFileReader reader = ParquetFileReader
-                .open(HadoopInputFile.fromPath(hadoopPath(file), new Configuration()))) {
+                .open(HadoopInputFile.fromPath(hadoopPath(file), HadoopConf.DEFAULTS))) {
 
             ParquetMetadata footer = reader.getFooter();
             MessageType schema = footer.getFileMetaData().getSchema();

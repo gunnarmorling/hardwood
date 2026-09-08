@@ -225,9 +225,8 @@ public class Utils {
     static List<GenericRecord> readWithParquetJava(Path file) throws IOException {
         List<GenericRecord> rows = new ArrayList<>();
 
-        Configuration conf = new Configuration();
         // Handle INT96 timestamps (legacy type used in some Parquet files)
-        conf.set("parquet.avro.readInt96AsFixed", "true");
+        Configuration conf = HadoopConf.AVRO_INT96_AS_FIXED;
         org.apache.hadoop.fs.Path hadoopPath = new org.apache.hadoop.fs.Path(file.toUri());
 
         try (ParquetReader<GenericRecord> reader = AvroParquetReader
