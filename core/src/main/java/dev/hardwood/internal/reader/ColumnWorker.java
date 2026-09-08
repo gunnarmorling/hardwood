@@ -237,7 +237,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
         // is not enough on its own: ArrayBlockingQueue's timed operations go through
         // AQS.ConditionObject.awaitNanos, which treats a bare unpark as spurious and re-parks
         // for the remainder of the window. The unpark above is still needed for the drain's
-        // other wait, the LockSupport.park() in runDrain that waits on a decode task.
+        // other wait, the LockSupport.parkNanos in runDrain that waits on a decode task.
         //
         // Only the drain is interrupted, and only because it does no I/O: every InputFile
         // access happens on the retriever (via PageSource.next) or on a decode task. That
@@ -283,7 +283,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     private long sourceNanos;
     private long throttleNanos;
     private int totalPagesSubmitted;
-    private int throttleParks;
+    private int throttleWakes;
 
     private void runRetriever() {
         try {
@@ -317,7 +317,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
                 // Throttle: park while too many pages are in flight
                 t0 = System.nanoTime();
                 while (!done && nextSeq - consumePosition >= MAX_INFLIGHT_PAGES) {
-                    throttleParks++;
+                    throttleWakes++;
                     LockSupport.parkNanos(WAKE_CHECK_NANOS);
                 }
                 throttleNanos += System.nanoTime() - t0;
@@ -355,9 +355,9 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
 
             LOG.log(System.Logger.Level.DEBUG,
                     "[{0}] Retriever finished: {1} pages submitted. "
-                    + "source={2,number,0.0}ms, throttle={3,number,0.0}ms ({4} parks)",
+                    + "source={2,number,0.0}ms, throttle={3,number,0.0}ms ({4} wakes)",
                     column.name(), totalPagesSubmitted,
-                    sourceNanos / 1_000_000.0, throttleNanos / 1_000_000.0, throttleParks);
+                    sourceNanos / 1_000_000.0, throttleNanos / 1_000_000.0, throttleWakes);
         }
         catch (Throwable t) {
             signalError(enrichWithFileName(t, pageSource.getCurrentFileName()));
@@ -386,7 +386,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     private long assemblyNanos;
     private long decodeWaitNanos;
     private int totalPagesDrained;
-    private int decodeWaitParks;
+    private int decodeWaitWakes;
 
     private void runDrain() {
         try {
@@ -403,7 +403,7 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
                     // No pages were ready — wait for a decode task to complete, but re-check rather than
                     // rely on being told. See WAKE_CHECK_NANOS.
                     long parkStart = System.nanoTime();
-                    decodeWaitParks++;
+                    decodeWaitWakes++;
                     LockSupport.parkNanos(WAKE_CHECK_NANOS);
                     decodeWaitNanos += System.nanoTime() - parkStart;
                 }
@@ -415,10 +415,10 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
 
             LOG.log(System.Logger.Level.DEBUG,
                     "[{0}] Drain finished: {1} pages drained, {2} batches. "
-                    + "assembly={3,number,0.0}ms, decodeWait={4,number,0.0}ms ({5} parks), "
+                    + "assembly={3,number,0.0}ms, decodeWait={4,number,0.0}ms ({5} wakes), "
                     + "publishBlock={6,number,0.0}ms",
                     column.name(), totalPagesDrained, batchesPublished,
-                    pureAssembly / 1_000_000.0, decodeWaitNanos / 1_000_000.0, decodeWaitParks,
+                    pureAssembly / 1_000_000.0, decodeWaitNanos / 1_000_000.0, decodeWaitWakes,
                     publishBlockNanos / 1_000_000.0);
         }
         catch (Throwable t) {
@@ -624,8 +624,11 @@ public abstract class ColumnWorker<B> implements AutoCloseable {
     /// bounded by its own fresh timeout regardless - so bounding both waits sidesteps the bug. A spurious
     /// wake costs one re-evaluation of an integer comparison or one `AtomicReferenceArray` read, and the
     /// unparks are kept because they are what makes the common case immediate rather than up to 10 ms
-    /// late. [BatchExchange] already times its two queue waits, though for its own reason: it waits on a
-    /// `finished` flag that carries no notification at all.
+    /// late. [BatchExchange] is the same shape since #1131: its `finish()` hands a waiting consumer an
+    /// end-of-stream sentinel through the ready queue, and its two queue waits stay timed because that
+    /// sentinel is best-effort - there is no room to offer it when the queue is full. There too the
+    /// notification decides whether a waiter is released now or up to 10 ms from now, and the bound
+    /// decides that it is released at all.
     ///
     /// This is a workaround, not a fix. The fix is a runtime of 25.0.3+ or 26.0.1+, and the exposure is
     /// wider than these two waits - any untimed park after a timed park is affected, including
