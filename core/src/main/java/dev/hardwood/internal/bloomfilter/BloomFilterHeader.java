@@ -16,34 +16,13 @@ public record BloomFilterHeader(
 ) {
     public enum Algorithm {
         BLOCK;
-
-        public static Algorithm fromVariant(short variant) {
-            if (variant == 1) {
-                return BLOCK;
-            }
-            throw new IllegalArgumentException("Unknown BloomFilterHeader.Algorithm variant: " + variant);
-        }
     }
 
     public enum Hash {
         XXHASH;
-
-        public static Hash fromVariant(short variant) {
-            if (variant == 1) {
-                return XXHASH;
-            }
-            throw new IllegalArgumentException("Unknown BloomFilterHeader.Hash variant: " + variant);
-        }
     }
 
     public enum Compression {
         UNCOMPRESSED;
-
-        public static Compression fromVariant(short variant) {
-            if (variant == 1) {
-                return UNCOMPRESSED;
-            }
-            throw new IllegalArgumentException("Unknown BloomFilterHeader.Compression variant: " + variant);
-        }
     }
 }

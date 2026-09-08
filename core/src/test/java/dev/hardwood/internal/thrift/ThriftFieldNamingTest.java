@@ -11,8 +11,10 @@ import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.Test;
 
+import dev.hardwood.internal.metadata.PageHeader;
 import dev.hardwood.reader.ParquetReadException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// A parse failure should say which field of which struct it was standing on.
@@ -110,14 +112,16 @@ class ThriftFieldNamingTest {
     /// struct rather than leaving the reader with none.
     @Test
     void leavingAnAnonymousNestedStructRestoresTheEnclosingOne() {
-        // PageHeader field 1 (type) is an i32; declared as a struct it is skipped
-        // wholesale, and field 2 then carries an invalid wire type.
-        byte[] bytes = { 0x1c, 0x00, 0x1f };
+        // PageHeader field 6 (index_page_header) is a struct this reader skips
+        // wholesale, entering it anonymously; field 7 then carries an invalid
+        // wire type, and must be named against PageHeader rather than against
+        // the struct just left.
+        byte[] bytes = { 0x6c, 0x00, 0x1f };
 
         assertThatThrownBy(() -> PageHeaderReader.read(
                 new ThriftCompactReader(ByteBuffer.wrap(bytes))))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessage("PageHeader.uncompressed_page_size — Unknown field type: 15");
+                .hasMessage("PageHeader.dictionary_page_header — Unknown field type: 15");
     }
 
     /// The structs a `LogicalType` variant holds are named too. `SchemaElement`'s
@@ -148,8 +152,8 @@ class ThriftFieldNamingTest {
         assertThatThrownBy(() -> SchemaElementReader.read(
                 new ThriftCompactReader(ByteBuffer.wrap(bytes))))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessage("SchemaElement.name — Malformed Parquet metadata: binary value declares "
-                        + "-1 bytes, which is not a length");
+                .hasMessage("SchemaElement.name — binary value declares -1 bytes,"
+                        + " which is not a length");
     }
 
     /// `LogicalType` is a union, so its ids name variants. Field 1 is `STRING`;
@@ -190,42 +194,83 @@ class ThriftFieldNamingTest {
     /// reader is standing on the field it rejected, so nothing states the name.
     @Test
     void namesTheFieldAReadersOwnValidationRejects() {
+        // numBytes = -5, which is an i32 the format allows nowhere.
+        assertThatThrownBy(() -> BloomFilterHeaderReader.read(
+                new ThriftCompactReader(ByteBuffer.wrap(new byte[] { 0x15, 0x09, 0x00 }))))
+                .isInstanceOf(ParquetReadException.class)
+                .hasMessage("BloomFilterHeader.numBytes — must be non-negative but was -5");
+    }
+
+    /// An *optional* field whose wire type disagrees is skipped, and nothing
+    /// names it because nothing failed: the file loses that field and the rest
+    /// of the struct reads. A required one fails where it is instead, so
+    /// "missing" is never said of a field that arrived.
+    @Test
+    void saysNothingAboutAnOptionalFieldItSkipped() {
+        // A valid PageHeader whose optional crc declares binary, not i32.
+        byte[] bytes = { 0x15, 0x00, 0x15, 0x14, 0x15, 0x10, 0x18, 0x00, 0x00 };
+
+        PageHeader header = PageHeaderReader.read(new ThriftCompactReader(ByteBuffer.wrap(bytes)));
+        assertThat(header.crc()).isNull();
+        assertThat(header.uncompressedPageSize()).isEqualTo(10);
+    }
+
+    /// A required field whose wire type disagrees fails at the field, naming it
+    /// and both types — never at the STOP as a field that never arrived.
+    @Test
+    void namesARequiredFieldWhoseWireTypeDisagrees() {
         // numBytes carrying a bool where the format gives it an i32.
         assertThatThrownBy(() -> BloomFilterHeaderReader.read(
                 new ThriftCompactReader(ByteBuffer.wrap(new byte[] { 0x11, 0x00 }))))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessage("BloomFilterHeader.numBytes — wrong wire type 0x1");
-    }
-
-    /// A union's variant is named against the union, not against the struct
-    /// holding it: the reader has entered `BloomFilterAlgorithm` by then.
-    @Test
-    void namesAUnionVariantAgainstTheUnion() {
-        // numBytes = 32, then algorithm holding a variant that is not a struct.
-        assertThatThrownBy(() -> BloomFilterHeaderReader.read(new ThriftCompactReader(
-                ByteBuffer.wrap(new byte[] { 0x15, 0x40, 0x1c, 0x15, 0x02, 0x00, 0x00 }))))
-                .isInstanceOf(ParquetReadException.class)
-                .hasMessage("BloomFilterAlgorithm.BLOCK — wrong wire type 0x5");
+                .hasMessage("BloomFilterHeader.numBytes — wrong Thrift wire type 0x1 (expected 0x5)");
     }
 
     /// A complaint about the struct rather than about a field of it names no
-    /// field. A required field that never arrived is found at the STOP that ends
-    /// the struct, where the last field read is unrelated to what is missing.
+    /// field, and names every field that is genuinely absent in one sentence.
     @Test
     void namesNoFieldForAComplaintAboutTheStruct() {
         assertThatThrownBy(() -> BloomFilterHeaderReader.read(
                 new ThriftCompactReader(ByteBuffer.wrap(new byte[] { 0x00 }))))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessage("Invalid BloomFilterHeader: missing required field 'numBytes'");
+                .hasMessage("BloomFilterHeader is missing required fields: numBytes, algorithm,"
+                        + " hash, compression");
     }
 
-    /// The union is named from [ThriftStruct] rather than by a string the caller
-    /// passes, so it cannot disagree with the name the table resolves against.
+    /// A union variant's value is the empty struct the format gives it, and that
+    /// value is required, so a wire type that disagrees is rejected where it is
+    /// rather than skipped by a type the bytes do not hold.
+    @Test
+    void rejectsAUnionVariantWhoseValueIsNotAStruct() {
+        // BloomFilterHeader.algorithm holding a union whose one variant declares i32.
+        byte[] bytes = { 0x15, 0x40, 0x1c, 0x15, 0x00, 0x00, 0x00 };
+
+        assertThatThrownBy(() -> BloomFilterHeaderReader.read(
+                new ThriftCompactReader(ByteBuffer.wrap(bytes))))
+                .isInstanceOf(ParquetReadException.class)
+                .hasMessage("BloomFilterAlgorithm.BLOCK — wrong Thrift wire type 0x5 (expected 0xc)");
+    }
+
+    /// A variant id the union does not define is not a variant, and says so with the
+    /// union named rather than as an argument that was out of range.
+    @Test
+    void rejectsAVariantIdTheUnionDoesNotDefine() {
+        // BloomFilterHeader.algorithm holding a union whose variant is id 2.
+        byte[] bytes = { 0x15, 0x40, 0x1c, 0x2c, 0x00, 0x00, 0x00 };
+
+        assertThatThrownBy(() -> BloomFilterHeaderReader.read(
+                new ThriftCompactReader(ByteBuffer.wrap(bytes))))
+                .isInstanceOf(ParquetReadException.class)
+                .hasMessage("BloomFilterAlgorithm field 2 is not a bloom filter algorithm");
+    }
+
+    /// The union names itself from [ThriftStruct] rather than from a string a
+    /// caller passes, so it cannot disagree with the name its ids resolve against.
     @Test
     void namesTheUnionWhenNoVariantIsSet() {
         assertThatThrownBy(() -> BloomFilterHeaderReader.read(new ThriftCompactReader(
                 ByteBuffer.wrap(new byte[] { 0x15, 0x40, 0x1c, 0x00, 0x00 }))))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessage("Invalid BloomFilterHeader: BloomFilterAlgorithm has no variant set");
+                .hasMessage("BloomFilterAlgorithm has no variant set");
     }
 }

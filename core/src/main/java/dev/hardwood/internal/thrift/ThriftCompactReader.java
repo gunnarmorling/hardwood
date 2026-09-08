@@ -22,9 +22,19 @@ import dev.hardwood.reader.ParquetReadException;
 /// Reference: https://github.com/apache/thrift/blob/master/doc/specs/thrift-compact-protocol.md
 ///
 /// The readers built on this class share one policy for input that does not match the
-/// format: a field whose wire type disagrees is skipped ([#acceptField]), while a collection
-/// whose element type disagrees is never decoded as if it did ([#requireListHeader],
-/// [#acceptListHeader]).
+/// format, and it turns on whether the reader can carry on without the field.
+///
+/// A field the reader tolerates the absence of is **skipped and logged**
+/// ([#acceptField], [#acceptListHeader]): the file loses that field and stays readable,
+/// which is what lets a newer writer's changes pass through an older reader. A field the
+/// reader will fail without is **rejected where it is** ([#requireField],
+/// [#requireListHeader]) — skipping one only defers the same failure to the end of the
+/// struct, where it is reported as a field that never arrived, which is not what
+/// happened. Either way a collection whose element type disagrees is never decoded as if
+/// it did.
+///
+/// Both halves say the same thing in the same words, so a log line and a message read
+/// alike: `wrong Thrift wire type 0x1 (expected 0x5)`.
 public class ThriftCompactReader {
 
     private static final System.Logger LOG = System.getLogger(ThriftCompactReader.class.getName());
@@ -369,8 +379,78 @@ public class ThriftCompactReader {
         if (type == expectedType) {
             return true;
         }
+        String field = fieldHere();
         skipField(type);
+        LOG.log(System.Logger.Level.WARNING,
+                () -> "Ignoring " + field + ": " + wrongType("wire", type, expectedType));
         return false;
+    }
+
+    /// Reads the header of a **required** field and checks its declared wire type.
+    ///
+    /// Fails here rather than skipping, because a field the caller cannot finish without
+    /// is not made more readable by being dropped: the read fails either way, and the
+    /// failure reported at the end of the struct would say the field never arrived when
+    /// in fact it arrived carrying something else.
+    ///
+    /// @param header the field header just read
+    /// @param expectedType wire code the format gives the field
+    /// @throws ParquetReadException if the field declares a different wire type
+    void requireField(int header, byte expectedType) {
+        byte type = fieldType(header);
+        if (type == expectedType) {
+            return;
+        }
+        // A nibble that is no wire type at all is the stronger statement — the bytes
+        // did not come from a Thrift writer — and the one skipField makes on the
+        // path an optional field would have taken.
+        throw isKnownType(type)
+                ? malformed(wrongType("wire", type, expectedType))
+                : malformed("Unknown field type: " + type);
+    }
+
+    /// Whether `type` is one of the compact protocol's wire types.
+    private static boolean isKnownType(byte type) {
+        return switch (type) {
+            case TYPE_BOOLEAN_TRUE, TYPE_BOOLEAN_FALSE, TYPE_BYTE, TYPE_I16, TYPE_I32,
+                    TYPE_I64, TYPE_DOUBLE, TYPE_BINARY, TYPE_LIST, TYPE_SET, TYPE_MAP,
+                    TYPE_STRUCT -> true;
+            default -> false;
+        };
+    }
+
+    /// A struct that ended without a field the reader cannot do without, named from
+    /// [ThriftStruct] rather than by hand.
+    ///
+    /// Only ever genuinely absent. A field that arrived carrying the wrong wire type
+    /// fails where it is ([#requireField]), so "missing" never stands in for "wrong",
+    /// and one shape of sentence covers every struct that has required fields.
+    ///
+    /// @param struct the struct that ended
+    /// @param fieldIds ids of the fields it did not carry, in the format's order
+    static ParquetReadException missingFields(ThriftStruct struct, int... fieldIds) {
+        StringBuilder sb = new StringBuilder(struct.structName())
+                .append(fieldIds.length == 1
+                        ? " is missing required field: "
+                        : " is missing required fields: ");
+        for (int i = 0; i < fieldIds.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(struct.fieldName(fieldIds[i]));
+        }
+        return new ParquetReadException(sb.toString());
+    }
+
+    /// What a disagreeing type is, in the words both the log and the message use.
+    private static String wrongType(String kind, byte actual, byte expected) {
+        return wrongType(kind, actual, hex(expected));
+    }
+
+    /// The same where more than one code is allowed, so the message never names one
+    /// of them as if it were the only one.
+    private static String wrongType(String kind, byte actual, String expected) {
+        return "wrong Thrift " + kind + " type " + hex(actual) + " (expected " + expected + ")";
     }
 
     /// Read a `bool` field, whose value the field header carries in its own type nibble rather
@@ -434,7 +514,7 @@ public class ThriftCompactReader {
     long requireListHeader(byte expectedElementType) {
         long header = readListHeader();
         if (elementType(header) != expectedElementType) {
-            throw wrongElementType(elementType(header), hex(expectedElementType));
+            throw wrongElementType(elementType(header), expectedElementType);
         }
         return header;
     }
@@ -456,8 +536,8 @@ public class ThriftCompactReader {
             byte actual = elementType(header);
             String field = fieldHere();
             skipElements(header);
-            LOG.log(System.Logger.Level.WARNING, "Ignoring " + field + ": wrong Thrift element type "
-                    + hex(actual) + " (expected " + hex(expectedElementType) + ")");
+            LOG.log(System.Logger.Level.WARNING,
+                    () -> "Ignoring " + field + ": " + wrongType("element", actual, expectedElementType));
             return ABSENT_LIST;
         }
         return header;
@@ -513,7 +593,8 @@ public class ThriftCompactReader {
     boolean[] readBoolArray() {
         long header = readListHeader();
         if (elementType(header) != TYPE_BOOLEAN_TRUE && elementType(header) != TYPE_BOOLEAN_FALSE) {
-            throw wrongElementType(elementType(header), "bool");
+            throw malformed(wrongType("element", elementType(header),
+                    hex(TYPE_BOOLEAN_TRUE) + " or " + hex(TYPE_BOOLEAN_FALSE)));
         }
         boolean[] values = new boolean[listSize(header)];
         for (int i = 0; i < values.length; i++) {
@@ -555,8 +636,8 @@ public class ThriftCompactReader {
     /// this is the one bound between a file-supplied length and an allocation.
     private int checkedBinaryLength(long declaredLength) {
         if (declaredLength < 0) {
-            throw new ParquetReadException(inStruct("Malformed Parquet metadata: binary value declares "
-                    + declaredLength + " bytes, which is not a length"));
+            throw malformed("binary value declares " + declaredLength
+                    + " bytes, which is not a length");
         }
         if (declaredLength > buffer.remaining()) {
             // A shortfall against the buffer is what a too-small peek looks like, and this is
@@ -575,8 +656,8 @@ public class ThriftCompactReader {
     /// data. See [#readListHeader] for what an unvalidated count would drive.
     private int checkedCollectionSize(long declaredSize) {
         if (declaredSize < 0) {
-            throw new ParquetReadException(inStruct("Malformed Parquet metadata: collection declares "
-                    + declaredSize + " elements, which is not a size"));
+            throw malformed("collection declares " + declaredSize
+                    + " elements, which is not a size");
         }
         if (declaredSize > buffer.remaining()) {
             // Truncation for the same reason as [#checkedBinaryLength].
@@ -598,9 +679,8 @@ public class ThriftCompactReader {
         return (short) declaredId;
     }
 
-    private ParquetReadException wrongElementType(byte actual, String expected) {
-        return malformed("declares Thrift element type " + hex(actual)
-                + " but must be a list of " + expected);
+    private ParquetReadException wrongElementType(byte actual, byte expected) {
+        return malformed(wrongType("element", actual, expected));
     }
 
     private static String hex(byte type) {
@@ -768,9 +848,43 @@ public class ThriftCompactReader {
         return new ParquetReadException(inStruct(message));
     }
 
+    /// The field id of the one variant a union has set.
+    ///
+    /// Enters `union` for the duration, so a failure inside it is named against the
+    /// union rather than against the struct holding it.
+    ///
+    /// The variant carries its meaning in its id, and its value is the empty struct
+    /// the format gives it. That value is required — a union with no variant set is
+    /// not a union — so a wire type other than `struct` is rejected here rather than
+    /// skipped: skipping by a type the bytes do not hold consumes the wrong number of
+    /// them and desynchronises the rest of the enclosing struct.
+    ///
+    /// @param union the union being read
+    /// @throws ParquetReadException if no variant is set, more than one is, or the
+    ///     variant's value is not the empty struct the format gives it
+    short readUnionVariant(ThriftStruct union) {
+        int saved = pushFieldIdContext(union);
+        try {
+            int variant = readFieldHeader();
+            if (variant == STOP_FIELD) {
+                throw new ParquetReadException(union.structName() + " has no variant set");
+            }
+            requireField(variant, Codes.STRUCT);
+            skipField(fieldType(variant));
+            if (readFieldHeader() != STOP_FIELD) {
+                throw new ParquetReadException(union.structName()
+                        + " has more than one variant set");
+            }
+            return fieldId(variant);
+        }
+        finally {
+            popFieldIdContext(saved);
+        }
+    }
+
     /// The struct and field the reader is standing on, for a log line that has
     /// to name it in the middle of a sentence rather than in front of one.
-    private String fieldHere() {
+    String fieldHere() {
         return currentStruct == null ? "the field" : currentStruct.describe(lastFieldId);
     }
 
