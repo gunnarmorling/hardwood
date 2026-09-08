@@ -9,98 +9,123 @@ package dev.hardwood;
 
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import dev.hardwood.internal.writer.ByteBufferOutputFile;
+import dev.hardwood.jfr.AbstractJfrRecorderTest;
 import dev.hardwood.metadata.PhysicalType;
 import dev.hardwood.metadata.RepetitionType;
 import dev.hardwood.reader.ColumnReader;
 import dev.hardwood.reader.ParquetFileReader;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ParquetFileWriter;
+import jdk.jfr.consumer.RecordedEvent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/// What reading a small file to the end costs, as a function of how many columns are read.
+/// What a read that runs to completion spends waiting on the pipeline, as a function of how many
+/// columns are read.
 ///
 /// This is the read-path counterpart of [ReaderCloseLatencyTest], and the same defect one step
-/// earlier. That test covers teardown: a drain blocked inside its exchange could not see the
+/// earlier. That one covers teardown: a drain blocked inside its exchange could not see the
 /// `finished` flag until its own timed queue operation expired, so `close()` inherited the wait
-/// once per column. This covers the read itself: the *consumer* waiting inside
-/// [dev.hardwood.internal.reader.BatchExchange#poll()] cannot see the flag either, so the last
-/// `nextBatch()` — the one that reports the end — waited out the same window.
+/// once per column. This covers the read itself — the *consumer* waiting inside
+/// [dev.hardwood.internal.reader.BatchExchange#poll()] could not see the flag either, so the last
+/// `nextBatch()`, the one that reports the end, waited out the same window. Teardown strands a
+/// producer whose consumer has stopped consuming; this strands a consumer whose producer has
+/// stopped producing, which is the ordinary path rather than the abandoned one.
 ///
-/// The two are mirrored. Teardown strands a producer whose consumer has stopped consuming; this
-/// strands a consumer whose producer has stopped producing. Teardown was also the abnormal path,
-/// reached only by abandoning a read with data outstanding. This is the ordinary one: every
-/// reader that reads to completion asks once more than there is data for, and that ask is the
-/// one that waited.
+/// The assertion is on `dev.hardwood.BatchWait`, which records exactly how long a consumer sat in
+/// the exchange, rather than on how long the read took end to end. Wall clock cannot separate the
+/// two things it sums: a stall is a fixed 10 ms quantum on any machine, while the work around it
+/// is whatever the machine is worth, and on a two-core runner the second term alone approached
+/// what a bound tight enough to catch the first would allow. The recorded stall is the property,
+/// so it is what is measured.
 ///
-/// The property under test is that a full read costs the same whether one column is read or
-/// sixteen. Each column is opened through its own [ParquetFileReader#columnReader(String)] and
-/// drained before the next is opened, because that is what makes the delays add rather than
-/// overlap — a projection read through one [dev.hardwood.reader.ColumnReaders] runs its columns
-/// concurrently, so the later ones find their streams already ended and pay nothing.
-///
-/// On the bound: see [ReaderCloseLatencyTest]'s note, which applies unchanged. Sub-millisecond
-/// reads are typical here, the distribution has a heavy tail under CPU oversubscription, and the
-/// bound is set to keep a real gap on both sides rather than to sit just under the regression.
-class ReaderEofLatencyTest {
+/// Each column is opened through its own [ParquetFileReader#columnReader(String)] and drained
+/// before the next is opened, which is what makes the stalls add rather than overlap: a
+/// projection read through one [dev.hardwood.reader.ColumnReaders] runs its columns concurrently,
+/// so all but the first find their streams already ended and pay nothing.
+class ReaderEofLatencyTest extends AbstractJfrRecorderTest {
+
+    private static final String BATCH_WAIT_EVENT = "dev.hardwood.BatchWait";
+
+    private static final String ROW_GROUP_SCANNED_EVENT = "dev.hardwood.RowGroupScanned";
 
     /// Wide enough that one stall per column is unmistakable against the bound.
     private static final int COLUMNS = 16;
 
-    /// Few enough rows that a column is one batch, which is the state this is about: the
-    /// consumer takes that batch, asks again, and arrives at the exchange before the drain has
-    /// finished itself. A file large enough to need many batches gives the drain time to end the
-    /// stream while the consumer is still working through them, and the last ask finds the flag
-    /// already set — the same read, none of the wait.
+    /// Few enough rows that a column is one batch, which is the state this is about: the consumer
+    /// takes that batch, asks again, and reaches the exchange before the drain has finished
+    /// itself. A file large enough to need many batches gives the drain time to end the stream
+    /// while the consumer is still working through them, and the last ask finds the flag already
+    /// set — the same read, none of the wait.
     private static final int ROWS = 1_000;
 
-    /// What a read that waits out the poll interval once per column settles at. The exchange
-    /// polls on a 10 ms window, so that is what one column costs.
-    private static final Duration PER_COLUMN_STALL_DURATION = Duration.ofMillis(10L);
+    /// What one column costs when the end of the stream reaches the consumer only through the
+    /// expiry of its own poll. The exchange polls on a 10 ms window, so that is the quantum.
+    private static final Duration PER_COLUMN_STALL = Duration.ofMillis(10L);
 
-    /// Passes comfortably when no read stalls, and cannot pass when they all do: stalling costs
-    /// about `COLUMNS * 10 ms` = 160 ms, against measurements of a few milliseconds for the
-    /// whole loop when the end of the stream is signalled.
-    private static final Duration BOUND = Duration.ofMillis(60L);
+    /// What counts as having waited out the window rather than merely having waited. A consumer
+    /// that outruns a busy producer waits too, and on a loaded machine it waits longer, so the
+    /// question is not whether any wait happened but whether it was the poll interval expiring.
+    private static final Duration WAITED_OUT_THE_WINDOW = PER_COLUMN_STALL.dividedBy(2);
+
+    /// How many columns may have waited out the window. The defect gives every column one, so any
+    /// small number separates it from a machine that was merely slow for a column or two — which
+    /// is what makes this hold on a two-core runner without being tuned to one.
+    private static final long TOLERATED_STALLED_COLUMNS = COLUMNS / 2;
 
     @Test
     @Timeout(value = 60, unit = TimeUnit.SECONDS)
-    void readingToTheEndDoesNotScaleWithColumnCount() throws Exception {
+    void readingToTheEndDoesNotStallOncePerColumn() throws Exception {
         byte[] file = writeSyntheticFile();
 
         try (Hardwood hardwood = Hardwood.create()) {
             // A first pass pays the one-off costs — class loading, the executor's threads, the
-            // footer parse — so they are not attributed to the reads being measured.
-            timeFullReadOfEveryColumn(hardwood, file);
+            // footer parse. Those can stall a consumer for real, so the pass is excluded rather
+            // than merely untimed: the events are filtered by when the measured pass began.
+            readEveryColumnToTheEnd(hardwood, file);
 
-            Duration elapsed = timeFullReadOfEveryColumn(hardwood, file);
+            Instant measuredFrom = Instant.now();
+            readEveryColumnToTheEnd(hardwood, file);
 
-            assertThat(elapsed)
-                    .as("reading %d columns of %d rows to the end, one column at a time; "
-                            + "a %d ms stall per column would be about %d ms",
-                            COLUMNS, ROWS, PER_COLUMN_STALL_DURATION.toMillis(),
-                            stallAcrossColumns().toMillis())
-                    .isLessThan(BOUND);
+            awaitEvents();
+
+            assertThat(eventsSince(ROW_GROUP_SCANNED_EVENT, measuredFrom).count())
+                    .as("the recording saw the measured pass, so an empty stall total means "
+                            + "no stalls rather than no recording")
+                    .isGreaterThanOrEqualTo(COLUMNS);
+
+            long stalledColumns = eventsSince(BATCH_WAIT_EVENT, measuredFrom)
+                    .map(RecordedEvent::getDuration)
+                    .filter(waited -> waited.compareTo(WAITED_OUT_THE_WINDOW) >= 0)
+                    .count();
+
+            assertThat(stalledColumns)
+                    .as("of %d columns read to the end, how many waited at least %d ms in the "
+                            + "exchange; an end that reaches the consumer only when its own poll "
+                            + "expires costs every one of them the full %d ms window",
+                            COLUMNS, WAITED_OUT_THE_WINDOW.toMillis(), PER_COLUMN_STALL.toMillis())
+                    .isLessThan(TOLERATED_STALLED_COLUMNS);
         }
     }
 
-    /// Opens each column in turn, drains it to the end, and returns how long all of them took.
-    ///
-    /// The `nextBatch()` that returns `false` is what is being measured, so every column is read
-    /// past its last batch rather than stopped at it.
-    private static Duration timeFullReadOfEveryColumn(Hardwood hardwood, byte[] file)
-            throws Exception {
+    private Stream<RecordedEvent> eventsSince(String eventName, Instant from) {
+        return events(eventName).filter(event -> !event.getStartTime().isBefore(from));
+    }
 
+    /// Opens each column in turn and drains it past its last batch, because the `nextBatch()`
+    /// that returns `false` is the one this is about.
+    private static void readEveryColumnToTheEnd(Hardwood hardwood, byte[] file) throws Exception {
         try (ParquetFileReader parquet = hardwood.open(InputFile.of(ByteBuffer.wrap(file)))) {
-            long start = System.nanoTime();
             for (String column : columnNames()) {
                 int batches = 0;
                 try (ColumnReader reader = parquet.columnReader(column)) {
@@ -110,14 +135,7 @@ class ReaderEofLatencyTest {
                 }
                 assertThat(batches).as("batches read from %s", column).isPositive();
             }
-            return Duration.ofNanos(System.nanoTime() - start);
         }
-    }
-
-    /// What a read that stalls once per column would cost in total, for the assertion message.
-    /// Every column is opened and drained in turn, so none of the stalls overlap.
-    private static Duration stallAcrossColumns() {
-        return PER_COLUMN_STALL_DURATION.multipliedBy(COLUMNS);
     }
 
     private static List<String> columnNames() {
