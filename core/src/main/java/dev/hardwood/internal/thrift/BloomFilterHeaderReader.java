@@ -11,7 +11,6 @@ import java.util.Arrays;
 
 import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
-import dev.hardwood.reader.ParquetReadException;
 
 public class BloomFilterHeaderReader {
 
@@ -109,9 +108,9 @@ public class BloomFilterHeaderReader {
         };
     }
 
-    private static ParquetReadException notAVariantOf(ThriftStruct union, short variant,
+    private static UnsupportedOperationException notAVariantOf(ThriftStruct union, short variant,
             String what) {
-        return new ParquetReadException(union.describe(variant) + " is not a " + what);
+        return new UnsupportedOperationException(union.describe(variant) + " is not a " + what);
     }
 
 }

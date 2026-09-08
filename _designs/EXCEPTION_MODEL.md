@@ -121,11 +121,22 @@ emit one warning per speculative chunk.
 | cross-file schema mismatch; a fixed-width column with no width | `SchemaIncompatibleException` |
 
 `UnsupportedOperationException` covers an encrypted footer or encrypted columns, an
-absent or unloadable codec library, an unimplemented encoding, a column chunk stored
-in a separate file, a row group whose page-index region spans more than
-`Integer.MAX_VALUE` bytes, and a file over 2 GB opened with the mmap-backed range
-cache. Each of those files is correct and another reader will open it. Whether the
-last two limits are worth keeping is tracked as #1113.
+absent or unloadable codec library, an unimplemented encoding, an unrecognized bloom
+filter algorithm, hash, or compression variant, a column chunk stored in a separate
+file, a row group whose page-index region spans more than `Integer.MAX_VALUE` bytes,
+and a file over 2 GB opened with the mmap-backed range cache. Each of those files is
+correct and another reader will open it. Whether the last two limits are worth
+keeping is tracked as #1113.
+
+An unrecognized bloom filter variant is the one exception to the "enum ordinal the
+format does not define" row above: everywhere else, such an ordinal means the
+metadata does not decode. A bloom filter's algorithm, hash and compression fields
+gate an optional pruning shortcut rather than value decoding — nothing downstream
+reads them once the header is parsed — so a variant this version of Hardwood does
+not recognise is unsupported, the same as an unimplemented encoding, not invalid.
+`RowGroupBloomFilterSource` declines to prune with that column's filter rather than
+failing the read, the same way it treats a `bloom_filter_offset` that cannot name a
+real filter.
 
 ## A truncated buffer
 
