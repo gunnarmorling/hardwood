@@ -20,7 +20,7 @@ import dev.hardwood.metadata.SizeStatistics;
 public class SizeStatisticsReader {
 
     public static SizeStatistics read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.SIZE_STATISTICS);
         try {
             return readInternal(reader);
         }
@@ -48,14 +48,12 @@ public class SizeStatisticsReader {
                     break;
                 case 2: // repetition_level_histogram (optional list<i64>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        repetitionLevelHistogram = reader.readOptionalI64Array(
-                                "SizeStatistics.repetition_level_histogram");
+                        repetitionLevelHistogram = reader.readOptionalI64Array();
                     }
                     break;
                 case 3: // definition_level_histogram (optional list<i64>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        definitionLevelHistogram = reader.readOptionalI64Array(
-                                "SizeStatistics.definition_level_histogram");
+                        definitionLevelHistogram = reader.readOptionalI64Array();
                     }
                     break;
                 default:

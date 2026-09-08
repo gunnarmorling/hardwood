@@ -74,7 +74,7 @@ class KeyValueMetadataWriterTest {
 
         ThriftCompactReader reader = new ThriftCompactReader(ByteBuffer.wrap(writer.toByteArray()));
         assertThat(ThriftCompactReader.fieldId(reader.readFieldHeader())).isEqualTo((short) 5);
-        assertThat(KeyValueMetadataReader.read(reader, "FileMetaData.key_value_metadata"))
+        assertThat(KeyValueMetadataReader.read(reader))
                 .containsExactlyEntriesOf(Map.of("key", "value"));
 
         assertThat(ThriftCompactReader.fieldId(reader.readFieldHeader())).isEqualTo((short) 6);
@@ -89,6 +89,6 @@ class KeyValueMetadataWriterTest {
 
         ThriftCompactReader reader = new ThriftCompactReader(ByteBuffer.wrap(writer.toByteArray()));
         reader.readFieldHeader();
-        return KeyValueMetadataReader.read(reader, "FileMetaData.key_value_metadata");
+        return KeyValueMetadataReader.read(reader);
     }
 }

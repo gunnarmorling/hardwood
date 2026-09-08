@@ -64,9 +64,20 @@ public class ThriftCompactReader {
     /// Shift the last of those bytes contributes at, and so the largest a shift may reach.
     private static final int MAX_VARINT_SHIFT = 7 * (MAX_VARINT_BYTES - 1);
 
+    /// Bits a [#pushFieldIdContext] token gives the enclosing field id, the rest
+    /// carrying the enclosing struct.
+    private static final int SAVED_STRUCT_SHIFT = 16;
+    /// The token's struct half, biased by one so that zero means "no struct".
+    private static final int NO_SAVED_STRUCT = 0;
+
     private final ByteBuffer buffer;
     private final int startPosition;
     private short lastFieldId = 0;
+
+    /// The struct being read, or `null` for one that has no name. Only the innermost
+    /// is ever consulted, and [#pushFieldIdContext] hands the enclosing one back in
+    /// its token, so no stack is needed.
+    private ThriftStruct currentStruct;
     /// Per-decode cache of repeated column paths, created on first use so the page-header path —
     /// which has none — never allocates one.
     private RepeatedPathCache pathCache;
@@ -186,7 +197,8 @@ public class ThriftCompactReader {
             }
             shift += 7;
             if (shift > MAX_VARINT_SHIFT) {
-                throw new ParquetReadException("Malformed varint: more than " + MAX_VARINT_BYTES + " bytes");
+                throw new ParquetReadException(inStruct(
+                        "Malformed varint: more than " + MAX_VARINT_BYTES + " bytes"));
             }
         }
         throw new ThriftTruncatedException("Unexpected EOF while reading varint");
@@ -223,7 +235,7 @@ public class ThriftCompactReader {
         else if (b == TYPE_BOOLEAN_FALSE) {
             return false;
         }
-        throw new ParquetReadException("Invalid boolean value: " + b);
+        throw new ParquetReadException(inStruct("Invalid boolean value: " + b));
     }
 
     /// Read an i32 value (zigzag encoded).
@@ -240,26 +252,20 @@ public class ThriftCompactReader {
     /// A negative value indicates a malformed or adversarial file and would
     /// otherwise drive a negative allocation or out-of-bounds slice downstream,
     /// so fail fast here with a controlled error naming the field.
-    ///
-    /// @param fieldName fully-qualified field name for the error message
-    public int readNonNegativeI32(String fieldName) {
+    public int readNonNegativeI32() {
         int value = readI32();
         if (value < 0) {
-            throw new ParquetReadException(
-                    "Malformed Parquet metadata: " + fieldName + " must be non-negative but was " + value);
+            throw malformed("must be non-negative but was " + value);
         }
         return value;
     }
 
     /// Read an i64 that must be non-negative — a size, count or file offset.
     /// See [#readNonNegativeI32] for rationale.
-    ///
-    /// @param fieldName fully-qualified field name for the error message
-    public long readNonNegativeI64(String fieldName) {
+    public long readNonNegativeI64() {
         long value = readI64();
         if (value < 0) {
-            throw new ParquetReadException(
-                    "Malformed Parquet metadata: " + fieldName + " must be non-negative but was " + value);
+            throw malformed("must be non-negative but was " + value);
         }
         return value;
     }
@@ -424,12 +430,11 @@ public class ThriftCompactReader {
     /// with wrong data where a failed read is the honest outcome.
     ///
     /// @param expectedElementType wire code the elements must declare
-    /// @param fieldName fully-qualified field name for the error message
     /// @throws ParquetReadException if the list declares a different element type
-    long requireListHeader(byte expectedElementType, String fieldName) {
+    long requireListHeader(byte expectedElementType) {
         long header = readListHeader();
         if (elementType(header) != expectedElementType) {
-            throw wrongElementType(fieldName, elementType(header), hex(expectedElementType));
+            throw wrongElementType(elementType(header), hex(expectedElementType));
         }
         return header;
     }
@@ -443,15 +448,16 @@ public class ThriftCompactReader {
     /// reader on the byte after the list: the file loses one optional field and stays readable.
     ///
     /// @param expectedElementType wire code the elements must declare
-    /// @param fieldName fully-qualified field name for the log message
     /// @return the header, or [#ABSENT_LIST] if the list declares a different element type and
     ///     has been skipped
-    long acceptListHeader(byte expectedElementType, String fieldName) {
+    long acceptListHeader(byte expectedElementType) {
         long header = readListHeader();
         if (elementType(header) != expectedElementType) {
+            byte actual = elementType(header);
+            String field = fieldHere();
             skipElements(header);
-            LOG.log(System.Logger.Level.WARNING, "Ignoring " + fieldName + ": wrong Thrift element type "
-                    + hex(elementType(header)) + " (expected " + hex(expectedElementType) + ")");
+            LOG.log(System.Logger.Level.WARNING, "Ignoring " + field + ": wrong Thrift element type "
+                    + hex(actual) + " (expected " + hex(expectedElementType) + ")");
             return ABSENT_LIST;
         }
         return header;
@@ -460,10 +466,9 @@ public class ThriftCompactReader {
     /// Read a required `list<struct>` in full: the collection header followed by every element,
     /// each decoded by `elementReader`.
     ///
-    /// @param fieldName fully-qualified field name for the error message
     /// @param elementReader reader for one element
-    <T> List<T> readStructList(String fieldName, StructReader<T> elementReader) {
-        long header = requireListHeader(Codes.STRUCT, fieldName);
+    <T> List<T> readStructList(StructReader<T> elementReader) {
+        long header = requireListHeader(Codes.STRUCT);
         List<T> values = new ArrayList<>(listSize(header));
         for (int i = 0, n = listSize(header); i < n; i++) {
             values.add(elementReader.read(this));
@@ -480,9 +485,8 @@ public class ThriftCompactReader {
     /// readers of collections that run to one element per column, page or row group fill an
     /// [ArrayList] instead, where the copy would cost more than the wrapper saves.
     ///
-    /// @param fieldName fully-qualified field name for the error message
-    List<String> readStringList(String fieldName) {
-        long header = requireListHeader(Codes.BINARY, fieldName);
+    List<String> readStringList() {
+        long header = requireListHeader(Codes.BINARY);
         String[] values = new String[listSize(header)];
         for (int i = 0; i < values.length; i++) {
             values[i] = readString();
@@ -492,9 +496,8 @@ public class ThriftCompactReader {
 
     /// Read a required `list<binary>` in full.
     ///
-    /// @param fieldName fully-qualified field name for the error message
-    List<byte[]> readBinaryList(String fieldName) {
-        long header = requireListHeader(Codes.BINARY, fieldName);
+    List<byte[]> readBinaryList() {
+        long header = requireListHeader(Codes.BINARY);
         List<byte[]> values = new ArrayList<>(listSize(header));
         for (int i = 0, n = listSize(header); i < n; i++) {
             values.add(readBinary());
@@ -507,11 +510,10 @@ public class ThriftCompactReader {
     /// The element type nibble carries `0x01` or `0x02` for `bool` depending on the writer, so
     /// both are accepted — see [ThriftCompactConstants.ElementType].
     ///
-    /// @param fieldName fully-qualified field name for the error message
-    boolean[] readBoolArray(String fieldName) {
+    boolean[] readBoolArray() {
         long header = readListHeader();
         if (elementType(header) != TYPE_BOOLEAN_TRUE && elementType(header) != TYPE_BOOLEAN_FALSE) {
-            throw wrongElementType(fieldName, elementType(header), "bool");
+            throw wrongElementType(elementType(header), "bool");
         }
         boolean[] values = new boolean[listSize(header)];
         for (int i = 0; i < values.length; i++) {
@@ -528,9 +530,8 @@ public class ThriftCompactReader {
     /// An absent list is `null` and a present but empty one is a zero-length array, a
     /// distinction the metadata records carry through to their callers.
     ///
-    /// @param fieldName fully-qualified field name for the log message
-    long[] readOptionalI64Array(String fieldName) {
-        long header = acceptListHeader(Codes.I64, fieldName);
+    long[] readOptionalI64Array() {
+        long header = acceptListHeader(Codes.I64);
         if (header == ABSENT_LIST) {
             return null;
         }
@@ -554,8 +555,8 @@ public class ThriftCompactReader {
     /// this is the one bound between a file-supplied length and an allocation.
     private int checkedBinaryLength(long declaredLength) {
         if (declaredLength < 0) {
-            throw new ParquetReadException("Malformed Parquet metadata: binary value declares "
-                    + declaredLength + " bytes, which is not a length");
+            throw new ParquetReadException(inStruct("Malformed Parquet metadata: binary value declares "
+                    + declaredLength + " bytes, which is not a length"));
         }
         if (declaredLength > buffer.remaining()) {
             // A shortfall against the buffer is what a too-small peek looks like, and this is
@@ -574,8 +575,8 @@ public class ThriftCompactReader {
     /// data. See [#readListHeader] for what an unvalidated count would drive.
     private int checkedCollectionSize(long declaredSize) {
         if (declaredSize < 0) {
-            throw new ParquetReadException("Malformed Parquet metadata: collection declares "
-                    + declaredSize + " elements, which is not a size");
+            throw new ParquetReadException(inStruct("Malformed Parquet metadata: collection declares "
+                    + declaredSize + " elements, which is not a size"));
         }
         if (declaredSize > buffer.remaining()) {
             // Truncation for the same reason as [#checkedBinaryLength].
@@ -597,10 +598,9 @@ public class ThriftCompactReader {
         return (short) declaredId;
     }
 
-    private static ParquetReadException wrongElementType(String fieldName, byte actual,
-            String expected) {
-        return new ParquetReadException("Malformed Parquet metadata: " + fieldName
-                + " declares Thrift element type " + hex(actual) + " but must be a list of " + expected);
+    private ParquetReadException wrongElementType(byte actual, String expected) {
+        return malformed("declares Thrift element type " + hex(actual)
+                + " but must be a list of " + expected);
     }
 
     private static String hex(byte type) {
@@ -683,14 +683,14 @@ public class ThriftCompactReader {
                 skipStruct();
                 break;
             default:
-                throw new ParquetReadException("Unknown field type: " + type);
+                throw new ParquetReadException(inStruct("Unknown field type: " + type));
         }
     }
 
     /// Skip an entire struct (read until STOP field).
     public void skipStruct() {
         // Save and reset field ID context for nested struct
-        short saved = pushFieldIdContext();
+        int saved = pushFieldIdContext();
         try {
             while (true) {
                 int header = readFieldHeader();
@@ -705,16 +705,81 @@ public class ThriftCompactReader {
         }
     }
 
-    /// Save the current last field ID and reset it for reading a nested struct.
-    public short pushFieldIdContext() {
-        short saved = lastFieldId;
+    /// Save the current last field ID and reset it for reading a nested struct
+    /// that nothing can name.
+    ///
+    /// A struct read without a name — a union's empty marker, one
+    /// [#skipStruct] walks past — is entered anonymously, so a failure inside it
+    /// takes no name rather than the enclosing struct's. A field id means one
+    /// thing in the struct it was read from and something else in the struct
+    /// around it, and a name resolved against the wrong one reads exactly as
+    /// authoritative as a right one.
+    int pushFieldIdContext() {
+        return pushFieldIdContext(null);
+    }
+
+    /// The same, for a struct the reader can name.
+    ///
+    /// The name is pushed rather than attached afterwards because only the
+    /// reader standing in the struct knows which one it is, and by the time a
+    /// failure has left it that is gone.
+    ///
+    /// The enclosing struct rides back to the caller in the returned token
+    /// alongside the enclosing field id, packed the way [#readFieldHeader] packs
+    /// a header and for the same reason: a struct-heavy footer enters tens of
+    /// millions of these, and a page header enters one per page, so the reader
+    /// must not hold a stack it would have to allocate.
+    ///
+    /// @param struct the struct being entered, or `null` if it has no name
+    /// @return a token to hand [#popFieldIdContext] on the way out
+    int pushFieldIdContext(ThriftStruct struct) {
+        int saved = savedStruct() | (lastFieldId & 0xFFFF);
+        currentStruct = struct;
         lastFieldId = 0;
         return saved;
     }
 
-    /// Restore the last field ID after reading a nested struct.
-    public void popFieldIdContext(short savedFieldId) {
-        lastFieldId = savedFieldId;
+    /// Restore the last field ID and enclosing struct after reading a nested struct.
+    void popFieldIdContext(int savedContext) {
+        int struct = savedContext >>> SAVED_STRUCT_SHIFT;
+        currentStruct = struct == NO_SAVED_STRUCT ? null : ThriftStruct.at(struct - 1);
+        lastFieldId = (short) savedContext;
+    }
+
+    private int savedStruct() {
+        return (currentStruct == null ? NO_SAVED_STRUCT : currentStruct.ordinal() + 1)
+                << SAVED_STRUCT_SHIFT;
+    }
+
+    /// A failure over the field the reader is standing on, named as the struct
+    /// and field `parquet.thrift` calls them.
+    ///
+    /// For a reader whose own validation rejects a field it has just read. The
+    /// reader already knows which field that is, so a caller naming it in the
+    /// message would be keeping a second copy of what [ThriftStruct] holds
+    /// — and an unchecked one, where [ThriftStruct]'s is checked against
+    /// parquet-format's own metadata.
+    ///
+    /// Only for a complaint about a *field*. A complaint about the struct as a
+    /// whole — a required field that never arrived, discovered at the STOP that
+    /// ends it — is standing on no field, and would take the name of whichever
+    /// one happened to be last.
+    ParquetReadException malformed(String message) {
+        return new ParquetReadException(inStruct(message));
+    }
+
+    /// The struct and field the reader is standing on, for a log line that has
+    /// to name it in the middle of a sentence rather than in front of one.
+    private String fieldHere() {
+        return currentStruct == null ? "the field" : currentStruct.describe(lastFieldId);
+    }
+
+    /// `Struct.field — message`, or `message` alone when the struct being read
+    /// has no name to resolve the field id against.
+    private String inStruct(String message) {
+        return currentStruct == null
+                ? message
+                : currentStruct.describe(lastFieldId) + " — " + message;
     }
 
     /// Decodes one element of a `list<struct>` from the reader it is given, which is positioned

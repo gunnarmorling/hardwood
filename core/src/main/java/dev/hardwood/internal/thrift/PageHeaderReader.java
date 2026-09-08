@@ -19,7 +19,7 @@ import dev.hardwood.reader.ParquetReadException;
 public class PageHeaderReader {
 
     public static PageHeader read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.PAGE_HEADER);
         try {
             return readInternal(reader);
         }
@@ -56,12 +56,12 @@ public class PageHeaderReader {
                     break;
                 case 2: // uncompressed_page_size
                     if (reader.acceptField(header, Codes.I32)) {
-                        uncompressedPageSize = reader.readNonNegativeI32("PageHeader.uncompressed_page_size");
+                        uncompressedPageSize = reader.readNonNegativeI32();
                     }
                     break;
                 case 3: // compressed_page_size
                     if (reader.acceptField(header, Codes.I32)) {
-                        compressedPageSize = reader.readNonNegativeI32("PageHeader.compressed_page_size");
+                        compressedPageSize = reader.readNonNegativeI32();
                     }
                     break;
                 case 4: // crc

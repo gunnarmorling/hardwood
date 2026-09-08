@@ -30,7 +30,7 @@ class MalformedMetadataFileTest {
         Path file = Paths.get("src/test/resources/negative_data_page_offset.parquet");
         assertThatThrownBy(() -> ParquetFileReader.open(InputFile.of(file)))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessage("[negative_data_page_offset.parquet] "
-                        + "Malformed Parquet metadata: ColumnMetaData.data_page_offset must be non-negative but was -1");
+                .hasMessage("[negative_data_page_offset.parquet] ColumnMetaData.data_page_offset"
+                        + " — must be non-negative but was -1");
     }
 }

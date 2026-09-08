@@ -15,7 +15,7 @@ import dev.hardwood.metadata.ColumnMetaData;
 public class ColumnChunkReader {
 
     public static ColumnChunk read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.COLUMN_CHUNK);
         try {
             return readInternal(reader);
         }
@@ -55,22 +55,22 @@ public class ColumnChunkReader {
                     break;
                 case 4: // offset_index_offset (optional i64)
                     if (reader.acceptField(header, Codes.I64)) {
-                        offsetIndexOffset = reader.readNonNegativeI64("ColumnChunk.offset_index_offset");
+                        offsetIndexOffset = reader.readNonNegativeI64();
                     }
                     break;
                 case 5: // offset_index_length (optional i32)
                     if (reader.acceptField(header, Codes.I32)) {
-                        offsetIndexLength = reader.readNonNegativeI32("ColumnChunk.offset_index_length");
+                        offsetIndexLength = reader.readNonNegativeI32();
                     }
                     break;
                 case 6: // column_index_offset (optional i64)
                     if (reader.acceptField(header, Codes.I64)) {
-                        columnIndexOffset = reader.readNonNegativeI64("ColumnChunk.column_index_offset");
+                        columnIndexOffset = reader.readNonNegativeI64();
                     }
                     break;
                 case 7: // column_index_length (optional i32)
                     if (reader.acceptField(header, Codes.I32)) {
-                        columnIndexLength = reader.readNonNegativeI32("ColumnChunk.column_index_length");
+                        columnIndexLength = reader.readNonNegativeI32();
                     }
                     break;
                 default:

@@ -47,8 +47,7 @@ final class RepeatedPathCache {
     /// either way.
     ///
     /// @param reader positioned on the list header of the path
-    /// @param fieldName fully-qualified field name for the error message
-    FieldPath next(ThriftCompactReader reader, String fieldName) {
+    FieldPath next(ThriftCompactReader reader) {
         int slot = position++;
         byte[] predicted = slot < encoded.length ? encoded[slot] : null;
         if (predicted != null && reader.matchesAt(predicted)) {
@@ -56,7 +55,7 @@ final class RepeatedPathCache {
             return paths[slot];
         }
         int start = reader.position();
-        FieldPath path = new FieldPath(reader.readStringList(fieldName));
+        FieldPath path = new FieldPath(reader.readStringList());
         store(slot, reader.copyRange(start, reader.position() - start), path);
         return path;
     }

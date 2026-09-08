@@ -29,7 +29,7 @@ public class ColumnMetaDataReader {
     private static final FieldPath EMPTY_PATH = new FieldPath(List.of());
 
     public static ColumnMetaData read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.COLUMN_META_DATA);
         try {
             return readInternal(reader);
         }
@@ -75,7 +75,7 @@ public class ColumnMetaDataReader {
                     break;
                 case 3: // path_in_schema (required list<string>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        pathInSchema = reader.pathCache().next(reader, "ColumnMetaData.path_in_schema");
+                        pathInSchema = reader.pathCache().next(reader);
                     }
                     break;
                 case 4: // codec
@@ -85,27 +85,27 @@ public class ColumnMetaDataReader {
                     break;
                 case 5: // num_values
                     if (reader.acceptField(header, Codes.I64)) {
-                        numValues = reader.readNonNegativeI64("ColumnMetaData.num_values");
+                        numValues = reader.readNonNegativeI64();
                     }
                     break;
                 case 6: // total_uncompressed_size
                     if (reader.acceptField(header, Codes.I64)) {
-                        totalUncompressedSize = reader.readNonNegativeI64("ColumnMetaData.total_uncompressed_size");
+                        totalUncompressedSize = reader.readNonNegativeI64();
                     }
                     break;
                 case 7: // total_compressed_size
                     if (reader.acceptField(header, Codes.I64)) {
-                        totalCompressedSize = reader.readNonNegativeI64("ColumnMetaData.total_compressed_size");
+                        totalCompressedSize = reader.readNonNegativeI64();
                     }
                     break;
                 case 8: // key_value_metadata (optional list<KeyValue>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        keyValueMetadata = KeyValueMetadataReader.read(reader, "ColumnMetaData.key_value_metadata");
+                        keyValueMetadata = KeyValueMetadataReader.read(reader);
                     }
                     break;
                 case 9: // data_page_offset
                     if (reader.acceptField(header, Codes.I64)) {
-                        dataPageOffset = reader.readNonNegativeI64("ColumnMetaData.data_page_offset");
+                        dataPageOffset = reader.readNonNegativeI64();
                     }
                     break;
                 case 10: // index_page_offset (optional) - skipped for now
@@ -113,7 +113,7 @@ public class ColumnMetaDataReader {
                     break;
                 case 11: // dictionary_page_offset (optional)
                     if (reader.acceptField(header, Codes.I64)) {
-                        dictionaryPageOffset = reader.readNonNegativeI64("ColumnMetaData.dictionary_page_offset");
+                        dictionaryPageOffset = reader.readNonNegativeI64();
                     }
                     break;
                 case 12: // statistics (optional)
@@ -128,12 +128,12 @@ public class ColumnMetaDataReader {
                     break;
                 case 14: // bloom_filter_offset (optional i64)
                     if (reader.acceptField(header, Codes.I64)) {
-                        bloomFilterOffset = reader.readNonNegativeI64("ColumnMetaData.bloom_filter_offset");
+                        bloomFilterOffset = reader.readNonNegativeI64();
                     }
                     break;
                 case 15: // bloom_filter_length (optional i32)
                     if (reader.acceptField(header, Codes.I32)) {
-                        bloomFilterLength = reader.readNonNegativeI32("ColumnMetaData.bloom_filter_length");
+                        bloomFilterLength = reader.readNonNegativeI32();
                     }
                     break;
                 case 16: // size_statistics (optional)
@@ -162,7 +162,7 @@ public class ColumnMetaDataReader {
     /// to the enum one by one.
     private static List<Encoding> readEncodings(ThriftCompactReader reader) {
         long listHeader =
-                reader.requireListHeader(Codes.I32, "ColumnMetaData.encodings");
+                reader.requireListHeader(Codes.I32);
         Encoding[] encodings = new Encoding[ThriftCompactReader.listSize(listHeader)];
         for (int i = 0; i < encodings.length; i++) {
             encodings[i] = ThriftEnumLookup.encoding(reader.readI32());

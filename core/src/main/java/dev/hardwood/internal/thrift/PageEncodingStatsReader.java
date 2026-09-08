@@ -34,7 +34,7 @@ class PageEncodingStatsReader {
     /// footer parses regardless of what this field contained.
     static List<PageEncodingStats> read(ThriftCompactReader reader) {
         long listHeader =
-                reader.acceptListHeader(Codes.STRUCT, "ColumnMetaData.encoding_stats");
+                reader.acceptListHeader(Codes.STRUCT);
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return List.of();
         }
@@ -61,7 +61,7 @@ class PageEncodingStatsReader {
     /// count is negative. The struct is consumed either way, leaving the reader on the next
     /// element.
     private static PageEncodingStats readStats(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.PAGE_ENCODING_STATS);
         try {
             PageType pageType = null;
             Encoding encoding = null;

@@ -23,7 +23,7 @@ import dev.hardwood.metadata.PageLocation;
 public class OffsetIndexReader {
 
     public static OffsetIndex read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.OFFSET_INDEX);
         try {
             return readInternal(reader);
         }
@@ -45,14 +45,12 @@ public class OffsetIndexReader {
             switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // page_locations (required list<PageLocation>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        pageLocations = reader.readStructList(
-                                "OffsetIndex.page_locations", PageLocationReader::read);
+                        pageLocations = reader.readStructList(PageLocationReader::read);
                     }
                     break;
                 case 2: // unencoded_byte_array_data_bytes (list<i64>, optional)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        unencodedByteArrayDataBytes = reader.readOptionalI64Array(
-                                "OffsetIndex.unencoded_byte_array_data_bytes");
+                        unencodedByteArrayDataBytes = reader.readOptionalI64Array();
                     }
                     break;
                 default:
