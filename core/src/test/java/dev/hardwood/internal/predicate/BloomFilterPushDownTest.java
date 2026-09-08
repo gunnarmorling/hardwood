@@ -290,6 +290,22 @@ class BloomFilterPushDownTest {
     }
 
     @Test
+    void unrecognizedBloomFilterAlgorithmIsTreatedAsAbsent() throws IOException {
+        // Same fragment as ThriftFieldNamingTest.rejectsAVariantIdTheUnionDoesNotDefine: a
+        // BloomFilterHeader whose algorithm union names variant 2, which the format does not
+        // define. A file naming an algorithm this library predates is correct Parquet the
+        // library cannot evaluate — decline to prune rather than fail the whole read.
+        byte[] header = { 0x15, 0x40, 0x1c, 0x2c, 0x00, 0x00, 0x00 };
+        int offset = 4; // must be positive: offset 0 would instead hit the invalid-offset branch
+        byte[] fileBytes = new byte[offset + header.length + 32]; // leading + trailing padding
+        System.arraycopy(header, 0, fileBytes, offset, header.length);
+        InputFile memory = InputFile.of(ByteBuffer.wrap(fileBytes));
+
+        assertThat(new RowGroupBloomFilterSource(memory, singleColumnRowGroup(offset)).forColumn(0))
+                .isNull();
+    }
+
+    @Test
     void rowGroupBloomFilterSourceExposesFiltersPerColumn() throws IOException {
         RowGroupBloomFilterSource source = new RowGroupBloomFilterSource(inputFile, rowGroup);
         assertThat(source.forColumn(NAME_COLUMN)).isNotNull();

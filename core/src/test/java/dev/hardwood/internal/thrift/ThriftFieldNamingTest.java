@@ -251,8 +251,11 @@ class ThriftFieldNamingTest {
                 .hasMessage("BloomFilterAlgorithm.BLOCK — wrong Thrift wire type 0x5 (expected 0xc)");
     }
 
-    /// A variant id the union does not define is not a variant, and says so with the
-    /// union named rather than as an argument that was out of range.
+    /// A variant id the union does not define names a file this version of Hardwood
+    /// cannot evaluate rather than an invalid one — the same file, read by a version
+    /// that defines the variant, is correct — so it fails as unsupported rather than
+    /// as unparseable, still named against the union rather than as an out-of-range
+    /// argument.
     @Test
     void rejectsAVariantIdTheUnionDoesNotDefine() {
         // BloomFilterHeader.algorithm holding a union whose variant is id 2.
@@ -260,7 +263,7 @@ class ThriftFieldNamingTest {
 
         assertThatThrownBy(() -> BloomFilterHeaderReader.read(
                 new ThriftCompactReader(ByteBuffer.wrap(bytes))))
-                .isInstanceOf(ParquetReadException.class)
+                .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessage("BloomFilterAlgorithm field 2 is not a bloom filter algorithm");
     }
 

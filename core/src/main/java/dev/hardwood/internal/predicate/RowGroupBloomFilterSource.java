@@ -89,7 +89,19 @@ public final class RowGroupBloomFilterSource implements BloomFilterSource {
                     + "; keeping the row group (statistics still apply)");
             return null;
         }
-        return readFilter(offset, metaData.bloomFilterLength());
+        try {
+            return readFilter(offset, metaData.bloomFilterLength());
+        }
+        catch (UnsupportedOperationException e) {
+            // The header names an algorithm, hash or compression this version of Hardwood does
+            // not implement — a correct file it cannot evaluate, not a corrupt one. The filter
+            // is unusable but the row group is still readable, so decline to prune rather than
+            // fail the whole read, and warn so the reduced pruning is visible.
+            LOG.log(System.Logger.Level.WARNING, () -> ExceptionContext.filePrefix(inputFile.name())
+                    + "Cannot evaluate the bloom filter for column " + columnIndex + ": "
+                    + e.getMessage() + "; keeping the row group (statistics still apply)");
+            return null;
+        }
     }
 
     /// Reads the filter at `offset`. When `length` is known the whole region is read in one call;
