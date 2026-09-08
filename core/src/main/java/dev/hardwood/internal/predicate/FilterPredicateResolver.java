@@ -178,6 +178,7 @@ public class FilterPredicateResolver {
                 ColumnSchema cs = resolveColumn(p.column(), schema);
                 rejectRepeated(p.column(), cs);
                 validateType(p.column(), PhysicalType.BYTE_ARRAY, cs);
+                rejectByteStringOrderOnDecimal(p.column(), cs);
                 yield new ResolvedPredicate.BinaryPredicate(cs.columnIndex(), p.op(), p.value(),
                         Comparison.BYTE_STRING);
             }
@@ -213,6 +214,7 @@ public class FilterPredicateResolver {
                 ColumnSchema cs = resolveColumn(p.column(), schema);
                 rejectRepeated(p.column(), cs);
                 validateType(p.column(), PhysicalType.BYTE_ARRAY, cs);
+                rejectByteStringOrderOnDecimal(p.column(), cs);
                 yield new ResolvedPredicate.BinaryInPredicate(cs.columnIndex(), p.values());
             }
             case FilterPredicate.IsNullPredicate p -> {
@@ -307,6 +309,24 @@ public class FilterPredicateResolver {
             throw new IllegalArgumentException(
                     "Column '" + columnName + "' has physical type " + actualType
                             + "; given filter predicate type " + expectedType + " is incompatible");
+        }
+    }
+
+    /// Rejects a byte-string predicate on a `DECIMAL` column.
+    ///
+    /// Such a predicate orders and matches the stored bytes as themselves, which a `BYTE_ARRAY`
+    /// `DECIMAL` cannot answer in either respect. Its sort order is a signed comparison of the
+    /// represented value, so the column's statistics are written in that order and pruning them
+    /// byte-wise reads the bounds in an order they were not produced in — dropping row groups
+    /// that hold matching rows. And the format asks such a column for the fewest bytes per value
+    /// without requiring them, so the same number may be stored under more than one byte string
+    /// and equality on the literal's own bytes misses the padded copies.
+    private static void rejectByteStringOrderOnDecimal(String columnName,
+            ColumnSchema columnSchema) {
+        if (columnSchema.logicalType() instanceof LogicalType.DecimalType) {
+            throw new IllegalArgumentException(
+                    "Column '" + columnName + "' is a DECIMAL and does not order or match as a "
+                            + "byte string; filter it with a BigDecimal predicate");
         }
     }
 
