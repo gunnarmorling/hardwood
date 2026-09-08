@@ -17,7 +17,7 @@ import dev.hardwood.reader.ParquetReadException;
 public class DataPageHeaderV2Reader {
 
     public static DataPageHeaderV2 read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.DATA_PAGE_HEADER_V2);
         try {
             return readInternal(reader);
         }
@@ -46,17 +46,17 @@ public class DataPageHeaderV2Reader {
             switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // num_values
                     if (reader.acceptField(header, Codes.I32)) {
-                        numValues = reader.readNonNegativeI32("DataPageHeaderV2.num_values");
+                        numValues = reader.readNonNegativeI32();
                     }
                     break;
                 case 2: // num_nulls
                     if (reader.acceptField(header, Codes.I32)) {
-                        numNulls = reader.readNonNegativeI32("DataPageHeaderV2.num_nulls");
+                        numNulls = reader.readNonNegativeI32();
                     }
                     break;
                 case 3: // num_rows
                     if (reader.acceptField(header, Codes.I32)) {
-                        numRows = reader.readNonNegativeI32("DataPageHeaderV2.num_rows");
+                        numRows = reader.readNonNegativeI32();
                     }
                     break;
                 case 4: // encoding
@@ -67,12 +67,12 @@ public class DataPageHeaderV2Reader {
                     break;
                 case 5: // definition_levels_byte_length
                     if (reader.acceptField(header, Codes.I32)) {
-                        definitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.definition_levels_byte_length");
+                        definitionLevelsByteLength = reader.readNonNegativeI32();
                     }
                     break;
                 case 6: // repetition_levels_byte_length
                     if (reader.acceptField(header, Codes.I32)) {
-                        repetitionLevelsByteLength = reader.readNonNegativeI32("DataPageHeaderV2.repetition_levels_byte_length");
+                        repetitionLevelsByteLength = reader.readNonNegativeI32();
                     }
                     break;
                 case 7: // is_compressed

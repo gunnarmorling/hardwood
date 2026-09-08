@@ -18,7 +18,7 @@ import dev.hardwood.metadata.RowGroup;
 public class RowGroupReader {
 
     public static RowGroup read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.ROW_GROUP);
         try {
             return readInternal(reader);
         }
@@ -44,17 +44,17 @@ public class RowGroupReader {
                         // Chunks come in schema order, so each column's path repeats the one the
                         // previous row group held at the same position.
                         reader.pathCache().startRowGroup();
-                        columns = reader.readStructList("RowGroup.columns", ColumnChunkReader::read);
+                        columns = reader.readStructList(ColumnChunkReader::read);
                     }
                     break;
                 case 2: // total_byte_size
                     if (reader.acceptField(header, Codes.I64)) {
-                        totalByteSize = reader.readNonNegativeI64("RowGroup.total_byte_size");
+                        totalByteSize = reader.readNonNegativeI64();
                     }
                     break;
                 case 3: // num_rows
                     if (reader.acceptField(header, Codes.I64)) {
-                        numRows = reader.readNonNegativeI64("RowGroup.num_rows");
+                        numRows = reader.readNonNegativeI64();
                     }
                     break;
                 default:

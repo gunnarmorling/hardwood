@@ -15,7 +15,7 @@ import dev.hardwood.metadata.Encoding;
 public class DictionaryPageHeaderReader {
 
     public static DictionaryPageHeader read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.DICTIONARY_PAGE_HEADER);
         try {
             return readInternal(reader);
         }
@@ -37,7 +37,7 @@ public class DictionaryPageHeaderReader {
             switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // num_values
                     if (reader.acceptField(header, Codes.I32)) {
-                        numValues = reader.readNonNegativeI32("DictionaryPageHeader.num_values");
+                        numValues = reader.readNonNegativeI32();
                     }
                     break;
                 case 2: // encoding

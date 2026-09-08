@@ -14,7 +14,7 @@ import dev.hardwood.metadata.PageLocation;
 public class PageLocationReader {
 
     public static PageLocation read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.PAGE_LOCATION);
         try {
             return readInternal(reader);
         }
@@ -37,17 +37,17 @@ public class PageLocationReader {
             switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // offset (i64)
                     if (reader.acceptField(header, Codes.I64)) {
-                        offset = reader.readNonNegativeI64("PageLocation.offset");
+                        offset = reader.readNonNegativeI64();
                     }
                     break;
                 case 2: // compressed_page_size (i32)
                     if (reader.acceptField(header, Codes.I32)) {
-                        compressedPageSize = reader.readNonNegativeI32("PageLocation.compressed_page_size");
+                        compressedPageSize = reader.readNonNegativeI32();
                     }
                     break;
                 case 3: // first_row_index (i64)
                     if (reader.acceptField(header, Codes.I64)) {
-                        firstRowIndex = reader.readNonNegativeI64("PageLocation.first_row_index");
+                        firstRowIndex = reader.readNonNegativeI64();
                     }
                     break;
                 default:

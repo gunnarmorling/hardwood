@@ -17,7 +17,7 @@ import dev.hardwood.metadata.Statistics;
 public class StatisticsReader {
 
     public static Statistics read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.STATISTICS);
         try {
             return readInternal(reader);
         }

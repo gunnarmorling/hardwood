@@ -23,7 +23,7 @@ import dev.hardwood.metadata.SchemaElement;
 public class FileMetaDataReader {
 
     public static FileMetaData read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.FILE_META_DATA);
         try {
             return readInternal(reader);
         }
@@ -55,22 +55,22 @@ public class FileMetaDataReader {
                     break;
                 case 2: // schema (required list<SchemaElement>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        schema = reader.readStructList("FileMetaData.schema", SchemaElementReader::read);
+                        schema = reader.readStructList(SchemaElementReader::read);
                     }
                     break;
                 case 3: // num_rows
                     if (reader.acceptField(header, Codes.I64)) {
-                        numRows = reader.readNonNegativeI64("FileMetaData.num_rows");
+                        numRows = reader.readNonNegativeI64();
                     }
                     break;
                 case 4: // row_groups (required list<RowGroup>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        rowGroups = reader.readStructList("FileMetaData.row_groups", RowGroupReader::read);
+                        rowGroups = reader.readStructList(RowGroupReader::read);
                     }
                     break;
                 case 5: // key_value_metadata (optional list<KeyValue>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        keyValueMetadata = KeyValueMetadataReader.read(reader, "FileMetaData.key_value_metadata");
+                        keyValueMetadata = KeyValueMetadataReader.read(reader);
                     }
                     break;
                 case 6: // created_by (optional)
@@ -103,7 +103,7 @@ public class FileMetaDataReader {
     /// the field.
     private static List<ColumnOrder> readColumnOrders(ThriftCompactReader reader) {
         long listHeader =
-                reader.acceptListHeader(Codes.STRUCT, "FileMetaData.column_orders");
+                reader.acceptListHeader(Codes.STRUCT);
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return List.of();
         }

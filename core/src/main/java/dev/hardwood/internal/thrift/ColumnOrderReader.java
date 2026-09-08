@@ -21,7 +21,7 @@ public class ColumnOrderReader {
     private static final short IEEE_754_TOTAL_ORDER = 2;
 
     public static ColumnOrder read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.COLUMN_ORDER);
         try {
             ColumnOrder order = ColumnOrder.UNKNOWN;
             int header = reader.readFieldHeader();

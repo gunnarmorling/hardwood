@@ -15,7 +15,7 @@ import dev.hardwood.reader.ParquetReadException;
 public class BoundingBoxReader {
 
     public static BoundingBox read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.BOUNDING_BOX);
         try {
             return readInternal(reader);
         }

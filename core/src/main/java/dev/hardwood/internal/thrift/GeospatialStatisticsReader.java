@@ -19,7 +19,7 @@ import dev.hardwood.metadata.GeospatialStatistics;
 public class GeospatialStatisticsReader {
 
     public static GeospatialStatistics read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.GEOSPATIAL_STATISTICS);
         try {
             return readInternal(reader);
         }
@@ -60,7 +60,7 @@ public class GeospatialStatisticsReader {
 
     private static List<Integer> readGeospatialTypes(ThriftCompactReader reader) {
         long listHeader =
-                reader.acceptListHeader(Codes.I32, "GeospatialStatistics.geospatial_types");
+                reader.acceptListHeader(Codes.I32);
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return List.of();
         }

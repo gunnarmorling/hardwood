@@ -22,9 +22,8 @@ class KeyValueMetadataReader {
     /// The field is optional wherever it appears, so a list declaring anything but struct
     /// elements is skipped and reported as an empty map.
     ///
-    /// @param fieldName fully-qualified name of the field being read, for the log message
-    static Map<String, String> read(ThriftCompactReader reader, String fieldName) {
-        long listHeader = reader.acceptListHeader(Codes.STRUCT, fieldName);
+    static Map<String, String> read(ThriftCompactReader reader) {
+        long listHeader = reader.acceptListHeader(Codes.STRUCT);
         if (listHeader == ThriftCompactReader.ABSENT_LIST) {
             return Map.of();
         }
@@ -37,7 +36,7 @@ class KeyValueMetadataReader {
 
     /// Reads a single KeyValue Thrift struct (field 1: key, field 2: value) and puts it into the map.
     private static void readKeyValue(ThriftCompactReader reader, Map<String, String> target) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.KEY_VALUE);
         try {
             String key = null;
             String value = null;

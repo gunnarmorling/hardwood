@@ -18,7 +18,7 @@ import dev.hardwood.reader.ParquetReadException;
 public class LogicalTypeReader {
 
     public static LogicalType read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.LOGICAL_TYPE);
         try {
             return readInternal(reader);
         }
@@ -104,7 +104,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.DecimalType readDecimalType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.DECIMAL_TYPE);
         try {
             return readDecimalTypeInternal(reader);
         }
@@ -150,7 +150,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.TimeType readTimeType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.TIME_TYPE);
         try {
             return readTimeTypeInternal(reader);
         }
@@ -186,7 +186,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.TimestampType readTimestampType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.TIMESTAMP_TYPE);
         try {
             return readTimestampTypeInternal(reader);
         }
@@ -222,7 +222,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.IntType readIntType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.INT_TYPE);
         try {
             return readIntTypeInternal(reader);
         }
@@ -260,7 +260,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.VariantType readVariantType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.VARIANT_TYPE);
         try {
             return readVariantTypeInternal(reader);
         }
@@ -294,7 +294,7 @@ public class LogicalTypeReader {
     }
 
     private static TimeUnit readTimeUnit(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.TIME_UNIT);
         try {
             int fieldId = readUnionVariantId(reader, "TimeUnit");
             return switch (fieldId) {
@@ -310,7 +310,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.GeometryType readGeometryType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.GEOMETRY_TYPE);
         try {
             return readGeometryTypeInternal(reader);
         }
@@ -347,7 +347,7 @@ public class LogicalTypeReader {
     }
 
     private static LogicalType.GeographyType readGeographyType(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.GEOGRAPHY_TYPE);
         try {
             return readGeographyTypeInternal(reader);
         }

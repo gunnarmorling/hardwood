@@ -18,7 +18,7 @@ import dev.hardwood.metadata.SchemaElement;
 public class SchemaElementReader {
 
     public static SchemaElement read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.SCHEMA_ELEMENT);
         try {
             return readInternal(reader);
         }

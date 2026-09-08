@@ -35,7 +35,7 @@ import dev.hardwood.reader.ParquetReadException;
 public class ColumnIndexReader {
 
     public static ColumnIndex read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.COLUMN_INDEX);
         try {
             return readInternal(reader);
         }
@@ -63,17 +63,17 @@ public class ColumnIndexReader {
             switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // null_pages (required list<bool>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        nullPages = reader.readBoolArray("ColumnIndex.null_pages");
+                        nullPages = reader.readBoolArray();
                     }
                     break;
                 case 2: // min_values (required list<binary>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        minValues = reader.readBinaryList("ColumnIndex.min_values");
+                        minValues = reader.readBinaryList();
                     }
                     break;
                 case 3: // max_values (required list<binary>)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        maxValues = reader.readBinaryList("ColumnIndex.max_values");
+                        maxValues = reader.readBinaryList();
                     }
                     break;
                 case 4: // boundary_order (enum)
@@ -83,24 +83,22 @@ public class ColumnIndexReader {
                     break;
                 case 5: // null_counts (list<i64>, optional)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        nullCounts = reader.readOptionalI64Array("ColumnIndex.null_counts");
+                        nullCounts = reader.readOptionalI64Array();
                     }
                     break;
                 case 6: // repetition_level_histograms (list<i64>, optional)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        repetitionLevelHistograms = reader.readOptionalI64Array(
-                                "ColumnIndex.repetition_level_histograms");
+                        repetitionLevelHistograms = reader.readOptionalI64Array();
                     }
                     break;
                 case 7: // definition_level_histograms (list<i64>, optional)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        definitionLevelHistograms = reader.readOptionalI64Array(
-                                "ColumnIndex.definition_level_histograms");
+                        definitionLevelHistograms = reader.readOptionalI64Array();
                     }
                     break;
                 case 8: // nan_counts (list<i64>, optional)
                     if (reader.acceptField(header, Codes.LIST)) {
-                        nanCounts = reader.readOptionalI64Array("ColumnIndex.nan_counts");
+                        nanCounts = reader.readOptionalI64Array();
                     }
                     break;
                 default:

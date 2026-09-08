@@ -17,7 +17,7 @@ import dev.hardwood.reader.ParquetReadException;
 public class DataPageHeaderReader {
 
     public static DataPageHeader read(ThriftCompactReader reader) {
-        short saved = reader.pushFieldIdContext();
+        int saved = reader.pushFieldIdContext(ThriftStruct.DATA_PAGE_HEADER);
         try {
             return readInternal(reader);
         }
@@ -43,7 +43,7 @@ public class DataPageHeaderReader {
             switch (ThriftCompactReader.fieldId(header)) {
                 case 1: // num_values
                     if (reader.acceptField(header, Codes.I32)) {
-                        numValues = reader.readNonNegativeI32("DataPageHeader.num_values");
+                        numValues = reader.readNonNegativeI32();
                     }
                     break;
                 case 2: // encoding
