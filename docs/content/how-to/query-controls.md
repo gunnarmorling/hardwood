@@ -125,9 +125,7 @@ FilterPredicate filter = FilterPredicate.eq("request_id",
     UUID.fromString("550e8400-e29b-41d4-a716-446655440000"));
 ```
 
-The logical-type factories validate the column's logical type at reader creation: `BigDecimal` predicates require a `DECIMAL` column and `UUID` predicates require a `UUID` column. Applying them to a plain `FIXED_LEN_BYTE_ARRAY` column without the corresponding logical-type annotation throws `IllegalArgumentException`.
-
-Raw physical-type predicates (`int`, `long`, etc.) remain available for columns without logical types or for filtering on the underlying physical value directly.
+A logical-type factory requires the column to carry the matching logical type and throws `IllegalArgumentException` at reader creation otherwise. Raw physical-type predicates (`int`, `long`, etc.) remain available for columns without logical types or for filtering on the underlying physical value directly. For the literal types each column accepts and the order each compares in, see [Predicate literals by column type](../reference/query-controls.md#predicate-literals-by-column-type).
 
 Filters work with all reader types: `RowReader`, `ColumnReader`, `AvroRowReader`, and across multi-file readers.
 
@@ -150,10 +148,10 @@ Filters work with all reader types: `RowReader`, `ColumnReader`, `AvroRowReader`
   `DOUBLE`, `eq(NaN)` is not pruned by the Bloom filter — raw-bit hashing distinguishes NaN
   payloads that `Float.compare` / `Double.compare` treat as equal, so a Bloom miss cannot prove a
   NaN absent; `eq(-0.0)` is pruned normally. A `BigDecimal` `eq` on a `DECIMAL` stored as
-  `BYTE_ARRAY` is pruned by neither the Bloom filter nor the dictionary: such a column may hold
-  the same number under more than one byte string, so a miss on the literal's own bytes does not
-  prove the value absent. Range predicates (`lt`, `gt`, …) and `notEq` are unaffected — a Bloom
-  filter answers only membership.
+  `BYTE_ARRAY` is pruned by neither the Bloom filter nor the dictionary, for the reason given in
+  the [reference](../reference/query-controls.md#predicate-literals-by-column-type). Range
+  predicates (`lt`, `gt`, …) and `notEq` are unaffected — a Bloom filter answers only
+  membership.
 - **Dictionary-based filtering is not supported
   ([#196](https://github.com/hardwood-hq/hardwood/issues/196)).** Dictionary-encoded columns
   are not checked for predicate matches before decoding.

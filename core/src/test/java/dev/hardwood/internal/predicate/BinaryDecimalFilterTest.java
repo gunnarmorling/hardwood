@@ -32,6 +32,7 @@ import dev.hardwood.schema.FileSchema;
 import dev.hardwood.writer.ParquetFileWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// A `DECIMAL` stored as `BYTE_ARRAY` holds each unscaled value in the fewest bytes that hold
 /// it, so two values of the same column differ in length and length does not track magnitude:
@@ -177,6 +178,52 @@ class BinaryDecimalFilterTest {
             assertThat(decideWithEmptyBloomFilter(rowGroup, literal, Comparison.FIXED_DECIMAL))
                     .isEqualTo(FilterDecision.CANNOT_MATCH);
         }
+    }
+
+    /// The bytes of `1.27` are in the file, and a byte-string `eq` for exactly those bytes came
+    /// back empty: the row group's statistics are written in the column's signed order
+    /// (`min = FF 00`, `max = 01 2C`) and pruning them unsigned sorts the literal `7F` below the
+    /// minimum. Rather than prune correctly for a question the column cannot answer anyway —
+    /// a padded copy of the same number would still miss — the predicate is refused.
+    @Test
+    void aByteStringPredicateIsRejected() {
+        FileSchema schema = schema();
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.eq("amount", "\u007F"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("does not order or match as a byte string")
+                .hasMessageContaining("BigDecimal");
+    }
+
+    @Test
+    void aByteStringRangePredicateIsRejected() {
+        FileSchema schema = schema();
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.lt("amount", "\u007F"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("does not order or match as a byte string");
+    }
+
+    @Test
+    void aByteStringSetPredicateIsRejected() {
+        FileSchema schema = schema();
+        assertThatThrownBy(() -> FilterPredicateResolver.resolve(
+                FilterPredicate.inStrings("amount", "\u007F"), schema))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("does not order or match as a byte string");
+    }
+
+    /// A `BYTE_ARRAY` column that is not a `DECIMAL` orders as its bytes, so the same predicates
+    /// stay available on it.
+    @Test
+    void aByteStringPredicateStaysAvailableOnAPlainBinaryColumn() {
+        FileSchema plain = FileSchema.builder("schema")
+                .addColumn("name", PhysicalType.BYTE_ARRAY, RepetitionType.REQUIRED, null)
+                .build();
+
+        assertThat(FilterPredicateResolver.resolve(FilterPredicate.eq("name", "a"), plain))
+                .isInstanceOfSatisfying(ResolvedPredicate.BinaryPredicate.class,
+                        p -> assertThat(p.signed()).isFalse());
     }
 
     // ==================== Fixtures ====================
