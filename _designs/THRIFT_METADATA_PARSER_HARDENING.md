@@ -23,56 +23,52 @@ the shape the readers share so that policy holds at every field.
 
 ## Policy
 
-### A field whose wire type does not match the schema is skipped
+### What happens to a field the reader cannot use turns on whether it can continue without it
 
-Thrift's own forward-compatibility rule: a reader that does not recognise a field consumes
-it by its declared type and moves on. The declared type is enough to skip the field
-correctly whatever it contains, so the cost is bounded to that one field and the struct
-continues to parse. Readers apply this uniformly through
-`ThriftCompactReader.acceptField(FieldHeader, byte)`, which returns `true` with the reader
-positioned on the value when the types agree, and otherwise skips the field and returns
-`false`:
+Thrift's forward-compatibility rule is that a reader consumes a field it does not recognise
+by that field's own declared type and moves on: the declared type is enough to skip the field
+whatever it holds, so the cost is bounded to it and the struct keeps parsing. Hardwood applies
+that rule to every field it can do without, and departs from it for the fields it cannot.
 
-```java
-case 3: // num_rows
-    if (reader.acceptField(header, Codes.I64)) {
-        numRows = reader.readNonNegativeI64("FileMetaData.num_rows");
-    }
-    break;
-```
-
-The expected type is named, never a raw hex literal — `0x08` and `0x09` differ by one bit
-and pick a different branch in silence.
-
-### A collection whose element type does not match is never decoded as if it did
-
-A list header declares one element type for the whole collection. Decoding elements as
-some other type consumes the wrong number of bytes per element and desynchronises the
-stream: from that point on, value bytes are read as field headers and the rest of the
-enclosing struct — the whole footer, in the case of `FileMetaData.schema` — is misread
-rather than merely lost.
-
-Every list read therefore gates on the declared element type before decoding an element,
-and skips the collection element-wise when it disagrees. What happens next depends on
-whether the field is required:
-
-| | wrong element type |
+| | wrong wire type, or wrong element type for a collection |
 |---|---|
-| required field | `IOException` naming the field and both types |
-| optional field | elements skipped, field reported absent, logged at `WARNING` |
+| optional field | skipped, reported absent, logged at `WARNING` |
+| required field | `ParquetReadException` naming the field and both types |
 
-The split follows from what "absent" can mean. An optional field already has a
-representation for *not there* that its consumers handle, so a list that cannot be decoded
-can use it: the file loses one informational field and stays readable. A required field has
-no such representation — reporting `RowGroup.columns` as an empty list would answer a query
-with zero rows instead of failing it, and silent wrong answers are worse than a failed read.
+An optional field already has a representation for *not there* that its consumers handle, so
+one that cannot be decoded can use it: the file loses a field and stays readable, which is what
+lets a newer writer's output pass through an older reader. A required field has no such
+representation — reporting `RowGroup.columns` as an empty list would answer a query with zero
+rows instead of failing it.
 
-Two methods on `ThriftCompactReader` implement the gate, and the typed list reads
-(`readStructList`, `readStringList`, `readBinaryList`, `readBoolArray`,
-`readOptionalI64Array`) are built on them:
+Thrift's own answer for a required field is to skip it too and fail at the end of the struct,
+as a field that never arrived. Hardwood rejects it where it is: the read fails either way, and
+"missing" said of a field that did arrive carrying the wrong type points at the wrong question.
+Genuine absence is what `ThriftCompactReader.missingFields` reports at the STOP that ends the
+struct — the one complaint that is about a struct rather than about a field of it.
 
-- `requireListHeader(elementType, fieldName)` — throws on mismatch
-- `acceptListHeader(elementType, fieldName)` — returns `null` on mismatch, after logging
+Four methods implement the gate, and the typed list reads (`readStructList`, `readStringList`,
+`readBinaryList`, `readBoolArray`, `readOptionalI64Array`) are built on the list pair:
+
+- `acceptField(header, expectedType)` / `acceptListHeader(elementType)` — skip and log
+- `requireField(header, expectedType)` / `requireListHeader(elementType)` — throw
+
+Neither takes the field's name: the reader knows which field it is standing on, and `ThriftStruct`
+holds the names, checked against parquet-format's own metadata. The expected type is always named
+through `Codes`, never a raw hex literal — `0x08` and `0x09` differ by one bit and pick a different
+branch in silence. Log line and thrown message are built from the same words, so the two read
+alike: `wrong Thrift wire type 0x1 (expected 0x5)`.
+
+### A collection is never decoded as some other element type
+
+A list header declares one element type for the whole collection, so decoding its elements as
+another consumes the wrong number of bytes each and desynchronises the stream: value bytes are
+then read as field headers, and the rest of the enclosing struct — the whole footer, for
+`FileMetaData.schema` — is misread rather than merely lost.
+
+A union is the same argument at one element. Its variant carries the meaning in its id and the
+empty struct the format gives it as the value, so `readUnionVariant` requires that value to
+declare `struct` rather than skipping it by whatever type it claims.
 
 ### Sizes, counts and offsets are validated where they are read
 
@@ -83,9 +79,9 @@ and outside the `IOException` contract the metadata path advertises. Checked at 
 of read it produces a controlled error naming the field, which
 `ParquetMetadataReader` then attributes to the file.
 
-Readers use `readNonNegativeI32(fieldName)` / `readNonNegativeI64(fieldName)` for every
-field the format defines as a size, count, length or file offset — in the footer readers as
-well as the page-header readers.
+Readers use `readNonNegativeI32()` / `readNonNegativeI64()` for every field the format defines
+as a size, count, length or file offset — in the footer readers as well as the page-header
+readers.
 
 Collection sizes are bounded by the bytes remaining in the buffer, since every Thrift
 element occupies at least one byte on the wire. This applies to the long-form list count

@@ -46,9 +46,10 @@ class PageEncodingStatsReader {
             }
         }
         if (result.size() != ThriftCompactReader.listSize(listHeader)) {
-            LOG.log(System.Logger.Level.WARNING,
-                    "Ignoring ColumnMetaData.encoding_stats: " + (ThriftCompactReader.listSize(listHeader) - result.size())
-                            + " of " + ThriftCompactReader.listSize(listHeader) + " entries are missing a required field");
+            LOG.log(System.Logger.Level.WARNING, () -> "Ignoring " + reader.fieldHere() + ": "
+                    + (ThriftCompactReader.listSize(listHeader) - result.size()) + " of "
+                    + ThriftCompactReader.listSize(listHeader)
+                    + " entries are missing a required field");
             return List.of();
         }
         return Collections.unmodifiableList(result);
@@ -74,8 +75,7 @@ class PageEncodingStatsReader {
                 }
                 // Every field defined on this struct is an i32, so one wire-type gate covers
                 // all three: anything else is a field this version cannot use.
-                if (ThriftCompactReader.fieldType(header) != Codes.I32) {
-                    reader.skipField(ThriftCompactReader.fieldType(header));
+                if (!reader.acceptField(header, Codes.I32)) {
                     continue;
                 }
                 switch (ThriftCompactReader.fieldId(header)) {

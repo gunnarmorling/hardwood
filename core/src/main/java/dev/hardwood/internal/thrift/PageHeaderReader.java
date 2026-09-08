@@ -44,16 +44,16 @@ public class PageHeaderReader {
             }
 
             switch (ThriftCompactReader.fieldId(header)) {
-                case 1: // type
-                    if (reader.acceptField(header, Codes.I32)) {
-                        int rawType = reader.readI32();
-                        type = ThriftEnumLookup.pageType(rawType);
-                        // A page whose header declares a type we do not know cannot be decoded.
-                        if (type == PageType.UNKNOWN) {
-                            throw new ParquetReadException("PageHeader has unknown page type: " + rawType);
-                        }
+                case 1: { // type — required, so a wrong wire type fails here
+                    reader.requireField(header, Codes.I32);
+                    int rawType = reader.readI32();
+                    type = ThriftEnumLookup.pageType(rawType);
+                    // A page whose header declares a type we do not know cannot be decoded.
+                    if (type == PageType.UNKNOWN) {
+                        throw new ParquetReadException("PageHeader has unknown page type: " + rawType);
                     }
                     break;
+                }
                 case 2: // uncompressed_page_size
                     if (reader.acceptField(header, Codes.I32)) {
                         uncompressedPageSize = reader.readNonNegativeI32();
@@ -95,7 +95,7 @@ public class PageHeaderReader {
 
         // Validate required fields
         if (type == null) {
-            throw new ParquetReadException("PageHeader missing required field: type");
+            throw ThriftCompactReader.missingFields(ThriftStruct.PAGE_HEADER, 1);
         }
 
         return new PageHeader(type, uncompressedPageSize, compressedPageSize,

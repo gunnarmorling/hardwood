@@ -365,8 +365,8 @@ class MalformedMetadataValidationTest {
                 .stop().build();
         assertThatThrownBy(() -> ColumnIndexReader.read(reader(index)))
                 .isInstanceOf(ParquetReadException.class)
-                .hasMessageContaining("ColumnIndex.null_pages")
-                .hasMessageContaining("bool");
+                .hasMessage("ColumnIndex.null_pages — wrong Thrift element type 0x5"
+                        + " (expected 0x1 or 0x2)");
     }
 
     @Test

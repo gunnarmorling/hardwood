@@ -11,7 +11,6 @@ import dev.hardwood.internal.metadata.DataPageHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.metadata.Encoding;
 import dev.hardwood.metadata.Statistics;
-import dev.hardwood.reader.ParquetReadException;
 
 /// Reader for DataPageHeader from Thrift Compact Protocol.
 public class DataPageHeaderReader {
@@ -46,11 +45,10 @@ public class DataPageHeaderReader {
                         numValues = reader.readNonNegativeI32();
                     }
                     break;
-                case 2: // encoding
-                    if (reader.acceptField(header, Codes.I32)) {
-                        encodingValue = reader.readI32();
-                        encoding = ThriftEnumLookup.encoding(encodingValue);
-                    }
+                case 2: // encoding — required, so a wrong wire type fails here
+                    reader.requireField(header, Codes.I32);
+                    encodingValue = reader.readI32();
+                    encoding = ThriftEnumLookup.encoding(encodingValue);
                     break;
                 case 3: // definition_level_encoding
                     if (reader.acceptField(header, Codes.I32)) {
@@ -74,7 +72,7 @@ public class DataPageHeaderReader {
         }
 
         if (encoding == null) {
-            throw new ParquetReadException("DataPageHeader missing required field: encoding");
+            throw ThriftCompactReader.missingFields(ThriftStruct.DATA_PAGE_HEADER, 2);
         }
 
         return new DataPageHeader(numValues, encoding, encodingValue,

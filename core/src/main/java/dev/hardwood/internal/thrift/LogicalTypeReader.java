@@ -294,19 +294,14 @@ public class LogicalTypeReader {
     }
 
     private static TimeUnit readTimeUnit(ThriftCompactReader reader) {
-        int saved = reader.pushFieldIdContext(ThriftStruct.TIME_UNIT);
-        try {
-            int fieldId = readUnionVariantId(reader, "TimeUnit");
-            return switch (fieldId) {
-                case 1 -> TimeUnit.MILLIS;
-                case 2 -> TimeUnit.MICROS;
-                case 3 -> TimeUnit.NANOS;
-                default -> throw new ParquetReadException("Unexpected time unit:" + fieldId);
-            };
-        }
-        finally {
-            reader.popFieldIdContext(saved);
-        }
+        int fieldId = reader.readUnionVariant(ThriftStruct.TIME_UNIT);
+        return switch (fieldId) {
+            case 1 -> TimeUnit.MILLIS;
+            case 2 -> TimeUnit.MICROS;
+            case 3 -> TimeUnit.NANOS;
+            default -> throw new ParquetReadException(
+                    ThriftStruct.TIME_UNIT.describe(fieldId) + " is not a time unit");
+        };
     }
 
     private static LogicalType.GeometryType readGeometryType(ThriftCompactReader reader) {
@@ -400,20 +395,4 @@ public class LogicalTypeReader {
     /// stands for — a timestamp's unit, a geography's edge model — has no default that could
     /// stand in for it. More than one is worse than ambiguous: the byte after the first variant
     /// is then another field header rather than STOP, so reading on would take the second
-    /// variant's value for a field of the enclosing struct and misparse the rest of it.
-    ///
-    /// @param unionName name of the union, for the error message
-    private static int readUnionVariantId(ThriftCompactReader reader, String unionName) {
-        int variant = reader.readFieldHeader();
-        if (variant == ThriftCompactReader.STOP_FIELD) {
-            throw new ParquetReadException("Malformed Parquet metadata: " + unionName
-                    + " union has no variant set");
-        }
-        reader.skipField(ThriftCompactReader.fieldType(variant));
-        if (reader.readFieldHeader() != ThriftCompactReader.STOP_FIELD) {
-            throw new ParquetReadException("Malformed Parquet metadata: " + unionName
-                    + " union has more than one variant set");
-        }
-        return ThriftCompactReader.fieldId(variant);
-    }
 }

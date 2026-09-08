@@ -7,6 +7,8 @@
  */
 package dev.hardwood.internal.thrift;
 
+import java.util.Arrays;
+
 import dev.hardwood.internal.bloomfilter.BloomFilterHeader;
 import dev.hardwood.internal.thrift.ThriftCompactConstants.FieldType.Codes;
 import dev.hardwood.reader.ParquetReadException;
@@ -35,86 +37,81 @@ public class BloomFilterHeaderReader {
             }
 
             switch (ThriftCompactReader.fieldId(header)) {
-                case 1 -> numBytes = readRequiredBitsetSize(reader, ThriftCompactReader.fieldType(header));
+                // Every field of a bloom filter header is required, so a wrong wire
+                // type fails here rather than being reported as a field that never
+                // arrived.
+                case 1 -> {
+                    reader.requireField(header, Codes.I32);
+                    numBytes = reader.readNonNegativeI32();
+                }
                 case 2 -> {
-                    short variant = readUnionVariant(reader,
-                            ThriftCompactReader.fieldType(header), ThriftStruct.BLOOM_FILTER_ALGORITHM);
-                    algorithm = BloomFilterHeader.Algorithm.fromVariant(variant);
+                    reader.requireField(header, Codes.STRUCT);
+                    algorithm = readAlgorithm(reader);
                 }
                 case 3 -> {
-                    short variant = readUnionVariant(reader,
-                            ThriftCompactReader.fieldType(header), ThriftStruct.BLOOM_FILTER_HASH);
-                    hash = BloomFilterHeader.Hash.fromVariant(variant);
+                    reader.requireField(header, Codes.STRUCT);
+                    hash = readHash(reader);
                 }
                 case 4 -> {
-                    short variant = readUnionVariant(reader,
-                            ThriftCompactReader.fieldType(header), ThriftStruct.BLOOM_FILTER_COMPRESSION);
-                    compression = BloomFilterHeader.Compression.fromVariant(variant);
+                    reader.requireField(header, Codes.STRUCT);
+                    compression = readCompression(reader);
                 }
                 default -> reader.skipField(ThriftCompactReader.fieldType(header));
             }
         }
 
+        int[] missing = new int[4];
+        int absent = 0;
         if (numBytes < 0) {
-            throw invalidHeader("missing required field 'numBytes'");
+            missing[absent++] = 1;
         }
-        if (algorithm == null || hash == null || compression == null) {
-            throw invalidHeader("missing required field(s) "
-                    + (algorithm == null ? "algorithm " : "")
-                    + (hash == null ? "hash " : "")
-                    + (compression == null ? "compression " : ""));
+        if (algorithm == null) {
+            missing[absent++] = 2;
+        }
+        if (hash == null) {
+            missing[absent++] = 3;
+        }
+        if (compression == null) {
+            missing[absent++] = 4;
+        }
+        if (absent > 0) {
+            throw ThriftCompactReader.missingFields(ThriftStruct.BLOOM_FILTER_HEADER,
+                    Arrays.copyOf(missing, absent));
         }
 
         return new BloomFilterHeader(numBytes, algorithm, hash, compression);
     }
 
-    private static int readRequiredBitsetSize(ThriftCompactReader reader, byte type) {
-        if (type != Codes.I32) {
-            throw wrongWireType(reader, type);
-        }
-        return reader.readNonNegativeI32();
+    private static BloomFilterHeader.Algorithm readAlgorithm(ThriftCompactReader reader) {
+        short variant = reader.readUnionVariant(ThriftStruct.BLOOM_FILTER_ALGORITHM);
+        return switch (variant) {
+            case 1 -> BloomFilterHeader.Algorithm.BLOCK;
+            default -> throw notAVariantOf(ThriftStruct.BLOOM_FILTER_ALGORITHM, variant,
+                    "bloom filter algorithm");
+        };
     }
 
-    private static short readUnionVariant(ThriftCompactReader reader, byte type, ThriftStruct union) {
-        if (type != Codes.STRUCT) {
-            // Still standing on the header's own field, so this names it:
-            // `BloomFilterHeader.algorithm`, from the table rather than by hand.
-            throw wrongWireType(reader, type);
-        }
-        int saved = reader.pushFieldIdContext(union);
-        try {
-            int variant = reader.readFieldHeader();
-            if (variant == ThriftCompactReader.STOP_FIELD) {
-                throw invalidHeader(union.structName() + " has no variant set");
-            }
-            // The variant's value is an empty struct; a different wire type would make skipField
-            // consume the wrong number of bytes and desync the rest of the header.
-            if (ThriftCompactReader.fieldType(variant) != Codes.STRUCT) {
-                // Inside the union now, so this names the variant it stopped on.
-                throw wrongWireType(reader, ThriftCompactReader.fieldType(variant));
-            }
-            reader.skipField(ThriftCompactReader.fieldType(variant)); // consume the variant's value (the empty inner struct)
-            if (reader.readFieldHeader() != ThriftCompactReader.STOP_FIELD) {
-                throw invalidHeader(union.structName() + " has more than one variant set");
-            }
-            return ThriftCompactReader.fieldId(variant);
-        } finally {
-            reader.popFieldIdContext(saved);
-        }
+    private static BloomFilterHeader.Hash readHash(ThriftCompactReader reader) {
+        short variant = reader.readUnionVariant(ThriftStruct.BLOOM_FILTER_HASH);
+        return switch (variant) {
+            case 1 -> BloomFilterHeader.Hash.XXHASH;
+            default -> throw notAVariantOf(ThriftStruct.BLOOM_FILTER_HASH, variant,
+                    "bloom filter hash");
+        };
     }
 
-    /// A field carrying something other than the wire type the format gives it,
-    /// named as the field the reader is standing on. The name says which struct,
-    /// so the message does not repeat it.
-    private static ParquetReadException wrongWireType(ThriftCompactReader reader, byte type) {
-        return reader.malformed("wrong wire type 0x" + Integer.toHexString(type & 0xFF));
+    private static BloomFilterHeader.Compression readCompression(ThriftCompactReader reader) {
+        short variant = reader.readUnionVariant(ThriftStruct.BLOOM_FILTER_COMPRESSION);
+        return switch (variant) {
+            case 1 -> BloomFilterHeader.Compression.UNCOMPRESSED;
+            default -> throw notAVariantOf(ThriftStruct.BLOOM_FILTER_COMPRESSION, variant,
+                    "bloom filter compression");
+        };
     }
 
-    /// A complaint about the header rather than about any one field of it, so
-    /// nothing names a field: a required field that never arrived is discovered
-    /// at the STOP that ends the struct, where the last field read is whichever
-    /// one came before it and has nothing to do with what is missing.
-    private static ParquetReadException invalidHeader(String message) {
-        return new ParquetReadException("Invalid BloomFilterHeader: " + message);
+    private static ParquetReadException notAVariantOf(ThriftStruct union, short variant,
+            String what) {
+        return new ParquetReadException(union.describe(variant) + " is not a " + what);
     }
+
 }
