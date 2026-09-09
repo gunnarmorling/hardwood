@@ -217,14 +217,10 @@ public final class NestedBatchDataView {
         // FLOAT16 path: primitive convertToFloat16 keeps the value unboxed;
         // readLogicalType isn't reused because LogicalTypeConverter.convert
         // returns Object and would box.
-        try {
-            return LogicalTypeConverter.convertToFloat16(
-                    ((BinaryBatchValues) batchIndex.valueArrays[projCol]).byteArrayAt(valueIdx),
-                    p.schema().type());
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        batchIndex.requireFloatAccess(p.schema());
+        return LogicalTypeConverter.convertToFloat16(
+                ((BinaryBatchValues) batchIndex.valueArrays[projCol]).byteArrayAt(valueIdx),
+                p.schema().type());
     }
 
     public double getDouble(String name) {
@@ -277,14 +273,10 @@ public final class NestedBatchDataView {
         if (p.schema().type() == PhysicalType.FLOAT) {
             return ((float[]) fieldValueArrays[projectedIndex])[valueIdx];
         }
-        try {
-            return LogicalTypeConverter.convertToFloat16(
-                    ((BinaryBatchValues) fieldValueArrays[projectedIndex]).byteArrayAt(valueIdx),
-                    p.schema().type());
-        }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        batchIndex.requireFloatAccess(p.schema());
+        return LogicalTypeConverter.convertToFloat16(
+                ((BinaryBatchValues) fieldValueArrays[projectedIndex]).byteArrayAt(valueIdx),
+                p.schema().type());
     }
 
     public double getDouble(int projectedIndex) {
@@ -512,16 +504,11 @@ public final class NestedBatchDataView {
         if (resultClass.isInstance(rawValue)) {
             return resultClass.cast(rawValue);
         }
-        try {
-            if (resultClass == Instant.class && p.schema().type() == PhysicalType.INT96) {
-                return resultClass.cast(LogicalTypeConverter.int96ToInstant((byte[]) rawValue));
-            }
-            Object converted = LogicalTypeConverter.convert(rawValue, p.schema().type(), p.schema().logicalType());
-            return resultClass.cast(converted);
+        if (resultClass == Instant.class && p.schema().type() == PhysicalType.INT96) {
+            return resultClass.cast(LogicalTypeConverter.int96ToInstant((byte[]) rawValue));
         }
-        catch (RuntimeException e) {
-            throw ExceptionContext.addFileContext(currentFileName, e);
-        }
+        return resultClass.cast(
+                LogicalTypeConverter.convert(rawValue, p.schema().type(), p.schema().logicalType()));
     }
 
     private PqList createList(TopLevelFieldMap.FieldDesc.ListOf listDesc) {

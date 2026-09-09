@@ -61,9 +61,21 @@ Primitive accessors (`getInt`, `getLong`, `getFloat`, `getDouble`, `getBoolean`)
 Requesting the wrong type for a column (e.g. `getInt` on a `LONG` column, `getDate` on a `STRING`
 column) is a programming error; the call fails at runtime with an unchecked exception. The
 specific exception type is unspecified and may change between releases — do not catch it as part of
-normal control flow. If the column type isn't known statically, check it up front via
-`reader.getFileSchema().getColumn(name)` and inspect the returned `ColumnSchema`'s `type()` /
-`logicalType()` — see [Inspect File Metadata](../how-to/metadata.md).
+normal control flow. The message names the column and not the file: the file is not what is wrong,
+and the fix is the same whichever file the reader is on. If the column type isn't known statically,
+check it up front via `reader.getFileSchema().getColumn(name)` and inspect the returned
+`ColumnSchema`'s `type()` / `logicalType()` — see [Inspect File Metadata](../how-to/metadata.md).
+
+A column whose annotation its physical type cannot carry is not a failure at all. `FLOAT16` is
+defined as a two-byte payload, so a `FLOAT16` column declaring three bytes has said two things that
+cannot both be true — and the format's answer is to read past the annotation rather than refuse the
+file. Hardwood drops such an annotation, and drops one it does not recognize at all, logging a
+warning in both cases; the column is then reported and read as the plain physical type it is.
+
+So `getFileSchema()` reports no logical type for it, `getValue` returns the physical value, the
+physical accessors work, and a logical accessor fails exactly as it would on any unannotated column
+of that type. Its statistics are compared under the physical type's ordering, and a logical-type
+predicate on it is rejected at reader creation like any other type mismatch.
 
 The `getTimestamp` / `getLocalTimestamp` pair is split along the column's `isAdjustedToUTC` flag:
 `getTimestamp` requires `isAdjustedToUTC = true` and returns `Instant`; `getLocalTimestamp`

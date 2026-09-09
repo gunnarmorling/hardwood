@@ -8,6 +8,7 @@
 package dev.hardwood.internal.reader;
 
 import dev.hardwood.internal.schema.ProjectedSchema;
+import dev.hardwood.metadata.LogicalType;
 import dev.hardwood.schema.ColumnSchema;
 import dev.hardwood.schema.FileSchema;
 import dev.hardwood.schema.SchemaNode;
@@ -50,6 +51,23 @@ final class NestedBatchIndex {
         this.multiOffsets = multiOffsets;
         this.elementValidity = elementValidity;
         this.projectedSchema = projectedSchema;
+    }
+
+    /// Fails when the caller has asked a column for a float it does not hold.
+    ///
+    /// Reached only once the `FLOAT` fast path has been ruled out, so a column that holds
+    /// floats never arrives here. Shared by every nested accessor that reads a `FLOAT16`,
+    /// so all of them answer a caller the same way — and the same way the flat reader does.
+    /// A column whose annotation its width cannot carry arrives unannotated, so it reaches
+    /// here as what it physically is rather than as a broken `FLOAT16`.
+    void requireFloatAccess(SchemaNode.PrimitiveNode column) {
+        LogicalType logicalType = column.logicalType();
+        if (logicalType instanceof LogicalType.Float16Type) {
+            return;
+        }
+        throw new IllegalArgumentException("Column '" + column.name() + "' is " + column.type()
+                + (logicalType == null ? "" : " annotated " + logicalType)
+                + ", which cannot be read as a float");
     }
 
     /// Build the batch index from [NestedBatch] objects whose index fields
