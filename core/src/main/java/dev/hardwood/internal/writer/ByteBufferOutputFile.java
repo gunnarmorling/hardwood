@@ -10,16 +10,28 @@ package dev.hardwood.internal.writer;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 
+import dev.hardwood.BufferOutputFile;
 import dev.hardwood.OutputFile;
 
-/// [OutputFile] backed by a growable in-memory buffer.
+/// [OutputFile] backed by a growable in-memory buffer, behind [OutputFile#inMemory()].
 ///
-/// The write-side counterpart to `ByteBufferInputFile`, used for round-trip tests
-/// and for producing Parquet bytes without touching the filesystem. The accumulated
-/// bytes are retrieved with [#toByteArray()] after [#close()].
-public final class ByteBufferOutputFile implements OutputFile {
+/// The write-side counterpart to `ByteBufferInputFile`: the file is accumulated on the heap
+/// and grows with it, nothing about the destination having to be sized before a file whose
+/// length is only known once it has been written. The accumulated bytes are retrieved after
+/// [#close()], as a view of them with [#buffer()] or a copy with [#toByteArray()].
+public final class ByteBufferOutputFile implements BufferOutputFile {
 
-    private final ByteArrayOutputStream sink = new ByteArrayOutputStream();
+    /// The accumulated bytes. `ByteArrayOutputStream` hands them out only as a copy, which for
+    /// a destination whose whole point is to give the file back is a second copy of the file
+    /// per caller; the subclass is here to expose a buffer over the array instead.
+    private static final class Sink extends ByteArrayOutputStream {
+
+        ByteBuffer view() {
+            return ByteBuffer.wrap(buf, 0, count).slice();
+        }
+    }
+
+    private final Sink sink = new Sink();
     private boolean created;
     private boolean closed;
     private boolean discarded;
@@ -70,15 +82,25 @@ public final class ByteBufferOutputFile implements OutputFile {
         sink.reset();
     }
 
+    @Override
+    public ByteBuffer buffer() {
+        requireFinished();
+        return sink.view();
+    }
+
     /// Returns a copy of the bytes written so far.
     public byte[] toByteArray() {
+        requireFinished();
+        return sink.toByteArray();
+    }
+
+    private void requireFinished() {
         if (discarded) {
             throw new IllegalStateException("OutputFile was discarded");
         }
         if (!closed) {
             throw new IllegalStateException("OutputFile not closed");
         }
-        return sink.toByteArray();
     }
 
     private void requireCreated() {

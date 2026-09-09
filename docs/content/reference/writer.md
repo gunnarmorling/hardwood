@@ -11,7 +11,36 @@
 -->
 # Writer Reference
 
-Facts about the write path: how a schema is declared, the configuration options, the encodings and codecs the writer produces, the setters each column type accepts, and what it rejects. For task-oriented instructions see [Write Row by Row](../how-to/write-row-by-row.md) and [Write Column by Column](../how-to/write-column-by-column.md).
+Facts about the write path: where a file can be written, how a schema is declared, the configuration options, the encodings and codecs the writer produces, the setters each column type accepts, and what it rejects. For task-oriented instructions see [Write Row by Row](../how-to/write-row-by-row.md) and [Write Column by Column](../how-to/write-column-by-column.md).
+
+## Destination
+
+A file goes wherever the `OutputFile` it is created with puts it.
+
+| Factory | Destination |
+|---|---|
+| `OutputFile.of(Path)` | A local file. The bytes are streamed to a temporary sibling of the target path and renamed onto it when the writer closes, so a write that fails or is abandoned leaves nothing at the path |
+| `OutputFile.inMemory()` | The heap. Returns a `BufferOutputFile`, whose `buffer()` hands the finished file back |
+
+An in-memory file is written and read back without a filesystem between the two: `buffer()` returns the whole file as a `ByteBuffer` positioned at its first byte, which is what `InputFile.of(ByteBuffer)` takes.
+
+```java
+BufferOutputFile out = OutputFile.inMemory();
+try (ParquetFileWriter writer = ParquetFileWriter.create(out, schema)) {
+    RowWriter rows = writer.rowWriter();
+    rows.writeRow(row -> row.setLong("id", 1L));
+}
+
+try (ParquetFileReader reader = ParquetFileReader.open(InputFile.of(out.buffer()))) {
+    // ...
+}
+```
+
+The destination grows with the file, so nothing is sized up front — a Parquet file's length is known only once it has been written. The file is held on the heap in full, which is the size of the finished file on top of what the writer holds for the row group it has open. `buffer()` is a view of those bytes rather than a copy, and every call returns a fresh one, so reading the file back consumes nothing.
+
+A file exists only once the writer closes, so that is when `buffer()` has one to give: before then, and after a destination the writer discarded, it raises `IllegalStateException`.
+
+Anywhere else — an object store, a socket, an arena — is reached by implementing `OutputFile`'s four methods.
 
 ## Schema
 
@@ -238,7 +267,7 @@ hardwood version <version> (build <commit>)
 | `UnsupportedOperationException` | A schema column of an unsupported physical type (`INT96`); a refused codec (`LZ4`, `LZO`) or one whose library is missing; a [schema shape](#schema-shapes) the writer cannot produce |
 | `IllegalArgumentException` | A `null` metadata key, metadata map or `created_by`; an unknown column name or path; a setter that does not fit the column's type; a `null` value array, or a `null` value at a present row of a binary column; a column set twice in one batch or record; a batch that leaves a column unset, or whose arrays disagree in length; a null mask on a `REQUIRED` column; a `boolean[]` mask whose length does not match the values; list offsets that do not start at `0`, are not non-decreasing, or disagree with the element count; a value outside the range its annotation declares; a `REQUIRED` field left unset by a record |
 | `IndexOutOfBoundsException` | A leaf-column index outside `[0, leaf column count)` on a `ColumnBatch` setter, or a field index outside `[0, getFieldCount())` on a `StructBuilder` setter |
-| `IllegalStateException` | Writing, or setting key-value metadata or `created_by`, after `close()`; using both write APIs on one file; using a `ColumnBatch` after it has been submitted, or a nested builder after its filler has returned |
+| `IllegalStateException` | Writing, or setting key-value metadata or `created_by`, after `close()`; using both write APIs on one file; using a `ColumnBatch` after it has been submitted, or a nested builder after its filler has returned; taking `BufferOutputFile.buffer()` before the writer has closed, or from a destination that was discarded |
 | `IOException` | The destination cannot be created, written, or finalized |
 
 ### Schema Shapes
