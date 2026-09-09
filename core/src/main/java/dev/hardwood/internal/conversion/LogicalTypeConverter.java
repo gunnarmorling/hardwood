@@ -26,6 +26,87 @@ import dev.hardwood.row.PqInterval;
 /// Converts physical values to their logical type representations.
 public class LogicalTypeConverter {
 
+    /// Why `logicalType` cannot be read from a column of this physical type and width, or
+    /// `null` when it can.
+    ///
+    /// A property of the column, not of any value in it: what the footer declares cannot
+    /// change once it has been read. Callers evaluate it once per column and hold the
+    /// answer, so the conversions below never re-establish it per value.
+    ///
+    /// This mirrors what the conversions accept and nothing more. [LogicalTypeValidator]
+    /// states the *writer's* rule, which is stricter — it pins `TIME(MILLIS)` to `INT32`
+    /// where reading accepts either width — and applying it here would refuse files that
+    /// read today.
+    ///
+    /// @param physicalType the column's physical type
+    /// @param typeLength its `FIXED_LEN_BYTE_ARRAY` byte length, `null` for any other type
+    /// @param logicalType its annotation, `null` for an unannotated column
+    /// @return the reason, or `null` if the annotation can be read from the column
+    public static String conversionFault(PhysicalType physicalType, Integer typeLength,
+                                         LogicalType logicalType) {
+        if (logicalType == null) {
+            return null;
+        }
+        return switch (logicalType) {
+            case LogicalType.StringType t -> requires(physicalType, "STRING", PhysicalType.BYTE_ARRAY);
+            case LogicalType.JsonType t -> requires(physicalType, "JSON", PhysicalType.BYTE_ARRAY);
+            case LogicalType.EnumType t -> requires(physicalType, "ENUM", PhysicalType.BYTE_ARRAY);
+            case LogicalType.BsonType t -> requires(physicalType, "BSON", PhysicalType.BYTE_ARRAY);
+            case LogicalType.DateType t -> requires(physicalType, "DATE", PhysicalType.INT32);
+            case LogicalType.TimestampType t -> requires(physicalType, "TIMESTAMP", PhysicalType.INT64);
+            case LogicalType.TimeType t -> requires(physicalType, "TIME",
+                    PhysicalType.INT32, PhysicalType.INT64);
+            case LogicalType.IntType t -> requires(physicalType, "INT",
+                    PhysicalType.INT32, PhysicalType.INT64);
+            case LogicalType.DecimalType t -> requires(physicalType, "DECIMAL",
+                    PhysicalType.INT32, PhysicalType.INT64, PhysicalType.BYTE_ARRAY,
+                    PhysicalType.FIXED_LEN_BYTE_ARRAY);
+            case LogicalType.UuidType t -> requiresFixed(physicalType, typeLength, "UUID", 16);
+            case LogicalType.IntervalType t -> requiresFixed(physicalType, typeLength, "INTERVAL", 12);
+            case LogicalType.Float16Type t -> requiresFixed(physicalType, typeLength, "FLOAT16", 2);
+            // Carried through as opaque payloads, so no physical type is imposed.
+            case LogicalType.GeometryType t -> null;
+            case LogicalType.GeographyType t -> null;
+            // A NULL column's values are all null and never reach a conversion; a
+            // structural annotation belongs to a group node, and one that reaches a leaf
+            // is caught by convert() itself rather than being pinned to a physical type.
+            case LogicalType.NullType t -> null;
+            case LogicalType.ListType t -> null;
+            case LogicalType.MapType t -> null;
+            case LogicalType.VariantType t -> null;
+        };
+    }
+
+    private static String requires(PhysicalType actual, String annotation, PhysicalType... allowed) {
+        for (PhysicalType candidate : allowed) {
+            if (actual == candidate) {
+                return null;
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < allowed.length; i++) {
+            sb.append(i == 0 ? "" : i == allowed.length - 1 ? " or " : ", ").append(allowed[i]);
+        }
+        return annotation + " is read from " + sb + ", but the column is " + actual;
+    }
+
+    private static String requiresFixed(PhysicalType actual, Integer typeLength, String annotation,
+                                        int width) {
+        String wrongType = requires(actual, annotation, PhysicalType.FIXED_LEN_BYTE_ARRAY);
+        if (wrongType != null) {
+            return wrongType;
+        }
+        // A footer that omits type_length states no width to contradict the annotation, so
+        // there is nothing here that can be proven wrong. That column cannot be decoded at
+        // all and FixedWidthValidator refuses it by name; reporting it as a bad annotation
+        // would drop a sound annotation and describe the wrong defect.
+        if (typeLength != null && typeLength != width) {
+            return annotation + " is exactly " + width + " bytes, but the column declares "
+                    + typeLength;
+        }
+        return null;
+    }
+
     /// Convert a physical value to its logical type representation.
     /// Returns the original value if no conversion is needed.
     ///

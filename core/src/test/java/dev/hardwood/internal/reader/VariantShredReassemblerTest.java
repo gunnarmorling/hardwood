@@ -15,7 +15,10 @@ import dev.hardwood.internal.variant.ShredLevel;
 import dev.hardwood.internal.variant.ShredLevel.Typed;
 import dev.hardwood.internal.variant.VariantMetadata;
 import dev.hardwood.internal.variant.VariantValueEncoder;
+import dev.hardwood.metadata.FieldPath;
 import dev.hardwood.metadata.PhysicalType;
+import dev.hardwood.metadata.RepetitionType;
+import dev.hardwood.schema.ColumnSchema;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -87,8 +90,17 @@ class VariantShredReassemblerTest {
         typedCol.recordCount = 1;
         typedCol.definitionLevels = new int[] { 1 };
 
+        // Real column schemas: the index derives each column's conversion fault from them
+        // as it is built, so a harness that omitted them would not be building the index
+        // the reader builds.
+        ColumnSchema[] columnSchemas = {
+            new ColumnSchema(FieldPath.of("value"), PhysicalType.BYTE_ARRAY,
+                    RepetitionType.OPTIONAL, null, 0, 1, 0, null),
+            new ColumnSchema(FieldPath.of("typed_value"), PhysicalType.INT64,
+                    RepetitionType.OPTIONAL, null, 1, 1, 0, null),
+        };
         return NestedBatchIndex.buildFromBatches(
                 new NestedBatch[] { valueCol, typedCol },
-                null, null, null, null);
+                columnSchemas, null, null, null);
     }
 }

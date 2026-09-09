@@ -13,6 +13,28 @@ without reading the message.
 > **Trying again will not:** `ParquetReadException`, `ParquetWriteException`,
 > `UnsupportedOperationException`
 
+## The second question: whose fault
+
+Retry-or-stop does not separate a file that is wrong from a call that is wrong, and both
+mean stop. So a second axis runs across the first, and it decides what the caller does
+next: change their code, or stop trusting the file.
+
+| | Means | Type |
+|---|---|---|
+| **The file's fault** | the bytes, or the footer, are not what they claim | `ParquetReadException` |
+| **The caller's fault** | the reader was asked for something it never held | unspecified — today `IllegalArgumentException`, `ClassCastException`, `NullPointerException`, `IllegalStateException` |
+
+The caller's side is deliberately unspecified. Validating a typed accessor's column cost
+4% per accessor and 7–8% end-to-end, above the 3% bar, so the guards were dropped and the
+wrong-type call surfaces as whatever the storage cast raises. Leaving the type unstated
+keeps the freedom to put a better error back on a path where it turns out to be free.
+
+**A named file means the file is at fault.** A caller's mistake names the column and not
+the file: the remedy is in their own code and does not change with the file, and a file
+name on such a message reads as a complaint about a file that is fine. This is the part
+that gives the `[fileName]` prefix its meaning — if both categories carried it, it would
+distinguish nothing.
+
 ## The categories
 
 | Category | Means | Type |
@@ -109,6 +131,45 @@ work again on the calling thread and reports to a caller that is waiting. DEBUG
 rather than WARN because that report is coming, and a backend outage would otherwise
 emit one warning per speculative chunk.
 
+## An annotation the reader cannot use is dropped, not raised
+
+A schema can be wrong on its own terms, and the two ways it can be are answered differently.
+
+A `FIXED_LEN_BYTE_ARRAY` that declares no width cannot be decoded at all — the width sizes
+the buffer and spaces the offsets, so without it there are no value boundaries to find.
+`FixedWidthValidator` refuses it when the reader is built, over the columns the read
+touches, as a `SchemaIncompatibleException`.
+
+An annotation its physical type cannot carry is not like that. A `FLOAT16` column twelve
+bytes wide has said two things that cannot both be true, but the twelve-byte values are
+perfectly readable — only the annotation is unusable. The format says to read past it: the
+"Unsupported Logical Types" section of `LogicalTypes.md`, adopted in parquet-format PR 606,
+has readers "ignore both the logical type annotation and column order for that column. Only
+the physical type information should be used to process the column's data."
+
+So `FileSchema` drops the annotation as the schema is built, and the column is reported and
+read as its physical type. Nothing downstream checks for this, because there is nothing left
+to check: the physical accessors work, `getValue` yields the physical value, a logical
+accessor fails exactly as it does on any unannotated column of that type, and the statistics
+are compared under the physical type's ordering. Column order needs no separate handling —
+the only thing it decides is whether a float predicate compares under IEEE 754 total order,
+and a column that has lost its `FLOAT16` annotation is rejected by `FilterPredicateResolver`
+before that flag is consulted.
+
+**Two causes, one behaviour, two warnings.** An annotation this version does not recognize
+at all is dropped where it is parsed, in `LogicalTypeReader`. The distinction is worth
+keeping in the message even though the handling is identical: an unrecognized arm means the
+file was written against a newer format version and the reader is what is behind, while an
+annotation its physical type cannot carry means the writer produced something no version of
+the format defines. Only the second is provably wrong, and only the second could ever be a
+candidate for refusing the read — never the first, which would break the forward
+compatibility the rule exists to provide.
+
+**What is not dropped is what cannot be proven wrong.** A footer that omits `type_length`
+states no width for the annotation to contradict, so the annotation is kept and the column
+is refused for the missing width instead, by the validator whose message describes that
+defect.
+
 ## Which failures are which
 
 | | |
@@ -118,6 +179,7 @@ emit one warning per speculative chunk.
 | page index parse; a column index and offset index that disagree on the page count | |
 | dictionary page offsets, lengths and placement; bloom filter offsets and lengths | the footer puts a page where one cannot be |
 | page CRC mismatch; page header parse; decompression; value decoding | the data does not match what the file says about it |
+| a fixed-width column that declares no width, raised when the reader is built for the columns it touches | the footer omits what every decode of the column needs |
 | cross-file schema mismatch; a fixed-width column with no width | `SchemaIncompatibleException` |
 
 `UnsupportedOperationException` covers an encrypted footer or encrypted columns, an

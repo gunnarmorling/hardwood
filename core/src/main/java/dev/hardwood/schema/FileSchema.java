@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
+import dev.hardwood.internal.conversion.LogicalTypeConverter;
 import dev.hardwood.internal.schema.LogicalTypeAnnotations;
 import dev.hardwood.internal.schema.LogicalTypeValidator;
 import dev.hardwood.internal.util.StringToIntMap;
@@ -28,6 +29,9 @@ import dev.hardwood.metadata.SchemaElement;
 /// @see <a href="https://parquet.apache.org/docs/file-format/">File Format</a>
 /// @see <a href="https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift">parquet.thrift</a>
 public class FileSchema {
+
+    private static final System.Logger LOG =
+            System.getLogger(FileSchema.class.getName());
 
     private final String name;
     private final List<ColumnSchema> columns;
@@ -231,7 +235,7 @@ public class FileSchema {
             if (element.isPrimitive()) {
                 // Primitive node - represents an actual column
                 int colIdx = columnIndex[0]++;
-                LogicalType effectiveLogicalType = effectiveLogicalType(element);
+                LogicalType effectiveLogicalType = readableLogicalType(element, currentPath);
                 columns.add(new ColumnSchema(
                         new FieldPath(List.copyOf(currentPath)),
                         element.type(),
@@ -296,6 +300,49 @@ public class FileSchema {
     /// When both annotations are present the modern `logicalType()` wins. Only
     /// primitive-level annotations are mapped here; the group-level `LIST`, `MAP`,
     /// and `MAP_KEY_VALUE` are consulted directly on [SchemaNode.GroupNode].
+    /// The column's annotation, or `null` where its physical type cannot carry it.
+    ///
+    /// Being exactly two bytes wide is the whole definition of `FLOAT16`, so a column
+    /// declaring twelve has not described an unusual column — it has said two things that
+    /// cannot both be true, and no reading of it produces the value the annotation promises.
+    /// The format's answer is to read past the annotation rather than refuse the file: see
+    /// the "Unsupported Logical Types" section of `LogicalTypes.md`, adopted in
+    /// parquet-format PR 606, which has readers "ignore both the logical type annotation and
+    /// column order for that column. Only the physical type information should be used to
+    /// process the column's data."
+    ///
+    /// So the column is reported and read as though the footer had not annotated it. Every
+    /// consequence follows from the annotation's absence rather than from a check: the
+    /// physical accessors work, `getValue` yields the physical value, a logical accessor
+    /// fails exactly as it would on any unannotated column of that type, and the column's
+    /// statistics are compared under its physical type's ordering.
+    ///
+    /// The sibling case — an annotation this version does not recognize at all — is dropped
+    /// where it is parsed, in `LogicalTypeReader`. Both end here as an unannotated column;
+    /// they differ only in what the warning can tell the reader, because one is a file from
+    /// a newer writer and the other is a file from a broken one.
+    ///
+    /// Column order needs no separate handling: the only thing it decides is whether a float
+    /// predicate compares under IEEE 754 total order, and a column that has lost its
+    /// `FLOAT16` annotation is rejected by `FilterPredicateResolver` before that flag is
+    /// consulted.
+    private static LogicalType readableLogicalType(SchemaElement element, List<String> path) {
+        LogicalType annotation = effectiveLogicalType(element);
+        if (annotation == null) {
+            return null;
+        }
+        String fault = LogicalTypeConverter.conversionFault(
+                element.type(), element.typeLength(), annotation);
+        if (fault == null) {
+            return annotation;
+        }
+        LOG.log(System.Logger.Level.WARNING,
+                "Column ''{0}'': {1}. Ignoring the annotation and reading the column as"
+                + " plain {2}; the file states two things about it that cannot both be true.",
+                String.join(".", path), fault, element.type());
+        return null;
+    }
+
     private static LogicalType effectiveLogicalType(SchemaElement element) {
         if (element.logicalType() != null) {
             return element.logicalType();
