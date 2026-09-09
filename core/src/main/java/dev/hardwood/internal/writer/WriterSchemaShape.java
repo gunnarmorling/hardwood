@@ -19,7 +19,14 @@ import dev.hardwood.schema.SchemaNode;
 /// the public API once this has run; [RowPlan]'s remaining guards are reached, and are about
 /// addressing rather than producing — see below.
 ///
-/// Two rules live here, and both are about repetition.
+/// **A schema declares at least one column.** A schema whose root holds no leaf has no column
+/// chunk to write, so a file made from it would be a header and a footer with nothing between
+/// them, and every per-column decision below — the encodings, the buffer each chunk is given —
+/// would be made for no column. [FileSchema.Builder] refuses to build such a schema; the rule is
+/// repeated here for one that arrives by another route, a childless root passed to
+/// [FileSchema#fromSchemaElements] being the one the public API offers.
+///
+/// The two rules that follow are about repetition.
 ///
 /// **A `REPEATED` field is producible only as the entry of a `LIST` or `MAP` group.** The
 /// shredder derives a repetition layer from the annotated group, and [ColumnBatch] addresses
@@ -59,8 +66,13 @@ public final class WriterSchemaShape {
     /// Rejects a schema the writer cannot produce.
     ///
     /// @param schema the schema to write
+    /// @throws IllegalArgumentException if the schema declares no columns
     /// @throws UnsupportedOperationException if the schema has a shape the writer cannot produce
     public static void validate(FileSchema schema) {
+        if (schema.getColumnCount() == 0) {
+            throw new IllegalArgumentException("Schema " + schema.getName()
+                    + " has no columns; a Parquet file must have at least one column");
+        }
         walk(schema.getRootNode(), "", false);
     }
 
