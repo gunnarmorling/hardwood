@@ -27,13 +27,15 @@ CARD_GAP = 97
 BELOW_TOP = AXIS_Y + CARD_GAP
 EVENTS = [
     dict(d=date(2026, 1, 4), part=1, label="First commit", card_date=date(2026, 1, 6),
-         card=("img", "images/tl-2026-01-06-announced.png", 96, 280, (1288, 510)), above=True),
+         card=("img", "images/tl-2026-01-06-announced.png", 96, 260, (1288, 510)), above=True),
     dict(d=date(2026, 1, 31), part=1,
-         card=("img", "images/tl-2026-01-31-perf.png", 392, 380, (1402, 594)), above=True),
+         card=("img", "images/tl-2026-01-31-perf.png", 370, 330, (1402, 594)), above=True),
     dict(d=date(2026, 2, 7), part=1,
          card=("img", "images/x-2026-02-07-race-condition.png", 96, 320, (599, 262)), above=False),
     dict(d=date(2026, 2, 26), part=1, label="Alpha1",
          card=("img", "images/tl-2026-02-26-alpha1.png", 430, 360, (1570, 585)), above=False),
+    dict(d=date(2026, 2, 27), part=1, dot=False,
+         card=("note", "“Is Hardwood vibe-coded? <em>Absolutely not.</em>”", 716, 234, 112), above=True),
     dict(d=date(2026, 3, 17), end=date(2026, 3, 27), part=1, span_label="S3 in ten days"),
     # Part 2 in two clicks: all releases up to 1.0 at once, then the CR1 note on its own.
     dict(d=date(2026, 4, 2), part=2, step=0, label="Beta1"),
@@ -71,7 +73,7 @@ def event(e):
     if "end" in e:
         marks += f'<line class="rtl-span" x1="{ex}" y1="{AXIS_Y}" x2="{x(e["end"])}" y2="{AXIS_Y}"/>'
         ex = (ex + x(e["end"])) // 2
-    else:
+    elif e.get("dot", True):
         marks += f'<circle class="rtl-dot" cx="{ex}" cy="{AXIS_Y}" r="7"/>'
     if "span_label" in e:
         marks += f'<text class="rtl-span-label" x="{ex}" y="{AXIS_Y + 26}" text-anchor="middle">{e["span_label"]}</text>'

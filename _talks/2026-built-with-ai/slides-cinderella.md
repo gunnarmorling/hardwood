@@ -18,76 +18,39 @@ the room believing this story actually happened to you.
 
 ---
 
-<!-- .slide: class="hero-image" -->
-
 ## A contributor's pull request
 
-<img src="images/01-geo-pr-413.png" width="1100" height="445" alt="PR #413: Support geospatial logical types, statistics, and intersects pushdown, merged May 1">
+<div class="stamped">
+  <img src="images/01-geo-pr-413.png" width="1100" height="445" style="max-height: none" alt="PR #413, merged May 1">
+  <div class="stamp fragment" data-fragment-index="0" style="left: 770px; top: 60px; --rot: -5deg; --c: #2e7d32">✓ Tests green</div>
+  <div class="stamp fragment" data-fragment-index="1" style="left: 740px; top: 140px; --rot: 3deg; --c: #2e7d32">✓ Merged, May 1</div>
+  <div class="stamp fragment" data-fragment-index="2" style="left: 640px; top: 220px; --rot: -4deg; --c: #2e7d32">✓ Shipped in 1.0.0.CR1</div>
+  <div class="stamp stamp-big fragment" data-fragment-index="3" style="left: 60px; top: 320px; --rot: -5deg; --c: #c62828">The feature couldn't work</div>
+</div>
 
 Note:
 Set the scene plainly: an outside contributor, LLM-assisted, offering
 page-level geospatial pruning for Hardwood. Skip pages whose bounding box
-can't intersect the query geometry.
+can't intersect the query geometry. Their work, their commit. I fixed a few
+loose ends and merged it on May 1 as #413, which keeps their authorship (their
+original PR, #173, was superseded). So the review, and the merge, were mine.
 
-Their work, their commit. I fixed a few loose ends and merged it on May 1 as
-#413, which keeps their authorship (their original PR, #173, was superseded).
-So the review, and the merge, were mine.
+Coherent code. Sensible names. Reads like the rest of the codebase. Say
+explicitly: this is not bad code. If you are waiting for the slide where the AI
+writes something obviously stupid, there isn't one.
 
-Don't editorialise yet. Let them think it sounds good, because it did.
+Click: tests green (all 11 checks passed). Click: merged. Click: shipped in CR1.
+Users got it, under a version number with my name on it. Pause.
 
----
-
-<!-- .slide: class="hero" -->
-
-## It read the page index. It found bounding boxes. It skipped pages.
-
-Note:
-Coherent code. Sensible names. Reads like the rest of the codebase — because
-the model had the rest of the codebase in front of it.
-
-Say explicitly: this is not bad code. If you are waiting for the slide where
-the AI writes something obviously stupid, there isn't one.
-
----
-
-<!-- .slide: class="hero" -->
-
-## It was tested. It was green. We merged it.
-
-Shipped in 1.0.0.CR1.
-
-Note:
-Users got it. It went out under a version number with my name on it.
-
-Pause here.
-
----
-
-<!-- .slide: class="hero" -->
-
-## Parquet has no page-level geospatial statistics.
-
-```thrift
-struct ColumnIndex {
-  …
-  6: optional list<i64> repetition_level_histograms
-  7: optional list<i64> definition_level_histograms
-}
-```
-
-Note:
-Geospatial statistics exist only per column chunk (ColumnMetaData, field 17).
-The PR read ColumnIndex field 7 as per-page bounding boxes. Field 7 is the
-definition-level histograms. The page-level path could never fire on a real
-file, and a public API component for it shipped anyway.
+Click: the feature couldn't work. Parquet doesn't store that information per
+page. No format details on stage. If someone asks: geospatial statistics exist
+only per column chunk (ColumnMetaData, field 17). The PR read ColumnIndex field 7
+as per-page bounding boxes; field 7 is the definition-level histograms.
 
 The detail that makes it worse: the geospatial design document asserted the
 same page-level mapping. The fiction was in the reviewed prose first, and the
-code implemented it faithfully.
-
-This is the thing to name clearly: the model did not write a bug. It
-implemented a *feature that does not exist*, convincingly, and then proved it
-worked.
+code implemented it faithfully. The model did not write a bug. It implemented a
+feature that does not exist, convincingly, and then proved it worked.
 
 ---
 
@@ -116,20 +79,20 @@ Photo: "TNT" by Alex Holyoake (CC BY 2.0, https://flic.kr/p/AN2ZRn). Loosely con
 
 <div class="montage">
   <h2>Do you remember the start of the year?</h2>
-  <img class="fragment" src="images/magic-willison.png" style="--x: 10px; --y: 20px; --r: -4deg" alt="Simon Willison, Dec 15: I ported JustHTML from Python to JavaScript with Codex CLI and GPT-5.2 in 4.5 hours">
-  <img class="fragment" src="images/magic-steinberger.png" style="--x: 390px; --y: 0px; --r: 2deg" alt="Peter Steinberger, Dec 28: Shipping at Inference-Speed">
-  <img class="fragment" src="images/magic-holland.png" style="--x: 770px; --y: 30px; --r: -2deg" alt="Burke Holland, Jan 5: Opus 4.5 is going to change everything">
-  <img class="fragment" src="images/magic-orosz.png" style="--x: 40px; --y: 230px; --r: 3deg" alt="Gergely Orosz, Jan 6: When AI writes almost all code, what happens to software engineering?">
-  <img class="fragment" src="images/magic-zvi.png" style="--x: 400px; --y: 190px; --r: -3deg" alt="Zvi Mowshowitz, Jan 9: Claude Codes">
-  <img class="fragment" src="images/magic-lambert.png" style="--x: 780px; --y: 250px; --r: 4deg" alt="Nathan Lambert, Jan 9: Claude Code Hits Different">
-  <img class="fragment" src="images/magic-antirez.png" style="--x: 200px; --y: 340px; --r: -1deg" alt="antirez, Jan 11: Don't fall into the anti-AI hype">
-  <img class="fragment" src="images/magic-huntley.png" style="--x: 620px; --y: 290px; --r: 2deg; --w: 360px" alt="Geoffrey Huntley, Jan 17: everything is a ralph loop">
+  <img class="fragment" data-fragment-index="0" src="images/magic-willison.png" style="--x: 10px; --y: 20px; --r: -4deg" alt="Simon Willison, Dec 15: I ported JustHTML from Python to JavaScript with Codex CLI and GPT-5.2 in 4.5 hours">
+  <img class="fragment" data-fragment-index="0" src="images/magic-steinberger.png" style="--x: 390px; --y: 0px; --r: 2deg" alt="Peter Steinberger, Dec 28: Shipping at Inference-Speed">
+  <img class="fragment" data-fragment-index="1" src="images/magic-holland.png" style="--x: 770px; --y: 30px; --r: -2deg" alt="Burke Holland, Jan 5: Opus 4.5 is going to change everything">
+  <img class="fragment" data-fragment-index="1" src="images/magic-orosz.png" style="--x: 40px; --y: 230px; --r: 3deg" alt="Gergely Orosz, Jan 6: When AI writes almost all code, what happens to software engineering?">
+  <img class="fragment" data-fragment-index="1" src="images/magic-zvi.png" style="--x: 400px; --y: 190px; --r: -3deg" alt="Zvi Mowshowitz, Jan 9: Claude Codes">
+  <img class="fragment" data-fragment-index="1" src="images/magic-lambert.png" style="--x: 780px; --y: 250px; --r: 4deg" alt="Nathan Lambert, Jan 9: Claude Code Hits Different">
+  <img class="fragment" data-fragment-index="2" src="images/magic-antirez.png" style="--x: 200px; --y: 340px; --r: -1deg" alt="antirez, Jan 11: Don't fall into the anti-AI hype">
+  <img class="fragment" data-fragment-index="2" src="images/magic-huntley.png" style="--x: 620px; --y: 290px; --r: 2deg; --w: 360px" alt="Geoffrey Huntley, Jan 17: everything is a ralph loop">
 </div>
 
 Note:
-Ask the question to the room, then click the posts in, oldest first, faster
-and faster: Willison (Dec 15), Steinberger (Dec 28), Holland (Jan 5), Orosz
-(Jan 6), Zvi and Lambert (Jan 9), antirez (Jan 11), Huntley (Jan 17). Sources
+Ask the question to the room, then three clicks, oldest first: December
+(Willison, Steinberger), the first days of January (Holland, Orosz, Zvi,
+Lambert), mid-January (antirez, Huntley). Sources
 in inputs/turn-of-year-posts.md.
 
 Everyone spent the holidays with the new models. Software was solved.
@@ -142,14 +105,19 @@ That's what got me started too.
 
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero no-parquet" -->
 
-## Hype or real?<br><em>Only one way to find out.</em>
+<img class="post" src="images/x-2026-01-04-where-is-the-disconnect.png" width="900" height="327" style="max-height: none" alt="Jan 4: Trying to reconcile the Claude did in 1h what took a Google team a year thing with my own LLM experiences. Where is the disconnect?">
+
+## Only one way to <em>find out</em>.
 
 <span class="aside">On a real problem, not a toy project.</span>
 
 Note:
-The frenzy was loud, and my own experience didn't match it. I didn't want to
+Two days before the first Hardwood post. The frenzy was loud, and my own
+experience didn't match it: lots of code, but it leaks resources, has data
+races, and maintainability is an afterthought. 131K views, 1K likes: I wasn't
+the only one. I didn't want to
 argue about it on the internet; I wanted to see for myself.
 
 And not with a to-do app. Something I actually needed, hard enough that the
@@ -240,22 +208,24 @@ not need it and it is not what they came for.
 
 ---
 
-<!-- .slide: class="timeline" -->
+<!-- .slide: class="timeline no-parquet" -->
 
 ## From first commit to 1.0
 
 <!-- release-timeline:1 -->
 <div class="rtl">
 <svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-axis" x1="96" y1="395" x2="1184" y2="395"/><line class="rtl-tick" x1="96" y1="389" x2="96" y2="401"/><text class="rtl-month" x="102" y="421">Jan</text><line class="rtl-tick" x1="282" y1="389" x2="282" y2="401"/><text class="rtl-month" x="288" y="421">Feb</text><line class="rtl-tick" x1="451" y1="389" x2="451" y2="401"/><text class="rtl-month" x="457" y="421">Mar</text><line class="rtl-tick" x1="637" y1="389" x2="637" y2="401"/><text class="rtl-month" x="643" y="421">Apr</text><line class="rtl-tick" x1="817" y1="389" x2="817" y2="401"/><text class="rtl-month" x="823" y="421">May</text><line class="rtl-tick" x1="1004" y1="389" x2="1004" y2="401"/><text class="rtl-month" x="1010" y="421">Jun</text></svg>
-<div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="126" y1="395" x2="126" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-06-announced.png" style="left: 96px; top: 187px; width: 280px; height: 111px" alt=""></div>
-<div class="rtl-event fragment" data-fragment-index="1"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="276" y1="395" x2="408" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-31-perf.png" style="left: 392px; top: 137px; width: 380px; height: 161px" alt=""></div>
+<div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="126" y1="395" x2="126" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-06-announced.png" style="left: 96px; top: 195px; width: 260px; height: 103px" alt=""></div>
+<div class="rtl-event fragment" data-fragment-index="1"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="276" y1="395" x2="386" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-31-perf.png" style="left: 370px; top: 158px; width: 330px; height: 140px" alt=""></div>
 <div class="rtl-event fragment" data-fragment-index="2"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="318" y1="395" x2="318" y2="492"/></svg><img class="rtl-card" src="images/x-2026-02-07-race-condition.png" style="left: 96px; top: 492px; width: 320px; height: 140px" alt=""></div>
 <div class="rtl-event fragment" data-fragment-index="3"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="433" y1="395" x2="446" y2="492"/></svg><img class="rtl-card" src="images/tl-2026-02-26-alpha1.png" style="left: 430px; top: 492px; width: 360px; height: 134px" alt=""></div>
+<div class="rtl-event fragment" data-fragment-index="4"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="439" y1="395" x2="732" y2="298"/></svg><div class="rtl-card rtl-note" style="left: 716px; top: 186px; width: 234px; height: 112px">“Is Hardwood vibe-coded? <em>Absolutely not.</em>”</div></div>
 <div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="114" cy="395" r="7"/><text class="rtl-label" x="114" y="379" text-anchor="middle">First commit</text></svg></div>
 <div class="rtl-event fragment" data-fragment-index="1"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="276" cy="395" r="7"/></svg></div>
 <div class="rtl-event fragment" data-fragment-index="2"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="318" cy="395" r="7"/></svg></div>
 <div class="rtl-event fragment" data-fragment-index="3"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="433" cy="395" r="7"/><text class="rtl-label" x="433" y="379" text-anchor="middle">Alpha1</text></svg></div>
-<div class="rtl-event fragment" data-fragment-index="4"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-span" x1="547" y1="395" x2="607" y2="395"/><text class="rtl-span-label" x="577" y="421" text-anchor="middle">S3 in ten days</text></svg></div>
+<div class="rtl-event fragment" data-fragment-index="4"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"></svg></div>
+<div class="rtl-event fragment" data-fragment-index="5"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-span" x1="547" y1="395" x2="607" y2="395"/><text class="rtl-span-label" x="577" y="421" text-anchor="middle">S3 in ten days</text></svg></div>
 </div>
 <!-- /release-timeline:1 -->
 
@@ -263,7 +233,10 @@ Note:
 Click through. Jan 6: the first public mention, two days after the first
 commit. Jan 31: projections and cross-file prefetching; three columns of the
 whole taxi data set (650M rows, ~9 GB) summed in 4.5 s on a laptop. Feb 7: it found and fixed a race condition, which I did not expect a
-model to do. Feb 26: Alpha1 on Maven Central, seven weeks in. Then S3.
+model to do. Feb 26: Alpha1 on Maven Central, seven weeks in. Feb 27, sharing the release
+post: "Are we using AI for building Hardwood? Absolutely. Is Hardwood
+vibe-coded? Absolutely not." Plant the title here; it pays off at the end. Then
+S3.
 
 ---
 
@@ -297,25 +270,6 @@ does not warrant eight megabytes and thirty-one JARs.
 
 ---
 
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/li-2026-04-21-make-or-buy-crop.png" alt="Apr 21: a request signer passing the AWS test vectors can be pretty much one-shotted">
-
-Note:
-This replaces "I would never have written AWS request signing by hand".
-
-Not the kind of code you would historically have wanted to write and own. But
-AWS publishes a suite of test vectors next to the spec, and a signer that passes
-them was pretty much one-shotted.
-
-This is the first feedback loop in the talk, before it has a name: the test
-vectors told the agent right from wrong. Make-or-buy moves wherever such a loop
-exists.
-
-"External dependencies now have to earn their place, and the bar has moved."
-
----
-
 <!-- .slide: class="hero" -->
 
 ## The line moved
@@ -325,7 +279,13 @@ The build side of make-or-buy got roughly <em>5× cheaper</em>.
 Most teams have not re-drawn the line.
 
 Note:
-Their Monday version: the dependency you took because writing it was
+How it moved for me: an AWS request signer is not the kind of code you'd have
+wanted to write and own. But AWS publishes test vectors next to the spec, and a
+signer that passes them was pretty much one-shotted. The first feedback loop in
+the talk, before it has a name. "External dependencies now have to earn their
+place, and the bar has moved." (Apr 21 post)
+
+Their version: the dependency you took because writing it was
 unthinkable — is it still unthinkable? Vendor the 300 lines you actually use
 instead of adopting the tree.
 
@@ -334,23 +294,25 @@ it, forever, including the part you didn't understand.
 
 ---
 
-<!-- .slide: class="timeline" -->
+<!-- .slide: class="timeline no-parquet" -->
 
 ## From first commit to 1.0
 
 <!-- release-timeline:2 -->
 <div class="rtl">
 <svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-axis" x1="96" y1="395" x2="1184" y2="395"/><line class="rtl-tick" x1="96" y1="389" x2="96" y2="401"/><text class="rtl-month" x="102" y="421">Jan</text><line class="rtl-tick" x1="282" y1="389" x2="282" y2="401"/><text class="rtl-month" x="288" y="421">Feb</text><line class="rtl-tick" x1="451" y1="389" x2="451" y2="401"/><text class="rtl-month" x="457" y="421">Mar</text><line class="rtl-tick" x1="637" y1="389" x2="637" y2="401"/><text class="rtl-month" x="643" y="421">Apr</text><line class="rtl-tick" x1="817" y1="389" x2="817" y2="401"/><text class="rtl-month" x="823" y="421">May</text><line class="rtl-tick" x1="1004" y1="389" x2="1004" y2="401"/><text class="rtl-month" x="1010" y="421">Jun</text></svg>
-<div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="126" y1="395" x2="126" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-06-announced.png" style="left: 96px; top: 187px; width: 280px; height: 111px" alt=""></div>
-<div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="276" y1="395" x2="408" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-31-perf.png" style="left: 392px; top: 137px; width: 380px; height: 161px" alt=""></div>
+<div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="126" y1="395" x2="126" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-06-announced.png" style="left: 96px; top: 195px; width: 260px; height: 103px" alt=""></div>
+<div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="276" y1="395" x2="386" y2="298"/></svg><img class="rtl-card" src="images/tl-2026-01-31-perf.png" style="left: 370px; top: 158px; width: 330px; height: 140px" alt=""></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="318" y1="395" x2="318" y2="492"/></svg><img class="rtl-card" src="images/x-2026-02-07-race-condition.png" style="left: 96px; top: 492px; width: 320px; height: 140px" alt=""></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="433" y1="395" x2="446" y2="492"/></svg><img class="rtl-card" src="images/tl-2026-02-26-alpha1.png" style="left: 430px; top: 492px; width: 360px; height: 134px" alt=""></div>
+<div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="439" y1="395" x2="732" y2="298"/></svg><div class="rtl-card rtl-note" style="left: 716px; top: 186px; width: 234px; height: 112px">“Is Hardwood vibe-coded? <em>Absolutely not.</em>”</div></div>
 <div class="rtl-event fragment" data-fragment-index="1"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="998" y1="395" x2="998" y2="298"/></svg><div class="rtl-card rtl-note" style="left: 966px; top: 228px; width: 218px; height: 70px">Geospatial pruning ships</div></div>
 <div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="1148" y1="395" x2="1148" y2="492"/></svg><img class="rtl-card" src="images/tl-2026-06-25-final.png" style="left: 810px; top: 492px; width: 374px; height: 126px" alt=""></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="114" cy="395" r="7"/><text class="rtl-label" x="114" y="379" text-anchor="middle">First commit</text></svg></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="276" cy="395" r="7"/></svg></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="318" cy="395" r="7"/></svg></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="433" cy="395" r="7"/><text class="rtl-label" x="433" y="379" text-anchor="middle">Alpha1</text></svg></div>
+<div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"></svg></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-span" x1="547" y1="395" x2="607" y2="395"/><text class="rtl-span-label" x="577" y="421" text-anchor="middle">S3 in ten days</text></svg></div>
 <div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="643" cy="395" r="7"/><text class="rtl-label" x="643" y="379" text-anchor="middle">Beta1</text></svg></div>
 <div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="805" cy="395" r="7"/><text class="rtl-label" x="805" y="379" text-anchor="middle">Beta2</text></svg></div>
@@ -388,10 +350,10 @@ Pause on it. The next act is the fall.
 
 # 2 · Midnight
 
-<span class="credit">© Dominic's pics https://flic.kr/p/96bybq (CC BY 2.0)</span>
+<span class="credit">© &#42;rboed&#42; https://flic.kr/p/FJ1h26 (CC BY 2.0)</span>
 
 Note:
-Photo: "Brighton Clock Tower" by Dominic's pics (CC BY 2.0, https://flic.kr/p/96bybq). Loosely connected: a clock face or clock tower at night.
+Photo: "Solitude" by *rboed* (CC BY 2.0, https://flic.kr/p/FJ1h26). A dark, narrow passage at night.
 
 ---
 
@@ -411,18 +373,9 @@ Amazing and useless, the same afternoon. That's the texture of this act.
 
 <!-- .slide: class="hero-image" -->
 
-<img class="post" src="images/x-2026-04-16-third-day-now.png" alt="Apr 16: iterating with Claude the third day now on a finicky redesign of performance-critical code">
-
-Note:
-Three days on one finicky redesign. Progress, but nothing like the magic.
-
----
-
-<!-- .slide: class="hero-image" -->
-
 ## It edited the test until it agreed
 
-<img class="post" src="images/x-2026-02-23-excluded-test-result.png" alt="Feb 23: Claude Code happily excluding an incorrect result from a test, instead of fixing the actual bug">
+<img class="post" src="images/x-2026-02-23-excluded-test-result.png" width="1288" height="668" alt="Feb 23: Claude Code happily excluding an incorrect result from a test, instead of fixing the actual bug">
 
 Note:
 A test gave an unexpected result. The agent didn't find out why. It excluded
@@ -433,54 +386,6 @@ jokes stop being funny.
 
 ---
 
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-02-18-theory-completely-wrong.png" alt="Feb 18: my theory was completely wrong. Give me once that confidence to make some wild claim based on pure guess work.">
-
-Note:
-"My theory was completely wrong." Delivered with the same confidence as the
-theory.
-
----
-
-<!-- .slide: class="hero" -->
-
-## "Plausible" performance wins
-
-that benchmarks reveal as no-ops or regressions.
-
-<span class="aside">Benchmarks are the ground truth, not Claude's narration.</span>
-
-Note:
-It will name the cause of a regression, or the reason a change is faster, with
-total confidence and no measurement. Often the explanation is convincing and
-the number didn't move. Sometimes it got worse.
-
-The rules come later, when we climb out. Here, just let it cost something.
-
----
-
-## Five causes. Four refuted.
-
-<blockquote class="transcript">
-"I've now predicted the cause of that four times (buffer growth, the per-entry page checks, the doubled window refill, the double flush walk) and the measurements refuted the first, the second and the fourth … Rather than offer you a fifth theory…"
-<cite>Claude, Aug 26</cite>
-</blockquote>
-
-<blockquote class="transcript">
-"The benchmark says I was wrong again — it got <strong>worse</strong>."
-<cite>Claude, Aug 26</cite>
-</blockquote>
-
-Note:
-An encode regression on the writer. Each guess came with arithmetic behind it,
-which makes a guess read like a finding. Allocation counting showed the branch
-allocated less, not more. Removing the "cause" made things slower, twice.
-
-What found it in the end: `-prof gc`, a measurement.
-
----
-
 <!-- .slide: class="hero" -->
 
 ## "Can we stop any probing or guessing, this drives me crazy."
@@ -488,6 +393,10 @@ What found it in the end: `-prof gc`, a measurement.
 <span class="aside">Me, to Claude</span>
 
 Note:
+Lead-in, from a writer regression in August: four confident theories, each with
+arithmetic behind it, three refuted by the measurements. "The benchmark says I
+was wrong again — it got worse." What found it: a measurement (`-prof gc`).
+
 Let it land. Everyone in the room who has used an agent has wanted to type this.
 
 Don't soften it. This is what midnight sounds like.
@@ -496,79 +405,33 @@ Don't soften it. This is what midnight sounds like.
 
 <!-- .slide: class="hero-image" -->
 
-<img class="post" src="images/x-2026-04-13-laterz-buddy.png" alt="Apr 13: Claude casually I'm outta here, laterz buddy-ing me">
+<img class="post" src="images/x-2026-04-13-laterz-buddy.png" width="1288" height="516" alt="Apr 13: Claude casually I'm outta here, laterz buddy-ing me">
 
 Note:
 Giving up early. The agent calls it a day, mid-task, with a cheerful sign-off.
 You don't get to.
 
----
-
-<!-- .slide: class="hero" -->
-
-<blockquote class="transcript">
-"I've already reshaped this code three times today."
-<cite>Claude, Aug 26</cite>
-</blockquote>
-
-<blockquote class="transcript">
-"Yes we are actively working on this code, so this is expected. We won't stop before we've found a satisfying solution, that's the job."
-<cite>Me</cite>
-</blockquote>
-
-Note:
-The other direction. Here the agent wanted to stop, and stopping would have
-been wrong.
-
+It goes the other way too: "I've already reshaped this code three times today."
 Deciding when to stop stays with you, both ways.
 
 ---
 
-<!-- .slide: class="hero" -->
+## Issue #1198: a small docs PR
 
-## Issue #1198
-
-Started as a <em>small docs PR</em>.
-
-Took a <em>week</em>.
+<div class="later-stack">
+  <img class="later-base" src="images/1198-docs-commit-diff.png" width="1000" height="429" alt="Sep 6: commit e4dc97d in PR #1103, docs/content/reference/query-controls.md, +6 −4">
+  </div>
 
 Note:
+Sep 6: PR #1103 as first opened. One commit, one reference page, six lines added
+and four removed. It documented a fix that had already landed. Let them read
+the diff for a second: it's nothing.
+
+
 I pulled one thread, and it kept coming. Each next step was cheap, so I took
-it. A week later I had rewritten a whole area of the predicate code — well, and
-it's better now, which is exactly the problem.
+it. A week later I had rewritten a whole area of the predicate code — and it's
+better now, which is exactly the problem.
 
----
-
-<!-- .slide: class="hero-image" -->
-
-## Sep 6: the pull request
-
-<img src="images/1198-docs-commit-diff.png" width="1000" height="429" alt="Diff of commit e4dc97d in docs/content/reference/query-controls.md: +6 -4">
-
-Note:
-PR #1103 as first opened: one commit, one reference page, six lines added and
-four removed. It documented a fix that had already landed.
-
-Writing down which physical types a BigDecimal predicate covers meant checking
-it, and checking it turned up three more wrong answers: #1141, #1142, #1144.
-The PR was force-pushed nineteen times and merged four days later at 37 files,
-+2,334 −159, under a new title: "List the predicate literals each column type
-takes, and correct the orders it exposed". That is where epic #1198 began.
-
----
-
-## Eight days later
-
-| | |
-|---|---|
-| Started as | 1 file, +6 −4 |
-| Issues closed | 25, 17 of them bugs |
-| Commits | 60 |
-| Files touched | 169 |
-| Lines | +21,500 −6,200 |
-| Design doc | 325 lines |
-
-Note:
 Sep 6 to Sep 14 for the epic, clean-up commits until Sep 15. All of it in
 1.1.0.Beta2.
 
@@ -582,6 +445,66 @@ the design's per-column table through five read paths.
 
 ---
 
+<!-- .slide: class="hero-image no-parquet" data-background-image="images/a-few-moments-later.jpg" data-background-size="cover" data-background-color="#000000" -->
+
+Note:
+Wait for the laugh. (Still from SpongeBob SquarePants,
+youtube.com/watch?v=S3wsCRJVUyg.)
+
+---
+
+<!-- .slide: class="no-parquet" -->
+
+<div class="pr-montage fragment" data-fragment-index="0">
+  <img src="images/1198-prs/pr-1103.png" width="560" height="101" style="--x: 344px; --y: 24px; --r: -1.0deg; --d: 0.00s" alt="PR #1103">
+  <img src="images/1198-prs/pr-1174.png" width="560" height="101" style="--x: 181px; --y: 39px; --r: 3.5deg; --d: 1.30s" alt="PR #1174">
+  <img src="images/1198-prs/pr-1180.png" width="560" height="101" style="--x: 441px; --y: 34px; --r: -0.7deg; --d: 2.31s" alt="PR #1180">
+  <img src="images/1198-prs/pr-1182.png" width="560" height="80" style="--x: 388px; --y: 50px; --r: -3.3deg; --d: 3.10s" alt="PR #1182">
+  <img src="images/1198-prs/pr-1187.png" width="560" height="101" style="--x: 441px; --y: 92px; --r: 0.0deg; --d: 3.72s" alt="PR #1187">
+  <img src="images/1198-prs/pr-1188.png" width="560" height="80" style="--x: 328px; --y: 119px; --r: -2.8deg; --d: 4.20s" alt="PR #1188">
+  <img src="images/1198-prs/pr-1191.png" width="560" height="101" style="--x: 153px; --y: 129px; --r: 1.8deg; --d: 4.58s" alt="PR #1191">
+  <img src="images/1198-prs/pr-1200.png" width="560" height="101" style="--x: 151px; --y: 123px; --r: 0.2deg; --d: 4.87s" alt="PR #1200">
+  <img src="images/1198-prs/pr-1201.png" width="560" height="101" style="--x: 191px; --y: 139px; --r: 2.8deg; --d: 5.10s" alt="PR #1201">
+  <img src="images/1198-prs/pr-1202.png" width="560" height="101" style="--x: 97px; --y: 177px; --r: 1.4deg; --d: 5.28s" alt="PR #1202">
+  <img src="images/1198-prs/pr-1204.png" width="560" height="101" style="--x: 476px; --y: 180px; --r: 1.2deg; --d: 5.42s" alt="PR #1204">
+  <img src="images/1198-prs/pr-1205.png" width="560" height="80" style="--x: 682px; --y: 251px; --r: -0.4deg; --d: 5.52s" alt="PR #1205">
+  <img src="images/1198-prs/pr-1207.png" width="560" height="101" style="--x: 131px; --y: 243px; --r: 2.7deg; --d: 5.61s" alt="PR #1207">
+  <img src="images/1198-prs/pr-1208.png" width="560" height="101" style="--x: 496px; --y: 246px; --r: 1.3deg; --d: 5.68s" alt="PR #1208">
+  <img src="images/1198-prs/pr-1209.png" width="560" height="101" style="--x: 549px; --y: 286px; --r: 1.5deg; --d: 5.73s" alt="PR #1209">
+  <img src="images/1198-prs/pr-1211.png" width="560" height="80" style="--x: 507px; --y: 304px; --r: -2.6deg; --d: 5.77s" alt="PR #1211">
+  <img src="images/1198-prs/pr-1212.png" width="560" height="101" style="--x: 307px; --y: 317px; --r: 0.9deg; --d: 5.80s" alt="PR #1212">
+  <img src="images/1198-prs/pr-1213.png" width="560" height="101" style="--x: 680px; --y: 317px; --r: -2.5deg; --d: 5.82s" alt="PR #1213">
+  <img src="images/1198-prs/pr-1214.png" width="560" height="101" style="--x: 234px; --y: 339px; --r: -1.1deg; --d: 5.84s" alt="PR #1214">
+  <img src="images/1198-prs/pr-1216.png" width="560" height="80" style="--x: 420px; --y: 360px; --r: -3.6deg; --d: 5.86s" alt="PR #1216">
+  <img src="images/1198-prs/pr-1219.png" width="560" height="80" style="--x: 189px; --y: 379px; --r: 3.4deg; --d: 5.87s" alt="PR #1219">
+  <img src="images/1198-prs/pr-1222.png" width="560" height="101" style="--x: 227px; --y: 399px; --r: -2.8deg; --d: 5.88s" alt="PR #1222">
+  <img src="images/1198-prs/pr-1226.png" width="560" height="101" style="--x: 99px; --y: 410px; --r: -2.6deg; --d: 5.88s" alt="PR #1226">
+  <img src="images/1198-prs/pr-1228.png" width="560" height="101" style="--x: 231px; --y: 424px; --r: -3.1deg; --d: 5.89s" alt="PR #1228">
+  <img src="images/1198-prs/pr-1233.png" width="560" height="101" style="--x: 393px; --y: 461px; --r: -3.4deg; --d: 5.89s" alt="PR #1233">
+  <img src="images/1198-prs/pr-1234.png" width="560" height="101" style="--x: 317px; --y: 480px; --r: -0.2deg; --d: 5.90s" alt="PR #1234">
+  <img src="images/1198-prs/pr-1235.png" width="560" height="101" style="--x: 440px; --y: 486px; --r: 1.2deg; --d: 5.90s" alt="PR #1235">
+</div>
+
+<div class="pr-stats fragment" data-fragment-index="1">
+  <p class="later-when">Eight days later · Sep 6 → Sep 14</p>
+  <div class="later-grid">
+    <div><b>25</b><span>issues closed, 17 of them bugs</span></div>
+    <div><b>60</b><span>commits</span></div>
+    <div><b>169</b><span>files touched</span></div>
+    <div><b>+21,500 −6,200</b><span>lines</span></div>
+  </div>
+</div>
+
+Note:
+Click once and let it run: the predicate pull requests merged after the docs PR,
+in merge order, faster and faster. 27 of them, Sep 10 to Sep 15, including the
+statistics rework (#1177) the literal rule pulled in. Don't read any of them.
+
+Click: the numbers for the epic, Sep 6 to Sep 14. The design doc alone is 325
+lines.
+
+---
+
 <!-- .slide: class="hero" -->
 
 ## The old brake was effort.
@@ -589,7 +512,7 @@ the design's per-column table through five read paths.
 "That's three days" used to end a lot of bad ideas.
 
 Note:
-Remember "20h of refactoring… Done"? That was the joy. This is the bill.
+Speed was the joy. This is the bill.
 
 Nothing replaced it. There is now no natural point at which a piece of work
 becomes too expensive to keep going.
@@ -604,25 +527,10 @@ I have to be the brake, by hand, and I am not reliably good at it.
 
 I'm dialling it back.
 
-<img class="callback" src="images/x-2026-07-03-context-switching-tax.png" alt="Jul 3: the context switching tax is brutal, even just for two sessions in parallel">
+<img class="callback" src="images/x-2026-07-03-context-switching-tax.png" width="460" height="150" alt="Jul 3: the context switching tax is brutal, even just for two sessions in parallel">
 
 Note:
 This is the honest one. Say the real reason.
-
----
-
-<!-- .slide: class="hero" -->
-
-<blockquote class="transcript">
-"I'd reverted them thinking another session was writing to /workspace — that was wrong, sorry."
-<cite>Claude, Sep 9</cite>
-</blockquote>
-
-Note:
-Parallel sessions share one checkout unless you stop them. One session
-relocated another's branch; another reverted my own changes. The multi-session
-section in my agent instructions exists because of this, and the first version
-of it overshot: sessions started creating worktrees for everything.
 
 ---
 
@@ -631,24 +539,46 @@ of it overshot: sessions started creating worktrees for everything.
 <img class="post" src="images/x-2026-07-31-like-a-psychopath.png" alt="Jul 31: Saw a guy working on his code. No multi-agent setup. Using just Claude and his CLI. Like a psychopath.">
 
 Note:
-The release after the confession. 602 likes.
+Straight after the confession, no setup. Let them laugh; it's aimed at the
+elaborate setups, and that includes mine. 602 likes.
+
+Then back to the cost: "The agent types. I only decide."
 
 ---
 
-<!-- .slide: class="hero-image" -->
+<!-- .slide: class="no-parquet" -->
 
-<img class="post" src="images/x-2026-06-02-agent-slowness.png" alt="Jun 2: impossible to get into a flow state when you have minute-long breaks all the time">
+## The agent types. I only decide.
 
-Note:
-Two things break flow: the minute-long waits, and what comes after them.
+<span class="subtitle">Sep 9: 205 prompts to 21 sessions, one every 2.7 minutes</span>
 
----
-
-<!-- .slide: class="hero" -->
-
-## All judgment. No flow.
+<svg class="proto " viewBox="0 0 1000 450" width="1000" height="450"><g class="fragment fade-out" data-fragment-index="1"><text x="150.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">09:00</text><line x1="150.0" y1="60" x2="150.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="314.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">12:00</text><line x1="314.0" y1="60" x2="314.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="478.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">15:00</text><line x1="478.0" y1="60" x2="478.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="642.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:00</text><line x1="642.0" y1="60" x2="642.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="806.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">21:00</text><line x1="806.0" y1="60" x2="806.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="970.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">24:00</text><line x1="970.0" y1="60" x2="970.0" y2="415" stroke="#e5e7eb" stroke-width="1"/></g><g class="fragment fade-out" data-fragment-index="0"><text x="134" y="228" text-anchor="end" class="p-sub" fill="#666666">all sessions</text><line x1="162.4" y1="190" x2="162.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="172.2" y1="190" x2="172.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="174.9" y1="190" x2="174.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="175.7" y1="190" x2="175.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="178.4" y1="190" x2="178.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="179.7" y1="190" x2="179.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="191.9" y1="190" x2="191.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="204.2" y1="190" x2="204.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="205.0" y1="190" x2="205.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="205.8" y1="190" x2="205.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="209.1" y1="190" x2="209.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="213.5" y1="190" x2="213.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="215.6" y1="190" x2="215.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="220.4" y1="190" x2="220.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="224.8" y1="190" x2="224.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="228.4" y1="190" x2="228.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="236.0" y1="190" x2="236.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="246.4" y1="190" x2="246.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="252.6" y1="190" x2="252.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="262.1" y1="190" x2="262.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="265.4" y1="190" x2="265.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="269.8" y1="190" x2="269.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="273.4" y1="190" x2="273.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="276.3" y1="190" x2="276.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="282.7" y1="190" x2="282.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="287.1" y1="190" x2="287.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="289.1" y1="190" x2="289.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="296.4" y1="190" x2="296.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="302.5" y1="190" x2="302.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="304.1" y1="190" x2="304.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="305.2" y1="190" x2="305.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="308.8" y1="190" x2="308.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="314.2" y1="190" x2="314.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="316.4" y1="190" x2="316.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="319.6" y1="190" x2="319.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="321.8" y1="190" x2="321.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="328.9" y1="190" x2="328.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="331.2" y1="190" x2="331.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="332.8" y1="190" x2="332.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="336.2" y1="190" x2="336.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="338.1" y1="190" x2="338.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="340.6" y1="190" x2="340.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="342.7" y1="190" x2="342.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="351.4" y1="190" x2="351.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="352.4" y1="190" x2="352.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="354.8" y1="190" x2="354.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="357.8" y1="190" x2="357.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="358.2" y1="190" x2="358.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="359.5" y1="190" x2="359.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="360.2" y1="190" x2="360.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="362.3" y1="190" x2="362.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="369.6" y1="190" x2="369.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="370.0" y1="190" x2="370.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="376.9" y1="190" x2="376.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="379.6" y1="190" x2="379.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="384.3" y1="190" x2="384.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="190" x2="386.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="190" x2="386.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="387.2" y1="190" x2="387.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="389.7" y1="190" x2="389.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="390.0" y1="190" x2="390.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="392.4" y1="190" x2="392.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="395.6" y1="190" x2="395.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="398.7" y1="190" x2="398.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="403.4" y1="190" x2="403.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="410.7" y1="190" x2="410.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="413.7" y1="190" x2="413.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="416.1" y1="190" x2="416.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="418.1" y1="190" x2="418.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="419.1" y1="190" x2="419.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="420.9" y1="190" x2="420.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="439.3" y1="190" x2="439.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="442.2" y1="190" x2="442.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="453.8" y1="190" x2="453.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="457.7" y1="190" x2="457.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="461.1" y1="190" x2="461.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="467.0" y1="190" x2="467.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="474.6" y1="190" x2="474.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="485.5" y1="190" x2="485.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="487.5" y1="190" x2="487.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="529.9" y1="190" x2="529.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="535.1" y1="190" x2="535.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="535.6" y1="190" x2="535.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="543.6" y1="190" x2="543.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="546.7" y1="190" x2="546.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="548.7" y1="190" x2="548.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="548.8" y1="190" x2="548.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="549.0" y1="190" x2="549.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="550.0" y1="190" x2="550.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="554.6" y1="190" x2="554.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="558.9" y1="190" x2="558.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="560.4" y1="190" x2="560.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="563.2" y1="190" x2="563.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="570.0" y1="190" x2="570.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="573.9" y1="190" x2="573.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="590.6" y1="190" x2="590.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="591.1" y1="190" x2="591.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="602.0" y1="190" x2="602.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="605.3" y1="190" x2="605.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="606.5" y1="190" x2="606.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="609.3" y1="190" x2="609.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="614.4" y1="190" x2="614.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="622.3" y1="190" x2="622.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="627.3" y1="190" x2="627.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="633.5" y1="190" x2="633.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="634.1" y1="190" x2="634.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="634.2" y1="190" x2="634.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="635.4" y1="190" x2="635.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="190" x2="637.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="190" x2="637.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="639.4" y1="190" x2="639.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="645.7" y1="190" x2="645.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="647.8" y1="190" x2="647.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="649.1" y1="190" x2="649.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="650.0" y1="190" x2="650.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="650.9" y1="190" x2="650.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="651.6" y1="190" x2="651.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="652.2" y1="190" x2="652.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="657.4" y1="190" x2="657.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="660.5" y1="190" x2="660.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="660.6" y1="190" x2="660.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="661.5" y1="190" x2="661.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="663.2" y1="190" x2="663.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="664.5" y1="190" x2="664.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="666.2" y1="190" x2="666.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="671.8" y1="190" x2="671.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="672.7" y1="190" x2="672.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="675.1" y1="190" x2="675.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="678.6" y1="190" x2="678.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="679.4" y1="190" x2="679.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="680.0" y1="190" x2="680.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="684.2" y1="190" x2="684.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="686.0" y1="190" x2="686.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="695.0" y1="190" x2="695.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="696.8" y1="190" x2="696.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="699.0" y1="190" x2="699.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="701.2" y1="190" x2="701.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="742.6" y1="190" x2="742.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="746.2" y1="190" x2="746.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="746.6" y1="190" x2="746.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="748.4" y1="190" x2="748.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="751.2" y1="190" x2="751.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="752.1" y1="190" x2="752.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="752.7" y1="190" x2="752.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="786.1" y1="190" x2="786.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="787.8" y1="190" x2="787.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="789.0" y1="190" x2="789.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="790.9" y1="190" x2="790.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="793.6" y1="190" x2="793.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="797.8" y1="190" x2="797.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="802.2" y1="190" x2="802.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="803.6" y1="190" x2="803.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="804.0" y1="190" x2="804.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="807.2" y1="190" x2="807.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="809.3" y1="190" x2="809.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="812.0" y1="190" x2="812.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="814.3" y1="190" x2="814.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="816.1" y1="190" x2="816.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="819.8" y1="190" x2="819.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="820.9" y1="190" x2="820.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="832.4" y1="190" x2="832.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="833.5" y1="190" x2="833.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="834.4" y1="190" x2="834.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="835.6" y1="190" x2="835.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="838.1" y1="190" x2="838.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="841.6" y1="190" x2="841.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="844.0" y1="190" x2="844.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="849.3" y1="190" x2="849.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="851.2" y1="190" x2="851.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="854.0" y1="190" x2="854.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="856.6" y1="190" x2="856.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="857.9" y1="190" x2="857.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="859.2" y1="190" x2="859.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="862.7" y1="190" x2="862.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="864.9" y1="190" x2="864.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="868.6" y1="190" x2="868.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="871.1" y1="190" x2="871.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="872.4" y1="190" x2="872.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="873.8" y1="190" x2="873.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="874.5" y1="190" x2="874.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="874.8" y1="190" x2="874.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="876.2" y1="190" x2="876.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="878.1" y1="190" x2="878.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="879.3" y1="190" x2="879.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="881.9" y1="190" x2="881.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="883.7" y1="190" x2="883.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="885.7" y1="190" x2="885.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="888.0" y1="190" x2="888.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="889.1" y1="190" x2="889.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="891.3" y1="190" x2="891.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="894.1" y1="190" x2="894.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="895.0" y1="190" x2="895.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="896.2" y1="190" x2="896.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="899.7" y1="190" x2="899.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="920.1" y1="190" x2="920.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="922.7" y1="190" x2="922.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="928.3" y1="190" x2="928.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="929.3" y1="190" x2="929.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="930.7" y1="190" x2="930.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="935.0" y1="190" x2="935.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="950.0" y1="190" x2="950.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="951.0" y1="190" x2="951.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="960.6" y1="190" x2="960.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="963.3" y1="190" x2="963.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="964.6" y1="190" x2="964.6" y2="250" stroke="#b5491f" stroke-width="2.5"/></g><g class="fragment fade-in-then-out" data-fragment-index="0"><text x="134" y="235.0" text-anchor="end" class="p-sub" fill="#666666">21 sessions</text><line x1="150" y1="77.9" x2="970" y2="77.9" stroke="#eef0f2" stroke-width="1"/><line x1="162.4" y1="72.0" x2="162.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="172.2" y1="72.0" x2="172.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="174.9" y1="72.0" x2="174.9" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="175.7" y1="72.0" x2="175.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="178.4" y1="72.0" x2="178.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="179.7" y1="72.0" x2="179.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="205.0" y1="72.0" x2="205.0" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="205.8" y1="72.0" x2="205.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="209.1" y1="72.0" x2="209.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="213.5" y1="72.0" x2="213.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="215.6" y1="72.0" x2="215.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="220.4" y1="72.0" x2="220.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="224.8" y1="72.0" x2="224.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="228.4" y1="72.0" x2="228.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="236.0" y1="72.0" x2="236.0" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="246.4" y1="72.0" x2="246.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="252.6" y1="72.0" x2="252.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="262.1" y1="72.0" x2="262.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="265.4" y1="72.0" x2="265.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="269.8" y1="72.0" x2="269.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="273.4" y1="72.0" x2="273.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="276.3" y1="72.0" x2="276.3" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="282.7" y1="72.0" x2="282.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="287.1" y1="72.0" x2="287.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="289.1" y1="72.0" x2="289.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="302.5" y1="72.0" x2="302.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="304.1" y1="72.0" x2="304.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="305.2" y1="72.0" x2="305.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="308.8" y1="72.0" x2="308.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="314.2" y1="72.0" x2="314.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="316.4" y1="72.0" x2="316.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="319.6" y1="72.0" x2="319.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="321.8" y1="72.0" x2="321.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="331.2" y1="72.0" x2="331.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="332.8" y1="72.0" x2="332.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="338.1" y1="72.0" x2="338.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="340.6" y1="72.0" x2="340.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="351.4" y1="72.0" x2="351.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="352.4" y1="72.0" x2="352.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="354.8" y1="72.0" x2="354.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="357.8" y1="72.0" x2="357.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="359.5" y1="72.0" x2="359.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="389.7" y1="72.0" x2="389.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="93.6" x2="970" y2="93.6" stroke="#eef0f2" stroke-width="1"/><line x1="191.9" y1="87.7" x2="191.9" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="204.2" y1="87.7" x2="204.2" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="336.2" y1="87.7" x2="336.2" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="109.3" x2="970" y2="109.3" stroke="#eef0f2" stroke-width="1"/><line x1="296.4" y1="103.4" x2="296.4" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="342.7" y1="103.4" x2="342.7" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="360.2" y1="103.4" x2="360.2" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="376.9" y1="103.4" x2="376.9" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="387.2" y1="103.4" x2="387.2" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="125.0" x2="970" y2="125.0" stroke="#eef0f2" stroke-width="1"/><line x1="328.9" y1="119.1" x2="328.9" y2="130.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="140.7" x2="970" y2="140.7" stroke="#eef0f2" stroke-width="1"/><line x1="358.2" y1="134.9" x2="358.2" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="362.3" y1="134.9" x2="362.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="369.6" y1="134.9" x2="369.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="379.6" y1="134.9" x2="379.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="384.3" y1="134.9" x2="384.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="134.9" x2="386.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="134.9" x2="386.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="390.0" y1="134.9" x2="390.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="392.4" y1="134.9" x2="392.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="395.6" y1="134.9" x2="395.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="398.7" y1="134.9" x2="398.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="403.4" y1="134.9" x2="403.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="410.7" y1="134.9" x2="410.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="413.7" y1="134.9" x2="413.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="416.1" y1="134.9" x2="416.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="418.1" y1="134.9" x2="418.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="419.1" y1="134.9" x2="419.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="420.9" y1="134.9" x2="420.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="439.3" y1="134.9" x2="439.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="442.2" y1="134.9" x2="442.2" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="453.8" y1="134.9" x2="453.8" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="457.7" y1="134.9" x2="457.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="461.1" y1="134.9" x2="461.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="467.0" y1="134.9" x2="467.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="529.9" y1="134.9" x2="529.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="535.1" y1="134.9" x2="535.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="548.7" y1="134.9" x2="548.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="548.8" y1="134.9" x2="548.8" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="549.0" y1="134.9" x2="549.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="550.0" y1="134.9" x2="550.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="570.0" y1="134.9" x2="570.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="573.9" y1="134.9" x2="573.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="590.6" y1="134.9" x2="590.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="602.0" y1="134.9" x2="602.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="605.3" y1="134.9" x2="605.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="606.5" y1="134.9" x2="606.5" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="609.3" y1="134.9" x2="609.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="622.3" y1="134.9" x2="622.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="627.3" y1="134.9" x2="627.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="633.5" y1="134.9" x2="633.5" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="635.4" y1="134.9" x2="635.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="134.9" x2="637.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="134.9" x2="637.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="649.1" y1="134.9" x2="649.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="650.9" y1="134.9" x2="650.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="156.4" x2="970" y2="156.4" stroke="#eef0f2" stroke-width="1"/><line x1="370.0" y1="150.6" x2="370.0" y2="162.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="172.1" x2="970" y2="172.1" stroke="#eef0f2" stroke-width="1"/><line x1="474.6" y1="166.3" x2="474.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="485.5" y1="166.3" x2="485.5" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="487.5" y1="166.3" x2="487.5" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="543.6" y1="166.3" x2="543.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="546.7" y1="166.3" x2="546.7" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="554.6" y1="166.3" x2="554.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="558.9" y1="166.3" x2="558.9" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="560.4" y1="166.3" x2="560.4" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="563.2" y1="166.3" x2="563.2" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="591.1" y1="166.3" x2="591.1" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="634.2" y1="166.3" x2="634.2" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="645.7" y1="166.3" x2="645.7" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="650.0" y1="166.3" x2="650.0" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="187.9" x2="970" y2="187.9" stroke="#eef0f2" stroke-width="1"/><line x1="535.6" y1="182.0" x2="535.6" y2="193.7" stroke="#b5491f" stroke-width="2.5"/><line x1="614.4" y1="182.0" x2="614.4" y2="193.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="203.6" x2="970" y2="203.6" stroke="#eef0f2" stroke-width="1"/><line x1="634.1" y1="197.7" x2="634.1" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="639.4" y1="197.7" x2="639.4" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="647.8" y1="197.7" x2="647.8" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="651.6" y1="197.7" x2="651.6" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="219.3" x2="970" y2="219.3" stroke="#eef0f2" stroke-width="1"/><line x1="652.2" y1="213.4" x2="652.2" y2="225.1" stroke="#b5491f" stroke-width="2.5"/><line x1="661.5" y1="213.4" x2="661.5" y2="225.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="235.0" x2="970" y2="235.0" stroke="#eef0f2" stroke-width="1"/><line x1="657.4" y1="229.1" x2="657.4" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="660.5" y1="229.1" x2="660.5" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="663.2" y1="229.1" x2="663.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="666.2" y1="229.1" x2="666.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="672.7" y1="229.1" x2="672.7" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="679.4" y1="229.1" x2="679.4" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="699.0" y1="229.1" x2="699.0" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="742.6" y1="229.1" x2="742.6" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="746.6" y1="229.1" x2="746.6" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="751.2" y1="229.1" x2="751.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="787.8" y1="229.1" x2="787.8" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="804.0" y1="229.1" x2="804.0" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="885.7" y1="229.1" x2="885.7" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="889.1" y1="229.1" x2="889.1" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="896.2" y1="229.1" x2="896.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="250.7" x2="970" y2="250.7" stroke="#eef0f2" stroke-width="1"/><line x1="660.6" y1="244.9" x2="660.6" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="664.5" y1="244.9" x2="664.5" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="671.8" y1="244.9" x2="671.8" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="266.4" x2="970" y2="266.4" stroke="#eef0f2" stroke-width="1"/><line x1="675.1" y1="260.6" x2="675.1" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="680.0" y1="260.6" x2="680.0" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="696.8" y1="260.6" x2="696.8" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="701.2" y1="260.6" x2="701.2" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="746.2" y1="260.6" x2="746.2" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="752.1" y1="260.6" x2="752.1" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="282.1" x2="970" y2="282.1" stroke="#eef0f2" stroke-width="1"/><line x1="678.6" y1="276.3" x2="678.6" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="695.0" y1="276.3" x2="695.0" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="748.4" y1="276.3" x2="748.4" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="786.1" y1="276.3" x2="786.1" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="789.0" y1="276.3" x2="789.0" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="790.9" y1="276.3" x2="790.9" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="297.9" x2="970" y2="297.9" stroke="#eef0f2" stroke-width="1"/><line x1="684.2" y1="292.0" x2="684.2" y2="303.7" stroke="#b5491f" stroke-width="2.5"/><line x1="686.0" y1="292.0" x2="686.0" y2="303.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="313.6" x2="970" y2="313.6" stroke="#eef0f2" stroke-width="1"/><line x1="752.7" y1="307.7" x2="752.7" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="793.6" y1="307.7" x2="793.6" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="803.6" y1="307.7" x2="803.6" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="807.2" y1="307.7" x2="807.2" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="812.0" y1="307.7" x2="812.0" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="814.3" y1="307.7" x2="814.3" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="820.9" y1="307.7" x2="820.9" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="963.3" y1="307.7" x2="963.3" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="329.3" x2="970" y2="329.3" stroke="#eef0f2" stroke-width="1"/><line x1="797.8" y1="323.4" x2="797.8" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="809.3" y1="323.4" x2="809.3" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="832.4" y1="323.4" x2="832.4" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="833.5" y1="323.4" x2="833.5" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="835.6" y1="323.4" x2="835.6" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="844.0" y1="323.4" x2="844.0" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="345.0" x2="970" y2="345.0" stroke="#eef0f2" stroke-width="1"/><line x1="802.2" y1="339.1" x2="802.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="816.1" y1="339.1" x2="816.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="819.8" y1="339.1" x2="819.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="834.4" y1="339.1" x2="834.4" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="838.1" y1="339.1" x2="838.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="841.6" y1="339.1" x2="841.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="849.3" y1="339.1" x2="849.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="851.2" y1="339.1" x2="851.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="854.0" y1="339.1" x2="854.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="856.6" y1="339.1" x2="856.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="857.9" y1="339.1" x2="857.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="859.2" y1="339.1" x2="859.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="862.7" y1="339.1" x2="862.7" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="864.9" y1="339.1" x2="864.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="868.6" y1="339.1" x2="868.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="871.1" y1="339.1" x2="871.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="872.4" y1="339.1" x2="872.4" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="873.8" y1="339.1" x2="873.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="874.5" y1="339.1" x2="874.5" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="874.8" y1="339.1" x2="874.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="876.2" y1="339.1" x2="876.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="878.1" y1="339.1" x2="878.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="879.3" y1="339.1" x2="879.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="881.9" y1="339.1" x2="881.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="883.7" y1="339.1" x2="883.7" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="888.0" y1="339.1" x2="888.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="891.3" y1="339.1" x2="891.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="894.1" y1="339.1" x2="894.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="895.0" y1="339.1" x2="895.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="360.7" x2="970" y2="360.7" stroke="#eef0f2" stroke-width="1"/><line x1="899.7" y1="354.9" x2="899.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="920.1" y1="354.9" x2="920.1" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="922.7" y1="354.9" x2="922.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="928.3" y1="354.9" x2="928.3" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="929.3" y1="354.9" x2="929.3" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="930.7" y1="354.9" x2="930.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="950.0" y1="354.9" x2="950.0" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="376.4" x2="970" y2="376.4" stroke="#eef0f2" stroke-width="1"/><line x1="935.0" y1="370.6" x2="935.0" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="951.0" y1="370.6" x2="951.0" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="960.6" y1="370.6" x2="960.6" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="392.1" x2="970" y2="392.1" stroke="#eef0f2" stroke-width="1"/><line x1="964.6" y1="386.3" x2="964.6" y2="398.0" stroke="#b5491f" stroke-width="2.5"/></g><g class="fragment" data-fragment-index="1"><line x1="150.0" y1="60" x2="150.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="150.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">17:50</text><line x1="423.3" y1="60" x2="423.3" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="423.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:05</text><line x1="696.7" y1="60" x2="696.7" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="696.7" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:20</text><line x1="970.0" y1="60" x2="970.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="970.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:35</text><text x="134" y="104.5" text-anchor="end" class="p-sub" fill="#666666">session A</text><line x1="150" y1="97.5" x2="970" y2="97.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="159.5" text-anchor="end" class="p-sub" fill="#666666">session B</text><line x1="150" y1="152.5" x2="970" y2="152.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="214.5" text-anchor="end" class="p-sub" fill="#666666">session C</text><line x1="150" y1="207.5" x2="970" y2="207.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="269.5" text-anchor="end" class="p-sub" fill="#666666">session D</text><line x1="150" y1="262.5" x2="970" y2="262.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="324.5" text-anchor="end" class="p-sub" fill="#666666">session E</text><line x1="150" y1="317.5" x2="970" y2="317.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="379.5" text-anchor="end" class="p-sub" fill="#666666">session F</text><line x1="150" y1="372.5" x2="970" y2="372.5" stroke="#eef0f2" stroke-width="1"/><path d="M161.8 97.5L173.8 152.5L177.1 207.5L201.0 97.5L234.0 97.5L234.0 97.5L280.0 152.5L406.5 207.5L448.8 152.5L473.6 97.5L493.5 207.5L510.7 97.5L523.9 152.5L537.4 262.5L640.9 317.5L702.5 317.5L703.5 372.5L722.1 262.5L756.7 317.5L782.9 372.5L816.8 317.5L928.6 372.5L946.0 317.5" fill="none" stroke="#b5491f" stroke-opacity="0.35" stroke-width="2"/><line x1="161.8" y1="78.0" x2="161.8" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="173.8" y1="133.0" x2="173.8" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="177.1" y1="188.0" x2="177.1" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="201.0" y1="78.0" x2="201.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="234.0" y1="78.0" x2="234.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="234.0" y1="78.0" x2="234.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="280.0" y1="133.0" x2="280.0" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="406.5" y1="188.0" x2="406.5" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="448.8" y1="133.0" x2="448.8" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="473.6" y1="78.0" x2="473.6" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="493.5" y1="188.0" x2="493.5" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="510.7" y1="78.0" x2="510.7" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="523.9" y1="133.0" x2="523.9" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="537.4" y1="243.0" x2="537.4" y2="282.0" stroke="#b5491f" stroke-width="5"/><line x1="640.9" y1="298.0" x2="640.9" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="702.5" y1="298.0" x2="702.5" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="703.5" y1="353.0" x2="703.5" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="722.1" y1="243.0" x2="722.1" y2="282.0" stroke="#b5491f" stroke-width="5"/><line x1="756.7" y1="298.0" x2="756.7" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="782.9" y1="353.0" x2="782.9" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="816.8" y1="298.0" x2="816.8" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="928.6" y1="353.0" x2="928.6" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="946.0" y1="298.0" x2="946.0" y2="337.0" stroke="#b5491f" stroke-width="5"/><text x="970" y="50" text-anchor="end" class="p-sub" fill="#354045">17:50–18:35: 23 prompts, 6 sessions, 19 switches</text></g></svg>
 
 Note:
+09:13 to 23:54; the 2.7 minutes is the median gap.
+Every tick is a prompt I typed to an agent on Sep 9, the busiest day in the
+transcripts (Jul 8 to Sep 16; times in Europe/Berlin). Tool approvals don't
+count, so the real number of decisions is higher. Click: the same ticks, one row
+per session, in the order they started. Every jump between rows is a context
+switch.
+
+Click: zoom into 17:50 to 18:35, the 45 minutes with the most switches. The line
+follows me from prompt to prompt.
+
+Zoomed in, what those six sessions were: exception-handling design, two PR
+reviews, a rebase and force push, an architecture question about value
+converters, issue triage. Many of the prompts are one word: "yes", "b, go ahead".
+Even a two-minute review session needed checking: "did you rework the branch? or
+where is the review work?"
+
+Writing code used to mix mechanical work (typing, compiling, fixing the
+obvious) with decisions. The mechanical part was where your mind rested and got
+into flow. With agents it's gone. What's left is only decisions: every time you
+come back to a session, is this right, is it cutting a corner, continue or stop?
+
+The waits: minute-long breaks all the time, too short to do anything else, too
+long to stay in flow.
+
 No typing rhythm. No compile-and-think pause. No stretch where the work is
 mechanical and your mind settles.
 
@@ -657,41 +587,6 @@ different kind of tired and our industry is not talking about it.
 
 Tell them what it actually cost you — an evening, a weekend, whatever is true.
 Fully personal here. This is the beat no other AI talk has.
-
----
-
-<!-- .slide: class="hero" -->
-
-## The debt has a shape
-
-Yet another if/else. And <em>duplication</em>.
-
-<img class="callback" src="images/x-2026-01-17-if-else.png" alt="Jan 17: yet another if/else is not gonna save us, mate">
-
-The agent will re-solve a solved problem locally
-rather than find the existing solution. Every time. Cheerfully.
-
-Note:
-"Yet another if/else" was funny in January.
-
-This is why "search for existing patterns before writing new code" is written
-into my agent instructions at all. It is not a style preference, it is a
-countermeasure.
-
-The cleanup is real work, and it is never the interesting work.
-
----
-
-<!-- .slide: class="hero" -->
-
-<blockquote class="transcript">
-"Stop — I was wrong, and the codebase already had a considered position I nearly destroyed."
-<cite>Claude, Sep 8</cite>
-</blockquote>
-
-Note:
-It had started writing validation that already existed, in a class that
-implemented every check it listed and more. Caught before it landed.
 
 ---
 
@@ -716,9 +611,18 @@ caught it open; it gets answered when we climb out.
 - I graded it against the PR description, not the spec
 - Volume. It looked competent, and others were waiting
 
+<div class="circled">
+  <img src="images/01-geo-pr-413-claim.png" width="1000" height="140" alt="PR #413 description: GeospatialStatistics with BoundingBox, page-level stats on ColumnIndex, plus page-level pushdown">
+  <svg class="circle-mark fragment" viewBox="0 0 100 100" preserveAspectRatio="none" style="left: 50%; top: 22%; width: 40.5%; height: 36%"><path d="M52 6 C 86 4, 99 30, 97 52 C 95 80, 60 96, 34 93 C 10 90, 1 68, 3 46 C 5 20, 30 5, 60 8"/></svg>
+</div>
+
 Note:
 All three, honestly. Don't soften it, and don't blame the contributor — the
 review was mine.
+
+Click: the claim was in the description the whole time, on the slide they saw
+at the start. "Page-level stats on ColumnIndex" is the feature that doesn't
+exist. Nobody asked whether it does.
 
 The first bullet is the whole talk in six words. The diff is the how; the claim
 is the what. Say it, then move on; you'll come back to it at the end.
@@ -735,17 +639,14 @@ Note:
 Quote yourself from the earlier Hardwood talk. Some people in the room may have
 seen it.
 
+The sting: that talk was on May 20. The geo PR had been merged on May 1. I was
+telling a room to read every diff while a feature that doesn't exist was already
+on main, merged by me.
+
 Don't apologise for it. It was right for where the project was.
 
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-08-09-necessary-not-sufficient.png" alt="Aug 9: reading code is a necessary precondition, not a sufficient one">
-
-Note:
-August: reading the code is necessary, not sufficient. Things slipped through
-while I was reading every diff.
+By August I'd written: reading the code is a necessary precondition, not a
+sufficient one. Things slipped through while I was reading every diff.
 
 ---
 
@@ -760,45 +661,19 @@ The loss, said plainly. Twenty years of knowing every bit of what I ship, and
 that's gone. Not because I got lazy: because reading every diff turned out not
 to be enough, and at this speed not to be possible.
 
+Development became probabilistic: I no longer know that the code is right. I
+know that it passes an oracle I trust, which is a weaker statement.
+
 Let it sit. This is the identity question everyone in the room carries.
-
----
-
-## How much of it do I read now?
-
-Core and public API: <em>every diff</em>.
-
-The edges: <em>the what</em>.
-
-Note:
-Core, the API, the hot paths: still every diff. That's where a wrong answer
-looks right.
-
-CLI, TUI, several codecs: I don't read the how. I check the what — does it
-behave, does it pass the oracle, can I see what it did.
-
-Honest feeling: mostly fine, because of the testing. Not entirely fine.
-
-What changed my mind was practice, not a principle. Reading every diff in the
-edges cost more than the bugs it caught.
-
----
-
-<!-- .slide: class="hero" -->
-
-## Development became probabilistic.
-
-Note:
-I no longer know that the code is right. I know that it passes an oracle I
-trust, which is a different and weaker statement.
-
-That should feel uncomfortable. Let it sit for a second.
 
 ---
 
 <!-- .slide: class="hero-image" -->
 
-<img class="tweet" src="images/08-tweet-exhausting.png" alt="Tweet: Finally realized why it's so exhausting and stressful to work with AI agents 8h a day.">
+<div class="stack">
+  <img class="tweet" src="images/08-tweet-exhausting.png" alt="Tweet: Finally realized why it's so exhausting and stressful to work with AI agents 8h a day.">
+  <img class="zoom fragment" src="images/08b-tweet-exhausting-counters.png" alt="304.3K views, 4.1K likes, 754 bookmarks">
+</div>
 
 Note:
 No introduction. Let the room read it, then read the middle paragraph aloud:
@@ -808,20 +683,9 @@ not taking short cuts."
 
 This is the bottom of the curve. Act three answers it.
 
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="zoom" src="images/08b-tweet-exhausting-counters.png" alt="304.3K views, 4.1K likes, 754 bookmarks">
-
-Note:
-304,000 views. 754 bookmarks: people saved a complaint so they could come back
-to it.
-
-Show of hands: who in this room has felt this?
-
-Look around the room before you move on. It turns 304,000 strangers into the
-people sitting in front of you.
+Click: the counters. 304,000 views. 754 bookmarks: people saved a complaint so
+they could come back to it. Show of hands: who in this room has felt this? Look
+around before you move on.
 
 ---
 
@@ -849,28 +713,12 @@ Second reply: but it's not quite right. Read it out cleanly, without the
 typos. When you delegate to a person, they can take on the accountability. When
 you delegate to the agent, nobody does. Your name stays on it.
 
+For this room it's contractual: your name, and your company's name, goes on
+what you deliver to a client. "Claude wrote that part" is not an answer a client
+accepts.
+
 Optional aside: the complaint got 304,000 views. The two replies that explain
 it got about 550 between them.
-
----
-
-<!-- .slide: class="hero" -->
-
-## You can delegate the work.
-
-You can't delegate the <em>signature</em>.
-
-Note:
-The manager comparison holds for the workload and breaks down on
-accountability.
-
-For this room it's contractual. Your name, and your company's name, goes on
-what you deliver to a client. "Claude wrote that part" is not an answer a
-client accepts.
-
-An engineering manager doesn't review how each line was written. They own what
-gets delivered. That's the shift from the how to the what, and because the
-signature stays with you, checking the what is not optional.
 
 ---
 
@@ -913,32 +761,38 @@ theatre the rest of the talk gets discounted. Mean it.
 
 ---
 
-## What I was handed for free
+## My case, and yours
+
+<div class="columns top">
+<div>
+
+**Hardwood**
 
 - A complete written specification
-- A public conformance corpus of test files
-- Three independent implementations to check against
-- Correctness = <em>the bytes match, or they don't</em>
-- Performance = <em>a number</em>
-- Greenfield code. One decision-maker.
+- A public corpus of test files
+- Three implementations to check against
+- Correct = <em>the bytes match</em>
+- Fast = <em>a number</em>
+- Greenfield. One decision-maker.
+
+</div>
+<div>
+
+**Your project**
+
+- A twelve-year-old system, no spec
+- Tests that assert what the code does
+- Correct = the client hasn't called
+- Four teams and an architect with a veto
+
+</div>
+</div>
 
 Note:
-Every one of these is a gift. I did not earn any of them.
+Left column first. Every one of these is a gift, and I did not earn any of
+them. Call back to the start: this is exactly why I picked the project.
 
-Call back to the start: this is exactly why I picked the project. I chose the best
-case on purpose.
-
----
-
-## What you have on Monday
-
-- A twelve-year-old system, no specification
-- Tests that assert whatever the code already does
-- "Correct" means the client hasn't called
-- Four teams and a client architect with a veto
-
-Note:
-Get the laugh, then land it flat.
+Then the right column. Get the laugh, then land it flat.
 
 ---
 
@@ -970,14 +824,16 @@ Photo: "Mechanics' Institute spiral staircase, from above" by chad_k (CC BY 2.0,
 
 <!-- .slide: class="hero-image" -->
 
-## A weekend project
+## Meanwhile, a weekend project
 
 ![](images/05-note-reading.png)
 
 <span class="aside">Sight-reading drill · pitch detection from the microphone · no dependencies</span>
 
 Note:
-Two days ago: a weekend project. A breather after midnight, and the key to it.
+A weekend in September. Say it plainly: same weeks, same tools as the Hardwood
+midnight, and no midnight at all. Why? That's the question for the next few
+slides. A breather, and the key.
 
 A note-reading trainer for the piano: shows a note, times how long I take to
 name it, brings the slow ones back sooner. In microphone mode it listens to me
@@ -996,170 +852,99 @@ Their version: the internal tool, the pitch demo, the spike nobody would fund.
 
 ## I vibe-coded all of it.
 
-I have not read the <em>how</em>.
+I checked the <em>what</em>: by ear.
 
 Note:
-Let that land in a talk called "not by AI". Somebody in the room is waiting
-for you to contradict yourself. Give them a second to think you have.
+Let the first line land in a talk called "not by AI". Somebody in the room is
+waiting for you to contradict yourself. Give them a second to think you have.
 
-Then ask: so why was that fine, when Hardwood took me to midnight?
-
----
-
-<!-- .slide: class="hero" -->
-
-## I checked the <em>what</em>.
-
-I play a note and hear whether it's right.
-
-Note:
-I am the feedback loop. Instant, exact, and the only user. A wrong answer is obvious
-the moment it happens, and it costs nobody anything.
+Then the second line. I play a note and hear whether it's right. I am the
+feedback loop: instant, exact, and the only user. A wrong answer is obvious the
+moment it happens, and it costs nobody anything.
 
 Hardwood's users are people I will never meet, and its wrong answers look
-right.
+right. A bug in my note trainer costs me a wrong note; a bug in Hardwood costs
+somebody else's data. Same tool, different consequences, so a different amount
+of checking.
 
-So "by AI" works when you can verify the what yourself, on the spot. "With AI"
-is what you need when you can't.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/li-2026-08-09-consequences.png" alt="Aug 9: the review debate comes down to vastly different consequences when shipped code fails">
-
-Note:
-The stakes, in one sentence: a bug in my note trainer costs me a wrong note.
-A bug in Hardwood costs somebody else's data.
-
-Same tool, same model. Different consequences, so a different amount of
-checking.
+And it was flow: playing against an instant answer is exactly the rhythm that
+was missing at midnight.
 
 ---
 
 <!-- .slide: class="hero" -->
 
-## Looking back, the magic happened wherever a <em>loop</em> existed.
+## Looking back, the magic happened wherever a <em>feedback loop</em> existed.
 
-<span class="aside">Test vectors. A conformance suite. My ears.</span>
+<span class="aside">Something that says right away whether the result is wrong:<br>test vectors, a conformance suite, my ears.</span>
 
 Note:
 The realisation that turns the curve. The SigV4 signer had AWS's test vectors.
 Hardwood had the parquet-testing corpus. The note trainer had my ears.
 
-Where a loop existed, the agent was magic. Where none did, I was the loop, and
-that was midnight.
+I was the loop in both. By ear, it answers in a second. Reading diffs, it takes
+all day. That's the whole difference.
+
+Where a loop existed, the agent was magic. It doesn't matter much what does the
+checking: my ears count, because they answer in a second and they're exact.
+
+Where nothing answered quickly, I was the loop the slow way: reading diffs and
+guessing whether they were right, all day. That was midnight.
 
 ---
 
 <!-- .slide: class="hero" -->
 
-## You can delegate exactly as much as you can check.
+## What a feedback loop can check, you can hand off.
+
+<span class="aside">The rest stays with you.</span>
 
 Note:
 Pre-empt the "so, write tests" reaction. Tests aren't new. What's new is the
 economics: when a human typed the code, tests were a safety net and review
-caught the rest. When an agent types it, your ability to check is the upper
-bound on how much you can hand off.
+caught the rest. When an agent types it, the feedback loops you have set the
+limit on what you can hand off. Not the model.
+
+"The rest stays with you" is where the last part of this act goes: review what
+no feedback loop can see.
 
 ---
 
-<!-- .slide: class="hero-image" -->
+## Stop being the loop
 
-<img class="post" src="images/x-2026-04-08-less-moat-in-code.png" alt="Apr 8: There is less and less moat in code">
-
-<span class="aside">Written in April. It took another turn before I worked that way.</span>
+<svg class="cycle" viewBox="0 0 1088 560" width="1088" height="560"><defs><marker id="cycle-head" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="cycle-head"/></marker></defs><path class="cycle-arc" d="M581.0 186.3 L585.5 187.6 L589.9 189.1 L594.3 190.8 L598.7 192.7 L602.9 194.8 L607.1 197.0 L611.2 199.4 L615.2 201.9 L619.2 204.7 L623.0 207.5 L626.7 210.6 L630.3 213.7 L633.7 217.1 L637.1 220.5 L640.3 224.1 L643.3 227.8 L646.3 231.7 L649.0 235.6 L651.7 239.7 L654.1 243.9 L656.4 248.2 L658.6 252.5 L660.5 257.0 L662.3 261.6" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M665.4 339.4 L663.9 344.2 L662.3 349.0 L660.4 353.7 L658.4 358.3 L656.2 362.8 L653.8 367.3 L651.3 371.7 L648.5 375.9 L645.6 380.1 L642.5 384.2 L639.3 388.1 L635.9 391.9 L632.4 395.6 L628.7 399.2 L624.9 402.6 L620.9 405.8 L616.8 408.9 L612.6 411.9 L608.2 414.6 L603.7 417.3 L599.2 419.7 L594.5 422.0 L589.8 424.0 L584.9 425.9" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M502.1 429.0 L497.0 427.4 L492.0 425.6 L487.0 423.7 L482.1 421.5 L477.3 419.2 L472.5 416.6 L467.9 413.9 L463.4 411.0 L458.9 407.9 L454.6 404.6 L450.5 401.2 L446.4 397.6 L442.5 393.8 L438.8 389.9 L435.2 385.8 L431.7 381.6 L428.4 377.2 L425.3 372.7 L422.4 368.1 L419.6 363.4 L417.0 358.5 L414.7 353.6 L412.5 348.5 L410.5 343.4" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M407.4 255.6 L409.1 250.2 L411.0 244.9 L413.0 239.6 L415.3 234.4 L417.8 229.3 L420.5 224.3 L423.4 219.4 L426.5 214.7 L429.8 210.0 L433.3 205.4 L436.9 201.0 L440.8 196.8 L444.8 192.6 L448.9 188.7 L453.2 184.9 L457.7 181.2 L462.3 177.8 L467.1 174.5 L472.0 171.4 L477.0 168.5 L482.1 165.8 L487.4 163.3 L492.7 161.0 L498.1 158.9" marker-end="url(#cycle-head)"/><text class="cycle-label" x="544" y="110" text-anchor="middle"><tspan class="cycle-num">1</tspan>  Build the <tspan class="cycle-em">feedback loop</tspan></text><text class="cycle-sub" x="544" y="140" text-anchor="middle">so the agent finds out it’s wrong</text><text class="cycle-label" x="734" y="304" text-anchor="start"><tspan class="cycle-num">2</tspan>  Make it <tspan class="cycle-em">fast</tspan></text><text class="cycle-sub" x="734" y="334" text-anchor="start">or it gets skipped</text><text class="cycle-label" x="544" y="512" text-anchor="middle"><tspan class="cycle-num">3</tspan>  Review what <tspan class="cycle-em">no feedback loop</tspan> can see</text><text class="cycle-sub" x="544" y="542" text-anchor="middle">that part stays with you</text><text class="cycle-label" x="354" y="304" text-anchor="end"><tspan class="cycle-num">4</tspan>  Raise the <tspan class="cycle-em">floor</tspan></text><text class="cycle-sub" x="354" y="334" text-anchor="end">make every correction stick</text></svg>
 
 Note:
-Written in April, long before this talk: the moat is in everything describing a
-system's behaviour verifiably. APIs, executable specifications, test suites.
-For functional and non-functional requirements. "Much more focused on the
-'What' and 'Why' than on the 'How'."
+The map for the rest of this part, and the closing slide in advance. Go round
+once, clockwise from the top.
 
-"I wrote this down in April. It took another turn before I actually worked that
-way." Knowing it and living by it are different things.
+The answer to "so, write tests": tests are the start of the first one. The
+other three are about keeping the loop usable, spending your own attention
+where no loop reaches, and making every correction stick.
 
----
-
-## The <em>what</em> is more than the feature
-
-You own the architecture:
-
-- Invariants
-- Threading
-- Allocation budget
-
-Note:
-Otherwise "check the what" sounds like "click through the feature and see if
-it works".
-
-The what includes everything the design promises: which invariants hold, who
-touches which thread, how much a read allocates. An agent can write code that
-does the right thing and breaks all three.
+Don't explain the arrows. They don't quite close: each time round starts a
+little further out. The helix at the end of the act pays that off.
 
 ---
 
-## What you check moves up
-
-1. <em>Behaviour</em>: does it do the right thing?
-2. <em>Performance</em>: is it fast enough?
-3. <em>The loop itself</em>: how fast do you find out?
-4. <em>Design</em>: is it the right thing to build?
-5. <em>Claims</em>: is what it tells you true?
-
-Note:
-This is the answer to "so, write tests". Tests are the first rung. Each level
-above it is its own discipline: differential testing, performance engineering,
-build engineering, API review, and checking what the agent says about its own
-work.
-
-The climb out of midnight goes up this list.
-
----
-
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero chapter" data-background-image="images/sections/chapter-build-loop.jpg" data-background-opacity="0.22" -->
 
 <span class="overline">3 · A new way of working</span>
 
-# Behaviour
+# Build the feedback loop
 
-<span class="aside">Does it do the right thing?</span>
+<span class="aside">Give the machine a way to say no.</span>
 
----
-
-## What caught the geo bug?
-
-- Not the tests — they tested the fiction <!-- .element: class="fragment" -->
-- Not the review — it passed <!-- .element: class="fragment" -->
-- Someone who knew the format well enough to ask whether the thing <em>exists</em> <!-- .element: class="fragment" -->
-
-Note:
-Answer the prologue's question.
+<span class="credit">© OregonDOT https://flic.kr/p/2j22sUS (CC BY 2.0)</span>
 
 ---
 
-<!-- .slide: class="hero-image" -->
+## What is the oracle?
 
-<img class="post" src="images/x-2026-03-30-known-unknowns.png" alt="Mar 30: LLMs are great for solving known unknowns. They are confidently bad for dealing with unknown unknowns.">
+<div class="columns top">
+<div>
 
-Note:
-A loop catches known unknowns: things somebody knew to check. The geo bug was an
-unknown unknown. Nobody writes a test for a field that doesn't exist.
-
-So loops take most of the checking off your plate, and expertise keeps the
-rest.
-
----
-
-<!-- .slide: class="hero" -->
-
-## The question is never "is the AI good?"
-
-It's "<em>what is my oracle?</em>"
-
----
-
-## My oracle
+**Hardwood**
 
 ```xml
 <!-- core/pom.xml -->
@@ -1175,6 +960,18 @@ It's "<em>what is my oracle?</em>"
 </dependency>
 ```
 
+</div>
+<div>
+
+**Your project**
+
+- Golden-master the legacy service, then refactor behind it
+- Replay recorded production traffic against both versions
+- Run the old system <em>beside</em> the new one and diff
+
+</div>
+</div>
+
 Note:
 Say the line out loud, it's the best one on this slide:
 
@@ -1188,75 +985,13 @@ the only reason I can let an agent near a binary format.
 Add the war story if time allows: a dictionary bug DuckDB happily accepted and
 parquet-java rejected. One lenient consumer hides a real break.
 
----
+The question to take home is never "is the AI good?". It's "what is my oracle?"
 
-## The predicate audit
+The predicate audit takes this to scale: about 72,000 predicate cells, through
+five read paths, against parquet-java and DuckDB, in every PR build.
 
-<span class="subtitle">About <em>72,000</em> predicate cells</span>
-
-× 5 read paths
-
-against parquet-java and DuckDB, in every PR build
-
-<span class="aside">tools/predicate-audit · about three minutes</span>
-
-Note:
-Every literal kind a column takes, around stored values, in gaps, past the
-range, at the edge cases: NaN payloads, signed zeros, padded decimals. Every
-operator, every negated and set form. Read through the row reader and the
-column reader, with and without metadata filtering.
-
-After three runs it stopped finding defects in the rule, so now it guards
-against regressions.
-
-On your project: this is the golden master, built on purpose.
-
----
-
-## The oracles have bugs too
-
-- parquet-java: `in` with `Set.of` throws; multi-value `notIn` returns every row
-- DuckDB: `-0.0 = 0.0`
-- A stale jar in `~/.m2` silently shadowing the code under test
-
-Note:
-Each of these produced plausible, wrong answers during the audit.
-
-A reference implementation is still an implementation. Disagreement is where
-you look; it isn't automatically the other side that's right.
-
----
-
-## Manufacturing an oracle
-
-- Golden-master the legacy service, then refactor behind it
-- Record production traffic, replay it against both versions
-- Property tests where you can't enumerate cases
-- Run the old system <em>beside</em> the new one and diff
-
-Note:
-None of this is new. All of it was optional before, because the humans were
-slow enough that review caught things.
-
-This is the "what do I do Monday" answer for the brownfield half of the room.
-
-The predicate audit is the same idea at scale: characterise the behaviour you
-have, then change the code behind it.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-## First, understand what's there
-
-<img class="post post-tall" src="images/x-2026-01-23-flink-pipeline-diagram.png" alt="Jan 23: Claude Code draws a Flink pipeline as an ASCII diagram from its source code">
-
-Note:
-Before you can pin down behaviour, you have to know what the system does. A
-Flink pipeline, drawn straight from its source.
-
-For a client's twelve-year-old system, this is where the agent earns its keep
-first: reading, not writing.
+Right column: the brownfield version. None of this is new. All of it was
+optional before, because humans were slow enough that review caught things.
 
 ---
 
@@ -1269,35 +1004,175 @@ They're a <em>mirror</em>.
 Note:
 Sharpest line in act three. Don't rush it and don't explain it.
 
+A real one, caught in review on Sep 15: the test's expected values came from the
+reader under test, so a decoding bug would have matched on both sides. The fix:
+expected values written independently, by the fixture generator.
+
+And the oracle itself is core: exclusion lists, expected values and skipped tests
+get read line by line. That's the answer to "it edited the test until it
+agreed".
+
+---
+
+## "Make it faster, Claude!"
+
+<div class="columns top">
+<div class="narrow">
+
+<img src="images/06-n300-box.jpg" width="340" height="340" alt="The Minix NEO Z300 on the desk">
+
+</div>
+<div>
+
+**What the agent does on a 7 W box**
+
+- Pushes my branch into the box's checkout
+- Pins the CPU clock, runs JMH
+- `perfnorm`: instructions, cache and branch misses
+- `async-profiler`: where the time goes
+- `perfasm`: the exact hot instructions
+
+</div>
+</div>
+
+<span class="aside">Works pretty well. If you can tell <em>faster</em> from <em>plausible</em>.</span>
+
+Note:
+Performance work is supposed to be where AI
+can't help: it needs real hardware, careful measurement, and knowledge of what
+the JIT does with your loop.
+
+It does help. Here's the setup that makes that true.
+
+A Minix NEO Z300, about 500 EUR, completely silent. Why a separate box: macOS
+gets in the way (SIP blocks dtrace, no clean way to pin a workload to one core),
+and the laptop runs everything else. Why this one: eight cores of one kind, so
+no performance/efficiency mix to throw off measurements. Downsides: one memory
+channel and no AVX-512.
+
+The agent SSHes in and does everything itself.
+
+"Coding agents work best with a tight feedback loop." The question was whether
+that holds for performance too (Jul 16 post).
+
+All of it unattended. I read the conclusions, and the numbers under them.
+
+This is the part people don't believe until they see it: the agent reading
+annotated assembly and telling you which instructions are hot, whether the loop
+vectorised, and what got inlined.
+
+---
+
+## perfasm names the culprit
+
+<span class="subtitle">Delta decoding: 69% of cycles in one method</span>
+
+<pre class="asm"><code class="nohighlight" data-noescape>   1.16%  add    %rsi,%rax                 ;*ladd
+   1.45%  mov    0x38(%rsp),%r10
+   0.79%  mov    %rax,0x10(%r10,%rcx,8)    ;*lastore
+<mark>   5.13%  mov    0x48(%rsp),%r10
+   1.03%  mov    %rax,0x10(%r10)           ;*putfield lastValue
+   6.66%  mov    %rbp,%r10</mark>
+   0.74%  shr    $0x3,%r10
+   …
+   0.45%  cmp    0x70(%rsp),%r10d
+   0.54%  jae    …                         ;*invokestatic checkIndex
+   …
+   0.95%  mov    %rsi,0x18(%r10,%rcx,8)    ;*lastore
+<mark>   3.97%  mov    0x48(%rsp),%r10
+   0.99%  mov    %rsi,0x10(%r10)           ;*putfield lastValue
+   5.25%  add    0x60(%rsp),%rdx</mark></code></pre>
+
+<span class="aside fragment">The fix: one local variable instead of the field. +2% to +7%, fewer instructions per value.</span>
+
+Note:
+Aug 30, reviewing the delta decoder rewrite. My whole prompt: "profile the
+decoding benchmark on the N300 to identify whether there's any remaining
+bottlenecks".
+
+perfnorm first: no cache or TLB misses, few branch misses, so pure instruction
+count. Then perfasm: the loop is unrolled twice, and in each copy the running
+value is loaded from and stored to the field lastValue, on every value. About
+11% of cycles (the sampling skid puts the cost on the lines around the store).
+
+The agent's explanation: the JIT can't keep the field in a register, because it
+can't prove the output array doesn't alias `this`.
+
+Click: the fix. The agent carried the value in a local and wrote it back once.
+Measured on the N300 (x86): +2%, +5%, +7% ops/ms at bit widths 10, 21, 64;
+instructions per value 38.6 → 36.9, 39.1 → 37.3, 26.4 → 24.8. On an Apple
+M-series laptop it's neutral, so it's free there.
+
+It also went after the two bounds checks per value: an int cursor needs a
+block-size cap, which broke a test, and it measured 5% slower. It reported that
+and dropped it.
+
+The fix is on main today, with a comment saying why the locals are there.
+
 ---
 
 <!-- .slide: class="hero" -->
 
-<blockquote class="transcript">
-"The oracle takes each row's value from the reader under test: values() reads the column through RowReader.getValue / getRawValue. A decode defect therefore passes on both sides."
-<cite>Me, reviewing a test, Sep 15</cite>
-</blockquote>
+## It never gets tired of trying.
+
+<em>The number decides what worked.</em>
 
 Note:
-A real one, caught in review two weeks ago. The expected values came from the
-code being tested, so a decoding bug would have produced matching wrong answers
-on both sides.
+Running profilers, reading assembly, trying variant after variant at two in
+the morning: it will do that all night and never get bored.
 
-The fix: expected values written independently, by the fixture generator, into
-files next to the test data.
+Whether any of it worked is a number. Not an explanation.
+
+The rules that came out of midnight: measure
+before naming a cause; an untested theory says "untested" in the same sentence;
+A/B/A, never A/B; "is any of this making a difference end to end?"; a hard time
+cap, checked inside every run.
 
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero chapter" data-background-image="images/sections/chapter-make-fast.jpg" data-background-opacity="0.22" -->
 
-## Changes to the oracle get read line by line.
+<span class="overline">3 · A new way of working</span>
 
-<span class="aside">Exclusion lists. Expected values. Skipped tests.</span>
+# Make it fast
+
+<span class="aside">A loop you wait minutes for is a loop you skip.</span>
+
+<span class="credit">© Elsie esq. https://flic.kr/p/i9NnnB (CC BY 2.0)</span>
+
+---
+
+## "I'm feeling our feedback loop is too slow."
+
+<span class="subtitle">Me, to Claude, Sep 7</span>
+
+- Integration tests: 40 of 130 seconds → <code>-DskipITs</code> while iterating <!-- .element: class="fragment" -->
+- The licence check: 8–16 s instead of 0.4 s. It walked 205,000 files, most of them in agent worktrees. <em>CI never saw it.</em> <!-- .element: class="fragment" -->
 
 Note:
-The answer to "it edited the test until it agreed". Checking the what is worth
-nothing if the thing doing the checking can be changed by the thing being
-checked. So that part is core, and core gets every diff.
+My prompt, verbatim: how long does verify take with and without the ITs, "I'm
+feeling our feedback loop is too slow." Then: reproduce it on the N300 and
+profile it there.
+
+First click: the integration tests need Docker and exercise nothing most
+changes touch. So iterating skips them, and the full build runs before pushing.
+That's a rule in the agent instructions now.
+
+Second click: the licence plugin descends into every directory it could match,
+including the ones it excludes. So it walked the agent worktrees, the benchmark
+data and the virtualenvs, 205,000 files to select 1,000. CI never saw it,
+because every CI checkout is fresh. The way I work with agents was slowing down
+the agents' own feedback loop, and only on my machine.
+
+Even here the first explanation was wrong: "The dir walk is the reason. I said
+otherwise a message ago and that was wrong." The measurement caught it.
+
+Three builds now: `-Dquick` to just build something (no tests, no quality
+checks; a test run under it reports success having run nothing), `-DskipITs`
+while iterating, everything before you push.
+
+On your project: profile your build like any other workload.
+
 
 ---
 
@@ -1310,419 +1185,98 @@ checked. So that part is core, and core gets every diff.
   <img src="images/li-2026-08-07-terminal.png" alt="Claude Code loading the hardwood-cli skill and finding the column rename">
 </div>
 
+<span class="aside">If your agent keeps writing one-off scripts to look at a system, that system is missing a tool.<br>Build it, even if only the agent uses it.</span>
+
 Note:
-The Hardwood skill, contributed by Sem Sinchenko. Point Claude Code at 122 NYC
+The Hardwood CLI, plus a skill that tells the agent how to call it (contributed
+by Sem Sinchenko). Point Claude Code at 122 NYC
 taxi files: "airport_fee comes back null for 2024. What changed?"
 
 It loads the skill, runs the CLI, and finds the rename to Airport_fee in
-February 2023 — plus VendorID changing type at the same boundary.
+February 2023, plus VendorID changing type at the same boundary.
 
----
+Before the skill, every question about a Parquet file meant a fresh one-off
+script: PyArrow, or unpacking the footer bytes by hand in Python. Each one
+written from scratch, each one a new chance to be wrong, and slow to get an
+answer from. Now it runs `hardwood`, which already knows the answer's shape.
 
-<!-- .slide: class="hero" -->
+The aside is the generalisation. A one-off script per question is a slow loop; a
+tool the agent has been taught is a fast one. I built the tool my agent debugs
+my library with, and the agent is its heaviest user.
 
-## The agent doesn't write throwaway scripts to look at a Parquet file.
+Same idea, more specific: a skill for the PR workflow (branches, rebases,
+pushes), so it doesn't reinvent git on every PR.
 
-It runs `hardwood`.
-
-Note:
-And here's the self-referential part that people remember:
-
-I built the tool my agent debugs my library with. The CLI exists for users,
-but the agent is its heaviest user.
-
----
-
-## The generalisation
-
-An agent reaching for a one-off script
-is telling you your domain is missing an <em>instrument</em>.
-
-Build it. Even if only the agent uses it.
-
-Note:
 Their version: the client system nobody can inspect without raising a ticket.
-The data pipeline whose state lives in someone's head. You have been tolerating
-that because *you* knew the workarounds. The agent doesn't, and it will
-cheerfully invent one.
 
 ---
 
-## Even when I vibe-code, I ask for instruments
-
-- A strike log: what the detector heard, and why it rejected it
-- A test mode that plays known notes
-- Recording a session to replay against the detector
-
-Note:
-Back to the note trainer. I didn't read how the pitch detection works, but I
-asked for all three of these, because "it didn't register my note" tells
-neither me nor the agent anything.
-
-Not reading the how only works if you can see the what. These are how you see
-it.
-
----
-
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero chapter" data-background-image="images/sections/chapter-review.jpg" data-background-opacity="0.22" -->
 
 <span class="overline">3 · A new way of working</span>
 
-# Performance
+# Review what no feedback loop can see
 
-<span class="aside">Is it fast enough?</span>
+<span class="aside">Human attention, where mistakes are expensive.</span>
+
+<span class="credit">© John 'Pathfinder' Lester https://flic.kr/p/bUgBy5 (CC BY 2.0)</span>
+
+---
+
+## What caught the geo bug?
+
+- Not the tests — they tested the fiction <!-- .element: class="fragment" -->
+- Not the review — it passed <!-- .element: class="fragment" -->
+- Someone who knew the format well enough to ask whether the thing <em>exists</em> <!-- .element: class="fragment" -->
+
+Note:
+Answer the prologue's question.
+
+A loop catches known unknowns, things somebody knew to check. The geo bug was an
+unknown unknown: nobody writes a test for a field that doesn't exist. Loops take
+most of the checking off your plate; expertise keeps the rest (Mar 30 post:
+"confidently bad for dealing with unknown unknowns").
+
+---
+
+## I own the design. <em>Not every line.</em>
+
+<svg class="pockets" viewBox="0 0 1000 470" width="1000" height="470"><text x="150" y="38" class="pk-title" fill="#354045">The design: mine</text><g class="fragment" data-fragment-index="1"><rect x="184.0" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="229.7" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="275.4" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="321.1" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="366.9" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="412.6" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="458.3" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="504.0" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="549.7" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.07"/><rect x="595.4" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="641.1" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="686.9" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="732.6" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="778.3" y="94.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.14"/><rect x="184.0" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="229.7" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="275.4" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="321.1" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="366.9" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="412.6" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.09"/><rect x="458.3" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="504.0" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.16"/><rect x="549.7" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="595.4" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="641.1" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.16"/><rect x="686.9" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.07"/><rect x="732.6" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.15"/><rect x="778.3" y="137.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="184.0" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="229.7" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="275.4" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="321.1" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="366.9" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="412.6" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.14"/><rect x="458.3" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.09"/><rect x="504.0" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="549.7" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="595.4" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="641.1" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="686.9" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="732.6" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="778.3" y="180.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="184.0" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.09"/><rect x="229.7" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="275.4" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="321.1" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="366.9" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="412.6" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="458.3" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="504.0" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="549.7" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.14"/><rect x="595.4" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="641.1" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="686.9" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="732.6" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="778.3" y="224.0" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.09"/><rect x="184.0" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="229.7" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="275.4" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.15"/><rect x="321.1" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.14"/><rect x="366.9" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="412.6" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="458.3" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="504.0" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="549.7" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.16"/><rect x="595.4" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.4"/><rect x="641.1" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.85"/><rect x="686.9" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="732.6" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="778.3" y="267.3" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.14"/><rect x="184.0" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.08"/><rect x="229.7" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="275.4" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.07"/><rect x="321.1" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="366.9" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.14"/><rect x="412.6" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="458.3" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.15"/><rect x="504.0" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.1"/><rect x="549.7" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.13"/><rect x="595.4" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="641.1" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.12"/><rect x="686.9" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.11"/><rect x="732.6" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.15"/><rect x="778.3" y="310.7" width="37.7" height="35.3" rx="4" fill="#354045" fill-opacity="0.16"/><rect x="880" y="130" width="26" height="26" rx="4" fill="#354045" fill-opacity="0.85"/><text x="916" y="151" class="pk-legend" fill="#354045">read closely</text><text x="916" y="178" class="pk-sub" fill="#666666">where a wrong</text><text x="916" y="202" class="pk-sub" fill="#666666">answer looks right</text><rect x="880" y="250" width="26" height="26" rx="4" fill="#354045" fill-opacity="0.12"/><text x="916" y="271" class="pk-legend" fill="#354045">the what</text><text x="916" y="298" class="pk-sub" fill="#666666">a feedback loop</text><text x="916" y="322" class="pk-sub" fill="#666666">checks it</text></g><rect x="150" y="60" width="700" height="320" rx="26" fill="none" stroke="#b5491f" stroke-width="12"/><text x="500.0" y="436" text-anchor="middle" class="pk-label" fill="#b5491f">The API: every change, line by line</text></svg>
+
+Note:
+The design is mine, always, and no feedback loop checks it. The one hard
+border is the API: every change to it gets read line by line.
+
+Click: inside, attention is graded, not uniform. Where a wrong answer would look
+right, I read closely. Where the what is precise (a decoder has a spec: it
+works, or it doesn't) or little is at stake (the TUI I judge by what it
+renders), a feedback loop checks it and I don't read the how.
 
 ---
 
 <!-- .slide: class="hero-image" -->
 
-<img class="post" src="images/x-2026-01-18-async-profiler-1-claude-0.png" alt="Jan 18: async-profiler: 1, Claude Code: 0">
+## Every API change, on a list
+
+<img src="images/api-report-1.0.0-filemetadata.png" width="1080" height="290" style="max-height: none" alt="API change report, 1.0.0.Final vs CR2: FileMetaData constructor REMOVED (!), CONSTRUCTOR_REMOVED; a new constructor added">
+
+<span class="aside">API report for 1.0.0.Final against CR2 · <code>(!)</code> marks a binary-incompatible change</span>
 
 Note:
-A breather. January: the profiler found what the agent's explanation missed.
+The hard border doesn't rely on me spotting API changes in a diff. japicmp
+compares every build against the last release, across all four published
+modules, and the report is published with each release on hardwood.dev.
+
+This one: between CR2 and Final, a constructor of the public FileMetaData
+record was removed and replaced. Flagged as binary-incompatible. Every line on
+that list gets a decision from me: intended, documented, worth it?
+
+A feedback loop for the one thing I never hand off. It surfaces the change; the
+judgment stays with me.
+
 
 ---
 
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-01-22-10x-100x.png" alt="Jan 22: most software is built inefficiently by factor 10x; ready to raise this 100x">
-
-Note:
-Why performance gets its own loop: generated code that nobody measures gets slow
-quietly.
-
----
-
-<!-- .slide: class="hero" -->
-
-## "Make it faster, Claude!"
-
-<span class="aside">Works pretty well. If you can tell <em>faster</em> from <em>plausible</em>.</span>
-
-Note:
-Performance work is supposed to be where AI
-can't help: it needs real hardware, careful measurement, and knowledge of what
-the JIT does with your loop.
-
-It does help. Here's the setup that makes that true.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-07-16-z300.png" alt="Jul 16: a Minix NEO Z300 for profiling; coding agents work best with a tight feedback loop">
-
-Note:
-"Coding agents work best with a tight feedback loop. 'Here's a bug with a
-reproducer, go and fix it' works great." The question was whether the same holds
-for performance.
-
-"This function is slow, profile it on the Z300 and address the bottleneck" has
-become a workflow. And it can measure instead of guess.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-## A 7 W box on my desk
-
-![](images/06-n300-box.svg)
-
-<span class="aside">Intel N300 · 8 E-cores · fanless · single memory channel</span>
-
-Note:
-A Minix NEO Z300, about 500 EUR, completely silent. Why a separate box: macOS
-gets in the way (SIP blocks dtrace, no clean way to pin a workload to one core),
-and the laptop runs everything else. Why this one: eight cores of one kind, so
-no performance/efficiency mix to throw off measurements. Downsides: one memory
-channel and no AVX-512.
-
-The agent SSHes in and does everything itself.
-
----
-
-## What the agent does on it
-
-- Pushes my branch straight into the box's checkout
-- Pins the CPU clock, runs JMH, restores the clock afterwards
-- `perfnorm`: instructions, IPC, cache and branch misses per op
-- `async-profiler`: where the time goes
-- `perfasm`: the exact hot instructions
-
-Note:
-All of it unattended. I read the conclusions, and the numbers under them.
-
-This is the part people don't believe until they see it: the agent reading
-annotated assembly and telling you which instructions are hot, whether the loop
-vectorised, and what got inlined.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-## Durable knowledge
-
-<span class="aside">Screenshot: the n300-profiling skill → images/03-n300-skill.svg</span>
-
-![](images/03-n300-skill.svg)
-
-Note:
-A personal bare-metal box for profiling. The skill tells the agent how to get
-on it, how to run the harness, and — mostly — what not to conclude from it.
-
----
-
-## The method, written down
-
-```markdown
-`perfnorm` to classify (instructions/op + IPC + misses
-→ compute vs memory vs branch bound)
-→ `async` flamegraph for *where*
-→ `perfasm` for the exact instructions.
-
-Prove a suspected bottleneck by *changing the supply*
-of the resource, not just reading the profile.
-```
-
-<span class="aside">From the skill</span>
-
-Note:
-The last line is the important one. A profile shows where time goes. It does
-not show why. You find out why by changing something and measuring again.
-
----
-
-## Every line is a mistake that will never happen again
-
-```markdown
-- **This box is not for memory-bandwidth-scaling conclusions**
-  (single channel makes almost anything parallel *look*
-  bandwidth-bound)
-
-- **Poll with a process match that can't match itself.**
-  `pgrep -f "mvn … install"` over SSH matches the polling
-  shell's own argv, so it reports "still running" forever.
-```
-
-Note:
-Read the second one aloud. It's funny, it's specific, and it cost me an hour
-once. Now it costs nobody anything, ever again.
-
-This is the actual artefact of expertise in an agentic workflow: not the code
-you wrote, the traps you wrote down.
-
----
-
-<!-- .slide: class="hero" -->
-
-## Embeddings
-
-A column of 768 floats per row.
-
-The fast path for it was <em>slower</em> than reading plain float columns.
-
-Note:
-Vector embeddings stored as Parquet lists: every row is a list of exactly 768
-floats. We had built a dedicated fast path for this shape. It lost to the
-ordinary flat-column path, which should be its floor, not its ceiling.
-
-Why?
-
----
-
-## Dead ends
-
-- Skip the per-batch trim → <em>7% slower</em>
-- Pre-size the accumulator → <em>slower</em>
-- Change the final-batch handoff → <em>noise</em>
-
-<span class="aside">The time-weighted CPU profile kept pointing the wrong way.</span>
-
-Note:
-Each fix had a plausible explanation behind it. Measurement refuted all three.
-
-Time-weighted CPU profiles kept over-weighting a few large memory moves, and
-sent us after them repeatedly.
-
----
-
-<!-- .slide: class="hero" -->
-
-## The batch was <em>512 MB</em>.
-
-<span class="aside">Sized for ~6 MB. Batch sizing counted 4 bytes per row and ignored the 768.</span>
-
-Note:
-Batch sizing looked at the leaf type — a float, 4 bytes — and never at how many
-values sit in one row. So a "row-count" batch held 768 times the intended data:
-half a gigabyte instead of something that fits in the L2 cache.
-
-The cost wasn't where the copy happened. It was how big the working set was.
-
-The instrument that found it was perfnorm counting instructions and cycles. The
-time-weighted profile never pointed at it.
-
----
-
-## After the fix
-
-| | Before | After |
-|---|---|---|
-| Time | ~690 ms | 437 ms |
-| Cycles | 2.45 B | 1.50 B |
-| Gap to flat columns | 1.77× | 1.07× |
-
-<span class="aside">Single core, N300.</span>
-
-Note:
-The regular, non-fast path got faster too, because it shares the sizing: about
-1.5 s down to 0.8 s.
-
-It's a cache effect, so it should carry over to other machines, but it still
-wants a confirmation on a multi-channel server before anyone quotes it. Why
-that matters comes up in a few slides.
-
----
-
-## The instrument lies too
-
-- A stale CPU pin at 800 MHz: every number ~2× slow, nothing says so
-- One memory channel: anything parallel <em>looks</em> bandwidth-bound
-- A 7 W part: whatever runs second is penalised by heat
-- A reproducer spun on row 0 for 65 minutes, on 8 cores
-
-Note:
-Each of these produced numbers that looked like results.
-
-The stale pin is the nastiest: a previous run set the clock to its base
-frequency and never restored it. JMH ran fine. Everything was twice as slow.
-
-The spinning reproducer: its loop never advanced to the next row, and the time
-cap was only checked between rounds. One round never ended.
-
----
-
-<!-- .slide: class="hero" -->
-
-## The instrument needs an oracle too.
-
----
-
-## The rules
-
-- Measure before naming a cause
-- An untested theory says "untested" in the same sentence
-- A/B/A, never A/B
-- "Is any of this making a difference <em>end to end</em>?"
-- A hard time cap, checked <em>inside</em> every run
-
-Note:
-The fourth is the one I use most. A micro-benchmark regression of 16 ns per
-page is real and irrelevant. Bound the end-to-end share before probing further.
-
-All five are written down for the agent now. Each one is an answer to midnight:
-the five causes, "this drives me crazy".
-
----
-
-<!-- .slide: class="hero" -->
-
-## It's tireless at the <em>how</em>.
-
-The <em>what</em> is the counter.
-
-Note:
-Running profilers, reading assembly, trying variant after variant at two in
-the morning: it will do that all night and never get bored.
-
-Whether any of it worked is a number. Not an explanation.
-
----
-
-<!-- .slide: class="hero" -->
-
-<span class="overline">3 · A new way of working</span>
-
-# The loop itself
-
-<span class="aside">How fast do you find out?</span>
-
-Note:
-A loop you wait minutes for is a loop you skip. Mine had got slow.
-
----
-
-## The licence check
-
-| | |
-|---|---|
-| Fresh checkout | 0.4 s |
-| My working clone | <em>8–16 s</em> |
-
-<span class="aside">It walked 205,000 files to select 1,000.</span>
-
-Note:
-I asked the agent to profile the build: "I'm feeling our feedback loop is too
-slow."
-
-The Maven licence plugin descends into every directory it could possibly match,
-including the ones it has already excluded. So it walked the agent worktrees,
-the benchmark data and the virtualenvs, and threw the results away.
-
----
-
-<!-- .slide: class="hero" -->
-
-## CI never saw it.
-
-<span class="aside">Every CI checkout is fresh. Mine was full of agent worktrees.</span>
-
-Note:
-The way I work with agents was slowing down the agents' own feedback loop, and
-only on my machine. Profiling found it; no dashboard would have.
-
----
-
-<!-- .slide: class="hero" -->
-
-<blockquote class="transcript">
-"The dir walk <strong>is</strong> the reason. I said otherwise a message ago and that was wrong — I'd compared my hand-rolled simulation (110ms) against the whole mvnw run (9.3s)."
-<cite>Claude, Sep 7</cite>
-</blockquote>
-
-Note:
-Even here, the first explanation was wrong, and the measurement caught it.
-
----
-
-## An inner loop and an outer loop
-
-| | |
-|---|---|
-| `./mvnw verify` | ~130 s |
-| …of which integration tests | ~40 s |
-
-Iterate with `-DskipITs`. Run everything before you push.
-
-Note:
-The integration tests need Docker and exercise nothing most changes touch. So
-the inner loop skips them, and the full build runs once before pushing. It's a
-line in the agent instructions.
-
-On your project: measure your inner loop. Profile the build like any other
-workload.
-
----
-
-<!-- .slide: class="hero" -->
-
-<span class="overline">3 · A new way of working</span>
-
-# Design
-
-<span class="aside">Is it the right thing to build?</span>
-
----
 
 <!-- .slide: class="hero-image" -->
 
@@ -1730,7 +1284,7 @@ workload.
 
 ![](images/07-code-review-pyramid.png) <!-- .element: class="plain" style="max-height: 500px" -->
 
-<span class="aside">Weight review effort by how expensive a problem is to fix after merge.</span>
+<span class="aside">The base is the <em>what</em>. The top is the <em>how</em>.</span>
 
 Note:
 Some people in the room will know this image. I drew it a few years ago, long
@@ -1743,141 +1297,12 @@ ships to production. The narrow top — style — is cheap and mechanical.
 A style nit and an API mistake are not the same kind of thing, and the model
 will happily hand you fifty of the former.
 
----
+The *what* is more than the feature: the architecture is part of it. Invariants,
+threading, the allocation budget. An agent can write code that does the right
+thing and breaks all three.
 
-<!-- .slide: class="hero" -->
-
-## The base is the <em>what</em>. The top is the <em>how</em>.
-
-Note:
-"Review the claim, not the diff" is this pyramid, applied to AI output.
-
----
-
-<!-- .slide: class="hero" -->
-
-## Automate the top.
-
----
-
-## The ladder
-
-1. Ask nicely in prose <!-- .element: class="fragment" -->
-2. Make it an automated check <!-- .element: class="fragment" -->
-3. Make the wrong thing <em>unrepresentable</em> <!-- .element: class="fragment" -->
-
-Note:
-Every standard in the project starts at step one. The ones that matter get
-promoted.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-03-27-kids-raise-themselves.png" alt="Mar 27: asking Claude how to avoid a mistake it keeps making, and adding that to CLAUDE.md, feels like asking your kids to raise themselves">
-
-Note:
-Step one of the ladder, and why it doesn't hold on its own.
-
----
-
-## The ladder, with dates
-
-- **Sep 4:** "never add the session id to PRs", in CLAUDE.md
-- **Sep 8:** "why are you adding the claude session to commits again, in claude.md we say don't do it"
-- **Sep 14:** moved into the settings file
-
-Note:
-The co-author trailer. A rule in prose, broken four days later, then moved
-into configuration where it can't be broken.
-
-Same path for filler prose in the docs: a complaint in August, a memory entry,
-then a check in the PR build.
-
----
-
-## Promoted
-
-| Rule | Lives as |
-|---|---|
-| Never use `var` | custom Error Prone check |
-| No legacy `/** */` JavaDoc | custom Error Prone check |
-| No filler prose in the docs | `docs-prose-check.py` in the PR build |
-
-Note:
-Two of these are compiler errors I wrote myself. The third is a Python script
-that fails the build on marketing language in documentation.
-
-Each began as a line of prose that I was tired of repeating.
-
----
-
-<!-- .slide: class="hero" -->
-
-## My design documents go stale.
-
-90 of them. I have not kept them current.
-
-Note:
-Confess it. Everybody in the room has this problem and almost nobody says it
-on a stage.
-
-It is not a discipline failure. It is a property of the form.
-
----
-
-<!-- .slide: class="hero" -->
-
-## Prose rots. Checks don't.
-
-The only documentation that doesn't rot
-is documentation that <em>runs</em>.
-
-Note:
-The design docs are still worth writing — as *input*. They are the thinking I
-do before generating, and steering the agent with a document beats steering it
-with a paragraph.
-
-But they are not a record. What survives is what executes.
-
----
-
-## Teach the agent the pyramid
-
-```markdown
-## Priority frame: the Code Review Pyramid
-
-Review effort is weighted by how expensive the issue is
-to fix after merge.
-
-When writing the findings file, sort by pyramid tier, not
-by checklist section. A small API-shape concern outranks a
-big style nit. Style items belong in a "Nits" footer.
-```
-
-<span class="aside">From the review skill</span>
-
-Note:
-The agent reviews too: other people's PRs, and its own output. Without the
-pyramid, it sorts findings in the order it found them.
-
----
-
-## AI reviews are noisy
-
-Cut, don't report:
-
-- Non-findings: "no API change here, looks fine"
-- Taste calls with no written rule behind them
-- Micro-optimisations on cold paths
-- Polishing a test that is already correct
-
-Note:
-Early review files were noisy: on one PR I kept only the items that named a
-real defect and cut the rest. A short review with five real defects beats a
-long one I have to filter.
-
-Same in their day jobs, with or without AI.
+Weight review effort by how expensive a problem is to fix after merge. "Review the
+claim, not the diff" is this pyramid, applied to AI output.
 
 ---
 
@@ -1889,78 +1314,7 @@ Same in their day jobs, with or without AI.
 
 Note:
 This is the most transferable slide in the section. It works for human
-reviewers on Monday morning, no agent required.
-
----
-
-## Decisions are not findings
-
-```markdown
-- **Q:** Keep the per-class duplication or extract a helper?
-  - [ ] **A.** Extract a shared helper
-  - [ ] **B.** Keep per-class, document why
-  - [ ] **C.** Keep as-is
-  - **Rec:** B — the classes are about to diverge
-```
-
-Note:
-Some review items aren't fixes, they're forks: two defensible options and
-somebody has to own the choice. The agent lifts them out, does the analysis,
-recommends one, and I tick a box. The file becomes the record of the decision.
-
-For consultants: this is the shape of every decision you take to a client.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-## Review, as an artifact
-
-<span class="aside">Screenshot: _reviews/pr-N-review.md with checkboxes → images/04-review-file.svg</span>
-
-![](images/04-review-file.svg)
-
-Note:
-Findings as checkboxes in a file, in priority order. A second skill walks the
-file and ticks them off as they're addressed.
-
-221 of these files.
-
----
-
-<!-- .slide: class="hero" -->
-
-## A review that evaporates on merge taught nobody anything.
-
-Note:
-The comment thread is gone. The file is still there, and the next review
-starts from it.
-
----
-
-<!-- .slide: class="hero" -->
-
-<span class="overline">3 · A new way of working</span>
-
-# Claims
-
-<span class="aside">Is what it tells you true?</span>
-
-Note:
-The top rung, and the one no loop covers: the agent's own account of what it
-did.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-03-28-full-picture.png" alt="Mar 28: What would Claude say if it were a photographer? Now I have the full picture.">
-
-<span class="aside">"I have the full picture": 12 times in my sessions last month.</span>
-
-Note:
-The joke from act one, back with a number from my own session transcripts.
-"I have the full picture" is a claim too.
+reviewers tomorrow, no agent required.
 
 ---
 
@@ -1977,16 +1331,68 @@ table directly above it said another. The diff was fine. The claim wasn't.
 
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero chapter" data-background-image="images/sections/chapter-raise-floor.jpg" data-background-opacity="0.22" -->
 
-<blockquote class="transcript">
-"Can you give a prompt for a new session to do the same (as your context is filling up)… I'd like to run the same analysis which started this session again, to make sure we have done the right thing."
-<cite>Me, Sep 14</cite>
-</blockquote>
+<span class="overline">3 · A new way of working</span>
+
+# Raise the floor
+
+<span class="aside">Make every correction stick.</span>
+
+<span class="credit">© jdtornow https://flic.kr/p/39W1Nx (CC BY 2.0)</span>
 
 Note:
-A fresh session is a cheap second opinion: it hasn't seen the first session's
-reasoning, so it can't be talked into it.
+Every time you correct the agent, ask: will it make this mistake again
+tomorrow? If yes, don't fix it in the conversation. Turn it into something that
+runs next time: a check, a skill, a type.
+
+That's what raises the floor. The helix at the end of this chapter shows why
+it's called that.
+
+---
+
+## Automate the top: the ladder
+
+<svg class="proto " viewBox="0 0 1000 460" width="1000" height="460"><g class="fragment" data-fragment-index="0"><rect x="25" y="350" width="310" height="90" fill="#354045" fill-opacity="0.25"/><text x="41" y="386" class="p-label" fill="#ffffff">1</text><text x="73" y="386" class="p-step" fill="#ffffff">Ask in prose</text><text x="31" y="304" class="p-sub" fill="#354045">Sep 4: a rule in CLAUDE.md</text><text x="31" y="330" class="p-sub" fill="#354045">Sep 8: “why again?”</text></g><g class="fragment" data-fragment-index="1"><rect x="345" y="260" width="310" height="180" fill="#354045" fill-opacity="0.55"/><text x="361" y="296" class="p-label" fill="#ffffff">2</text><text x="393" y="296" class="p-step" fill="#ffffff">Automated check</text><text x="351" y="214" class="p-sub" fill="#354045">Filler prose → PR build check</text><text x="351" y="240" class="p-sub" fill="#354045">var → compiler error</text></g><g class="fragment" data-fragment-index="2"><rect x="665" y="170" width="310" height="270" fill="#354045" fill-opacity="0.85"/><text x="681" y="206" class="p-label" fill="#ffffff">3</text><text x="713" y="206" class="p-step" fill="#ffffff">Unrepresentable</text><text x="671" y="124" class="p-sub" fill="#354045">Sep 14: co-author trailer</text><text x="671" y="150" class="p-sub" fill="#354045">off in the settings file</text></g></svg>
+
+Note:
+Every standard in the project starts at step one. The ones that matter get
+promoted.
+
+Step one alone doesn't hold. Adding "don't do X" to CLAUDE.md after asking Claude
+how to avoid X feels like asking your kids to raise themselves (Mar 27 post).
+
+With dates: Sep 4, "never add the session id to PRs" in CLAUDE.md. Sep 8, "why
+are you adding the claude session to commits again". Sep 14, moved into the
+settings file, where it can't be broken.
+
+One click per step. Step two: two of the checks are compiler errors I wrote
+myself; the prose check fails the build on marketing language in documentation.
+
+The same goes for what the agent learns. The N300 skill has a list of traps, each
+a mistake that will never happen again: "Poll with a process match that can't
+match itself" (pgrep over SSH matched its own shell and reported "still running"
+forever). The hardwood CLI: "why did you do that instead of the skill?", said
+once, now written down. The performance rules from midnight: written down, not
+repeated in every session.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## Prose rots. Checks don't.
+
+<span class="aside">90 design documents. I have not kept them current.</span>
+
+The only documentation that doesn't rot
+is documentation that <em>runs</em>.
+
+Note:
+The design docs are still worth writing — as *input*. They are the thinking I
+do before generating, and steering the agent with a document beats steering it
+with a paragraph.
+
+But they are not a record. What survives is what executes.
 
 ---
 
@@ -2030,7 +1436,7 @@ Three turns, matching the next-but-one slide. Change with data-turns.
 
 ## What raises the floor is what outlasts the turn.
 
-<span class="aside">Checks. Skills. The audit. Not the instructions I gave in the moment.</span>
+<span class="aside">Checks. Skills. Rules in the build. Not the instructions I gave in the moment.</span>
 
 Note:
 The five wrong causes became written rules. The co-author rule moved from
@@ -2038,6 +1444,219 @@ prose into the settings file. The rebase trouble became a skill. The edited
 test became "changes to the oracle get read line by line".
 
 This is "prose rots, checks don't" again, now as the reason the trend goes up.
+
+---
+
+
+<!-- .slide: class="section" data-state="section-slide" data-background-image="images/sections/price-joy.jpg" data-background-opacity="0.55" -->
+
+# 4 · The price, and the joy
+
+<span class="credit">© Michael Elleray https://flic.kr/p/aCqL2a (CC BY 2.0)</span>
+
+Note:
+Photo: "Meteorite" by Michael Elleray (CC BY 2.0, https://flic.kr/p/aCqL2a). Loosely connected: a fairground at dusk.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## I no longer know every line.
+
+And I'm fine with that.
+
+Note:
+The first price, and the biggest: the answer to the loss from midnight. Control
+over every line is gone, and I've made my peace with it. Don't explain again how;
+"I own the design, not every line" did that in act three.
+
+---
+
+<!-- .slide: class="hero-image" -->
+
+## Expand, then consolidate
+
+<div class="pair">
+  <img src="images/x-2026-01-19-expand-and-consolidate.png" alt="Jan 19: an expand and consolidate pattern">
+  <img src="images/li-2026-08-12-make-time-for-cleanup.png" alt="Aug 12: make time for clean-up, restructuring, refactoring">
+</div>
+
+Note:
+January, as an observation. August, as a job description: make time for
+clean-up, interleaved with feature work, "or you'll end up with an
+incomprehensible pile of slop in no time."
+
+It isn't only hygiene. The agent works worse on a messy codebase too.
+
+One rule in my agent instructions exists for this: search for existing patterns
+in the same class or package before writing new code, and extract repeated
+logic instead of duplicating it. Ordinary advice for humans, load-bearing for
+agents.
+
+---
+
+<!-- .slide: class="hero-image" -->
+
+<img src="images/x-2026-05-14-contributors-cant-follow.png" width="703" height="600" style="max-height: none" alt="May 14: agent-speed teams move at a pace that is hard for outside contributors to track">
+
+Note:
+A cost that lands on other people: at agent speed, anyone a step removed has to
+work just to understand the current state of the system.
+
+For consultancies: the colleague joining mid-project, and the client team you
+hand the code over to.
+
+---
+
+## Nine months
+
+| | |
+|---|---|
+| Commits | ~1,000 |
+| Main code | ~500k lines |
+| Test code | about the same again |
+| Design documents | 90 |
+| Review files | 221 |
+| Issues | 1,200+ |
+
+Note:
+The joy, in numbers: this is what one person built in nine months, next to a
+day job. Don't read the table.
+
+Point at test code being the same size as main code: that ratio is not
+discipline, it is the only reason any of this was possible.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## AI lets you build things you otherwise just <em>wouldn't</em>.
+
+<span class="aside">Me, Sep 14</span>
+
+Note:
+The joy. My own words from the post announcing the note trainer, but don't
+show the post again: they've seen the project.
+
+Their version: the internal tool nobody would staff, the pitch demo, the spike
+nobody would fund. Now it's a weekend.
+
+It's still fun.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## "Built with AI, not by AI" is a quality claim.
+
+The agent owns more and more of the <em>how</em>.<br>It holds only if you're the arbiter of the <em>what</em>.
+
+Note:
+The title of this talk is a promise, the same one as the Feb 27 post: reviewed,
+maintainable, correct. Like any claim, it has to be kept true.
+
+Say the arbiter part as a role, not a loss: the answer to "what's left for us?"
+You decide whether something is right, and whether it should exist at all.
+"More and more": the core and the public API still get every diff.
+
+The note trainer: never read the how, verified the what by ear. Hardwood: the
+agent writes the how, and everything in act three is machinery for verifying the
+what. The geo PR: I checked the how and never asked about the what.
+
+Loops are how you check the what without being the loop yourself.
+
+---
+
+<!-- .slide: class="hero" -->
+
+# Review the claim, not the diff.
+
+Note:
+What the arbiter does in practice: the claim is the what, the diff is the how.
+And it applies to the title too: "built with AI, not by AI" is a claim like any
+PR description.
+
+Let it stand alone. Don't add anything.
+
+---
+
+## Stop being the loop
+
+<svg class="cycle cycle-monday" viewBox="0 0 1088 560" width="1088" height="560"><defs><marker id="cycle-head-monday" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="cycle-head"/></marker></defs><path class="cycle-arc" d="M581.0 186.3 L585.5 187.6 L589.9 189.1 L594.3 190.8 L598.7 192.7 L602.9 194.8 L607.1 197.0 L611.2 199.4 L615.2 201.9 L619.2 204.7 L623.0 207.5 L626.7 210.6 L630.3 213.7 L633.7 217.1 L637.1 220.5 L640.3 224.1 L643.3 227.8 L646.3 231.7 L649.0 235.6 L651.7 239.7 L654.1 243.9 L656.4 248.2 L658.6 252.5 L660.5 257.0 L662.3 261.6" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M665.4 339.4 L663.9 344.2 L662.3 349.0 L660.4 353.7 L658.4 358.3 L656.2 362.8 L653.8 367.3 L651.3 371.7 L648.5 375.9 L645.6 380.1 L642.5 384.2 L639.3 388.1 L635.9 391.9 L632.4 395.6 L628.7 399.2 L624.9 402.6 L620.9 405.8 L616.8 408.9 L612.6 411.9 L608.2 414.6 L603.7 417.3 L599.2 419.7 L594.5 422.0 L589.8 424.0 L584.9 425.9" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M502.1 429.0 L497.0 427.4 L492.0 425.6 L487.0 423.7 L482.1 421.5 L477.3 419.2 L472.5 416.6 L467.9 413.9 L463.4 411.0 L458.9 407.9 L454.6 404.6 L450.5 401.2 L446.4 397.6 L442.5 393.8 L438.8 389.9 L435.2 385.8 L431.7 381.6 L428.4 377.2 L425.3 372.7 L422.4 368.1 L419.6 363.4 L417.0 358.5 L414.7 353.6 L412.5 348.5 L410.5 343.4" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M407.4 255.6 L409.1 250.2 L411.0 244.9 L413.0 239.6 L415.3 234.4 L417.8 229.3 L420.5 224.3 L423.4 219.4 L426.5 214.7 L429.8 210.0 L433.3 205.4 L436.9 201.0 L440.8 196.8 L444.8 192.6 L448.9 188.7 L453.2 184.9 L457.7 181.2 L462.3 177.8 L467.1 174.5 L472.0 171.4 L477.0 168.5 L482.1 165.8 L487.4 163.3 L492.7 161.0 L498.1 158.9" marker-end="url(#cycle-head-monday)"/><text class="cycle-label" x="544" y="110" text-anchor="middle"><tspan class="cycle-num">1</tspan>  Build the <tspan class="cycle-em">feedback loop</tspan></text><text class="cycle-sub" x="544" y="140" text-anchor="middle">so the agent finds out it’s wrong</text><text class="cycle-label" x="734" y="304" text-anchor="start"><tspan class="cycle-num">2</tspan>  Make it <tspan class="cycle-em">fast</tspan></text><text class="cycle-sub" x="734" y="334" text-anchor="start">or it gets skipped</text><text class="cycle-label" x="544" y="512" text-anchor="middle"><tspan class="cycle-num">3</tspan>  Review what <tspan class="cycle-em">no feedback loop</tspan> can see</text><text class="cycle-sub" x="544" y="542" text-anchor="middle">that part stays with you</text><text class="cycle-label" x="354" y="304" text-anchor="end"><tspan class="cycle-num">4</tspan>  Raise the <tspan class="cycle-em">floor</tspan></text><text class="cycle-sub" x="354" y="334" text-anchor="end">make every correction stick</text></svg>
+
+<div class="signoff">
+  <img src="images/gunnar-morling.jpg" width="96" height="96" alt="Gunnar Morling">
+  <div>
+    <strong>Thank you!</strong> Gunnar Morling
+    <span>morling.dev · hardwood.dev · @gunnarmorling</span>
+  </div>
+</div>
+
+Note:
+Ten seconds each, once round the circle. Then stop.
+
+Leave this slide up through the applause and the questions.
+
+---
+
+
+<!-- .slide: class="section backburner" -->
+
+# Backburner
+
+Note:
+Not part of the talk. Candidates that might come back in; everything after this
+slide is out of the running order.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## Upgrade to current Java.
+
+<span class="aside">Come for the runtime, stay for the language.</span>
+
+Note:
+Candidate aside, maybe for the "make it fast" beat. Hardwood targets Java 21
+but is measured on 25; the Jan 31 numbers ran on Java 25.
+
+The argument for this room: most client systems sit on 11 or 17. The runtime
+improvements alone pay for the upgrade, without touching a line of code.
+And an agent with a green test suite is exactly the tool for doing the upgrade;
+I wrote in January that JDK upgrades are "only ever getting easier with
+LLM-based coding agents".
+
+---
+
+## What you get without changing a line
+
+- <em>Compact object headers</em>: smaller heaps, one flag (JEP 519, Java 25)
+- <em>Virtual threads</em> no longer pin on `synchronized` (JEP 491, Java 24)
+- <em>JFR</em>: CPU-time profiling, method tracing (JEPs 509, 520, Java 25)
+- <em>AOT cache</em>: faster startup and warm-up (JEPs 483, 515, Java 24–25)
+
+<span class="aside">…and then records, pattern matching, sealed types, text blocks.</span>
+
+Note:
+Hardwood leans on virtual threads, the Vector API, FFM and JFR (see the
+"Modern Java FTW" slide in the Hardwood talk).
+
+Check the JEP list against the current release before the talk.
+
+---
+
+<!-- .slide: class="hero-image" -->
+
+## First, understand what's there
+
+<img class="post post-tall" src="images/x-2026-01-23-flink-pipeline-diagram.png" alt="Jan 23: Claude Code draws a Flink pipeline as an ASCII diagram from its source code">
+
+Note:
+Before you can pin down behaviour, you have to know what the system does. A
+Flink pipeline, drawn straight from its source.
+
+For a client's twelve-year-old system, this is where the agent earns its keep
+first: reading, not writing.
 
 ---
 
@@ -2058,102 +1677,67 @@ against your memory before the talk.
 
 ---
 
-<!-- .slide: class="section" data-state="section-slide" data-background-image="images/sections/price-joy.jpg" data-background-opacity="0.55" -->
-
-# 4 · The price, and the joy
-
-<span class="credit">© Michael Elleray https://flic.kr/p/aCqL2a (CC BY 2.0)</span>
-
-Note:
-Photo: "Meteorite" by Michael Elleray (CC BY 2.0, https://flic.kr/p/aCqL2a). Loosely connected: a fairground at dusk.
-
----
-
-## Nine months
-
-| | |
-|---|---|
-| Commits | ~1,000 |
-| Main code | ~500k lines |
-| Test code | about the same again |
-| Design documents | 90 |
-| Review files | 221 |
-| Issues | 1,200+ |
-
-Note:
-Don't read the table. Point at test code being the same size as main code and
-say: that ratio is not discipline, it is the only reason any of the rest of
-this was possible. This is the scale the price is paid on.
-
----
-
 <!-- .slide: class="hero-image" -->
 
-## Expand, then consolidate
+## The agent runs in a container
 
-<div class="pair">
-  <img src="images/x-2026-01-19-expand-and-consolidate.png" alt="Jan 19: an expand and consolidate pattern">
-  <img src="images/li-2026-08-12-make-time-for-cleanup.png" alt="Aug 12: make time for clean-up, restructuring, refactoring">
+<img class="post" src="images/x-2026-02-01-sandboxing.png" alt="Feb 1: running Claude Code exclusively in a container with just a single mounted directory, out of an abundance of caution">
+
+Note:
+Candidate, maybe for Q&A. One mounted directory: the repository. No access to
+the rest of my machine or my browser sessions; for the N300 it has an SSH key of
+its own, not mine.
+
+Why it matters beyond caution: it's also what lets me let the agent run long
+without watching it.
+
+---
+
+## One mounted directory
+
+```yaml
+claude:
+  build: .
+  volumes:
+    - .:/workspace                # the repository, nothing else
+  environment:
+    - DOCKER_HOST=tcp://docker-proxy:2375
+docker-proxy:                     # Testcontainers only
+  environment:
+    CONTAINERS: 1
+    BUILD: 0                      # no docker build from inside
+    VOLUMES: 0                    # no volume create or remove
+```
+
+<span class="aside">Abridged from Hardwood's <code>docker-compose.yaml</code></span>
+
+Note:
+The integration tests need Docker, so the agent gets a socket proxy that allows
+starting containers and nothing else.
+
+A side effect worth mentioning: agent worktrees have to live inside the
+repository, because that's the only directory mounted.
+
+---
+
+## Thank you
+
+<span class="subtitle">Get in touch</span>
+
+<div class="contact">
+  <img src="images/gunnar-morling.jpg" width="330" height="330" alt="Gunnar Morling">
+  <dl>
+    <dt>Mail</dt><dd><a href="mailto:gmorling@confluent.io">gmorling@confluent.io</a></dd>
+    <dt>X</dt><dd><a href="https://x.com/gunnarmorling">@gunnarmorling</a></dd>
+    <dt>Bluesky</dt><dd><a href="https://bsky.app/profile/gunnarmorling.dev">@gunnarmorling.dev</a></dd>
+    <dt>Blog</dt><dd><a href="https://www.morling.dev/">morling.dev</a></dd>
+    <dt>Hardwood</dt><dd><a href="https://hardwood.dev/">hardwood.dev</a></dd>
+  </dl>
 </div>
 
 Note:
-January, as an observation. August, as a job description: make time for
-clean-up, interleaved with feature work, "or you'll end up with an
-incomprehensible pile of slop in no time."
-
-It isn't only hygiene. The agent works worse on a messy codebase too.
-
----
-
-## Which is why this is a rule
-
-```markdown
-Before writing new code, search for existing patterns in the
-same class/package that accomplish the same thing. Extract
-repeated logic into helper methods rather than duplicating it.
-```
-
-Note:
-Ordinary advice for humans. Load-bearing infrastructure for agents.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-05-14-contributors-cant-follow.png" alt="May 14: agent-speed teams move at a pace that is hard for outside contributors to track">
-
-Note:
-A cost that lands on other people: at agent speed, anyone a step removed has to
-work just to understand the current state of the system.
-
-For consultancies: the colleague joining mid-project, and the client team you
-hand the code over to.
-
----
-
-## The chain
-
-- Written by AI <!-- .element: class="fragment" -->
-- Reviewed by a human <!-- .element: class="fragment" -->
-- Tests: green <!-- .element: class="fragment" -->
-- Shipped to users <!-- .element: class="fragment" -->
-- Caught by <em>one person knowing the format</em> <!-- .element: class="fragment" -->
-
-Note:
-Build it one line at a time. The last line is the only one that worked.
-
----
-
-<!-- .slide: class="hero" -->
-
-## I no longer know every line.
-
-I know what it does, and <em>how</em> I know.
-
-Note:
-The answer to the loss from midnight. Control over every line is gone. What
-replaced it is knowing which loop tells me the code is right, and where there
-isn't one, knowing that I'm it.
+Point at the write-up for the ten-item version, once it's published. Three
+things on stage, ten in the blog post.
 
 ---
 
@@ -2192,33 +1776,6 @@ height so they stay visible; exact numbers are in the tooltips.
 
 ---
 
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-09-14-note-trainer.png" alt="Sep 14: a note-reading drill that listens to my piano; AI really lets you build things that you otherwise just wouldn't">
-
-Note:
-The joy, as a callback to the note trainer from the start of act three: "AI really
-lets you build things that you otherwise just wouldn't."
-
-It's still fun.
-
----
-
-<!-- .slide: class="hero" -->
-
-## "Built with AI, not by AI" is not a quality claim.
-
-It means your job moved from the <em>how</em> to the <em>what</em>.
-
-Note:
-The note trainer: never read the how, verified the what by ear. Hardwood: the
-agent writes the how, and everything in act three is machinery for verifying the
-what. The geo PR: I checked the how and never asked about the what.
-
-Loops are how you check the what without being the loop yourself.
-
----
-
 <!-- .slide: class="hero" -->
 
 ## The <em>what</em> gets more formal
@@ -2236,38 +1793,36 @@ property-based tests.
 
 ---
 
-<!-- .slide: class="hero" -->
+## Decisions are not findings
 
-# Review the claim, not the diff.
+```markdown
+- **Q:** Keep the per-class duplication or extract a helper?
+  - [ ] **A.** Extract a shared helper
+  - [ ] **B.** Keep per-class, document why
+  - [ ] **C.** Keep as-is
+  - **Rec:** B — the classes are about to diverge
+```
 
 Note:
-The concrete version of "the job moved from the how to the what": the claim is the what, the diff is
-the how.
+Some review items aren't fixes, they're forks: two defensible options and
+somebody has to own the choice. The agent lifts them out, does the analysis,
+recommends one, and I tick a box. The file becomes the record of the decision.
 
-Let it stand alone. Don't add anything.
+For consultants: this is the shape of every decision you take to a client.
 
 ---
 
-## Monday
+<!-- .slide: class="hero-image" -->
 
-- Build the <em>loop</em>
-- Make it <em>fast</em>
-- Review what <em>no loop</em> can see
-- Raise the <em>floor</em>: keep what outlasts the turn
+## Review, as an artifact
 
-Note:
-Ten seconds each. Then stop.
-
----
-
-<!-- .slide: class="hero" -->
-
-## Thank you
-
-hardwood.dev · morling.dev · @gunnarmorling
-
-<span class="aside">Long-form version of all of this: morling.dev/blog/…</span>
+<img src="images/04-review-file.png" width="624" height="600" style="max-height: none" alt="_reviews/pr-933-review.md: decisions with options and a recommendation, blockers ticked off">
 
 Note:
-Point at the write-up for the ten-item version. Three things on stage, ten in
-the blog post.
+Findings as checkboxes in a file, in priority order. A second skill walks the
+file and ticks them off as they're addressed.
+
+221 of these files.
+
+The comment thread is gone after the merge. The file is still there, and the next
+review starts from it.

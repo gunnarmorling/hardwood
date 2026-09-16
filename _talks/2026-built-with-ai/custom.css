@@ -14,8 +14,8 @@
   --r-heading-font-weight: 700;
   --r-heading-text-transform: none;
   --r-heading-letter-spacing: normal;
-  --r-link-color: #0097a7;
-  --r-link-color-hover: #006f7a;
+  --r-link-color: #2d6a9f;
+  --r-link-color-hover: #1f4f78;
   --r-code-font: Consolas, Menlo, "DejaVu Sans Mono", monospace;
 }
 
@@ -106,10 +106,13 @@
 }
 
 /* A screenshot of a post, scaled up for the room. */
+/* Post screenshots: as wide as fits, up to 860 x 520, never stretched. */
 .reveal section img.post {
-  width: 860px;
-  max-width: 100%;
+  width: auto;
   height: auto;
+  max-width: min(860px, 100%);
+  max-height: 520px;
+  aspect-ratio: auto;
 }
 
 /* A tall post: fit the height instead of the width. */
@@ -586,3 +589,419 @@ html.grid-view.reveal-print .reveal .slides .pdf-page.grid-current {
 .reveal .rtl-label,
 .reveal .rtl-span-label,
 .reveal .rtl-month { paint-order: stroke; stroke: #ffffff; stroke-width: 6px; stroke-linejoin: round; }
+
+/* A screenshot with a hand-drawn circle around a phrase. Position the circle in % of the image.
+   Use: <div class="circled"><img …><svg class="circle-mark fragment" style="left; top; width; height">…</svg></div> */
+.reveal .circled {
+  position: relative;
+  display: inline-block;
+  margin-top: 0.6em;
+}
+
+.reveal .circled img {
+  display: block;
+  margin: 0;
+}
+
+.reveal .circle-mark {
+  position: absolute;
+  overflow: visible;
+}
+
+.reveal .circle-mark path {
+  fill: none;
+  stroke: #d62d20;
+  stroke-width: 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* An image with a second one clicked in on top of it, centred. Use: <div class="stack"><img …><img class="fragment" …></div> */
+.reveal .stack {
+  position: relative;
+  display: inline-block;
+}
+
+.reveal .stack > img + img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #ffffff;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+}
+
+/* The backburner divider has no photo, so it uses the regular ink. */
+.reveal section.section.backburner h1 {
+  color: var(--r-heading-color);
+  text-shadow: none;
+}
+
+/* Faint parquet planks in the bottom-right corner of regular and hero slides, as in the Speaker Deck template.
+   index.html sets .parquet on .reveal for the current slide; the print layout (grid) uses :has(). */
+.reveal.parquet .backgrounds::after,
+html.reveal-print .pdf-page:has(> section:not(.section):not(.hero-image):not(.no-parquet):not([data-background-image]))::after {
+  content: "";
+  position: absolute;
+  right: 2.9%;
+  bottom: 4%;
+  width: 21%;
+  aspect-ratio: 390 / 300;
+  background: url("images/parquet-deco.svg") no-repeat center / contain;
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+html.reveal-print .pdf-page {
+  position: relative;
+}
+
+/* Annotated assembly, e.g. perfasm output. Use: <pre class="asm"><code>…<mark>hot lines</mark>…</code></pre> */
+.reveal pre.asm {
+  font-size: 0.42em;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.reveal pre.asm code {
+  padding: 1em 1.4em;
+  background: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.reveal pre.asm mark {
+  display: inline-block;
+  width: 100%;
+  background: rgba(214, 45, 32, 0.35);
+  color: #ffffff;
+}
+
+.reveal .columns.top {
+  align-items: flex-start;
+}
+
+/* Chapter dividers in part 3: a faint photo on white, lighter than the act dividers. */
+.reveal section.chapter .credit {
+  display: none;
+}
+
+.reveal.credit-footer.credit-light .deck-footer {
+  color: var(--dim);
+}
+
+.reveal section.chapter h1,
+.reveal section.chapter .overline,
+.reveal section.chapter .aside {
+  text-shadow: 0 0 14px #ffffff, 0 0 4px #ffffff;
+}
+
+.reveal section.chapter .aside {
+  color: var(--r-main-color);
+}
+
+/* The four chapters of part 3 as a cycle that doesn't quite close. */
+.reveal svg.cycle {
+  display: block;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.reveal .cycle-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.reveal .cycle-head {
+  fill: var(--accent);
+}
+
+.reveal .cycle-label {
+  fill: var(--r-main-color);
+  font-family: var(--r-main-font);
+  font-size: 32px;
+}
+
+.reveal .cycle-em {
+  fill: var(--accent);
+  font-weight: 700;
+}
+
+.reveal .cycle-sub {
+  fill: var(--dim);
+  font-family: var(--r-main-font);
+  font-size: 21px;
+  font-weight: 300;
+}
+
+.reveal .cycle-num {
+  fill: var(--dim);
+  font-weight: 700;
+}
+
+/* On dark act dividers the photo credit's link needs a lighter blue. */
+.reveal.credit-footer:not(.credit-light) .deck-footer a {
+  color: #9cc7ea;
+}
+
+/* Closing slide: headshot beside the contact details. */
+.reveal .contact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 64px;
+  margin-top: 2.6em;
+}
+
+.reveal .contact img {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.reveal .contact dl {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 28px;
+  row-gap: 14px;
+  margin: 0;
+  font-size: 0.8em;
+  text-align: left;
+}
+
+.reveal .contact dt {
+  font-weight: 700;
+  color: var(--dim);
+  text-align: right;
+}
+
+.reveal .contact dd {
+  margin: 0;
+}
+
+/* The Monday slide reuses the cycle from part 3, a little smaller, with the thanks underneath. */
+.reveal svg.cycle-monday {
+  height: 470px;
+  width: auto;
+  margin-top: -10px;
+}
+
+.reveal .slides > section:not(.center) > p.thanks:not(.subtitle) {
+  margin: 24px 0 0;
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--dim);
+}
+
+/* Sign-off under the closing cycle: a small headshot, so people can find the speaker later. */
+.reveal .signoff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 14px;
+  text-align: left;
+}
+
+.reveal .signoff img {
+  width: 96px;
+  height: 96px;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  object-fit: cover;
+}
+
+.reveal .signoff div {
+  font-size: 26px;
+  line-height: 1.35;
+}
+
+.reveal .signoff span {
+  display: block;
+  font-size: 22px;
+  font-weight: 300;
+  color: var(--dim);
+}
+
+/* A listing inside a column, e.g. the pom next to the brownfield list. */
+.reveal .columns.top pre {
+  margin: 0.4em 0 0;
+  font-size: 0.4em;
+}
+
+/* "I own the design": the system outline with the pockets of code I don't read. */
+.reveal svg.pockets {
+  display: block;
+  margin: 10px auto 0;
+  overflow: visible;
+}
+
+.reveal svg.pockets text {
+  font-family: var(--r-main-font);
+}
+
+.reveal .pk-title { font-size: 26px; font-weight: 700; }
+.reveal .pk-label { font-size: 28px; font-weight: 700; }
+.reveal .pk-sub { font-size: 19px; font-weight: 300; }
+.reveal .pk-legend { font-size: 22px; }
+
+/* Prototypes (slides-prototypes.md). */
+.reveal svg.proto { display: block; margin: 10px auto 0; overflow: visible; }
+.reveal svg.proto text { font-family: var(--r-main-font); }
+.reveal .p-label { font-size: 26px; font-weight: 700; }
+.reveal .p-step { font-size: 22px; font-weight: 700; }
+.reveal .p-big { font-size: 34px; font-weight: 700; }
+.reveal .p-sub { font-size: 19px; }
+.reveal .p-tiny { font-size: 13px; }
+
+.reveal svg.proto .grow { transform-box: fill-box; transform-origin: 0 100%; transform: scale(0.019); transition: transform 1.4s ease-in-out, opacity 0.2s; }
+.reveal svg.proto .grow.visible { transform: scale(1); }
+
+.reveal .stamped { position: relative; display: inline-block; }
+.reveal .stamped img { margin: 0; }
+.reveal .stamp {
+  position: absolute;
+  padding: 6px 18px;
+  border: 5px solid var(--c);
+  border-radius: 8px;
+  color: var(--c);
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 30px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transform: rotate(var(--rot));
+}
+.reveal .stamp-big { font-size: 58px; padding: 14px 30px; border-width: 8px; }
+
+.reveal p.verdicts { font-size: 0.7em; margin-top: 0.8em; }
+.reveal p.verdicts .no { color: #c62828; font-weight: 700; }
+.reveal p.verdicts .yes { color: #2e7d32; font-weight: 700; }
+.reveal .verdict-list p { margin: 0.2em 0; font-size: 0.8em; text-align: left; }
+.reveal .verdict-list .no { color: #c62828; font-weight: 700; }
+.reveal .verdict-list .yes { color: #2e7d32; font-weight: 700; }
+
+/* #1198: the small diff, a title card, then what it turned into. */
+.reveal .later-stack {
+  position: relative;
+  width: 1088px;
+  height: 520px;
+  margin: 10px auto 0;
+}
+
+.reveal .later-stack img.later-base {
+  display: block;
+  margin: 20px auto 0;
+}
+
+.reveal .later-card {
+  position: absolute;
+  top: -160px;
+  left: calc(50% - 700px);
+  width: 1400px;
+  height: 820px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000000;
+}
+
+.reveal .later-card img {
+  width: 1280px;
+  height: 720px;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  object-fit: cover;
+}
+
+.reveal .later-stats {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: #ffffff;
+  padding-top: 60px;
+}
+
+.reveal .later-when {
+  margin: 0 0 20px;
+  font-size: 34px;
+  font-weight: 300;
+  color: var(--dim);
+}
+
+.reveal .later-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 34px 40px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.reveal .later-grid div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.reveal .later-grid b {
+  white-space: nowrap;
+  font-size: 66px;
+  line-height: 1.1;
+  color: var(--accent);
+}
+
+.reveal .later-grid span {
+  font-size: 26px;
+  color: var(--dim);
+}
+
+/* The #1198 pull requests popping in, faster and faster. */
+.reveal .pr-montage {
+  position: absolute;
+  top: 50px;
+  left: calc(50% - 668px);
+  width: 1280px;
+  height: 640px;
+}
+
+.reveal section .pr-montage img {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  margin: 0;
+  max-height: none;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: rotate(var(--r)) scale(0.7);
+}
+
+.reveal .pr-montage.visible img {
+  animation: pr-pop 0.22s ease-out forwards;
+  animation-delay: var(--d);
+}
+
+@keyframes pr-pop {
+  to { opacity: 1; transform: rotate(var(--r)) scale(1); }
+}
+
+.reveal .pr-stats {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  width: 1000px;
+  margin-left: -500px;
+  z-index: 50;
+  padding: 30px 20px 40px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.3);
+}

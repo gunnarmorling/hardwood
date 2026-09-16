@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Built with AI, not by AI</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/reset.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/reveal.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/theme/white.min.css" id="theme" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/plugin/highlight/monokai.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300;0,400;0,700;1,400&family=Luckiest+Guy&display=swap" />
+    <link rel="stylesheet" href="custom.css" />
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <!-- All content lives in slides.md; this file is just the shell. -->
+        <section
+          data-markdown="slides.md"
+          data-separator="^\r?\n---\r?\n$"
+          data-separator-vertical="^\r?\n--\r?\n$"
+          data-separator-notes="^Note:"
+          data-charset="utf-8"
+        ></section>
+      </div>
+      <!-- Shown on regular slides only; hidden on hero, hero-image and section slides. -->
+      <div class="deck-footer">#Hardwood #AI · @gunnarmorling</div>
+    </div>
+
+    <script>
+      // ?grid shows every slide at once as a thumbnail grid, using reveal's print layout.
+      (() => {
+        const params = new URLSearchParams(location.search);
+        if (!params.has('grid')) return;
+        document.documentElement.classList.add('grid-view');
+        if (!params.has('print-pdf')) {
+          history.replaceState(null, '', location.pathname + location.search + '&print-pdf' + location.hash);
+        }
+
+        // Scroll to and mark the slide given in the hash (#/12), once the pages exist.
+        // This script runs before reveal.js is loaded, hence DOMContentLoaded.
+        document.addEventListener('DOMContentLoaded', () => Reveal.on('pdf-ready', () => {
+          const match = location.hash.match(/^#\/(\d+)/);
+          if (!match) return;
+          const pages = [...document.querySelectorAll('.reveal .slides .pdf-page')];
+          const seen = new Set();
+          const page = pages.find((p) => {
+            const section = p.querySelector('section');
+            if (seen.has(section)) return false;
+            seen.add(section);
+            return seen.size - 1 === Number(match[1]);
+          });
+          if (page) {
+            page.classList.add('grid-current');
+            // Not scrollIntoView: it would also scroll reveal's overflow-hidden containers.
+            const box = page.getBoundingClientRect();
+            window.scrollTo(0, window.scrollY + box.top - (window.innerHeight - box.height) / 2);
+          }
+        }));
+
+        // Clicking a thumbnail opens the deck at that slide (Cmd/Ctrl-click: in a new tab).
+        document.addEventListener('click', (event) => {
+          const page = event.target.closest('.pdf-page');
+          if (!page) return;
+          event.preventDefault();
+          const first = (p) => p.querySelector('section');
+          const slides = [...new Set([...document.querySelectorAll('.reveal .slides .pdf-page')].map(first))];
+          const index = slides.indexOf(first(page));
+          if (index < 0) return;
+          const query = new URLSearchParams(location.search);
+          query.delete('grid');
+          query.delete('print-pdf');
+          const target = location.pathname + (query.toString() ? '?' + query : '') + '#/' + index;
+          if (event.metaKey || event.ctrlKey) window.open(target, '_blank');
+          else location.href = target;
+        }, true);
+      })();
+
+      // ?slides=<file>.md picks another deck file from this directory; default is slides.md.
+      (() => {
+        const section = document.querySelector('[data-markdown]');
+        const file = new URLSearchParams(location.search).get('slides');
+        if (file && /^[\w.-]+\.md$/.test(file)) {
+          section.setAttribute('data-markdown', file);
+        }
+
+        // Local editing only: always fetch the current deck, and reload the page when a
+        // deck file changes. Works with any static server, since it compares contents.
+        if (!['localhost', '127.0.0.1'].includes(location.hostname)) return;
+        const deck = section.getAttribute('data-markdown');
+        section.setAttribute('data-markdown', deck + '?v=' + Date.now());
+        const watched = [deck, 'custom.css', 'helix.js', 'index.html'];
+        const snapshot = () => Promise.all(watched.map((f) =>
+          fetch(f + '?v=' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.text() : ''))
+        )).then((texts) => texts.join('\u0000'));
+        let seen = null;
+        setInterval(async () => {
+          try {
+            const now = await snapshot();
+            if (seen !== null && now !== seen) location.reload();
+            seen = now;
+          } catch (e) {
+            // server restarting; keep polling
+          }
+        }, 1000);
+      })();
+
+      // A screenshot that hasn't been taken yet shows as a labelled placeholder instead of a broken image.
+      document.addEventListener('error', (event) => {
+        const img = event.target;
+        if (img.tagName !== 'IMG' || img.dataset.missing) return;
+        img.dataset.missing = 'true';
+        const box = document.createElement('div');
+        box.className = 'missing-image';
+        box.textContent = 'Screenshot to take: ' + img.getAttribute('src');
+        img.replaceWith(box);
+      }, true);
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/reveal.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/plugin/markdown/markdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/plugin/highlight/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/5.2.1/plugin/notes/notes.min.js"></script>
+    <script src="helix.js"></script>
+    <script>
+      // Slide types (set per slide with <!-- .slide: class="…" -->):
+      //   regular (no class)  title pinned at the top, footer and slide number
+      //   hero                one big sentence or quote, centred, no footer
+      //   hero-image          one visual, centred, optional caption, no footer
+      //   section             act divider: full-bleed photo, big caption, no footer
+      // "statement" is the older name for "hero", kept for the earlier deck versions.
+      const CENTRED = ['hero', 'hero-image', 'section', 'statement'];
+      const isCentred = (slide) => slide && CENTRED.some((c) => slide.classList.contains(c));
+
+      // Section slides show their photo credit where the footer sits on regular slides.
+      function syncFooter(slide) {
+        const reveal = document.querySelector('.reveal');
+        const footer = reveal.querySelector('.deck-footer');
+        footer.dataset.default ??= footer.textContent;
+        const photo = slide && (slide.classList.contains('section') || slide.classList.contains('chapter'));
+        const credit = photo && slide.querySelector('.credit');
+        // innerHTML keeps the credit's link (Markdown turns the Flickr URL into an <a>).
+        if (credit) footer.innerHTML = credit.innerHTML;
+        else footer.textContent = footer.dataset.default;
+        reveal.classList.toggle('credit-footer', !!credit);
+        // Chapter dividers show their photo faintly on white, so the credit keeps the regular ink.
+        reveal.classList.toggle('credit-light', !!credit && slide.classList.contains('chapter'));
+        reveal.classList.toggle('no-footer', isCentred(slide) && !credit);
+        // The faint parquet in the corner goes on slides without a photo or a visual of their own.
+        const plain = slide && !slide.hasAttribute('data-background-image')
+          && !['section', 'hero-image', 'no-parquet'].some((c) => slide.classList.contains(c));
+        reveal.classList.toggle('parquet', !!plain);
+      }
+
+      // Post screenshots come in different shapes; size each one to fit 860 x 520 at its own aspect ratio,
+      // scaling small screenshots up rather than showing them at their native width.
+      function fitPost(img) {
+        const ratio = img.naturalWidth / img.naturalHeight;
+        if (!ratio) return;
+        const width = Math.min(860, 520 * ratio);
+        img.style.width = width + 'px';
+        img.style.height = width / ratio + 'px';
+        img.style.maxWidth = 'none';
+        img.style.maxHeight = 'none';
+      }
+
+      Reveal.on('ready', () => {
+        document.querySelectorAll('.reveal section img.post:not([width])').forEach((img) => {
+          if (img.complete) fitPost(img);
+          else img.addEventListener('load', () => fitPost(img));
+        });
+      });
+
+      Reveal.on('ready', (event) => {
+        // With center: false, Reveal still centres slides that carry the "center" class.
+        document.querySelectorAll('.reveal .slides section').forEach((slide) => {
+          if (isCentred(slide)) slide.classList.add('center');
+        });
+        Reveal.layout();
+        syncFooter(event.currentSlide);
+      });
+      Reveal.on('slidechanged', (event) => syncFooter(event.currentSlide));
+
+      // "g" switches to the thumbnail grid, scrolled to the current slide.
+      Reveal.on('ready', () => {
+        if (document.documentElement.classList.contains('grid-view')) return;
+        Reveal.addKeyBinding({ keyCode: 71, key: 'G', description: 'Thumbnail grid' }, () => {
+          const query = new URLSearchParams(location.search);
+          query.set('grid', '');
+          location.href = location.pathname + '?' + query.toString().replace(/grid=(&|$)/, 'grid$1') + '#/' + Reveal.getIndices().h;
+        });
+      });
+
+      Reveal.initialize({
+        hash: true,
+        center: false,
+        // No on-screen arrows: they cover the slide number, and a clicker or the keyboard drives the talk.
+        controls: false,
+        slideNumber: 'c',
+        // One thumbnail per slide in the grid view, not one per fragment step.
+        pdfSeparateFragments: !document.documentElement.classList.contains('grid-view'),
+        transition: 'none',
+        width: 1280,
+        height: 720,
+        margin: 0.06,
+        plugins: [RevealMarkdown, RevealHighlight, RevealNotes],
+      });
+    </script>
+  </body>
+</html>

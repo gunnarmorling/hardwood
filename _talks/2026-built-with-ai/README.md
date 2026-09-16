@@ -21,7 +21,7 @@ Keynote deck. 45 minutes, internal developer conference.
 | `serve.py` | Local dev server with browser caching turned off. The page reloads itself on changes. |
 | `helix.js` | The spiral reveal: a ring seen from above that a fragment tilts into a climbing helix. Use `<svg class="helix" data-helix data-turns="3">` plus a `data-helix-tilt` fragment. |
 | `custom.css` | Small layout overrides on the reveal `white` theme. |
-| `images/` | Screenshots. `01`, `05` and `07`–`10` are real; `02`–`04` and `06` are SVG placeholders. |
+| `images/` | Screenshots. `01`, `05` and `07`–`10` are real, as are `04-review-file.png` and `06-n300-box.jpg`; `02`, `03`, `04-review-file.svg` and `06-n300-box.svg` are SVG placeholders still used by the older decks. |
 
 ## Presenting
 
@@ -104,8 +104,6 @@ Replace the placeholder and change the extension in `slides.md`:
 |---|---|
 | `02-cli-skill` | `hardwood-cli` SKILL.md front matter — name, description, triggers. |
 | `03-n300-skill` | `n300-profiling` SKILL.md — the *Access* and conventions section. |
-| `04-review-file` | A `_reviews/pr-N-review.md` with `[ ]` checkboxes, grouped by priority. |
-| `06-n300-box` | A photo of the N300 on the desk, for scale. |
 
 `08`–`10` are the tweet thread: `08` is the full tweet, `08a`/`08b` are its body
 and counters cropped out of it, `09` and `10` are the two replies trimmed to
@@ -129,10 +127,14 @@ committing.
 |---|---|---|---|---|
 | `title.jpg` | "Wood Grain" | mrpolyonymous | CC BY 2.0 | https://flic.kr/p/a6j2Z7 |
 | `the-magic.jpg` | "TNT" | Alex Holyoake | CC BY 2.0 | https://flic.kr/p/AN2ZRn |
-| `midnight.jpg` | "Brighton Clock Tower" | Dominic's pics | CC BY 2.0 | https://flic.kr/p/96bybq |
+| `midnight.jpg` | "Solitude" | \*rboed\* | CC BY 2.0 | https://flic.kr/p/FJ1h26 |
 | `hinge.jpg` | "Rusty hinge" | ConspiracyofHappiness | CC BY 2.0 | https://flic.kr/p/KqAcY |
 | `new-way.jpg` | "Mechanics' Institute spiral staircase, from above" | chad_k | CC BY 2.0 | https://flic.kr/p/6AH9Zu |
 | `price-joy.jpg` | "Meteorite" | Michael Elleray | CC BY 2.0 | https://flic.kr/p/aCqL2a |
+| `chapter-build-loop.jpg` | "Aerial view of roundabout on OR 57 in Forest Grove" | OregonDOT | CC BY 2.0 | https://flic.kr/p/2j22sUS |
+| `chapter-make-fast.jpg` | "Intersting 1960s desk stopwatch 5" | Elsie esq. | CC BY 2.0 | https://flic.kr/p/i9NnnB |
+| `chapter-review.jpg` | "Magnifying glass 6/5" | John 'Pathfinder' Lester | CC BY 2.0 | https://flic.kr/p/bUgBy5 |
+| `chapter-raise-floor.jpg` | "New Cowboys Stadium" | jdtornow | CC BY 2.0 | https://flic.kr/p/39W1Nx |
 
 ## Timing
 
