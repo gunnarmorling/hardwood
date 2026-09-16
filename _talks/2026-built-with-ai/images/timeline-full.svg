@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+<rect width="1200" height="640" fill="#ffffff"/>
+<text x="70" y="40" font-size="26" font-weight="700" fill="#1f2937">Nine months, in my own posts</text>
+<text x="70" y="68" font-size="16" fill="#6b7280">Selected posts · column height = likes on X</text>
+<rect x="70.0" y="110" width="56.2" height="310" fill="#f3f4f6"/>
+<text x="98.1" y="100" font-size="14" fill="#6b7280" text-anchor="middle">Frenzy</text>
+<text x="242.6" y="100" font-size="14" fill="#6b7280" text-anchor="middle">Sceptical, friction</text>
+<rect x="359.1" y="110" width="236.9" height="310" fill="#f3f4f6"/>
+<text x="477.5" y="100" font-size="14" fill="#6b7280" text-anchor="middle">Framing</text>
+<text x="782.6" y="100" font-size="14" fill="#6b7280" text-anchor="middle">Method</text>
+<rect x="969.3" y="110" width="192.7" height="310" fill="#f3f4f6"/>
+<text x="1065.6" y="100" font-size="14" fill="#6b7280" text-anchor="middle">Boundaries, cost, joy</text>
+<line x1="70" x2="1170" y1="420.0" y2="420.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="60" y="425.0" font-size="13" fill="#6b7280" text-anchor="end">0</text>
+<line x1="70" x2="1170" y1="283.4" y2="283.4" stroke="#e5e7eb" stroke-width="1"/>
+<text x="60" y="288.4" font-size="13" fill="#6b7280" text-anchor="end">2,000</text>
+<line x1="70" x2="1170" y1="146.9" y2="146.9" stroke="#e5e7eb" stroke-width="1"/>
+<text x="60" y="151.9" font-size="13" fill="#6b7280" text-anchor="end">4,000</text>
+<text x="118.2" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Jan</text>
+<text x="242.6" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Feb</text>
+<text x="355.0" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Mar</text>
+<text x="479.5" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Apr</text>
+<text x="599.9" y="442" font-size="13" fill="#6b7280" text-anchor="middle">May</text>
+<text x="724.4" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Jun</text>
+<text x="844.8" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Jul</text>
+<text x="969.3" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Aug</text>
+<text x="1093.7" y="442" font-size="13" fill="#6b7280" text-anchor="middle">Sep</text>
+<line x1="599.9" x2="736.4" y1="386" y2="386" stroke="#1f2937" stroke-width="2" stroke-linecap="round"/>
+<line x1="599.9" x2="599.9" y1="380" y2="392" stroke="#1f2937" stroke-width="2" stroke-linecap="round"/>
+<line x1="736.4" x2="736.4" y1="380" y2="392" stroke="#1f2937" stroke-width="2" stroke-linecap="round"/>
+<text x="668.2" y="372" font-size="14" fill="#1f2937" text-anchor="middle">Geo bug: merged May 1, shipped in CR1 May 31, fixed Jun 4</text>
+<g><title>2026-01-01 · Most work rebuilds things built a hundred times · 23 likes</title><rect x="113.2" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="109.2" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<g><title>2026-01-04 · &quot;Where is the disconnect?&quot; · 1,069 likes</title><rect x="125.2" y="347.0" width="10" height="73.0" rx="4.0" fill="#aab1bb"/><rect x="121.2" y="343.0" width="18" height="81.0" fill="transparent"/></g>
+<line x1="130.2" x2="130.2" y1="426" y2="464" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-01-06 · Hardwood started: &quot;a perfect case for LLMs&quot; · 48 likes</title><rect x="133.2" y="416.7" width="10" height="3.3" rx="1.6" fill="#aab1bb"/><rect x="129.2" y="412.7" width="18" height="11.3" fill="transparent"/></g>
+<line x1="138.2" x2="138.2" y1="426" y2="494" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-01-17 · &quot;Yet another if/else is not gonna save us&quot; · 386 likes</title><rect x="177.4" y="393.6" width="10" height="26.4" rx="4.0" fill="#aab1bb"/><rect x="173.4" y="389.6" width="18" height="34.4" fill="transparent"/></g>
+<g><title>2026-01-19 · Expand and consolidate · 16 likes</title><rect x="185.4" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="181.4" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<g><title>2026-02-23 · A test result excluded, slipped through review · 281 likes</title><rect x="325.9" y="400.8" width="10" height="19.2" rx="4.0" fill="#aab1bb"/><rect x="321.9" y="396.8" width="18" height="27.2" fill="transparent"/></g>
+<g><title>2026-02-27 · &quot;Vibe-coded? Absolutely not.&quot; · 41 likes</title><rect x="342.0" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="338.0" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<g><title>2026-03-30 · Known unknowns vs. unknown unknowns · 194 likes</title><rect x="466.5" y="406.8" width="10" height="13.2" rx="4.0" fill="#aab1bb"/><rect x="462.5" y="402.8" width="18" height="21.2" fill="transparent"/></g>
+<g><title>2026-04-08 · &quot;Less and less moat in code&quot; · 64 likes</title><rect x="502.6" y="415.6" width="10" height="4.4" rx="2.2" fill="#aab1bb"/><rect x="498.6" y="411.6" width="18" height="12.4" fill="transparent"/></g>
+<line x1="507.6" x2="507.6" y1="426" y2="524" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-04-20 · &quot;20h of refactoring&quot; … &quot;Done.&quot; · 10 likes</title><rect x="550.8" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="546.8" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<g><title>2026-05-20 · Current London: &quot;You read every diff&quot;</title><rect x="671.2" y="415" width="10" height="10" transform="rotate(45 676.2 420)" fill="#1f2937" stroke="#ffffff" stroke-width="2"/></g>
+<line x1="676.2" x2="676.2" y1="426" y2="554" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-07-03 · The context-switching tax · 291 likes</title><rect x="847.8" y="400.1" width="10" height="19.9" rx="4.0" fill="#aab1bb"/><rect x="843.8" y="396.1" width="18" height="27.9" fill="transparent"/></g>
+<g><title>2026-07-16 · The Z300: &quot;measure instead of guess&quot; · 21 likes</title><rect x="900.0" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="896.0" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<line x1="905.0" x2="905.0" y1="426" y2="554" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-08-09 · Reading code: &quot;necessary, not sufficient&quot; · 4 likes</title><rect x="996.4" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="992.4" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<g><title>2026-08-10 · &quot;Software is solved&quot; doesn&#x27;t match · 48 likes</title><rect x="1000.4" y="416.7" width="10" height="3.3" rx="1.6" fill="#aab1bb"/><rect x="996.4" y="412.7" width="18" height="11.3" fill="transparent"/></g>
+<line x1="1005.4" x2="1005.4" y1="426" y2="464" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-08-10 · Contribution guidelines · 20 likes</title><rect x="1000.4" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="996.4" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<g><title>2026-09-11 · &quot;It adds to your mental load&quot; · 4,101 likes</title><rect x="1128.9" y="140.0" width="10" height="280.0" rx="4.0" fill="#b5491f"/><rect x="1124.9" y="136.0" width="18" height="288.0" fill="transparent"/></g>
+<text x="1121.9" y="156.0" font-size="15" font-weight="700" fill="#1f2937" text-anchor="end">4,101</text>
+<line x1="1133.9" x2="1133.9" y1="426" y2="494" stroke="#e5e7eb" stroke-width="1"/>
+<g><title>2026-09-14 · &quot;Build things you otherwise just wouldn&#x27;t&quot; · 5 likes</title><rect x="1140.9" y="417.0" width="10" height="3.0" rx="1.5" fill="#aab1bb"/><rect x="1136.9" y="413.0" width="18" height="11.0" fill="transparent"/></g>
+<line x1="1145.9" x2="1145.9" y1="426" y2="524" stroke="#e5e7eb" stroke-width="1"/>
+<text x="130.2" y="478" font-size="15" fill="#1f2937" text-anchor="start" stroke="#ffffff" stroke-width="5" paint-order="stroke">&quot;Where is the disconnect?&quot;</text>
+<text x="138.2" y="508" font-size="15" fill="#1f2937" text-anchor="start" stroke="#ffffff" stroke-width="5" paint-order="stroke">Hardwood started: &quot;a perfect case for LLMs&quot;</text>
+<text x="507.6" y="538" font-size="15" fill="#1f2937" text-anchor="start" stroke="#ffffff" stroke-width="5" paint-order="stroke">&quot;Less and less moat in code&quot;</text>
+<text x="676.2" y="568" font-size="15" fill="#1f2937" text-anchor="end" stroke="#ffffff" stroke-width="5" paint-order="stroke">Current London: &quot;You read every diff&quot;</text>
+<text x="905.0" y="568" font-size="15" fill="#1f2937" text-anchor="start" stroke="#ffffff" stroke-width="5" paint-order="stroke">The Z300: &quot;measure instead of guess&quot;</text>
+<text x="1005.4" y="478" font-size="15" fill="#1f2937" text-anchor="end" stroke="#ffffff" stroke-width="5" paint-order="stroke">&quot;Software is solved&quot; doesn&#x27;t match</text>
+<text x="1133.9" y="508" font-size="15" fill="#1f2937" text-anchor="end" stroke="#ffffff" stroke-width="5" paint-order="stroke">&quot;It adds to your mental load&quot;</text>
+<text x="1145.9" y="538" font-size="15" fill="#1f2937" text-anchor="end" stroke="#ffffff" stroke-width="5" paint-order="stroke">&quot;Build things you otherwise just wouldn&#x27;t&quot;</text>
+<line x1="70" x2="1170" y1="420" y2="420" stroke="#6b7280" stroke-width="1"/>
+</svg>

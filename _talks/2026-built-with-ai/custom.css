@@ -1,0 +1,588 @@
+/* Minimal overrides on top of the reveal "white" theme.
+   Keep this small: layout tweaks only, no per-slide styling. */
+
+:root {
+  --accent: #b5491f;
+  --dim: #666666;
+
+  /* One family, Open Sans; hierarchy through weight, size and colour.
+     Bold: titles. Regular: body, footer, credits. Light: asides and section captions. */
+  --r-main-font: "Open Sans", Verdana, sans-serif;
+  --r-main-color: #354045;
+  --r-heading-font: "Open Sans", Verdana, sans-serif;
+  --r-heading-color: #354045;
+  --r-heading-font-weight: 700;
+  --r-heading-text-transform: none;
+  --r-heading-letter-spacing: normal;
+  --r-link-color: #0097a7;
+  --r-link-color-hover: #006f7a;
+  --r-code-font: Consolas, Menlo, "DejaVu Sans Mono", monospace;
+}
+
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  text-transform: none;
+  font-weight: 700;
+}
+
+.reveal h1 { font-size: 2.1em; }
+.reveal h2 { font-size: 1.5em; }
+.reveal em { color: var(--accent); font-style: normal; font-weight: 700; }
+
+/* A single sentence filling the slide. Use: <!-- .slide: class="statement" --> */
+.reveal .statement h2,
+.reveal .statement h1 {
+  font-size: 1.9em;
+  line-height: 1.25;
+}
+
+/* Quiet trailing attribution / aside line. Use: class="aside" */
+.reveal .aside {
+  font-weight: 300;
+  color: var(--dim);
+  font-size: 0.7em;
+}
+
+/* Big numbers grid. Use a table; this just calms it down. */
+.reveal table { font-size: 0.8em; }
+.reveal table th { text-transform: none; }
+
+.reveal pre { width: 100%; box-shadow: none; font-size: 0.5em; }
+.reveal pre code { padding: 1em; max-height: 560px; }
+
+.reveal section img {
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  max-height: 520px;
+}
+
+/* Image with no chrome. Use: class="plain" */
+.reveal section img.plain {
+  border: 0;
+  box-shadow: none;
+}
+
+.reveal ul { display: block; }
+.reveal li { margin-bottom: 0.35em; }
+
+/* Tweet screenshots. Native width is 598px, so scale up for the room. */
+.reveal section img.tweet {
+  height: 590px;
+  max-height: none;
+}
+
+.reveal section img.zoom {
+  width: 1150px;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* A tweet with replies stacked under it, shown as one card.
+   Replies use class="fragment" to fade in. */
+.reveal .thread {
+  display: inline-flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  background: #fff;
+}
+
+.reveal .thread img {
+  width: 680px;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+/* A small reminder of an earlier image under a statement. */
+.reveal section img.callback {
+  width: 460px;
+  opacity: 0.85;
+  margin-top: 0.8em;
+}
+
+/* A screenshot of a post, scaled up for the room. */
+.reveal section img.post {
+  width: 860px;
+  max-width: 100%;
+  height: auto;
+}
+
+/* A tall post: fit the height instead of the width. */
+.reveal section img.post-tall {
+  height: 600px;
+  width: auto;
+  max-height: none;
+}
+
+/* Two screenshots side by side. */
+.reveal .pair {
+  display: flex;
+  gap: 28px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.reveal .pair img {
+  width: 48%;
+  height: auto;
+  max-height: 600px;
+  object-fit: contain;
+  margin: 0;
+}
+
+/* A quote from a session transcript. */
+.reveal blockquote.transcript {
+  width: 88%;
+  text-align: left;
+  font-size: 0.8em;
+  border-left: 4px solid var(--accent);
+  box-shadow: none;
+  background: transparent;
+  padding: 0.4em 1em;
+}
+
+.reveal blockquote.transcript cite {
+  display: block;
+  margin-top: 0.6em;
+  font-size: 0.75em;
+  font-style: normal;
+  color: var(--dim);
+}
+
+/* Placeholder for a screenshot that isn't there yet (see index.html). */
+.reveal .missing-image {
+  margin: 0.6em auto;
+  width: 70%;
+  padding: 3em 1em;
+  border: 2px dashed #c9ced6;
+  background: #f3f4f6;
+  color: var(--dim);
+  font-size: 0.55em;
+}
+
+/* Generated charts (timeline). */
+.reveal section img.chart,
+.reveal section object.chart {
+  width: 1150px;
+  max-width: 100%;
+  max-height: none;
+  border: 0;
+  box-shadow: none;
+}
+
+/* The spiral reveal (helix.js): a ring seen from above, tilted by a fragment. */
+.reveal .helix {
+  width: 520px;
+  height: 520px;
+  color: var(--r-main-color);
+}
+
+.reveal .helix .ball { fill: var(--accent); }
+.reveal .helix .back { opacity: 0.3; }
+.reveal .helix .axis { opacity: 0; }
+
+.reveal .helix .ring-label {
+  font-size: 22px;
+  font-weight: 700;
+  fill: currentColor;
+  transition: opacity 0.6s;
+}
+
+.reveal .helix.tilted .ring-label { opacity: 0; }
+
+/* The tilt fragment carries no content of its own. */
+.reveal .helix-step { display: none; }
+
+/* Two captions in the same spot, swapped by fragments. */
+.reveal .helix-captions {
+  display: grid;
+  margin-top: 0.2em;
+}
+
+.reveal .helix-captions > * {
+  grid-area: 1 / 1;
+  margin: 0;
+}
+
+/* ───────────── Slide types (see index.html) ───────────── */
+
+/* Footer and slide number: regular slides only. */
+.reveal .deck-footer {
+  line-height: 1;
+  position: absolute;
+  left: 28px;
+  bottom: 14px;
+  z-index: 30;
+  font-size: 15px;
+  color: var(--dim);
+}
+
+.reveal .slide-number {
+  line-height: 1;
+  padding: 0;
+  right: 28px;
+  bottom: 14px;
+  background: transparent;
+  font-family: var(--r-main-font);
+  color: var(--dim);
+  font-size: 15px;
+}
+
+/* !important: reveal sets the slide number's display inline. */
+.reveal.no-footer .deck-footer,
+.reveal.no-footer .slide-number {
+  display: none !important;
+}
+
+/* Regular: bold title and light grey subtitle, pinned to the top of every slide.
+   Subtitle use: <span class="subtitle">…</span> as the paragraph right after the title. */
+.reveal .slides section:not(.center) > h2:first-child,
+.reveal .slides section:not(.center) > h1:first-child {
+  margin: -0.45em 0 0.6em;
+  font-size: 0.92em;
+  line-height: 1.25;
+}
+
+.reveal .slides section:not(.center) > h2:first-child:has(+ p > .subtitle) {
+  margin-bottom: 0;
+}
+
+.reveal .slides section:not(.center) > h2:first-child + p:has(> .subtitle) {
+  margin: 0 0 1em;
+  line-height: 1.25;
+}
+
+.reveal .subtitle {
+  font-weight: 300;
+  font-size: 0.95em;
+  color: var(--dim);
+}
+
+/* Regular: body text smaller than the title, inset from the slide edges. */
+.reveal .slides > section:not(.center) {
+  box-sizing: border-box;
+  padding-inline: 96px;
+}
+
+.reveal .slides > section:not(.center) > ul,
+.reveal .slides > section:not(.center) > ol,
+.reveal .slides > section:not(.center) > p:not(:has(> .subtitle)),
+.reveal .columns ul,
+.reveal .columns ol,
+.reveal .columns p {
+  font-size: 0.8em;
+}
+
+/* Two columns side by side, e.g. bullets next to a listing. Use: <div class="columns"> */
+.reveal .columns {
+  display: flex;
+  gap: 48px;
+  align-items: center;
+  text-align: left;
+}
+
+.reveal .columns > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.reveal .columns > .narrow {
+  flex: 0 0 auto;
+}
+
+/* Hero: one big sentence. */
+.reveal section.hero h1,
+.reveal section.hero h2 {
+  font-size: 1.9em;
+  line-height: 1.25;
+}
+
+.reveal section.hero .overline {
+  display: block;
+  margin-bottom: 0.6em;
+  font-size: 0.6em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* Hero image: the title, if any, becomes a quiet caption above the visual. */
+.reveal section.hero-image h2 {
+  font-size: 1.1em;
+  margin-bottom: 0.5em;
+}
+
+/* Section: caption over a darkened full-bleed photo. */
+.reveal section.section h1,
+.reveal section.section h2,
+.reveal section.section p {
+  color: #ffffff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+}
+
+.reveal section.section h1 {
+  font-weight: 300;
+  font-size: 2.6em;
+}
+
+.reveal section.section h1 em {
+  color: #ffffff;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.12em;
+}
+
+.reveal section.section .aside {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* The credit is shown in the footer position by index.html, not inside the slide. */
+.reveal section.section .credit {
+  display: none;
+}
+
+.reveal.credit-footer .deck-footer {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.reveal.credit-footer .slide-number {
+  display: none !important;
+}
+
+/* Section slides set data-state="section-slide": a dark ground under the dimmed photo
+   (and in place of it, while the photo is still missing). */
+html:not(.reveal-print) .reveal-viewport.section-slide,
+html.section-slide:not(.reveal-print) {
+  background-color: #111111;
+}
+
+/* ───────────── Print layout (?print-pdf) and thumbnail grid (?grid) ───────────── */
+
+/* In the print layout every page paints its own ground: white, or dark behind a
+   section slide's photo. The per-slide data-state class on the viewport doesn't apply
+   there (it would follow whichever slide was current, e.g. the title). */
+html.reveal-print,
+html.reveal-print body,
+html.reveal-print .reveal-viewport {
+  background-color: #ffffff;
+}
+
+html.reveal-print .reveal .slides .pdf-page,
+html.reveal-print .reveal .slides .pdf-page .slide-background {
+  background-color: #ffffff;
+}
+
+html.reveal-print .reveal .slides .pdf-page:has(section.section),
+html.reveal-print .reveal .slides .pdf-page:has(section.section) .slide-background {
+  background-color: #111111;
+}
+
+html.grid-view.reveal-print,
+html.grid-view.reveal-print body,
+html.grid-view.reveal-print .reveal-viewport {
+  background-color: #e5e7eb;
+}
+
+/* reveal's print CSS sets padding and margin with !important, and display on a selector
+   of the same weight, so these override explicitly. */
+html.grid-view.reveal-print .reveal .slides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px !important;
+}
+
+/* A page's content is absolutely positioned, so as a flex item it would shrink to zero
+   width. Give it the print page size reveal uses: slide size × (1 + margin). */
+html.grid-view.reveal-print .reveal .slides .pdf-page {
+  flex: 0 0 auto;
+  width: 1356px;
+  height: 763px;
+  zoom: 0.22;
+  margin: 0;
+  box-shadow: 0 0 0 4px #9ca3af;
+}
+
+html.grid-view.reveal-print .reveal .slides .pdf-page {
+  cursor: pointer;
+}
+
+html.grid-view.reveal-print .reveal .slides .pdf-page:hover {
+  box-shadow: 0 0 0 10px var(--accent);
+}
+
+html.grid-view.reveal-print .reveal .slides .pdf-page.grid-current {
+  box-shadow: 0 0 0 14px var(--accent);
+}
+
+/* Screenshots piling up on top of each other. Each image sets its place with
+   style="--x: …px; --y: …px; --r: …deg" and optionally --w. */
+.reveal .montage {
+  position: relative;
+  width: 1180px;
+  height: 600px;
+  margin: 50px auto 0;
+}
+
+.reveal .montage > h2 {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  margin: 0;
+  font-size: 1.9em;
+}
+
+.reveal section .montage img {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w, 400px);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  transform: rotate(var(--r, 0deg));
+  background: #fff;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.28);
+}
+
+/* A wall of text in a terminal, e.g. a classpath. Use: <pre class="classpath"> */
+.reveal pre.classpath {
+  margin-top: 0.6em;
+  padding: 1.1em 1.3em;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: #1e1e1e;
+  color: #e879b9;
+  font-size: 0.3em;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: left;
+}
+
+.reveal .columns pre {
+  margin: 0;
+  font-size: 0.5em;
+}
+
+/* A listing placed freely on the slide, allowed to sit beside or below short text.
+   Use: <div class="float-listing" style="--x: …; --y: …; --w: …"> around a code block. */
+.reveal .float-listing {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+}
+
+.reveal .float-listing pre {
+  margin: 0;
+  font-size: 0.58em;
+}
+
+.reveal .float-listing pre code {
+  max-height: none;
+  padding: 0.9em 1em;
+}
+
+/* Release timeline, generated by timeline/make_release_timeline.py. Coordinates are slide pixels. */
+.reveal .rtl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 720px;
+  pointer-events: none;
+}
+
+.reveal .rtl-event,
+.reveal .rtl-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1280px;
+  height: 720px;
+}
+
+.reveal .rtl-axis { stroke: var(--r-main-color); stroke-width: 3; }
+.reveal .rtl-tick { stroke: var(--dim); stroke-width: 2; }
+.reveal .rtl-month { fill: var(--dim); font-size: 16px; font-family: var(--r-main-font); }
+.reveal .rtl-dot { fill: var(--accent); stroke: #ffffff; stroke-width: 2; }
+.reveal .rtl-span { stroke: var(--accent); stroke-width: 9; stroke-linecap: round; }
+.reveal .rtl-label { fill: var(--r-main-color); font-size: 16px; font-weight: 700; font-family: var(--r-main-font); }
+.reveal .rtl-connector { stroke: var(--dim); stroke-width: 1.5; stroke-dasharray: 4 4; }
+
+.reveal section img.rtl-card,
+.reveal .rtl-card {
+  position: absolute;
+  margin: 0;
+  max-height: none;
+  background: #ffffff;
+}
+
+.reveal .rtl-note {
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid var(--accent);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  font-size: 20px;
+  line-height: 1.3;
+  text-align: left;
+}
+
+/* A word crossed out and corrected with an arrow, as on a whiteboard.
+   Use: <span class="xout">word<svg class="xout-mark fragment">…</svg><span class="xout-insert fragment">…</span></span> */
+.reveal .xout {
+  position: relative;
+  display: inline-block;
+}
+
+.reveal .xout-mark {
+  position: absolute;
+  left: -8%;
+  top: 12%;
+  width: 116%;
+  height: 80%;
+  overflow: visible;
+}
+
+.reveal .xout-mark path,
+.reveal .xout-arrow path {
+  fill: none;
+  stroke: #d62d20;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.reveal .xout-insert {
+  position: absolute;
+  left: 160%;
+  bottom: 112%;
+  white-space: nowrap;
+  font-size: 0.8em;
+  color: var(--r-heading-color);
+}
+
+.reveal .xout-arrow {
+  position: absolute;
+  right: 100%;
+  top: 40%;
+  width: 1.9em;
+  height: 1.45em;
+  overflow: visible;
+}
+.reveal .rtl-span-label { fill: var(--accent); font-size: 16px; font-weight: 700; font-family: var(--r-main-font); }
+/* A white halo keeps labels legible where the axis or a connector runs behind them. */
+.reveal .rtl-label,
+.reveal .rtl-span-label,
+.reveal .rtl-month { paint-order: stroke; stroke: #ffffff; stroke-width: 6px; stroke-linejoin: round; }

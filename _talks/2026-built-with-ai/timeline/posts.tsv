@@ -1,0 +1,19 @@
+date	likes	platform	label	label_row	anchor	screenshot
+2026-01-01	23	x	Most work rebuilds things built a hundred times			x-2026-01-01-rebuilding-known-things.png
+2026-01-04	1069	x	"Where is the disconnect?"	1	start	x-2026-01-04-where-is-the-disconnect.png
+2026-01-06	48	x	Hardwood started: "a perfect case for LLMs"	2	start	x-2026-01-06-hardwood-announced.png
+2026-01-17	386	x	"Yet another if/else is not gonna save us"			x-2026-01-17-if-else.png
+2026-01-19	16	x	Expand and consolidate			x-2026-01-19-expand-and-consolidate.png
+2026-02-23	281	x	A test result excluded, slipped through review			x-2026-02-23-excluded-test-result.png
+2026-02-27	41	x	"Vibe-coded? Absolutely not."			x-2026-02-27-absolutely-not.png
+2026-03-30	194	x	Known unknowns vs. unknown unknowns			x-2026-03-30-known-unknowns.png
+2026-04-08	64	x	"Less and less moat in code"	3	start	x-2026-04-08-less-moat-in-code.png
+2026-04-20	10	x	"20h of refactoring" … "Done."			x-2026-04-20-20h-refactoring.png
+2026-05-20	0	talk	Current London: "You read every diff"	4	end	speakerdeck-current-london-48.png
+2026-07-03	291	x	The context-switching tax			x-2026-07-03-context-switching-tax.png
+2026-07-16	21	x	The Z300: "measure instead of guess"	4	start	x-2026-07-16-z300.png
+2026-08-09	4	x	Reading code: "necessary, not sufficient"			x-2026-08-09-necessary-not-sufficient.png
+2026-08-10	48	x	"Software is solved" doesn't match	1	end	x-2026-08-10-software-is-solved.png
+2026-08-10	20	x	Contribution guidelines			x-2026-08-10-contribution-guidelines.png
+2026-09-11	4101	x	"It adds to your mental load"	2	end	08-tweet-exhausting.png
+2026-09-14	5	x	"Build things you otherwise just wouldn't"	3	end	x-2026-09-14-note-trainer.png

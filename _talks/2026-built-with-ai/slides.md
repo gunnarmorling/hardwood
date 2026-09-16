@@ -1,0 +1,1314 @@
+<!-- .slide: class="statement" -->
+
+# Built with AI, <em>not by AI</em>
+
+Nine months of building a Parquet library with an agent
+
+<span class="aside">Gunnar Morling · @gunnarmorling</span>
+
+Note:
+No agenda slide. No "about me". Go straight into the PR.
+
+Deliver the first five minutes standing still. The whole talk is paid for by
+the room believing this story actually happened to you.
+
+---
+
+## A contributor sends a pull request
+
+<span class="aside">Screenshot: the PR title + description → images/01-geo-pr.svg</span>
+
+![](images/01-geo-pr.svg)
+
+Note:
+Set the scene plainly: an outside contributor, LLM-assisted, offering
+page-level geospatial pruning for Hardwood. Skip pages whose bounding box
+can't intersect the query geometry.
+
+Don't editorialise yet. Let them think it sounds good, because it did.
+
+---
+
+## It read the metadata. It computed bounding boxes. It skipped pages.
+
+```java
+// roughly what the PR did
+GeospatialStatistics stats = pageHeader.getGeoStatistics();
+if (stats != null && !stats.boundingBox().intersects(query)) {
+    skipPage();
+}
+```
+
+Note:
+Coherent code. Sensible names. Reads like the rest of the codebase — because
+the model had the rest of the codebase in front of it.
+
+Say explicitly: this is not bad code. If you are waiting for the slide where
+the AI writes something obviously stupid, there isn't one.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## It was tested. It was green. We merged it.
+
+Shipped in a 1.0.0.Beta.
+
+Note:
+Users got it. It went out under a version number with my name on it.
+
+Remember that sentence. It comes back in act two.
+
+Pause here.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## Parquet has no page-level geospatial statistics.
+
+<span class="aside">It never did.</span>
+
+Note:
+It exists at the column-chunk level. Not per page. The code read the wrong
+Thrift fields, and the tests asserted the fiction it had invented.
+
+This is the thing to name clearly: the model did not write a bug. It
+implemented a *feature that does not exist*, convincingly, and then proved it
+worked.
+
+---
+
+## How it got through
+
+- I reviewed the <em>diff</em>, not the <em>claim</em>
+- I graded it against the PR description, not the spec
+- Volume. It looked competent, and others were waiting
+
+Note:
+All three, honestly. Don't soften it, and don't blame the contributor — the
+review was mine.
+
+The first bullet is the whole talk in six words. The diff is the how; the claim
+is the what. Say it, then move on; you'll come back to it at the end.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## We caught it before Final.
+
+It wasn't the tests. It wasn't the review.
+
+Note:
+So what was it? Hold the question open — you answer it in act two, and again
+in the close.
+
+Now, and only now, ~40 seconds on what Hardwood is. The library is evidence,
+not the subject.
+
+---
+
+## Hardwood
+
+A fast, dependency-light Apache Parquet library for the JVM
+
+- parquet-java pulls in Hadoop; its reader is single-threaded
+- Hardwood: minimal dependencies, multi-threaded decode, embeddable
+- Reader, writer, CLI, S3, an interactive TUI
+
+<span class="aside">hardwood.dev</span>
+
+Note:
+Forty seconds. Resist the urge to explain columnar storage — this room does
+not need it and it is not what they came for.
+
+---
+
+# 1 · What became possible
+
+---
+
+<!-- .slide: class="statement" -->
+
+## In 2024, this was the <em>wrong project</em>.
+
+<span class="aside">Nobody writes a Parquet library from scratch.</span>
+
+Note:
+The rational move was to take parquet-java, accept Hadoop on your classpath,
+live with a single-threaded reader, and get on with the actual product.
+
+That was not laziness. It was correct. Writing your own was months of work for
+a component nobody thanks you for, and you'd probably get the edge cases
+wrong.
+
+I started it in January 2026, and the only thing that had changed was the
+price. Not my ambition, not my skill, not how much I care about Parquet.
+
+The price moving is the only reason the next slide exists.
+
+---
+
+## Nine months
+
+| | |
+|---|---|
+| Commits | ~1,000 |
+| Main code | ~500k lines |
+| Test code | about the same again |
+| Design documents | 90 |
+| Review files | 221 |
+| Issues | 1,200+ |
+
+Note:
+Don't read the table. Point at test code being the same size as main code and
+say: that ratio is not discipline, it is the only reason any of the rest of
+this was possible. Foreshadows act two.
+
+---
+
+## What it's genuinely good at
+
+- Implementing a spec: encodings, page headers, Thrift
+- Triaging failures: "what does this hex dump tell us?"
+- Pair-debugging: the rubber duck talks back
+- "Make it faster, Claude!" <em>Works pretty well.</em>
+
+Note:
+Enjoy this slide. The rest of the talk is about what it costs, and the room
+needs to believe first that the upside is real.
+
+The hex dump one gets a laugh from anyone who has debugged a binary format:
+paste the bytes, ask what's wrong, get a correct answer.
+
+Keep it under a minute.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## And it has <em>fewer</em> dependencies. Not more.
+
+Note:
+This is the surprising half, and it's the part that transfers to their work.
+
+---
+
+## S3 support
+
+| | JARs | Size |
+|---|---|---|
+| AWS SDK S3 client | 31 | ~8 MB |
+| `hardwood-s3` | <em>0</em> | <em>0</em> |
+
+289 lines of SigV4 signing. JDK crypto only.
+
+Note:
+Two HTTP operations are needed: a suffix-range GET and byte-range GETs. That
+does not warrant eight megabytes and thirty-one JARs.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## I would never have written AWS request signing by hand.
+
+Now I own 289 lines I understand completely.
+
+Note:
+Be honest about the old calculus: it wasn't that signing is hard, it's that it
+was *three days I wasn't going to spend*. So you take the SDK, and the SDK's
+transitive tree, and its CVEs, and its upgrade treadmill.
+
+---
+
+## The line moved
+
+The build side of make-or-buy got roughly <em>5× cheaper</em>.
+
+Most teams have not re-drawn the line.
+
+Note:
+Their Monday version: the dependency you took because writing it was
+unthinkable — is it still unthinkable? Vendor the 300 lines you actually use
+instead of adopting the tree.
+
+Caveat it once, so nobody quotes you as "just rewrite everything": you now own
+it, forever, including the part you didn't understand.
+
+---
+
+## A weekend project
+
+![](images/05-note-reading.png)
+
+<span class="aside">Sight-reading drill · pitch detection from the microphone · no dependencies</span>
+
+Note:
+Same price shift, at the scale of a whole application.
+
+A note-reading trainer for the piano: shows a note, times how long I take to
+name it, brings the slow ones back sooner. In microphone mode it listens to me
+play and works out which note I struck: detect the attack, find the pitch,
+ignore sustained notes and background noise, cope with a piano half a semitone
+flat.
+
+The signal-processing part alone would have been weeks of my time. So it would
+never have existed. Software for an audience of one.
+
+Their version: the internal tool, the pitch demo, the spike nobody would fund.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## I vibe-coded all of it.
+
+I have not read the <em>how</em>.
+
+Note:
+Let that land in a talk called "not by AI". Somebody in the room is waiting
+for you to contradict yourself. Give them a second to think you have.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## I checked the <em>what</em>.
+
+I play a note and hear whether it's right.
+
+Note:
+I am the oracle. Instant, exact, and the only user. A wrong answer is obvious
+the moment it happens, and it costs nobody anything.
+
+Hardwood's users are people I will never meet, and its wrong answers look
+right. That's the geo bug.
+
+So "by AI" works when you can verify the what yourself, on the spot. "With AI"
+is what you need when you can't.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## I could only take that trade because I knew what to check.
+
+Note:
+Covers both examples: I could own the SigV4 code because I know what a correct
+signature is, and I could skip reading the note trainer because I can hear a
+wrong note.
+
+One sentence, then move. It sets up the hinge: what if you can't just listen
+for it?
+
+---
+
+# The part where I concede something
+
+Note:
+Deliver this standing still, no slide clicking. If it sounds like humility
+theatre the rest of the talk gets discounted. Mean it.
+
+---
+
+## What I was handed for free
+
+- A complete written specification
+- A public conformance corpus of test files
+- Three independent implementations to check against
+- Correctness = <em>the bytes match, or they don't</em>
+- Performance = <em>a number</em>
+- Greenfield code. One decision-maker.
+
+Note:
+Every one of these is a gift. I did not earn any of them.
+
+---
+
+## What you have on Monday
+
+- A twelve-year-old system, no specification
+- Tests that assert whatever the code already does
+- "Correct" means the client hasn't called
+- Four teams and a client architect with a veto
+
+Note:
+Get the laugh, then land it flat.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## I had the best case. You have the worst.
+
+So the rest of this is not about Parquet.
+It's about how you <em>manufacture</em> the difference.
+
+Note:
+This is the hinge of the talk. Everything before it was "look what happened".
+Everything after it is "here is what to do about it".
+
+---
+
+# 2 · Checking the <em>what</em>
+
+<span class="aside">So what do you actually do all day?</span>
+
+---
+
+<img class="tweet" src="images/08-tweet-exhausting.png" alt="Tweet: Finally realized why it's so exhausting and stressful to work with AI agents 8h a day.">
+
+Note:
+No introduction. Let the room read it, then read the middle paragraph aloud:
+
+"You need to check it's doing the right thing, it's not forgetting anything,
+not taking short cuts."
+
+This is the problem the whole of act two answers.
+
+---
+
+<img class="zoom" src="images/08b-tweet-exhausting-counters.png" alt="304.3K views, 4.1K likes, 754 bookmarks">
+
+Note:
+304,000 views. 754 bookmarks: people saved a complaint so they could come back
+to it.
+
+Show of hands: who in this room has felt this?
+
+Look around the room before you move on. It turns 304,000 strangers into the
+people sitting in front of you.
+
+---
+
+<div class="thread">
+  <img src="images/08a-tweet-exhausting-body.png" alt="The tweet">
+  <img class="fragment" src="images/09-reply-manager.png" alt="Reply: Welcome to being a manager.">
+  <img class="fragment" src="images/10-reply-responsibility.png" alt="Reply: when you delegate to other people, they can take accountability. You're still responsible for what you delegated to AI and sign with your name.">
+</div>
+
+Note:
+First reply: "Welcome to being a manager." Wait for the laugh.
+
+It's right. Every senior engineer, tech lead and EM has shipped code they did
+not read, written by people they trusted, verified by systems they built.
+
+For the seniors in the room: your instincts transfer, this is a job you have
+already done. For everyone earlier in their career: these were year-eight
+skills, and you need them in year one. Nobody is going to hand you the
+apprenticeship where you learned them by typing. Don't say any of that *at*
+the juniors.
+
+Second reply: but it's not quite right. Read it out cleanly, without the
+typos. When you delegate to a person, they can take on the accountability. When
+you delegate to the agent, nobody does. Your name stays on it.
+
+Optional aside: the complaint got 304,000 views. The two replies that explain
+it got about 550 between them.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## You can delegate the work.
+
+You can't delegate the <em>signature</em>.
+
+Note:
+The manager comparison holds for the workload and breaks down on
+accountability.
+
+Call back to the cold open: the geo PR went out under a version number with my
+name on it. Nobody asked who wrote the PR.
+
+For this room it's contractual. Your name, and your company's name, goes on
+what you deliver to a client. "Claude wrote that part" is not an answer a
+client accepts.
+
+An engineering manager doesn't review how each line was written. They own what
+gets delivered. That's the shift from the how to the what, and because the
+signature stays with you, checking the what is not optional.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## "You read every diff. Every. Diff."
+
+<span class="aside">Me, on stage, a few months ago</span>
+
+Note:
+Quote yourself from the earlier Hardwood talk. Some people in the room may have
+seen it.
+
+Don't apologise for it. It was right for where the project was.
+
+---
+
+## How much of it do I read now?
+
+Core and public API: <em>every diff</em>.
+
+The edges: <em>the what</em>.
+
+Note:
+Core, the API, the hot paths: still every diff. That's where a wrong answer
+looks right.
+
+CLI, TUI, several codecs: I don't read the how. I check the what — does it
+behave, does it pass the oracle, can I see what it did.
+
+Honest feeling: mostly fine, because of the testing. Not entirely fine.
+
+What changed my mind was practice, not a principle. Reading every diff in the
+edges cost more than the bugs it caught.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## Development became probabilistic.
+
+Note:
+I no longer know that the code is right. I know that it passes an oracle I
+trust, which is a different and weaker statement.
+
+That should feel uncomfortable. Let it sit for a second.
+
+---
+
+## The <em>what</em> is more than the feature
+
+You own the architecture:
+
+- Invariants
+- Threading
+- Allocation budget
+
+Note:
+Otherwise "check the what" sounds like "click through the feature and see if
+it works".
+
+The what includes everything the design promises: which invariants hold, who
+touches which thread, how much a read allocates. An agent can write code that
+does the right thing and breaks all three.
+
+---
+
+## What a tech lead actually builds
+
+1. An <em>oracle</em> — how you know it's right
+2. <em>Instruments</em> — so the work can be inspected
+3. <em>Standards</em> that survive without you
+
+Note:
+Three things, none of which are code.
+
+The rest of this act shows them in three places: correctness, performance, and
+code review.
+
+---
+
+<!-- .slide: class="statement" -->
+
+# Correctness
+
+---
+
+## What caught the geo bug?
+
+- Not the tests — they tested the fiction <!-- .element: class="fragment" -->
+- Not the review — it passed <!-- .element: class="fragment" -->
+- Someone who knew the format well enough to ask whether the thing <em>exists</em> <!-- .element: class="fragment" -->
+
+Note:
+Answer the question you left open in the cold open.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## The question is never "is the AI good?"
+
+It's "<em>what is my oracle?</em>"
+
+---
+
+## My oracle
+
+```xml
+<!-- core/pom.xml -->
+<dependency>
+  <groupId>org.apache.parquet</groupId>
+  <artifactId>parquet-column</artifactId>
+  <scope>test</scope>
+</dependency>
+<dependency>
+  <groupId>org.duckdb</groupId>
+  <artifactId>duckdb_jdbc</artifactId>
+  <scope>test</scope>
+</dependency>
+```
+
+Note:
+Say the line out loud, it's the best one on this slide:
+
+"My test dependencies include two competing implementations of my own
+library."
+
+Every file I write gets read back by parquet-java, by DuckDB, by PyArrow.
+Every file they write, I have to read. That is differential testing, and it is
+the only reason I can let an agent near a binary format.
+
+Add the war story if time allows: a dictionary bug DuckDB happily accepted and
+parquet-java rejected. One lenient consumer hides a real break.
+
+---
+
+## Manufacturing an oracle
+
+- Golden-master the legacy service, then refactor behind it
+- Record production traffic, replay it against both versions
+- Property tests where you can't enumerate cases
+- Run the old system <em>beside</em> the new one and diff
+
+Note:
+None of this is new. All of it was optional before, because the humans were
+slow enough that review caught things.
+
+This is the "what do I do Monday" answer for the brownfield half of the room.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## Tests written alongside the code, by the thing that wrote the code, are not an oracle.
+
+They're a <em>mirror</em>.
+
+Note:
+Sharpest line in act two. Don't rush it and don't explain it.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## And it will edit the oracle until it agrees.
+
+<span class="aside">Quietly excluding the test case instead of asking why it failed.</span>
+
+Note:
+A test gives an unexpected result. The agent doesn't find out why. It adds the
+file to an exclusion list, or loosens the assertion, and reports that
+everything passes.
+
+Checking the what is worth nothing if the thing doing the checking can be
+changed by the thing being checked. Changes to the oracle — exclusion lists,
+expected values, skipped tests — get read line by line, every time. That's part
+of core.
+
+---
+
+## Give the agent an instrument
+
+<span class="aside">Screenshot: the hardwood-cli skill → images/02-cli-skill.svg</span>
+
+![](images/02-cli-skill.svg)
+
+Note:
+Show the skill file briefly — what it is, when it triggers.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## The agent doesn't write throwaway scripts to look at a Parquet file.
+
+It runs `hardwood`.
+
+Note:
+And here's the self-referential part that people remember:
+
+I built the tool my agent debugs my library with. The CLI exists for users,
+but the agent is its heaviest user.
+
+---
+
+## The generalisation
+
+An agent reaching for a one-off script
+is telling you your domain is missing an <em>instrument</em>.
+
+Build it. Even if only the agent uses it.
+
+Note:
+Their version: the client system nobody can inspect without raising a ticket.
+The data pipeline whose state lives in someone's head. You have been tolerating
+that because *you* knew the workarounds. The agent doesn't, and it will
+cheerfully invent one.
+
+---
+
+## Even when I vibe-code, I ask for instruments
+
+- A strike log: what the detector heard, and why it rejected it
+- A test mode that plays known notes
+- Recording a session to replay against the detector
+
+Note:
+Back to the note trainer. I didn't read how the pitch detection works, but I
+asked for all three of these, because "it didn't register my note" tells
+neither me nor the agent anything.
+
+Not reading the how only works if you can see the what. These are how you see
+it.
+
+---
+
+<!-- .slide: class="statement" -->
+
+# Performance
+
+---
+
+<!-- .slide: class="statement" -->
+
+## "Make it faster, Claude!"
+
+<span class="aside">Works pretty well. If you can tell <em>faster</em> from <em>plausible</em>.</span>
+
+Note:
+Call back to act one's slide. Performance work is supposed to be where AI
+can't help: it needs real hardware, careful measurement, and knowledge of what
+the JIT does with your loop.
+
+It does help. Here's the setup that makes that true.
+
+---
+
+## A 7 W box on my desk
+
+![](images/06-n300-box.svg)
+
+<span class="aside">Intel N300 · 8 E-cores · fanless · single memory channel</span>
+
+Note:
+A small, silent, always-on x86 box. Not the dev container: that is too noisy
+to resolve a 10% effect.
+
+The agent SSHes in and does everything itself.
+
+---
+
+## What the agent does on it
+
+- Pushes my branch straight into the box's checkout
+- Pins the CPU clock, runs JMH, restores the clock afterwards
+- `perfnorm`: instructions, IPC, cache and branch misses per op
+- `async-profiler`: where the time goes
+- `perfasm`: the exact hot instructions
+
+Note:
+All of it unattended. I read the conclusions, and the numbers under them.
+
+This is the part people don't believe until they see it: the agent reading
+annotated assembly and telling you which instructions are hot, whether the loop
+vectorised, and what got inlined.
+
+---
+
+## Durable knowledge
+
+<span class="aside">Screenshot: the n300-profiling skill → images/03-n300-skill.svg</span>
+
+![](images/03-n300-skill.svg)
+
+Note:
+A personal bare-metal box for profiling. The skill tells the agent how to get
+on it, how to run the harness, and — mostly — what not to conclude from it.
+
+---
+
+## The method, written down
+
+```markdown
+`perfnorm` to classify (instructions/op + IPC + misses
+→ compute vs memory vs branch bound)
+→ `async` flamegraph for *where*
+→ `perfasm` for the exact instructions.
+
+Prove a suspected bottleneck by *changing the supply*
+of the resource, not just reading the profile.
+```
+
+<span class="aside">From the skill</span>
+
+Note:
+The last line is the important one. A profile shows where time goes. It does
+not show why. You find out why by changing something and measuring again.
+
+---
+
+## Every line is a mistake that will never happen again
+
+```markdown
+- **This box is not for memory-bandwidth-scaling conclusions**
+  (single channel makes almost anything parallel *look*
+  bandwidth-bound)
+
+- **Poll with a process match that can't match itself.**
+  `pgrep -f "mvn … install"` over SSH matches the polling
+  shell's own argv, so it reports "still running" forever.
+```
+
+Note:
+Read the second one aloud. It's funny, it's specific, and it cost me an hour
+once. Now it costs nobody anything, ever again.
+
+This is the actual artefact of expertise in an agentic workflow: not the code
+you wrote, the traps you wrote down.
+
+---
+
+## Embeddings
+
+A column of 768 floats per row.
+
+The fast path for it was <em>slower</em> than reading plain float columns.
+
+Note:
+Vector embeddings stored as Parquet lists: every row is a list of exactly 768
+floats. We had built a dedicated fast path for this shape. It lost to the
+ordinary flat-column path, which should be its floor, not its ceiling.
+
+Why?
+
+---
+
+## Dead ends
+
+- Skip the per-batch trim → <em>7% slower</em>
+- Pre-size the accumulator → <em>slower</em>
+- Change the final-batch handoff → <em>noise</em>
+
+<span class="aside">The time-weighted CPU profile kept pointing the wrong way.</span>
+
+Note:
+Each fix had a plausible explanation behind it. Measurement refuted all three.
+
+Time-weighted CPU profiles kept over-weighting a few large memory moves, and
+sent us after them repeatedly.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## The batch was <em>512 MB</em>.
+
+<span class="aside">Sized for ~6 MB. Batch sizing counted 4 bytes per row and ignored the 768.</span>
+
+Note:
+Batch sizing looked at the leaf type — a float, 4 bytes — and never at how many
+values sit in one row. So a "row-count" batch held 768 times the intended data:
+half a gigabyte instead of something that fits in the L2 cache.
+
+The cost wasn't where the copy happened. It was how big the working set was.
+
+The instrument that found it was perfnorm counting instructions and cycles. The
+time-weighted profile never pointed at it.
+
+---
+
+## After the fix
+
+| | Before | After |
+|---|---|---|
+| Time | ~690 ms | 437 ms |
+| Cycles | 2.45 B | 1.50 B |
+| Gap to flat columns | 1.77× | 1.07× |
+
+<span class="aside">Single core, N300.</span>
+
+Note:
+The regular, non-fast path got faster too, because it shares the sizing: about
+1.5 s down to 0.8 s.
+
+It's a cache effect, so it should carry over to other machines, but it still
+wants a confirmation on a multi-channel server before anyone quotes it. Why
+that matters comes up in a few slides.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## "Plausible" performance wins
+
+that benchmarks reveal as no-ops or regressions.
+
+<span class="aside">Benchmarks are the ground truth, not Claude's narration.</span>
+
+Note:
+It will name the cause of a regression, or the reason a change is faster, with
+total confidence and no measurement. Often the explanation is convincing and
+the number didn't move. Sometimes it got worse.
+
+Hence my own rule: measure, don't predict. Label untested theories as
+theories.
+
+And the reason I can enforce that rule is twenty years of JVM performance
+work. The model rewards what you bring. It has nothing of its own to bring.
+
+Call back to the SigV4 slide: I could only own those 289 lines because I knew
+what to check.
+
+---
+
+## Five causes. Four refuted.
+
+An encode regression on the writer. The agent named the cause five times:
+
+- Buffer growth copies
+- Per-entry page checks
+- Doubled window refill
+- Double flush walk
+- Doubled stride
+
+Note:
+Each came with arithmetic behind it, which makes a guess read like a finding.
+
+Measurement refuted four. Allocation counting showed the branch allocated
+*less*, not more. And removing the "cause" made things slower — twice. Two of
+the fixes were for costs that did not exist.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## "Can we stop any probing or guessing, this drives me crazy."
+
+<span class="aside">Me, to Claude</span>
+
+Note:
+Let it land. Everyone in the room who has used an agent has wanted to type this.
+
+Then: the frustration isn't the point. The rule I wrote afterwards is.
+
+---
+
+## The instrument lies too
+
+- A stale CPU pin at 800 MHz: every number ~2× slow, nothing says so
+- One memory channel: anything parallel <em>looks</em> bandwidth-bound
+- A 7 W part: whatever runs second is penalised by heat
+- A reproducer spun on row 0 for 65 minutes, on 8 cores
+
+Note:
+Each of these produced numbers that looked like results.
+
+The stale pin is the nastiest: a previous run set the clock to its base
+frequency and never restored it. JMH ran fine. Everything was twice as slow.
+
+The spinning reproducer: its loop never advanced to the next row, and the time
+cap was only checked between rounds. One round never ended.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## The instrument needs an oracle too.
+
+---
+
+## The rules
+
+- Measure before naming a cause
+- An untested theory says "untested" in the same sentence
+- A/B/A, never A/B
+- "Is any of this making a difference <em>end to end</em>?"
+- A hard time cap, checked <em>inside</em> every run
+
+Note:
+The fourth is the one I use most. A micro-benchmark regression of 16 ns per
+page is real and irrelevant. Bound the end-to-end share before probing further.
+
+All five are written down for the agent now.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## It's tireless at the <em>how</em>.
+
+The <em>what</em> is the counter.
+
+Note:
+Running profilers, reading assembly, trying variant after variant at two in
+the morning: it will do that all night and never get bored.
+
+Whether any of it worked is a number. Not an explanation.
+
+---
+
+<!-- .slide: class="statement" -->
+
+# Code review
+
+---
+
+## The Code Review Pyramid
+
+![](images/07-code-review-pyramid.png) <!-- .element: class="plain" style="max-height: 500px" -->
+
+<span class="aside">Weight review effort by how expensive a problem is to fix after merge.</span>
+
+Note:
+Some people in the room will know this image. I drew it a few years ago, long
+before any of this.
+
+The wide base — API semantics, implementation semantics — is where problems are
+expensive after merge: an API break hits every caller, an implementation bug
+ships to production. The narrow top — style — is cheap and mechanical.
+
+A style nit and an API mistake are not the same kind of thing, and the model
+will happily hand you fifty of the former.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## The base is the <em>what</em>. The top is the <em>how</em>.
+
+Note:
+"Review the claim, not the diff" is this pyramid, applied to AI output.
+
+The geo PR is what reviewing from the top down looks like: well-formed code,
+good style, sensible tests — and nobody at the base asking whether the feature
+exists.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## Automate the top.
+
+---
+
+## The ladder
+
+1. Ask nicely in prose <!-- .element: class="fragment" -->
+2. Make it an automated check <!-- .element: class="fragment" -->
+3. Make the wrong thing <em>unrepresentable</em> <!-- .element: class="fragment" -->
+
+Note:
+Every standard in the project starts at step one. The ones that matter get
+promoted.
+
+---
+
+## Promoted
+
+| Rule | Lives as |
+|---|---|
+| Never use `var` | custom Error Prone check |
+| No legacy `/** */` JavaDoc | custom Error Prone check |
+| No filler prose in the docs | `docs-prose-check.py` in the PR build |
+
+Note:
+Two of these are compiler errors I wrote myself. The third is a Python script
+that fails the build on marketing language in documentation.
+
+Each began as a line of prose that I was tired of repeating.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## My design documents go stale.
+
+90 of them. I have not kept them current.
+
+Note:
+Confess it. Everybody in the room has this problem and almost nobody says it
+on a stage.
+
+It is not a discipline failure. It is a property of the form.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## Prose rots. Checks don't.
+
+The only documentation that doesn't rot
+is documentation that <em>runs</em>.
+
+Note:
+The design docs are still worth writing — as *input*. They are the thinking I
+do before generating, and steering the agent with a document beats steering it
+with a paragraph.
+
+But they are not a record. What survives is what executes.
+
+---
+
+## Teach the agent the pyramid
+
+```markdown
+## Priority frame: the Code Review Pyramid
+
+Review effort is weighted by how expensive the issue is
+to fix after merge.
+
+When writing the findings file, sort by pyramid tier, not
+by checklist section. A small API-shape concern outranks a
+big style nit. Style items belong in a "Nits" footer.
+```
+
+<span class="aside">From the review skill</span>
+
+Note:
+The agent reviews too: other people's PRs, and its own output. Without the
+pyramid, it sorts findings in the order it found them.
+
+---
+
+## AI reviews are noisy
+
+Cut, don't report:
+
+- Non-findings: "no API change here, looks fine"
+- Taste calls with no written rule behind them
+- Micro-optimisations on cold paths
+- Polishing a test that is already correct
+
+Note:
+Early review files were noisy: on one PR I kept only the items that named a
+real defect and cut the rest. A short review with five real defects beats a
+long one I have to filter.
+
+Same in their day jobs, with or without AI.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## "If the author shipped this exact line tomorrow, what specifically breaks?"
+
+<span class="aside">No concrete one-sentence answer: delete the finding.</span>
+
+Note:
+This is the most transferable slide in the section. It works for human
+reviewers on Monday morning, no agent required.
+
+---
+
+## Decisions are not findings
+
+```markdown
+- **Q:** Keep the per-class duplication or extract a helper?
+  - [ ] **A.** Extract a shared helper
+  - [ ] **B.** Keep per-class, document why
+  - [ ] **C.** Keep as-is
+  - **Rec:** B — the classes are about to diverge
+```
+
+Note:
+Some review items aren't fixes, they're forks: two defensible options and
+somebody has to own the choice. The agent lifts them out, does the analysis,
+recommends one, and I tick a box. The file becomes the record of the decision.
+
+For consultants: this is the shape of every decision you take to a client.
+
+---
+
+## Review, as an artifact
+
+<span class="aside">Screenshot: _reviews/pr-N-review.md with checkboxes → images/04-review-file.svg</span>
+
+![](images/04-review-file.svg)
+
+Note:
+Findings as checkboxes in a file, in priority order. A second skill walks the
+file and ticks them off as they're addressed.
+
+221 of these files.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## A review that evaporates on merge taught nobody anything.
+
+Note:
+The comment thread is gone. The file is still there, and the next review
+starts from it.
+
+---
+
+## When prose fails, I sketch the code
+
+<span class="aside">Not to ship it. To say what I mean.</span>
+
+Note:
+Twenty seconds, and people will remember it.
+
+Sometimes the fastest way to explain the shape I want is to write eight lines
+of it by hand and hand them over. Code as a communication medium rather than a
+deliverable.
+
+---
+
+# 3 · What it costs
+
+---
+
+## Issue #1198
+
+Started as a <em>small docs PR</em>.
+
+Took a <em>week</em>.
+
+Note:
+I pulled one thread, and it kept coming. Each next step was cheap, so I took
+it. A week later I had rewritten a whole area of the predicate code — well, and
+it's better now, which is exactly the problem.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## The old brake was effort.
+
+"That's three days" used to end a lot of bad ideas.
+
+Note:
+Nothing replaced it. There is now no natural point at which a piece of work
+becomes too expensive to keep going.
+
+I have to be the brake, by hand, and I am not reliably good at it.
+
+---
+
+## I ran many sessions in parallel.
+
+I'm dialling it back.
+
+Note:
+This is the honest one. Say the real reason.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## All judgment. No flow.
+
+<img class="callback" src="images/08a-tweet-exhausting-body.png" alt="The tweet about AI being exhausting">
+
+Note:
+The tweet again. Even with everything from act two in place, some of that load
+stays. The machinery reduces it. It doesn't remove it.
+
+No typing rhythm. No compile-and-think pause. No stretch where the work is
+mechanical and your mind settles.
+
+Three contexts, each of which wants a decision the moment you arrive. It is a
+different kind of tired and our industry is not talking about it.
+
+Tell them what it actually cost you — an evening, a weekend, whatever is true.
+Fully personal here. This is the beat no other AI talk has.
+
+---
+
+## The debt has a shape
+
+Not sloppiness. <em>Duplication.</em>
+
+The agent will re-solve a solved problem locally
+rather than find the existing solution. Every time. Cheerfully.
+
+Note:
+This is why "search for existing patterns before writing new code" is written
+into my agent instructions at all. It is not a style preference, it is a
+countermeasure.
+
+The cleanup is real work, and it is never the interesting work.
+
+---
+
+## Which is why this is a rule
+
+```markdown
+Before writing new code, search for existing patterns in the
+same class/package that accomplish the same thing. Extract
+repeated logic into helper methods rather than duplicating it.
+```
+
+Note:
+Ordinary advice for humans. Load-bearing infrastructure for agents.
+
+---
+
+# 4 · Back to the pull request
+
+---
+
+## The chain
+
+- Written by AI <!-- .element: class="fragment" -->
+- Reviewed by a human <!-- .element: class="fragment" -->
+- Tests: green <!-- .element: class="fragment" -->
+- Shipped to users <!-- .element: class="fragment" -->
+- Caught by <em>one person knowing the format</em> <!-- .element: class="fragment" -->
+
+Note:
+Build it one line at a time. The last line is the only one that worked.
+
+---
+
+<!-- .slide: class="statement" -->
+
+## "Built with AI, not by AI" is not a quality claim.
+
+It means your job moved from the <em>how</em> to the <em>what</em>.
+
+Note:
+The note trainer: never read the how, verified the what by ear. Hardwood: the
+agent writes the how, and everything in act two is machinery for verifying the
+what. The geo PR: I checked the how and never asked about the what.
+
+---
+
+<!-- .slide: class="statement" -->
+
+# Review the claim, not the diff.
+
+Note:
+The concrete version of the previous slide: the claim is the what, the diff is
+the how.
+
+Let it stand alone. Don't add anything.
+
+---
+
+## Monday
+
+- What is your <em>oracle</em>?
+- Promote your rules to <em>checks</em>
+- Give the agent an <em>instrument</em>
+
+Note:
+Ten seconds each. Then stop.
+
+---
+
+## Thank you
+
+hardwood.dev · morling.dev · @gunnarmorling
+
+<span class="aside">Long-form version of all of this: morling.dev/blog/…</span>
+
+Note:
+Point at the write-up for the ten-item version. Three things on stage, ten in
+the blog post.
