@@ -400,6 +400,77 @@ container.
 """
 
 
+# 12. "Make it faster, Claude!" thinned out: the box as the hero (B), and the loop as a diagram (C) ----
+def n300_hero():
+    return """## "Make it faster, Claude!"
+
+<div class="columns n300-hero">
+<div>
+
+A 7 W box, 500 EUR, silent.<br>
+The agent SSHes in and measures.
+
+<span class="aside"><code>perfnorm</code>, <code>async-profiler</code>, <code>perfasm</code>.<br>
+Works pretty well. If you can tell <em>faster</em> from <em>plausible</em>.</span>
+
+</div>
+<div>
+<img class="plain" src="images/06-n300-box.jpg" alt="The Minix NEO Z300 on the desk">
+</div>
+</div>
+
+Note:
+Prototype B for slide 44: the photo carries it, the tool names sit in the aside.
+
+Everything else is spoken: why a separate box (macOS blocks dtrace, no clean way
+to pin a core, the laptop runs everything else), why this one (eight cores of one
+kind, no performance/efficiency mix), the downsides (one memory channel, no
+AVX-512), and that all of it runs unattended while I read the conclusions and the
+numbers under them.
+"""
+
+
+def n300_loop():
+    """The same loop shape as the chapter, made physical, with the box's photo inside the middle node."""
+    arrow = ('<svg class="n300-arrow" viewBox="0 0 90 24" width="90" height="24">'
+             f'<path d="M2 12 L74 12" stroke="{ACC}" stroke-width="4"/>'
+             f'<path d="M72 4 L88 12 L72 20 z" fill="{ACC}"/></svg>')
+    back = ('<svg class="n300-back" viewBox="0 0 1000 90" width="1000" height="90" preserveAspectRatio="none">'
+            f'<path d="M980 8 C980 78, 20 78, 20 16" fill="none" stroke="{DIM}" stroke-width="3" stroke-dasharray="8 7"/>'
+            f'<path d="M12 4 L28 12 L14 22 z" fill="{DIM}"/></svg>')
+    return f"""## "Make it faster, Claude!"
+
+<span class="subtitle">A 7 W box on the desk, 500 EUR, silent</span>
+
+<div class="n300">
+<div class="n300-row">
+<div class="n300-node"><strong>My branch</strong><span>pushed over SSH</span></div>
+{arrow}
+<div class="n300-box">
+<img class="plain" src="images/06-n300-box.jpg" alt="The Minix NEO Z300 on the desk">
+<div><strong>Clock pinned</strong><span><code>JMH</code></span><span><code>perfnorm</code></span><span><code>async-profiler</code></span><span><code>perfasm</code></span><span>unattended</span></div>
+</div>
+{arrow}
+<div class="n300-node"><strong>Numbers back</strong><span>with the assembly</span></div>
+</div>
+{back}
+<p class="n300-again">the next variant, minutes later</p>
+</div>
+
+Note:
+Prototype C for slide 44, with the box's photo in the middle node: the chapter's
+loop, made physical. The agent pushes the branch, the box measures, the numbers
+come back, and it goes again, unattended.
+
+Spoken: why a separate box (macOS blocks dtrace, no clean way to pin a core, the
+laptop runs everything else), why this one (eight cores of one kind), the
+downsides (one memory channel, no AVX-512), and that I read the conclusions and
+the numbers under them. "The number decides what worked" comes one slide later,
+so the caveat doesn't need to be on this slide.
+"""
+
+
+
 # 5. Decisions as ticks -------------------------------------------------------------------------------
 SKIP = ('<command', '<local-command', 'Caveat:', '<system-reminder', '[Request interrupted',
         'This session is being continued', '<task-notification', '<bash-')
@@ -627,7 +698,7 @@ def geo_thread():
 
 
 def main():
-    slides = [cost_chart(), prose_rots(), no_test_catches(), claim_table(), prologue(), thread(), ladder(), claim_vs_spec(), decisions(), calendar(), s3()] + geo_thread()
+    slides = [n300_hero(), n300_loop(), cost_chart(), prose_rots(), no_test_catches(), claim_table(), prologue(), thread(), ladder(), claim_vs_spec(), decisions(), calendar(), s3()] + geo_thread()
     with open(os.path.join(DECK, 'slides-prototypes.md'), 'w') as f:
         f.write('\n---\n\n'.join(s.strip() + '\n' for s in slides))
 

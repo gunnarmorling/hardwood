@@ -2,7 +2,7 @@
 
 One sentence per section that the audience should leave with, the beats that carry it, and the slides that carry each beat. A slide that carries no beat goes to `slides-cinderella-cuts.md`. Slide numbers refer to `slides-cinderella.md` as of 2026-09-16 and shift as slides move.
 
-Budget: 45 minutes.
+Budget: a 75-minute slot including Q&A; about 60 minutes of talk.
 
 ## Prologue: the feature that didn't exist (~3 min)
 
@@ -61,11 +61,12 @@ Slides 33–34: section, "My case, and yours" (two columns, with "I had it easy.
 | Intro | The note trainer: vibe-coded, checked by playing it | 36, 37 |
 | Intro | The realisation and the rule: what a feedback loop can check, you can hand off | 38, 39 |
 | Intro | The map: stop being the loop (cycle) | 40 |
-| Build the feedback loop | What is the oracle (Hardwood / your project), the mirror | 42, 43 |
-| Build the feedback loop | "Make it faster, Claude!" on the N300, perfasm and the one-local fix, with "the number decides" as its last click | 44, 45 |
-| Make it fast | "I'm feeling our feedback loop is too slow": licence check, parallel tests, Hadoop's config in the slowest tests, dev loop 60 s → 28 s (bar chart); give the agent an instrument | 47, 48 |
-| Review what no feedback loop can see | What caught the geo bug, I own the design (abstract diagram: the API as the hard border, graded attention inside), every API change on a list (japicmp report), the pyramid, what no test catches (the docs sentence on read parallelism, caught by knowing the design) | 50–54 |
-| Raise the floor | The ladder as stairs with dated examples, prose rots (the matcher comment perfasm disproved); the curve, the helix | 56–59 |
+| Build the feedback loop | Where the agent lives: one directory mounted, a Docker socket that only starts containers — the precondition for leaving it running | 42 |
+| Build the feedback loop | What is the oracle (Hardwood / your project), the mirror | 43, 44 |
+| Build the feedback loop | "Make it faster, Claude!" as the loop made physical (branch → the 7 W box → numbers back), perfasm and the one-local fix, with "the number decides" as its last click | 45, 46 |
+| Make it fast | "I'm feeling our feedback loop is too slow": licence check, parallel tests, Hadoop's config in the slowest tests, dev loop 60 s → 28 s (bar chart); give the agent an instrument | 48, 49 |
+| Review what no feedback loop can see | What caught the geo bug, I own the design (abstract diagram: the API as the hard border, graded attention inside), every API change on a list (japicmp report), the pyramid, what no test catches (the docs sentence on read parallelism, caught by knowing the design) | 51–55 |
+| Raise the floor | The ladder as stairs with dated examples, prose rots (the matcher comment perfasm disproved); the curve, the helix | 57–60 |
 
 Cut: the predicate audit, "Durable knowledge", "The base is the what" (now the pyramid's aside). Backburner: "Decisions are not findings", "Review, as an artifact", "What specifically breaks?", the #1142 claim transcript (outcome superseded on main; visual prototype in `slides-prototypes.md`).
 
@@ -75,16 +76,16 @@ Cut: the predicate audit, "Durable knowledge", "The base is the what" (now the p
 
 | Beat | Slides |
 |---|---|
-| Price: control ("I no longer know every line. And I'm fine with that.") | 61 |
-| Price: upkeep (expand, then consolidate) | 62 |
-| Price: other people (contributors can't follow) | 63 |
-| Joy: nine months; things you otherwise wouldn't build | 64, 65 |
-| Message: a quality claim that holds only if you're the arbiter of the what; review the claim, not the diff | 66, 67 |
-| Close: stop being the loop, with the sign-off | 68 |
+| Price: control ("I no longer know every line. And I'm fine with that.") | 62 |
+| Price: upkeep (expand, then consolidate) | 63 |
+| Price: other people (contributors can't follow) | 64 |
+| Joy: nine months; things you otherwise wouldn't build | 65, 66 |
+| Message: a quality claim that holds only if you're the arbiter of the what; review the claim, not the diff | 67, 68 |
+| Close: stop being the loop, with the sign-off | 69 |
 
 Cut: the search-before-writing rule, the chain. Backburner: sketching code, the real timeline, the formal-specs outlook.
 
 ## Backburner
 
-The last section of `slides-cinderella.md`, after the closing slide: candidates that might come back in: the "What did Hardwood cost?" chart (Q&A backup), upgrading to current Java (two slides), the Flink diagram, the three-turns table, sandboxing (two slides), the contact slide, sketching code, the real timeline, the formal-specs outlook, "What specifically breaks?", the #1142 claim transcript, "It has no mandatory dependencies", "Can we stop any probing or guessing", "What raises the floor is what outlasts the turn", the "how can that be?" transcript excerpt (licence check).
+The last section of `slides-cinderella.md`, after the closing slide: candidates that might come back in: the "What did Hardwood cost?" chart (Q&A backup), upgrading to current Java (two slides), the Flink diagram, the three-turns table, the Feb 1 sandboxing post (lead-in for "So I can walk away"), the contact slide, sketching code, the real timeline, the formal-specs outlook, "What specifically breaks?", the #1142 claim transcript, "It has no mandatory dependencies", "Can we stop any probing or guessing", "What raises the floor is what outlasts the turn", the "how can that be?" transcript excerpt (licence check).
 

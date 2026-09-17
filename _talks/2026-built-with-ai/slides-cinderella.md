@@ -976,6 +976,48 @@ little further out. The helix at the end of the act pays that off.
 
 ---
 
+## So I can walk away
+
+<span class="subtitle">No browser session, no SSH keys, no home directory</span>
+
+```yaml
+claude:
+  build: .
+  volumes:
+    - .:/workspace                # the repository, nothing else
+  environment:
+    - DOCKER_HOST=tcp://docker-proxy:2375
+docker-proxy:                     # Testcontainers only
+  environment:
+    CONTAINERS: 1
+    BUILD: 0                      # no docker build from inside
+    VOLUMES: 0                    # no volume create or remove
+```
+
+<span class="aside">Abridged from Hardwood's <code>docker-compose.yaml</code></span>
+
+Note:
+Everything in this act assumes I can start something and leave. That only works
+because of where the agent lives: a container with one directory mounted, the
+repository. Not my home directory, not my browser sessions, not my SSH keys —
+for the N300 it has a key of its own.
+
+The integration tests need Docker, so it gets a socket proxy that allows
+starting containers and nothing else: no `docker build`, no volumes.
+
+The framing, if I say one line about it: letting an agent run long is a
+blast-radius question, not a trust question. I don't have to decide whether I
+trust it. I decide what it can reach.
+
+A side effect worth mentioning: agent worktrees have to live inside the
+repository, because that's the only directory mounted.
+
+For this room: this is also the answer to "can I point this at client code?" The
+Feb 1 post said "out of an abundance of caution". Nine months on, the caution is
+what makes the speed possible.
+
+---
+
 ## What is the oracle?
 
 <div class="columns top oracle">
@@ -1055,52 +1097,40 @@ agreed".
 
 ---
 
+
 ## "Make it faster, Claude!"
 
-<div class="columns top">
-<div class="narrow">
+<span class="subtitle">A 7 W box on the desk, 500 EUR, silent</span>
 
-<img src="images/06-n300-box.jpg" width="340" height="340" alt="The Minix NEO Z300 on the desk">
-
+<div class="n300">
+<div class="n300-row">
+<div class="n300-node"><strong>My branch</strong><span>pushed over SSH</span></div>
+<svg class="n300-arrow" viewBox="0 0 90 24" width="90" height="24"><path d="M2 12 L74 12" stroke="#b5491f" stroke-width="4"/><path d="M72 4 L88 12 L72 20 z" fill="#b5491f"/></svg>
+<div class="n300-box">
+<img class="plain" src="images/06-n300-box.jpg" alt="The Minix NEO Z300 on the desk">
+<div><strong>Clock pinned</strong><span><code>JMH</code></span><span><code>perfnorm</code></span><span><code>async-profiler</code></span><span><code>perfasm</code></span><span>unattended</span></div>
 </div>
-<div>
-
-**What the agent does on a 7 W box**
-
-- Pushes my branch into the box's checkout
-- Pins the CPU clock, runs JMH
-- `perfnorm`: instructions, cache and branch misses
-- `async-profiler`: where the time goes
-- `perfasm`: the exact hot instructions
-
+<svg class="n300-arrow" viewBox="0 0 90 24" width="90" height="24"><path d="M2 12 L74 12" stroke="#b5491f" stroke-width="4"/><path d="M72 4 L88 12 L72 20 z" fill="#b5491f"/></svg>
+<div class="n300-node"><strong>Numbers back</strong><span>with the assembly</span></div>
 </div>
+<svg class="n300-back" viewBox="0 0 1000 90" width="1000" height="90" preserveAspectRatio="none"><path d="M980 8 C980 78, 20 78, 20 16" fill="none" stroke="#666666" stroke-width="3" stroke-dasharray="8 7"/><path d="M12 4 L28 12 L14 22 z" fill="#666666"/></svg>
+<p class="n300-again">the next variant, minutes later</p>
 </div>
-
-<span class="aside">Works pretty well. If you can tell <em>faster</em> from <em>plausible</em>.</span>
 
 Note:
-Performance work is supposed to be where AI
-can't help: it needs real hardware, careful measurement, and knowledge of what
-the JIT does with your loop.
+The chapter's loop, made physical. The agent pushes the branch, the box measures, the numbers
+come back, and it goes again, unattended.
 
-It does help. Here's the setup that makes that true.
+Spoken: why a separate box (macOS blocks dtrace, no clean way to pin a core, the
+laptop runs everything else), why this one (eight cores of one kind), the
+downsides (one memory channel, no AVX-512), and that I read the conclusions and
+the numbers under them. "The number decides what worked" comes one slide later,
+so the caveat doesn't need to be on this slide.
 
-A Minix NEO Z300, about 500 EUR, completely silent. Why a separate box: macOS
-gets in the way (SIP blocks dtrace, no clean way to pin a workload to one core),
-and the laptop runs everything else. Why this one: eight cores of one kind, so
-no performance/efficiency mix to throw off measurements. Downsides: one memory
-channel and no AVX-512.
-
-The agent SSHes in and does everything itself.
-
-"Coding agents work best with a tight feedback loop." The question was whether
-that holds for performance too (Jul 16 post).
-
-All of it unattended. I read the conclusions, and the numbers under them.
-
-This is the part people don't believe until they see it: the agent reading
-annotated assembly and telling you which instructions are hot, whether the loop
-vectorised, and what got inlined.
+More background, if asked: the Jul 16 post ("coding agents work best with a tight
+feedback loop", and whether that holds for performance too), and the part people
+don't believe until they see it: the agent reading annotated assembly and telling
+you which instructions are hot, whether the loop vectorised, and what got inlined.
 
 ---
 
@@ -1743,6 +1773,11 @@ what. The geo PR: I checked the how and never asked about the what.
 
 Loops are how you check the what without being the loop yourself.
 
+Where the what gets written down: an issue, before any code exists. Nothing
+starts without one, and every commit message carries its number. That isn't
+bookkeeping — it's the claim, stated while I still have to think about it, and
+it's what the diff gets reviewed against later.
+
 ---
 
 <!-- .slide: class="hero" -->
@@ -1897,39 +1932,12 @@ against your memory before the talk.
 <img class="post" src="images/x-2026-02-01-sandboxing.png" alt="Feb 1: running Claude Code exclusively in a container with just a single mounted directory, out of an abundance of caution">
 
 Note:
-Candidate, maybe for Q&A. One mounted directory: the repository. No access to
-the rest of my machine or my browser sessions; for the N300 it has an SSH key of
-its own, not mine.
+The lead-in for "So I can walk away", if that slide wants the evidence in front
+of the YAML. Out at the moment because the YAML carries it alone, and two slides
+is a lot for scene-setting.
 
-Why it matters beyond caution: it's also what lets me let the agent run long
-without watching it.
-
----
-
-## One mounted directory
-
-```yaml
-claude:
-  build: .
-  volumes:
-    - .:/workspace                # the repository, nothing else
-  environment:
-    - DOCKER_HOST=tcp://docker-proxy:2375
-docker-proxy:                     # Testcontainers only
-  environment:
-    CONTAINERS: 1
-    BUILD: 0                      # no docker build from inside
-    VOLUMES: 0                    # no volume create or remove
-```
-
-<span class="aside">Abridged from Hardwood's <code>docker-compose.yaml</code></span>
-
-Note:
-The integration tests need Docker, so the agent gets a socket proxy that allows
-starting containers and nothing else.
-
-A side effect worth mentioning: agent worktrees have to live inside the
-repository, because that's the only directory mounted.
+The post is from Feb 1: "out of an abundance of caution". The caution turned out
+to be what lets the agent run long without me watching it.
 
 ---
 

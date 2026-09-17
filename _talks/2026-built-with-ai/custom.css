@@ -1619,3 +1619,25 @@ html.reveal-print .pdf-page {
 
 /* "Thank you!" to the left of the headshot, as large as the name block is tall. */
 .reveal .signoff strong.signoff-thanks { display: block; font-size: 48px; line-height: 1.1; }
+
+/* Prototypes for "Make it faster, Claude!": the box as the hero, and the loop as a diagram. */
+.reveal .columns.n300-hero { gap: 56px; align-items: center; }
+.reveal .columns.n300-hero > div:last-child { flex: 0 0 440px; }
+.reveal section .columns.n300-hero img { width: 100%; max-height: none; margin: 0; border-radius: 10px; }
+.reveal .columns.n300-hero p { font-size: var(--fs-body); }
+
+.reveal .n300 { position: relative; }
+.reveal .n300-row { display: flex; align-items: center; justify-content: center; gap: 20px; }
+.reveal .n300-node { flex: 0 0 auto; text-align: center; white-space: nowrap; }
+.reveal .n300-node strong { display: block; font-size: var(--fs-aside); }
+.reveal .n300-node span { display: block; font-size: var(--fs-caption); color: var(--dim); }
+.reveal .n300-box {
+  display: flex; flex: 0 0 auto; align-items: center; gap: 24px; padding: 18px 24px;
+  border-radius: 14px; background: #f4f5f6; text-align: left;
+}
+.reveal section .n300-box img { width: 250px; max-height: none; margin: 0; border-radius: 8px; }
+.reveal .n300-box strong { display: block; font-size: var(--fs-aside); }
+.reveal .n300-box span { display: block; font-size: var(--fs-caption); color: var(--dim); white-space: nowrap; }
+.reveal .n300-box code { font-size: 0.95em; color: var(--accent); }
+.reveal .n300-back { display: block; margin: 6px auto 0; }
+.reveal .n300-again { margin: 2px 0 0; font-size: var(--fs-caption); color: var(--dim); }
