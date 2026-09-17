@@ -17,6 +17,15 @@
   --r-link-color: #2d6a9f;
   --r-link-color-hover: #1f4f78;
   --r-code-font: Consolas, Menlo, "DejaVu Sans Mono", monospace;
+
+  /* The type scale, in slide pixels (the slide is 1280 x 720). Titles live with their slide types below.
+     Body is bullets and running text; aside is the quiet line under a statement or visual, larger on hero
+     and chapter slides to hold its own under an 80px title; caption is credits and labels above code. */
+  --fs-body: 34px;
+  --fs-aside: 29px;
+  --fs-hero-aside: 34px;
+  --fs-caption: 25px;
+  --fs-code: 21px;
 }
 
 .reveal h1,
@@ -41,7 +50,11 @@
 .reveal .aside {
   font-weight: 300;
   color: var(--dim);
-  font-size: 0.7em;
+  font-size: var(--fs-aside);
+}
+
+.reveal :is(section.hero, section.chapter, section.section) .aside {
+  font-size: var(--fs-hero-aside);
 }
 
 /* Big numbers grid. Use a table; this just calms it down. */
@@ -152,7 +165,7 @@
 .reveal blockquote.transcript cite {
   display: block;
   margin-top: 0.6em;
-  font-size: 0.75em;
+  font-size: var(--fs-caption);
   font-style: normal;
   color: var(--dim);
 }
@@ -214,14 +227,14 @@
 
 /* ───────────── Slide types (see index.html) ───────────── */
 
-/* Footer and slide number: regular slides only. */
+/* Footer and slide number: every slide but the section dividers (see index.html). */
 .reveal .deck-footer {
   line-height: 1;
   position: absolute;
   left: 28px;
   bottom: 14px;
   z-index: 30;
-  font-size: 15px;
+  font-size: 18px;
   color: var(--dim);
 }
 
@@ -233,7 +246,22 @@
   background: transparent;
   font-family: var(--r-main-font);
   color: var(--dim);
-  font-size: 15px;
+  font-size: 18px;
+}
+
+/* The Hardwood bird leads the footer, facing into the slide. Photo credits replace the footer text, without it. */
+.reveal .deck-footer::before {
+  content: "";
+  display: inline-block;
+  width: 29px;
+  height: 29px;
+  margin-right: 10px;
+  vertical-align: -8px;
+  background: url("images/hardwood.svg") no-repeat center / contain;
+}
+
+.reveal.credit-footer .deck-footer::before {
+  display: none;
 }
 
 /* !important: reveal sets the slide number's display inline. */
@@ -246,8 +274,8 @@
    Subtitle use: <span class="subtitle">…</span> as the paragraph right after the title. */
 .reveal .slides section:not(.center) > h2:first-child,
 .reveal .slides section:not(.center) > h1:first-child {
-  margin: -0.45em 0 0.6em;
-  font-size: 0.92em;
+  margin: 0.35em 0 0.6em;
+  font-size: 1.1em;
   line-height: 1.25;
 }
 
@@ -267,14 +295,48 @@
 }
 
 /* Regular: body text smaller than the title, inset from the slide edges. */
-.reveal .slides > section:not(.center) {
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) {
   box-sizing: border-box;
   padding-inline: 96px;
 }
 
-.reveal .slides > section:not(.center) > ul,
-.reveal .slides > section:not(.center) > ol,
-.reveal .slides > section:not(.center) > p:not(:has(> .subtitle)),
+/* reveal's print CSS zeroes section padding with !important, so the thumbnails need it restated. */
+html.reveal-print .reveal .pdf-page > section:not(.center, .hero, .hero-image, .section, .statement) {
+  padding-inline: 96px !important;
+}
+
+/* Regular: title and subtitle at the top, the rest centred in the space below them and above the footer.
+   A column flexbox with two growing spacers; Reveal hides far-away slides with an inline display: none.
+   .pdf-page covers the thumbnail grid (print layout), so thumbnails lay out like the slides; the print
+   layout never gets the "center" class, hence the centred slide types listed as well. */
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement):not([style*="display: none"]) {
+  display: flex !important;
+  flex-direction: column;
+  height: 100%;
+  padding-bottom: 56px;
+}
+
+/* A print page is taller than the slide (reveal adds its margin), so 100% would stretch the section. */
+.reveal .pdf-page > section:not(.center, .hero, .hero-image, .section, .statement):not([style*="display: none"]) {
+  height: var(--slide-height, 720px);
+}
+
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement)::before,
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement)::after {
+  content: "";
+  flex: 1 1 0;
+}
+
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement)::before { order: 1; }
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > * { order: 2; flex: 0 0 auto; }
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement)::after { order: 3; }
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > h2:first-child,
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > h1:first-child,
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > h2:first-child + p:has(> .subtitle) { order: 0; }
+
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > ul,
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > ol,
+.reveal :is(.slides, .pdf-page) > section:not(.center, .hero, .hero-image, .section, .statement) > p:not(:has(> .subtitle)):not(.aside),
 .reveal .columns ul,
 .reveal .columns ol,
 .reveal .columns p {
@@ -416,6 +478,28 @@ html.grid-view.reveal-print .reveal .slides .pdf-page {
   cursor: pointer;
 }
 
+/* The slide number in each thumbnail's lower right corner. Sizes are in page pixels (zoomed by 0.22). */
+html.grid-view.reveal-print .reveal .slides {
+  counter-reset: grid-slide;
+}
+
+html.grid-view.reveal-print .reveal .slides .pdf-page {
+  counter-increment: grid-slide;
+}
+
+html.grid-view.reveal-print .reveal .slides .pdf-page::before {
+  content: counter(grid-slide);
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  z-index: 100;
+  padding: 2px 18px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #6b7280;
+  font: 400 64px/1.2 var(--r-main-font);
+}
+
 html.grid-view.reveal-print .reveal .slides .pdf-page:hover {
   box-shadow: 0 0 0 10px var(--accent);
 }
@@ -473,7 +557,7 @@ html.grid-view.reveal-print .reveal .slides .pdf-page.grid-current {
 
 .reveal .columns pre {
   margin: 0;
-  font-size: 0.5em;
+  font-size: var(--fs-code);
 }
 
 /* A listing placed freely on the slide, allowed to sit beside or below short text.
@@ -637,21 +721,6 @@ html.grid-view.reveal-print .reveal .slides .pdf-page.grid-current {
   text-shadow: none;
 }
 
-/* Faint parquet planks in the bottom-right corner of regular and hero slides, as in the Speaker Deck template.
-   index.html sets .parquet on .reveal for the current slide; the print layout (grid) uses :has(). */
-.reveal.parquet .backgrounds::after,
-html.reveal-print .pdf-page:has(> section:not(.section):not(.hero-image):not(.no-parquet):not([data-background-image]))::after {
-  content: "";
-  position: absolute;
-  right: 2.9%;
-  bottom: 4%;
-  width: 21%;
-  aspect-ratio: 390 / 300;
-  background: url("images/parquet-deco.svg") no-repeat center / contain;
-  opacity: 0.16;
-  pointer-events: none;
-}
-
 html.reveal-print .pdf-page {
   position: relative;
 }
@@ -782,46 +851,52 @@ html.reveal-print .pdf-page {
 
 /* The Monday slide reuses the cycle from part 3, a little smaller, with the thanks underneath. */
 .reveal svg.cycle-monday {
-  height: 470px;
-  width: auto;
-  margin-top: -10px;
+  transform-origin: 50% 0;
+  transition: transform 0.8s ease-in-out;
 }
-
-.reveal .slides > section:not(.center) > p.thanks:not(.subtitle) {
-  margin: 24px 0 0;
-  font-size: 24px;
-  font-weight: 300;
-  color: var(--dim);
+/* The closing cycle starts at the size it had when introduced. Showing the sign-off fades the title out,
+   puts the sign-off in its place at the top and moves the cycle down, a bit smaller, below it. */
+.reveal section:has(.signoff.visible) svg.cycle-monday {
+  transform: translateY(116px) scale(0.78);
 }
-
-/* Sign-off under the closing cycle: a small headshot, so people can find the speaker later. */
+.reveal section:has(> .signoff) > h2:first-child { transition: opacity 0.4s; }
+.reveal section:has(.signoff.visible) > h2:first-child { opacity: 0; }
 .reveal .signoff {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 24px;
+  width: fit-content;
+  margin-inline: auto;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 20px;
-  margin-top: 14px;
+  gap: 32px;
+  white-space: nowrap;
   text-align: left;
 }
-
+/* The sign-off appears once the cycle has made room for it, and leaves at once on the way back. */
+.reveal .signoff.fragment.visible {
+  transition-delay: 0.8s;
+}
 .reveal .signoff img {
-  width: 96px;
-  height: 96px;
+  width: 160px;
+  height: 160px;
   margin: 0;
   border: 0;
   border-radius: 50%;
   box-shadow: none;
   object-fit: cover;
 }
-
 .reveal .signoff div {
-  font-size: 26px;
+  font-size: 36px;
   line-height: 1.35;
 }
-
+.reveal .signoff strong {
+  display: block;
+}
 .reveal .signoff span {
   display: block;
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 300;
   color: var(--dim);
 }
@@ -829,7 +904,7 @@ html.reveal-print .pdf-page {
 /* A listing inside a column, e.g. the pom next to the brownfield list. */
 .reveal .columns.top pre {
   margin: 0.4em 0 0;
-  font-size: 0.4em;
+  font-size: var(--fs-code);
 }
 
 /* "I own the design": the system outline with the pockets of code I don't read. */
@@ -984,7 +1059,17 @@ html.reveal-print .pdf-page {
   transform: rotate(var(--r)) scale(0.7);
 }
 
-.reveal .pr-montage.visible img {
+.reveal section .pr-montage img.pr-first {
+  opacity: 1;
+  transform: rotate(var(--r));
+}
+
+.reveal .pr-go {
+  display: none;
+}
+
+/* Showing the (invisible) trigger fragment starts the animation. */
+.reveal section:has(.pr-go.visible) .pr-montage img:not(.pr-first) {
   animation: pr-pop 0.22s ease-out forwards;
   animation-delay: var(--d);
 }
@@ -1005,3 +1090,532 @@ html.reveal-print .pdf-page {
   border-radius: 16px;
   box-shadow: 0 12px 60px rgba(0, 0, 0, 0.3);
 }
+
+/* The geo thread: the CR1 card on the release timeline echoes the dashed bounding box of the geo backdrop. */
+.reveal .rtl-note.rtl-geo {
+  border: 3px dashed rgba(181, 73, 31, 0.6);
+  background: #fbf3ee;
+  box-shadow: none;
+}
+
+/* The claim against its own table (prototype). */
+.reveal .ct { width: 100%; }
+.reveal .ct-claim {
+  font-size: 0.62em;
+  text-align: left;
+  padding: 0.5em 0.8em;
+  margin: 0 0 0.7em;
+  background: #f4f5f6;
+  border-radius: 8px;
+}
+.reveal .ct-who {
+  font-weight: 700;
+  color: var(--dim);
+  margin-right: 0.5em;
+}
+.reveal .ct-claim mark {
+  background: none;
+  color: inherit;
+  font-weight: 700;
+  box-shadow: inset 0 -0.45em 0 rgba(181, 73, 31, 0.22);
+}
+.reveal table.ct-table {
+  font-size: 0.6em;
+  margin: 0 auto;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.reveal table.ct-table th,
+.reveal table.ct-table td {
+  padding: 0.35em 0.6em;
+  text-align: center;
+  border-bottom: 1px solid #d8dcdf;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+}
+.reveal table.ct-table th:first-child,
+.reveal table.ct-table td:first-child { text-align: left; }
+.reveal table.ct-table code { font-size: 0.9em; white-space: nowrap; }
+.reveal table.ct-table .bad { color: #c62828; font-weight: 700; }
+.reveal table.ct-table .good { color: #2e7d32; font-weight: 700; }
+.reveal .ct-go { display: none; }
+.reveal table.ct-table td.ct-flag { transition: background 0.3s, box-shadow 0.3s; }
+.reveal section:has(.ct-go.visible) table.ct-table td.ct-flag {
+  background: rgba(181, 73, 31, 0.12);
+  box-shadow: inset 0 0 0 3px var(--accent);
+  font-weight: 700;
+}
+.reveal blockquote.ct-me {
+  margin: 1.1em auto 0;
+  font-size: 0.6em;
+}
+.reveal .ct-card {
+  position: absolute;
+  left: 50%;
+  top: 250px;
+  width: 960px;
+  margin-left: -480px;
+  z-index: 50;
+  padding: 26px 30px 30px;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 16px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.3);
+}
+.reveal .ct-card .ct-card-head {
+  margin: 0 0 0.5em;
+  font-size: 0.6em;
+  font-weight: 700;
+}
+.reveal .ct-card table.ct-table { font-size: 0.66em; }
+.reveal table.ct-table th,
+.reveal table.ct-table td { white-space: nowrap; }
+.reveal .ct-card .ct-verdict {
+  margin: 0.7em 0 0;
+  font-size: 0.75em;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.reveal table.ct-table tr.ct-why td {
+  border-bottom: 0;
+  padding-top: 0.2em;
+  font-size: 0.75em;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.reveal section:has(.ct-go.visible) table.ct-table tr.ct-why td { opacity: 1; }
+
+.reveal table.ct-table .ct-bolt {
+  display: inline-block;
+  width: 0;
+  margin-left: -1.3em;
+  margin-right: 1.3em;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.reveal section:has(.ct-go.visible) table.ct-table .ct-bolt { opacity: 1; }
+
+.reveal .ct-card .ct-card-test {
+  margin: 0.2em 0 0.3em;
+  font-size: 0.6em;
+}
+.reveal table.ct-table .ct-dim { color: var(--dim); font-weight: 300; }
+
+/* Prose rots: the matcher loop with its comment; click 1 strikes the claim and gives perfasm's verdict,
+   click 2 swaps in the corrected comment. Both comments share one grid cell, so nothing moves. */
+.reveal .rot-go,
+.reveal .rot-fix-go { display: none; }
+.reveal pre.rot-code {
+  width: 100%;
+  margin: 0;
+  box-shadow: none;
+  font-size: var(--fs-code);
+  line-height: 1.25;
+  text-align: left;
+}
+.reveal pre.rot-code code {
+  max-height: none;
+  padding: 0.9em 1.2em;
+  background: #272822;
+  color: #f8f8f2;
+}
+.reveal pre.rot-code .k { color: #f92672; }
+.reveal pre.rot-code .c { color: #9a9884; }
+.reveal pre.rot-code .rot-swap { display: grid; }
+.reveal pre.rot-code .rot-old,
+.reveal pre.rot-code .rot-new {
+  grid-area: 1 / 1;
+  white-space: pre;
+  transition: opacity 0.4s;
+}
+.reveal pre.rot-code .rot-new { opacity: 0; }
+/* The old comment is two lines shorter; it sits directly above the loop, like the new one. */
+.reveal pre.rot-code .rot-old { align-self: end; }
+.reveal pre.rot-code mark {
+  background: rgba(181, 73, 31, 0.35);
+  color: #ffffff;
+  text-decoration: line-through transparent 3px;
+  transition: text-decoration-color 0.3s;
+}
+.reveal pre.rot-code mark.rot-fixed { background: rgba(46, 125, 50, 0.45); text-decoration: none; }
+.reveal section:has(.rot-go.visible) pre.rot-code mark.rot-claim { text-decoration-color: #ff8a65; }
+.reveal section:has(.rot-fix-go.visible) pre.rot-code .rot-old { opacity: 0; }
+.reveal section:has(.rot-fix-go.visible) pre.rot-code .rot-new { opacity: 1; }
+.reveal .rot-captions { display: grid; margin-top: 0.5em; }
+.reveal .rot-captions p {
+  grid-area: 1 / 1;
+  margin: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.reveal section:has(.rot-go.visible) .rot-captions .rot-verdict { opacity: 1; }
+.reveal section:has(.rot-fix-go.visible) .rot-captions .rot-verdict { opacity: 0; }
+.reveal section:has(.rot-fix-go.visible) .rot-captions .rot-fix { opacity: 1; }
+
+/* What no test catches (prototype): a docs sentence, the catch, and the checks that couldn't see it. */
+.reveal .doc-excerpt {
+  font-size: 0.62em;
+  text-align: left;
+  padding: 0.6em 1em;
+  border-left: 4px solid #d0d7de;
+  background: #f6f8fa;
+}
+.reveal .doc-excerpt p { margin: 0.3em 0; }
+.reveal .doc-excerpt mark {
+  background: none;
+  color: inherit;
+  box-shadow: inset 0 -0.45em 0 rgba(181, 73, 31, 0.25);
+}
+.reveal blockquote.doc-me {
+  margin: 0.9em auto 0;
+  font-size: var(--fs-aside);
+}
+.reveal .doc-checks {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.4em 1.6em;
+  margin-top: 1em;
+  font-size: 0.62em;
+}
+.reveal .doc-checks .doc-label {
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.reveal .doc-checks .doc-caught { margin-left: 1.2em; color: var(--accent); }
+.reveal .doc-checks .doc-owner { font-weight: 700; color: var(--accent); }
+
+/* The exhaustion tweet: click 1 boxes the counters; click 2 crops the tweet to its text, moves it up
+   and threads in the first reply; click 3 the second.
+   The layout is fixed at its final size from the start, so nothing reflows: the block only moves as
+   one piece (translate), the card only crops (its own height), and the replies only fade in. */
+.reveal .ex-stats-go,
+.reveal .ex-r1-go,
+.reveal .ex-r2-go { display: none; }
+.reveal .ex {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Half of what the replies add below the full tweet: (278 + 130 + 95 - 410) / 2. */
+  transform: translateY(47px);
+  transition: transform 0.6s ease-in-out 0.25s;
+}
+.reveal section:has(.ex-r1-go.visible) .ex { transform: none; }
+.reveal .ex img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+/* Holds the cropped height in the layout; the card inside hangs over it until it's cropped. */
+.reveal .ex-tweet {
+  position: relative;
+  width: 602px;
+  height: 278px;
+}
+.reveal .ex-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 600px;
+  height: 408px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  transition: height 0.6s ease-in-out 0.25s;
+}
+/* Around the counter row, as wide as the divider above it. */
+.reveal .ex-box {
+  position: absolute;
+  left: 1.67%;
+  width: 74.5%;
+  top: 78%;
+  height: 10%;
+  box-sizing: border-box;
+  border: 3px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(181, 73, 31, 0.06);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.reveal section:has(.ex-stats-go.visible) .ex-box { opacity: 1; }
+/* Beats the rule above: :has() counts its argument, so a bare section.ex-back would lose. */
+.reveal section.ex-back:has(.ex-stats-go.visible) .ex-box { opacity: 0; transition: none; }
+/* The box leaves first, then the card crops to just above the timestamp while the block moves up. */
+.reveal section:has(.ex-r1-go.visible) .ex-box { opacity: 0; transition-duration: 0.2s; }
+.reveal section:has(.ex-r1-go.visible) .ex-card { height: 276px; }
+
+.reveal .ex-reply {
+  --indent: 64px;
+  position: relative;
+  box-sizing: border-box;
+  width: 602px;
+  padding: 12px 0 0 var(--indent);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.reveal .ex-r1 { height: 130px; }
+.reveal .ex-r2 { height: 95px; }
+.reveal .ex-reply img {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+}
+/* The thread line: down from the post above to the middle of this reply, then across to it. */
+.reveal .ex-reply::before,
+.reveal .ex-reply::after,
+.reveal .ex-reply .ex-tail {
+  content: "";
+  position: absolute;
+  left: 28px;
+  background: #cfd9de;
+}
+.reveal .ex-reply::before {
+  top: 0;
+  width: 3px;
+  height: calc(6px + 50%);
+}
+.reveal .ex-reply::after {
+  top: calc(6px + 50%);
+  width: calc(var(--indent) - 28px);
+  height: 3px;
+}
+/* Carries the line on past a reply once another one follows it. */
+.reveal .ex-reply .ex-tail {
+  top: calc(6px + 50%);
+  bottom: 0;
+  width: 3px;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+/* The first reply waits until the tweet has arrived. */
+.reveal section:has(.ex-r1-go.visible) .ex-r1 { opacity: 1; transition-delay: 0.8s; }
+.reveal section:has(.ex-r2-go.visible) .ex-r2 { opacity: 1; }
+.reveal section:has(.ex-r2-go.visible) .ex-r1 .ex-tail { opacity: 1; }
+
+/* Invisible click triggers (the *-go spans) end up in a paragraph of their own, whose margins would
+   still push the slide's content down. Reveal toggles their "visible" class all the same. */
+.reveal section > p:has(> span[class*="-go "]):not(:has(> :not(span[class*="-go "]))) {
+  display: none;
+}
+
+/* "My case, and yours" with the hinge question as its last click. */
+.reveal .columns.compact ul { font-size: var(--fs-body); }
+.reveal .columns.compact li { margin-bottom: 0.2em; }
+.reveal p.hinge-q { margin: 0.6em 0 0; }
+
+/* perfasm slide: the fix and the takeaway as two short lines under the listing. */
+.reveal .asm-asides p { margin: 0.2em 0 0; }
+
+/* S3 support: mvn dependency:tree before and after. */
+.reveal .columns.deptrees { align-items: flex-start; gap: 32px; }
+.reveal .columns.deptrees > div:first-child { flex: 1.25 1 0; }
+.reveal .columns.deptrees p.deptree-label { margin: 0 0 0.4em; font-size: var(--fs-caption); }
+.reveal .columns.deptrees pre.deptree {
+  width: 100%;
+  margin: 0;
+  box-shadow: none;
+  font-size: 0.29em;
+  line-height: 1.12;
+  text-align: left;
+}
+.reveal pre.deptree code { max-height: none; padding: 0.7em 0.9em; background: #272822; color: #f8f8f2; }
+.reveal .columns.deptrees ul.deptree-how { margin-top: 1em; font-size: var(--fs-caption); }
+
+/* The Hardwood bird above the talk title. */
+.reveal section img.title-bird {
+  display: block;
+  width: 150px;
+  height: auto;
+  margin: 0 auto 0.1em;
+  border: 0;
+  box-shadow: none;
+  /* A thin white outline, like a sticker, so the dark tail and feet stand off the wood grain. */
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff)
+    drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45));
+}
+
+/* "A new project is born": the bullets with the listing overlapping their right side, starting below the
+   first bullet. One block, positioned relative to itself, so the slide's centring moves both together
+   and the thumbnail grid lays it out the same way. */
+.reveal .born {
+  position: relative;
+  /* Tall enough to hold the listing: its top offset plus its height. */
+  height: 442px;
+  text-align: left;
+  /* Half a bullet line above centre. */
+  transform: translateY(-26px);
+}
+.reveal .born > ul { margin: 0; font-size: 0.8em; }
+.reveal .born-listing {
+  position: absolute;
+  left: 300px;
+  right: 0;
+  top: 88px;
+}
+.reveal .born-listing pre { margin: 0; font-size: 0.52em; }
+.reveal .born-listing pre code { max-height: none; padding: 0.9em 1em; }
+
+/* A red box marking part of a screenshot, the same as the counters box on the exhaustion slide.
+   Use inside .circled: <span class="mark-box fragment" style="left; top; width; height">, all in % of the image. */
+.reveal .mark-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(181, 73, 31, 0.06);
+}
+
+.reveal .circled.centred { align-self: center; }
+
+/* A photo credit for a backdrop behind a hero slide, where the footer is taken: along the right edge,
+   reading bottom to top, ending just above the slide number. The slide carries it as .credit-side;
+   index.html copies it into .side-credit, which sits on the slide frame like the footer. */
+.reveal section .credit-side { display: none; }
+.reveal .side-credit {
+  position: absolute;
+  right: 22px;
+  bottom: 54px;
+  z-index: 30;
+  transform: rotate(-90deg) translateX(100%);
+  transform-origin: right bottom;
+  white-space: nowrap;
+  /* The same as the credits in the footer of the chapter slides. */
+  line-height: 1;
+  font-size: 18px;
+  color: var(--dim);
+}
+
+/* perfasm next to the loop it points at; click 1 swaps the field for a local. */
+.reveal .fix-go { display: none; }
+.reveal .columns.asm-code { gap: 28px; align-items: stretch; }
+.reveal .columns.asm-code > div:first-child { flex: 1.1 1 0; }
+.reveal .columns.asm-code pre { margin: 0; height: 100%; }
+.reveal .columns.asm-code pre.asm { font-size: var(--fs-code); }
+.reveal .columns.asm-code pre.asm code { height: 100%; box-sizing: border-box; }
+.reveal .columns.asm-code pre.fix-code { font-size: var(--fs-code); }
+.reveal pre.fix-code .rot-old { align-self: start; }
+.reveal .columns.asm-code pre.fix-code code { height: 100%; box-sizing: border-box; }
+.reveal pre.fix-code mark { text-decoration: none; }
+.reveal section:has(.fix-go.visible) pre.fix-code .rot-old { opacity: 0; }
+.reveal section:has(.fix-go.visible) pre.fix-code .rot-new { opacity: 1; }
+.reveal .columns.asm-code + .asm-asides { margin-top: 0.6em; }
+
+/* The prompt first, in the cell the perfasm output takes over on click 1. */
+.reveal .columns.asm-code .asm-left { display: grid; }
+.reveal .columns.asm-code .asm-left > * { grid-area: 1 / 1; transition: opacity 0.4s; }
+.reveal .columns.asm-code blockquote.asm-prompt {
+  width: auto;
+  margin: 0;
+  align-self: center;
+  font-size: var(--fs-aside);
+}
+.reveal .columns.asm-code .asm-left pre.asm { opacity: 0; }
+.reveal section:has(.fix-go.visible) .columns.asm-code .asm-left pre.asm { opacity: 1; }
+.reveal section:has(.fix-go.visible) .columns.asm-code blockquote.asm-prompt { opacity: 0; }
+
+/* "What is the oracle?": the pom listing gets the room it needs at code size. */
+.reveal .columns.oracle > div:first-child { flex: 1.35 1 0; }
+
+/* "I'm feeling our feedback loop is too slow": one row per fix, before and after on one shared scale. */
+.reveal .loop-chart { display: flex; flex-direction: column; gap: 20px; text-align: left; }
+.reveal .loop-row { display: grid; grid-template-columns: 450px 1fr; column-gap: 24px; align-items: center; }
+.reveal .loop-label strong { display: block; font-size: var(--fs-aside); line-height: 1.2; }
+.reveal .loop-label span { display: block; font-size: var(--fs-caption); font-weight: 300; color: var(--dim); line-height: 1.25; }
+.reveal .loop-bars { display: flex; flex-direction: column; gap: 6px; }
+.reveal .loop-bar { position: relative; height: 24px; border-radius: 0 4px 4px 0; }
+.reveal .loop-bar.before { background: #c9ced6; }
+.reveal .loop-bar.after { background: var(--accent); }
+.reveal .loop-bar span {
+  position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+  margin-left: 10px; white-space: nowrap; font-size: var(--fs-caption); color: var(--r-main-color);
+}
+.reveal .loop-bar.after span { font-weight: 700; color: var(--accent); }
+.reveal .loop-note { grid-column: 2; margin-top: 6px; font-size: var(--fs-caption); }
+.reveal .loop-note::before { content: "↳ "; color: var(--accent); }
+
+.reveal .loop-row.loop-total { border-top: 2px solid #c9ced6; padding-top: 16px; }
+.reveal .loop-row.loop-total .loop-label strong { font-size: var(--fs-body); }
+
+/* A rendered transcript excerpt, styled like a terminal window. */
+.reveal .term {
+  width: 1040px;
+  margin: 0 auto;
+  text-align: left;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1e1f22;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.reveal .term-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: #2b2d31;
+}
+.reveal .term-bar span { width: 12px; height: 12px; border-radius: 50%; background: #5c5f66; }
+.reveal .term-bar em {
+  margin-left: 10px; font-style: normal; font-weight: 400;
+  font-size: 18px; color: #9aa0a6;
+}
+.reveal .term-body { padding: 22px 30px 26px; font-size: var(--fs-caption); line-height: 1.45; color: #e3e3e3; }
+.reveal .term-body p { margin: 0 0 0.8em; }
+.reveal .term-body p:last-child { margin-bottom: 0; }
+.reveal .term-body .term-user { color: #9cc7ea; }
+.reveal .term-body code { font-size: 0.9em; color: #f0b27a; background: none; white-space: nowrap; }
+.reveal .term-body strong { color: #ffffff; }
+.reveal .term-body mark { background: rgba(181, 73, 31, 0.55); color: #fff; padding: 0 3px; }
+/* Rows without a note keep an empty note line, so the fix rows sit at equal distances. */
+.reveal .loop-row:not(.loop-total):not(:has(.loop-note))::after {
+  content: "\00a0";
+  grid-column: 2;
+  margin-top: 6px;
+  font-size: var(--fs-caption);
+}
+
+/* "What caught the geo bug?": the spec's ColumnIndex, then what Hardwood made of field 7, then the verdict. */
+.reveal .columns.geo-spec { align-items: flex-start; justify-content: center; gap: 56px; }
+.reveal .columns.geo-spec > div:first-child { flex: 0 0 470px; }
+.reveal .columns.geo-spec > div:last-child { flex: 0 1 580px; margin-bottom: 150px; }
+.reveal .columns.geo-spec pre.rot-code { margin: 0; }
+.reveal .columns.geo-spec .spec-7 { display: inline-block; width: 100%; transition: background 0.3s; }
+.reveal section:has(.geo-claim.visible) .columns.geo-spec .spec-7 { background: rgba(181, 73, 31, 0.45); color: #fff; }
+.reveal .geo-verdict { text-align: left; }
+.reveal .geo-claim { margin: 0 0 1em; font-size: var(--fs-aside); line-height: 1.35; }
+.reveal .geo-claim s { text-decoration-color: var(--accent); text-decoration-thickness: 3px; }
+.reveal .geo-verdict .verdict-list p { font-size: var(--fs-aside); margin: 0.25em 0; }
+
+.reveal .columns.geo-spec p.geo-label { margin: 0 0 0.4em; font-size: var(--fs-caption); text-align: left; }
+.reveal .columns.geo-spec p.geo-claim { font-size: var(--fs-aside); }
+.reveal .columns.geo-spec .verdict-list p { font-size: var(--fs-aside); }
+
+/* "Nine months": the numbers beside GitHub's commits-per-week chart. */
+.reveal .columns.nine-months { gap: 36px; align-items: center; }
+.reveal .columns.nine-months > div:first-child { flex: 0 0 400px; }
+.reveal .columns.nine-months table { margin: 0; }
+.reveal .columns.nine-months table :is(td, th) { font-size: var(--fs-aside); padding: 0.35em 0.5em; white-space: nowrap; }
+.reveal section .columns.nine-months img.gh-activity { width: 100%; max-height: none; margin: 0; border: 1px solid #d0d7de; border-radius: 6px; }
+.reveal .columns.nine-months p.gh-caption { margin: 0.4em 0 0; font-size: var(--fs-caption); color: var(--dim); }
+.reveal .columns.nine-months table td:last-child { text-align: right; }
+
+/* The Code Review Pyramid: as large as fits, centred in the space above the footer rather than on the
+   whole slide, so the gap above the image matches the gap between the aside and the footer. */
+.reveal section img.pyramid {
+  display: block;
+  max-height: 605px;
+  margin: 0 auto;
+  transform: translateY(-32px);
+}
+.reveal section:has(> p > img.pyramid) > p.aside,
+.reveal section:has(img.pyramid) > p.aside { transform: translateY(-32px); }
+
+/* The role line under the name on the closing slide. */
+.reveal .signoff span.signoff-role { font-size: 28px; font-weight: 400; color: var(--r-main-color); margin-bottom: 4px; }
+
+/* "Thank you!" to the left of the headshot, as large as the name block is tall. */
+.reveal .signoff strong.signoff-thanks { display: block; font-size: 48px; line-height: 1.1; }

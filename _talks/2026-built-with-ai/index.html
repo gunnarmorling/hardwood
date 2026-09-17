@@ -26,8 +26,10 @@
           data-charset="utf-8"
         ></section>
       </div>
-      <!-- Shown on regular slides only; hidden on hero, hero-image and section slides. -->
+      <!-- Shown on every slide but section dividers without a credit. -->
       <div class="deck-footer">#Hardwood #AI · @gunnarmorling</div>
+      <!-- The credit for a hero slide's backdrop photo, copied in from the slide (see syncFooter). -->
+      <div class="side-credit"></div>
     </div>
 
     <script>
@@ -147,11 +149,11 @@
         reveal.classList.toggle('credit-footer', !!credit);
         // Chapter dividers show their photo faintly on white, so the credit keeps the regular ink.
         reveal.classList.toggle('credit-light', !!credit && slide.classList.contains('chapter'));
-        reveal.classList.toggle('no-footer', isCentred(slide) && !credit);
-        // The faint parquet in the corner goes on slides without a photo or a visual of their own.
-        const plain = slide && !slide.hasAttribute('data-background-image')
-          && !['section', 'hero-image', 'no-parquet'].some((c) => slide.classList.contains(c));
-        reveal.classList.toggle('parquet', !!plain);
+        // A hero slide with a backdrop photo keeps the footer, so its credit runs up the right edge instead.
+        const sideCredit = slide && slide.querySelector('.credit-side');
+        reveal.querySelector('.side-credit').innerHTML = sideCredit ? sideCredit.innerHTML : '';
+        // Footer and slide number on every slide but the section dividers, whose photo credit takes that spot.
+        reveal.classList.toggle('no-footer', !!slide && slide.classList.contains('section') && !credit);
       }
 
       // Post screenshots come in different shapes; size each one to fit 860 x 520 at its own aspect ratio,
@@ -182,6 +184,15 @@
         syncFooter(event.currentSlide);
       });
       Reveal.on('slidechanged', (event) => syncFooter(event.currentSlide));
+
+      // Stepping back past the exhaustion slide's crop: hold the counters' box back until the tweet
+      // has moved down again, instead of showing it on the moving tweet.
+      Reveal.on('fragmenthidden', (event) => {
+        if (!event.fragment.classList.contains('ex-r1-go')) return;
+        const slide = event.fragment.closest('section');
+        slide.classList.add('ex-back');
+        setTimeout(() => slide.classList.remove('ex-back'), 900);
+      });
 
       // "g" switches to the thumbnail grid, scrolled to the current slide.
       Reveal.on('ready', () => {

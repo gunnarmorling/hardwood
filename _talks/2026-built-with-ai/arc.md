@@ -8,6 +8,8 @@ Budget: 45 minutes.
 
 **Message:** A careful maintainer shipped a convincing, tested feature that could not exist.
 
+The geo slides (2, 3, 26, 27, 50) share a backdrop, a faint map grid with a dashed bounding box; the CR1 card on the release timeline has the same dashed outline.
+
 | Beat | Slides |
 |---|---|
 | The PR #413 screenshot, with stamps landing on it: tests green, merged, shipped in CR1, then "The feature couldn't work" | 2 |
@@ -24,9 +26,9 @@ Budget: 45 minutes.
 | Nobody built this, because it cost too much, until the price changed | 8 |
 | A new project | 9 |
 | Speed, part 1: first mention, perf numbers, race condition, Alpha1, "Is Hardwood vibe-coded? Absolutely not." (plants the title), S3 in ten days | 10 |
-| Reach: no mandatory dependencies, S3 without the SDK, the line moved | 11–13 |
-| Speed, part 2: to 1.0, with CR1 quietly shipping the geo feature | 14 |
-| The top of the curve | 15 |
+| Reach: S3 without the SDK, the line moved | 11–12 |
+| Speed, part 2: to 1.0, with CR1 quietly shipping the geo feature | 13 |
+| The top of the curve | 14 |
 
 ## 2 · Midnight (~9 min)
 
@@ -34,21 +36,21 @@ Budget: 45 minutes.
 
 | Beat | Slides |
 |---|---|
-| Meandering: amazing and useless the same afternoon | 17 |
-| Plausible but wrong: the edited test, "stop probing or guessing" | 18, 19 |
-| Early giving up | 20 |
-| Thread pulling, and why: #1198 (the +6 −4 diff; "a few moments later"; the 27 PRs popping up, then the stats), the old brake was effort | 21–24 |
-| Context switching ("like a psychopath" as relief), no flow: Sep 9 as 205 prompt ticks, split by session, zoom on 45 minutes | 25–27 |
-| The geo bug returns: caught before Final, how it got through (claim circled) | 28, 29 |
-| The loss: "every diff", lost full control | 30, 31 |
-| The bottom: the exhausting post and its counters, the manager thread | 32, 33 |
-| Bridge: you are the feedback loop; the curve | 34, 35 |
+| Meandering: amazing and useless the same afternoon | 16 |
+| Plausible but wrong: the edited test | 17 |
+| Early giving up | 18 |
+| Thread pulling, and why: #1198 (the +6 −4 diff; "a few moments later"; the 27 PRs popping up, then the stats), the old brake was effort | 19–22 |
+| The pace: Sep 9 as 205 prompt ticks, split into 21 sessions, zoom on 45 minutes; the confession "I'm dialling it back"; "like a psychopath" as relief | 23–25 |
+| At that pace, something slips: the geo bug returns, caught before Final, how it got through (claim circled) | 26, 27 |
+| The loss: "every diff", lost full control | 28, 29 |
+| The bottom: the exhausting post ("The exhaustion is real"): counters boxed, then the replies threaded below (accountability, then "welcome to being a manager") | 30 |
+| Bridge: you are the feedback loop; the curve | 31, 32 |
 
 ## Hinge (~2 min)
 
-**Message:** I had the best case; you have the worst, so the way out matters more for you.
+**Message:** I had it easy; your projects are harder, so the way out matters more for you.
 
-Slides 36–38: section, "My case, and yours" (two columns), "I had the best case".
+Slides 33–34: section, "My case, and yours" (two columns, with "I had it easy. Your projects are harder. So what got me out?" as the last click).
 
 ## 3 · A new way of working (~23 min)
 
@@ -56,16 +58,16 @@ Slides 36–38: section, "My case, and yours" (two columns), "I had the best cas
 
 | Chapter | Beat | Slides |
 |---|---|---|
-| Intro | The note trainer: vibe-coded, checked by ear | 39–41 |
-| Intro | The realisation and the rule: what a feedback loop can check, you can hand off | 42, 43 |
-| Intro | The map: stop being the loop (cycle) | 44 |
-| Build the feedback loop | What is the oracle (Hardwood / your project), the mirror | 45–47 |
-| Build the feedback loop | "Make it faster, Claude!" on the N300, perfasm and the one-local fix, the number decides | 48–50 |
-| Make it fast | "I'm feeling our feedback loop is too slow": slow ITs, the licence check CI never saw; give the agent an instrument | 51–53 |
-| Review what no feedback loop can see | What caught the geo bug, I own the design (abstract diagram: the API as the hard border, graded attention inside), every API change on a list (japicmp report), the pyramid, what breaks tomorrow, the claim transcript | 54–59 |
-| Raise the floor | The ladder as stairs with dated examples, prose rots; the curve, the helix, what outlasts the turn | 60–65 |
+| Intro | The note trainer: vibe-coded, checked by playing it | 36, 37 |
+| Intro | The realisation and the rule: what a feedback loop can check, you can hand off | 38, 39 |
+| Intro | The map: stop being the loop (cycle) | 40 |
+| Build the feedback loop | What is the oracle (Hardwood / your project), the mirror | 42, 43 |
+| Build the feedback loop | "Make it faster, Claude!" on the N300, perfasm and the one-local fix, with "the number decides" as its last click | 44, 45 |
+| Make it fast | "I'm feeling our feedback loop is too slow": licence check, parallel tests, Hadoop's config in the slowest tests, dev loop 60 s → 28 s (bar chart); give the agent an instrument | 47, 48 |
+| Review what no feedback loop can see | What caught the geo bug, I own the design (abstract diagram: the API as the hard border, graded attention inside), every API change on a list (japicmp report), the pyramid, what no test catches (the docs sentence on read parallelism, caught by knowing the design) | 50–54 |
+| Raise the floor | The ladder as stairs with dated examples, prose rots (the matcher comment perfasm disproved); the curve, the helix | 56–59 |
 
-Cut: the predicate audit, "Durable knowledge", "The base is the what" (now the pyramid's aside). Backburner: "Decisions are not findings", "Review, as an artifact".
+Cut: the predicate audit, "Durable knowledge", "The base is the what" (now the pyramid's aside). Backburner: "Decisions are not findings", "Review, as an artifact", "What specifically breaks?", the #1142 claim transcript (outcome superseded on main; visual prototype in `slides-prototypes.md`).
 
 ## 4 · The price, and the joy (~5 min)
 
@@ -73,16 +75,16 @@ Cut: the predicate audit, "Durable knowledge", "The base is the what" (now the p
 
 | Beat | Slides |
 |---|---|
-| Price: control ("I no longer know every line. And I'm fine with that.") | 67 |
-| Price: upkeep (expand, then consolidate) | 68 |
-| Price: other people (contributors can't follow) | 69 |
-| Joy: nine months; things you otherwise wouldn't build | 70, 71 |
-| Message: a quality claim that holds only if you're the arbiter of the what; review the claim, not the diff | 72, 73 |
-| Close: stop being the loop, with the sign-off | 74 |
+| Price: control ("I no longer know every line. And I'm fine with that.") | 61 |
+| Price: upkeep (expand, then consolidate) | 62 |
+| Price: other people (contributors can't follow) | 63 |
+| Joy: nine months; things you otherwise wouldn't build | 64, 65 |
+| Message: a quality claim that holds only if you're the arbiter of the what; review the claim, not the diff | 66, 67 |
+| Close: stop being the loop, with the sign-off | 68 |
 
 Cut: the search-before-writing rule, the chain. Backburner: sketching code, the real timeline, the formal-specs outlook.
 
 ## Backburner
 
-The last section of `slides-cinderella.md`, after the closing slide: candidates that might come back in: upgrading to current Java (two slides), the Flink diagram, the three-turns table, sandboxing (two slides), the contact slide, sketching code, the real timeline, the formal-specs outlook.
+The last section of `slides-cinderella.md`, after the closing slide: candidates that might come back in: the "What did Hardwood cost?" chart (Q&A backup), upgrading to current Java (two slides), the Flink diagram, the three-turns table, sandboxing (two slides), the contact slide, sketching code, the real timeline, the formal-specs outlook, "What specifically breaks?", the #1142 claim transcript, "It has no mandatory dependencies", "Can we stop any probing or guessing", "What raises the floor is what outlasts the turn", the "how can that be?" transcript excerpt (licence check).
 

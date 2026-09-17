@@ -6,7 +6,7 @@
 Data sources: Claude Code session transcripts under /claude-config (decision ticks),
 `git log main` of the Hardwood repository (commit calendar), and fixed numbers from the deck.
 """
-import collections, datetime, glob, json, math, os, subprocess
+import collections, csv, datetime, glob, json, math, os, re, subprocess
 from zoneinfo import ZoneInfo
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -146,6 +146,260 @@ chunk (ColumnMetaData, field 17).
 '''
 
 
+# 8. The claim against its own table (#1103, Sep 10) -------------------------------------------------
+def claim_table():
+    return"""##"Matches both oracles"?
+
+<span class="subtitle">PR #1103, Sep 10</span>
+
+<span class="ct-go fragment" data-fragment-index="0"></span>
+
+<div class="ct">
+<div class="ct-claim"><span class="ct-who">Claude</span> The bug reproduces before the fix, and the fix <mark>matches both oracles</mark>.</div>
+
+<table class="ct-table">
+<thead><tr><th>#1142</th><th>parquet-java</th><th>DuckDB</th><th>Hardwood before</th><th>Hardwood after</th></tr></thead>
+<tbody>
+<tr><td><code>amount &gt; 1.27</code></td><td>3.00</td><td>3.00</td><td class="bad">−2.56</td><td class="ct-flag"><span class="ct-bolt">⚡</span>throws</td></tr>
+</tbody>
+</table>
+
+<blockquote class="transcript ct-me fragment" data-fragment-index="1">
+"…that's not what the table suggests for 1142?"
+<cite>Me</cite>
+</blockquote>
+</div>
+
+<div class="ct-card fragment" data-fragment-index="2">
+<p class="ct-card-head">Why throw? The PR: 1.27 can be stored as <code>7F</code> or as <code>00 7F</code>,<br>so searching by bytes can miss it.</p>
+<p class="ct-card-test">Test file with 1.27 stored as <code>00 7F</code>, searched with <code>7F</code>:</p>
+<table class="ct-table">
+<tbody><tr><td>parquet-java</td><td class="good">found</td><td class="ct-dim">compares the bytes as numbers</td></tr></tbody>
+</table>
+<p class="ct-verdict">"Matches both" hid a refusal, built on a false reason.<br>Reworked, it now does match both.</p>
+</div>
+
+Note:
+Prototype, replaces the transcript slide in the review chapter. Three clicks.
+
+Setup: a DECIMAL column stores numbers as bytes, and you could search it with
+a byte value. Hardwood compared the bytes as plain byte strings. The bytes of
+-2.56 start with FF, which sorts above 7F, the bytes of 1.27. So "amount greater
+than 1.27" returned -2.56.
+
+On arrival: Claude's summary of the before/after run against parquet-java and
+DuckDB, and the row for that bug. Before the fix: -2.56, the bug reproduces.
+That half of the claim holds.
+
+Click 1: the other half doesn't. The fix doesn't compare correctly, it refuses.
+Hardwood throws, while both oracles answer. "Matches both oracles" reported a
+design decision as parity.
+
+Click 2: my question. I didn't read the code for this. I read the sentence
+against the table.
+
+Click 3: why refuse? The PR said: 1.27 can be stored as 7F or padded as 00 7F,
+so a byte-by-byte search with 7F could miss a padded value. Claude wrote a test
+file storing 1.27 as 00 7F and searched it with 7F. parquet-java finds 1.27 in
+it, because it compares these bytes as numbers. The reason, repeated in the
+issue, the PR, the release note and the docs, was false. The claim wasn't just
+sloppy wording: it hid the one decision in the PR that was wrong. I reworked
+the PR, and it now matches both oracles.
+
+The diff was fine. The claim wasn't.
+"""
+
+# 9. Prose rots: a comment perfasm disproved (#250 → #456) -------------------------------------------
+def prose_rots():
+    return"""## Prose rots. Checks don't.
+
+<span class="subtitle">One comment, in 29 filter matchers, May 11 to Sep 10</span>
+
+<span class="rot-go fragment" data-fragment-index="0"></span>
+
+<pre class="rot-comment"><code class="nohighlight" data-noescape>// Build the predicate bitmap ignoring nulls. The inner loop is fixed at 64
+// iterations and uses a branchless `(cond ? 1 : 0) << b` pack so HotSpot
+// <mark class="rot-claim">fully unrolls it and auto-vectorizes the comparison</mark>. The tail is split
+// off to keep the hot loop's trip count constant at 64.</code></pre>
+
+<div class="rot-proof fragment" data-fragment-index="0">
+<pre class="asm"><code class="nohighlight" data-noescape>mov    0x20(%rax,%r14,8),%rdi   ; load value
+xor    %r13d,%r13d
+cmp    %r9,%rdi                 ; compare to literal
+setg   %r13b                    ; 0 or 1
+shlx   %r11,%r13,%r13           ; shift into place
+or     %rcx,%r8                 ; accumulate into word</code></pre>
+<div class="rot-verdict">
+<p><strong>perfasm</strong>, C2</p>
+<p>Six scalar instructions per value</p>
+<p>Zero <code>ymm</code></p>
+<p>Unrolled 4×, not fully</p>
+</div>
+</div>
+
+<p class="aside rot-close fragment" data-fragment-index="1">The only documentation that doesn't rot is documentation that <em>runs</em>.</p>
+
+Note:
+Prototype, gives "Prose rots. Checks don't." its evidence. Two clicks.
+
+On arrival: a comment that sat in 29 filter matchers for four months. It said
+the JIT unrolls the loop and vectorizes the comparison. That claim was the reason
+the code has its awkward branchless shape.
+
+Click 1: perfasm on the compiled code. Six scalar instructions per value, not a
+single vector register. The comment was never true. It read well, it went
+through review, and nothing could check it until something ran.
+
+Click 2: the line. The design docs are worth writing as input. They are not a
+record.
+
+Facts: the comment came in with #250 (a contributed PR, May 11) and was corrected
+in 49e59d81 (#456, Sep 10). The asm is an excerpt of LongGtBatchMatcher::test,
+C2 level 4, JDK 25. Don't attribute the comment to anyone on stage.
+"""
+
+
+# 10. What no test catches: a false sentence about the design (#9 docs) --------------------------------
+def no_test_catches():
+    return"""## What no test catches
+
+<span class="subtitle">Hardwood docs, the write model, Aug 22</span>
+
+<div class="doc-excerpt">
+<p><strong>Page size</strong> governs read granularity. A reader that skips pages by their statistics can only skip whole pages.</p>
+<p><strong>Row-group size</strong> governs <mark class="doc-claim">read parallelism</mark> and split sizing, and on the write side it is the memory bound above.</p>
+</div>
+
+<blockquote class="transcript doc-me fragment" data-fragment-index="0">
+"…governs read parallelism" in the docs is not correct: we parallelize reading at the chunk and even page level.
+<cite>Me, Aug 26</cite>
+</blockquote>
+
+<div class="doc-checks fragment" data-fragment-index="1">
+<span class="doc-label">Passed it</span> <span>Tests</span> <span>Docs build</span>
+<span class="doc-label doc-caught">Caught it</span> <span class="doc-owner">Someone who knows the design</span>
+</div>
+
+Note:
+Prototype, closes the review chapter with a catch that went right. Two clicks.
+
+On arrival: a sentence from the writer docs. It reads like something a Parquet
+expert would write. Row groups are the unit people usually associate with
+parallel reads, in Spark for instance.
+
+Click 1: it's wrong for Hardwood. The reader runs two virtual threads per
+column and decodes pages concurrently inside a row group. Row-group size doesn't
+bound its parallelism at all. I flagged it, and it was corrected the next day
+(2c71576d).
+
+Click 2: nothing else could have caught it. Tests don't read docs. The docs build
+checks form, not truth. The only check for a sentence about
+the design is someone who owns the design.
+
+That's the part of review that stays with you.
+"""
+
+
+# 11. What Hardwood cost: measured token spend, extrapolated back by lines added ----------------------
+TALK_SESSIONS = {'f21cf717-fb5b-4875-9391-d378ef580191', 'a39a6433-b0f8-4623-88a5-180f7d847ee5'}
+DATA_FILES = re.compile(r'(\.parquet$|\.json$|\.tsv$|\.csv$|/resources/|\.svg$|\.lock$|package-lock|\.cast$|_reviews/|_talks/|\.min\.)')
+
+
+def cost_chart():
+    """Cumulative API-price cost of Hardwood. Measured from the session transcripts (inputs/tokens/sessions.tsv,
+    written by inputs/tokens/usage.py) from Aug 10, when the kept transcripts start; before that, each week's
+    lines added (git, data files excluded) times the measured cost per line added."""
+    measured_from = datetime.date(2026, 8, 10)
+    start = datetime.date(2026, 1, 4)
+    end = datetime.date(2026, 9, 17)
+    rows = list(csv.DictReader(open(os.path.join(DECK, 'inputs', 'tokens', 'sessions.tsv')), delimiter='\t'))
+    cost_by_day = collections.Counter()
+    for r in rows:
+        if r['session'] in TALK_SESSIONS:
+            continue
+        d = datetime.date.fromisoformat(r['start'][:10])
+        if d >= measured_from:
+            cost_by_day[d] += float(r['usd'])
+    log = subprocess.run(['git', '-C', REPO, 'log', 'origin/main', '--no-merges', '--numstat', '--format=@%ad', '--date=short'],
+                         capture_output=True, text=True).stdout
+    lines_by_day = collections.Counter()
+    day = None
+    for line in log.splitlines():
+        if line.startswith('@'):
+            day = datetime.date.fromisoformat(line[1:])
+            continue
+        parts = line.split('\t')
+        if len(parts) == 3 and parts[0] != '-' and not DATA_FILES.search(parts[2]):
+            lines_by_day[day] += int(parts[0])
+    measured = sum(cost_by_day.values())
+    per_line = measured / sum(v for d, v in lines_by_day.items() if d >= measured_from)
+
+    days = [start + datetime.timedelta(n) for n in range((end - start).days + 1)]
+    cum, total, split = [], 0.0, None
+    for d in days:
+        total += cost_by_day[d] if d >= measured_from else lines_by_day[d] * per_line
+        cum.append(total)
+        if d == measured_from - datetime.timedelta(1):
+            split = total
+    W, H, L, R, T, B = 1100, 470, 80, 150, 20, 60
+    ymax = 20000
+    x = lambda i: L + (W - L - R) * i / (len(days) - 1)
+    y = lambda v: T + (H - T - B) * (1 - v / ymax)
+    k = (measured_from - start).days
+    def area(i0, i1):
+        pts = ' '.join(f'{x(i):.1f},{y(cum[i]):.1f}' for i in range(i0, i1 + 1))
+        return f'{x(i0):.1f},{y(0):.1f} {pts} {x(i1):.1f},{y(0):.1f}'
+    body = ['<defs><pattern id="cost-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+            f'<rect width="8" height="8" fill="#f3e3dc"/><line x1="0" y1="0" x2="0" y2="8" stroke="{ACC}" stroke-opacity="0.35" stroke-width="3"/></pattern></defs>']
+    for v in range(0, ymax + 1, 5000):
+        body.append(f'<line x1="{L}" y1="{y(v):.1f}" x2="{W - R}" y2="{y(v):.1f}" stroke="#e5e7eb" stroke-width="1"/>')
+        body.append(f'<text x="{L - 12}" y="{y(v) + 6:.1f}" text-anchor="end" class="p-sub" fill="{DIM}">${v // 1000}k</text>')
+    for m in range(1, 10):
+        d = datetime.date(2026, m, 1)
+        i = max(0, (d - start).days)
+        body.append(f'<text x="{x(i):.1f}" y="{H - B + 30}" text-anchor="middle" class="p-sub" fill="{DIM}">{d.strftime("%b")}</text>')
+    # The hatched area is the extrapolated spend, carried on under the measured weeks as their baseline;
+    # the solid area is only what the transcripts measured on top of it.
+    hatch = ' '.join(f'{x(i):.1f},{y(min(cum[i], split)):.1f}' for i in range(len(days)))
+    body.append(f'<polygon points="{x(0):.1f},{y(0):.1f} {hatch} {x(len(days) - 1):.1f},{y(0):.1f}" fill="url(#cost-hatch)"/>')
+    body.append(f'<polyline points="{" ".join(f"{x(i):.1f},{y(cum[i]):.1f}" for i in range(0, k + 1))}" fill="none" stroke="{ACC}" stroke-width="2" stroke-dasharray="6 5"/>')
+    solid = ' '.join(f'{x(i):.1f},{y(cum[i]):.1f}' for i in range(k, len(days)))
+    body.append(f'<polygon points="{x(k):.1f},{y(split):.1f} {solid} {x(len(days) - 1):.1f},{y(split):.1f}" fill="{ACC}" fill-opacity="0.85"/>')
+    body.append(f'<line x1="{L}" y1="{y(0):.1f}" x2="{W - R}" y2="{y(0):.1f}" stroke="{INK}" stroke-width="2"/>')
+    body.append(f'<text x="{x(len(days) - 1) + 12:.1f}" y="{y(cum[-1]) + 8:.1f}" class="p-big" fill="{INK}">${cum[-1] / 1000:.0f}k</text>')
+    body.append(f'<text x="{x(k * 0.3):.1f}" y="{y(split * 0.62):.1f}" text-anchor="middle" class="p-label" fill="{DIM}">extrapolated</text>')
+    body.append(f'<text x="{x(k * 0.3):.1f}" y="{y(split * 0.62) + 26:.1f}" text-anchor="middle" class="p-sub" fill="{DIM}">lines added × ${per_line:.3f} per line</text>')
+    mx = x((k + len(days) - 1) / 2)
+    body.append(f'<text x="{x(k) - 14:.1f}" y="{y(split) - 64:.1f}" text-anchor="end" class="p-label" fill="{ACC}">measured</text>')
+    body.append(f'<text x="{x(k) - 14:.1f}" y="{y(split) - 38:.1f}" text-anchor="end" class="p-sub" fill="{DIM}">${measured:,.0f} in 5½ weeks →</text>')
+    chart = svg(W, H, ''.join(body))
+    return f"""<!-- .slide: class="" -->
+
+## What did Hardwood cost?
+
+<span class="subtitle">At API list prices, Jan 4 to Sep 17</span>
+
+{chart}
+
+Note:
+Prototype. Measured: every API response in the session transcripts since Aug 10
+(when the kept transcripts start), priced at list prices: Opus 5 at $5/$25 per
+million tokens, cache writes 1.25x (5 min) or 2x (1 h), cache reads 0.1x.
+${measured:,.0f} for Hardwood work, talk sessions excluded. Most of it is cache
+reads: long contexts re-sent every turn.
+
+Extrapolated: before Aug 10, each week's lines added on main (data files, reviews
+and the talk excluded) times the measured cost per line added,
+${per_line:.3f}. That assumes spring cost per line was like August's; the models
+and the way of working were different, so treat the hatched part as an order of
+magnitude.
+
+Say it as "on the order of ${cum[-1] / 1000:.0f}k at API list prices". It isn't what I
+paid: a subscription costs a fraction. And it's only the sessions in this
+container.
+"""
+
+
 # 5. Decisions as ticks -------------------------------------------------------------------------------
 SKIP = ('<command', '<local-command', 'Caveat:', '<system-reminder', '[Request interrupted',
         'This session is being continued', '<task-notification', '<bash-')
@@ -246,9 +500,7 @@ def decisions(day='2026-09-09'):
         f'<g class="fragment fade-in-then-out" data-fragment-index="0">{axis}{split}</g>',
         f'<g class="fragment fade-in-then-out" data-fragment-index="0">{split}</g>')
     first, last = msgs[0][0].strftime('%H:%M'), msgs[-1][0].strftime('%H:%M')
-    return f'''<!-- .slide: class="no-parquet" -->
-
-## The agent types. I only decide.
+    return f'''## The agent types. I only decide.
 
 <span class="subtitle">Sep 9: {len(msgs)} prompts to {len(counts)} sessions, one every {median:.1f} minutes</span>
 
@@ -307,9 +559,7 @@ def calendar():
     for i, (_, col) in enumerate(steps):
         body += f'<rect x="{lx + i * (cell + gap)}" y="{ly}" width="{cell}" height="{cell}" rx="3" fill="{col}"/>'
     body += f'<text x="{lx + len(steps) * (cell + gap) + 6}" y="{ly + 16}" class="p-sub" fill="{DIM}">more commits</text>'
-    return f'''<!-- .slide: class="no-parquet" -->
-
-## Nine months
+    return f'''## Nine months
 
 <span class="subtitle">{len(days):,} commits to main, {datetime.date.fromisoformat(min(days)).strftime("%b %-d")} to {datetime.date.fromisoformat(max(days)).strftime("%b %-d")}</span>
 
@@ -339,9 +589,7 @@ def s3():
         body += f'<line x1="{fx + 24}" y1="{100 + k * 22}" x2="{fx + 176 - (k * 37 % 70)}" y2="{100 + k * 22}" stroke="#d6dae0" stroke-width="6" stroke-linecap="round"/>'
     body += f'<text x="{fx}" y="360" class="p-label" fill="{INK}">Aws4Signer.java</text>'
     body += f'<text x="{fx}" y="392" class="p-sub" fill="{DIM}">289 lines, JDK crypto only</text>'
-    return f'''<!-- .slide: class="no-parquet" -->
-
-## S3 support
+    return f'''## S3 support
 
 <span class="subtitle">Mar 17: with the AWS SDK · Mar 27: without it</span>
 
@@ -353,8 +601,33 @@ file. The signer passes AWS's published test vectors.
 '''
 
 
+# 8. The geo thread: the slides of the geo story, with a common backdrop --------------------------------
+GEO_TITLES = ["## A contributor's pull request", '## How does someone careful end up here?',
+              '## We caught it before Final.', '## How it got through', '## What caught the geo bug?']
+
+
+def geo_thread():
+    import re
+    deck = open(os.path.join(DECK, 'slides-cinderella.md')).read()
+    blocks = re.split(r'\n---\n(?=\n|<!--)', deck)
+    out = []
+    for title in GEO_TITLES:
+        block = next(b for b in blocks if title in b).strip()
+        if 'geo-backdrop' in block:
+            out.append(block + '\n')
+            continue
+        attrs = 'data-background-image="images/geo-backdrop.svg" data-background-size="cover"'
+        m = re.match(r'<!-- \.slide: class="([^"]*)"(.*?)-->', block)
+        if m:
+            block = f'<!-- .slide: class="{m.group(1)} geo"{m.group(2)} {attrs} -->' + block[m.end():]
+        else:
+            block = f'<!-- .slide: class="geo" {attrs} -->\n\n' + block
+        out.append(block + '\n')
+    return out
+
+
 def main():
-    slides = [prologue(), thread(), ladder(), claim_vs_spec(), decisions(), calendar(), s3()]
+    slides = [cost_chart(), prose_rots(), no_test_catches(), claim_table(), prologue(), thread(), ladder(), claim_vs_spec(), decisions(), calendar(), s3()] + geo_thread()
     with open(os.path.join(DECK, 'slides-prototypes.md'), 'w') as f:
         f.write('\n---\n\n'.join(s.strip() + '\n' for s in slides))
 

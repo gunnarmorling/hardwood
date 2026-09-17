@@ -1,3 +1,179 @@
+<!-- .slide: class="" -->
+
+## What did Hardwood cost?
+
+<span class="subtitle">At API list prices, Jan 4 to Sep 17</span>
+
+<svg class="proto " viewBox="0 0 1100 470" width="1100" height="470"><defs><pattern id="cost-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f3e3dc"/><line x1="0" y1="0" x2="0" y2="8" stroke="#b5491f" stroke-opacity="0.35" stroke-width="3"/></pattern></defs><line x1="80" y1="410.0" x2="950" y2="410.0" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="416.0" text-anchor="end" class="p-sub" fill="#666666">$0k</text><line x1="80" y1="312.5" x2="950" y2="312.5" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="318.5" text-anchor="end" class="p-sub" fill="#666666">$5k</text><line x1="80" y1="215.0" x2="950" y2="215.0" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="221.0" text-anchor="end" class="p-sub" fill="#666666">$10k</text><line x1="80" y1="117.5" x2="950" y2="117.5" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="123.5" text-anchor="end" class="p-sub" fill="#666666">$15k</text><line x1="80" y1="20.0" x2="950" y2="20.0" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="26.0" text-anchor="end" class="p-sub" fill="#666666">$20k</text><text x="80.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">Jan</text><text x="175.2" y="440" text-anchor="middle" class="p-sub" fill="#666666">Feb</text><text x="270.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">Mar</text><text x="375.7" y="440" text-anchor="middle" class="p-sub" fill="#666666">Apr</text><text x="477.6" y="440" text-anchor="middle" class="p-sub" fill="#666666">May</text><text x="583.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">Jun</text><text x="684.9" y="440" text-anchor="middle" class="p-sub" fill="#666666">Jul</text><text x="790.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">Aug</text><text x="895.6" y="440" text-anchor="middle" class="p-sub" fill="#666666">Sep</text><polygon points="80.0,410.0 80.0,404.8 83.4,402.1 86.8,398.1 90.2,394.1 93.6,394.1 97.0,394.1 100.4,394.1 103.8,389.2 107.2,388.9 110.6,388.7 114.0,388.3 117.4,388.3 120.8,388.3 124.2,387.3 127.6,386.7 131.0,382.8 134.4,382.8 137.8,382.8 141.2,380.9 144.6,380.7 148.0,380.7 151.4,380.7 154.8,377.7 158.2,377.2 161.6,377.2 165.0,375.3 168.4,372.9 171.8,369.3 175.2,369.3 178.6,369.3 182.0,369.3 185.4,369.3 188.8,369.3 192.1,369.3 195.5,369.3 198.9,369.3 202.3,369.3 205.7,369.3 209.1,367.8 212.5,367.1 215.9,367.1 219.3,367.0 222.7,366.6 226.1,364.4 229.5,363.5 232.9,363.2 236.3,362.6 239.7,360.6 243.1,360.4 246.5,359.1 249.9,356.3 253.3,354.4 256.7,354.2 260.1,353.2 263.5,353.0 266.9,351.7 270.3,351.1 273.7,347.2 277.1,346.8 280.5,346.8 283.9,346.8 287.3,346.8 290.7,346.8 294.1,346.8 297.5,346.8 300.9,346.8 304.3,343.2 307.7,343.2 311.1,343.2 314.5,343.2 317.9,343.2 321.3,342.8 324.7,341.5 328.1,340.2 331.5,340.2 334.9,340.0 338.3,336.3 341.7,335.8 345.1,335.3 348.5,331.8 351.9,331.2 355.3,330.1 358.7,328.0 362.1,323.1 365.5,320.3 368.9,315.0 372.3,313.4 375.7,311.5 379.1,311.3 382.5,311.3 385.9,311.3 389.3,311.3 392.7,311.3 396.1,311.3 399.5,311.2 402.9,311.2 406.2,311.2 409.6,311.2 413.0,311.2 416.4,311.2 419.8,311.0 423.2,311.0 426.6,311.0 430.0,310.4 433.4,310.3 436.8,303.5 440.2,301.4 443.6,300.1 447.0,298.1 450.4,291.5 453.8,290.6 457.2,290.6 460.6,278.8 464.0,276.8 467.4,272.1 470.8,270.4 474.2,268.9 477.6,266.4 481.0,266.1 484.4,266.1 487.8,265.7 491.2,263.1 494.6,262.8 498.0,261.8 501.4,261.8 504.8,261.2 508.2,261.2 511.6,253.0 515.0,249.0 518.4,247.5 521.8,247.3 525.2,247.2 528.6,247.1 532.0,247.1 535.4,247.0 538.8,247.0 542.2,247.0 545.6,247.0 549.0,247.0 552.4,247.0 555.8,247.0 559.2,247.0 562.6,246.9 566.0,246.9 569.4,244.4 572.8,243.0 576.2,241.7 579.6,240.8 583.0,240.7 586.4,239.9 589.8,237.3 593.2,235.3 596.6,233.1 600.0,232.5 603.4,231.6 606.8,231.6 610.2,231.6 613.6,231.6 617.0,230.7 620.4,230.4 623.8,230.2 627.1,230.1 630.5,230.0 633.9,230.0 637.3,230.0 640.7,230.0 644.1,230.0 647.5,230.0 650.9,229.5 654.3,229.5 657.7,229.5 661.1,228.1 664.5,227.4 667.9,226.2 671.3,225.1 674.7,223.8 678.1,223.7 681.5,221.4 684.9,221.2 688.3,214.4 691.7,214.4 695.1,214.0 698.5,211.6 701.9,211.1 705.3,211.1 708.7,210.8 712.1,210.8 715.5,209.3 718.9,207.2 722.3,207.2 725.7,207.1 729.1,207.1 732.5,205.9 735.9,205.8 739.3,205.8 742.7,204.1 746.1,204.1 749.5,203.8 752.9,203.8 756.3,203.7 759.7,203.7 763.1,199.2 766.5,199.0 769.9,199.0 773.3,199.0 776.7,199.0 780.1,199.0 783.5,199.0 786.9,199.0 790.3,199.0 793.7,199.0 797.1,199.0 800.5,197.8 803.9,197.6 807.3,197.4 810.7,197.0 814.1,195.8 817.5,195.4 820.9,195.4 824.3,195.4 827.7,195.4 831.1,195.4 834.5,195.4 837.9,195.4 841.2,195.4 844.6,195.4 848.0,195.4 851.4,195.4 854.8,195.4 858.2,195.4 861.6,195.4 865.0,195.4 868.4,195.4 871.8,195.4 875.2,195.4 878.6,195.4 882.0,195.4 885.4,195.4 888.8,195.4 892.2,195.4 895.6,195.4 899.0,195.4 902.4,195.4 905.8,195.4 909.2,195.4 912.6,195.4 916.0,195.4 919.4,195.4 922.8,195.4 926.2,195.4 929.6,195.4 933.0,195.4 936.4,195.4 939.8,195.4 943.2,195.4 946.6,195.4 950.0,195.4 950.0,410.0" fill="url(#cost-hatch)"/><polyline points="80.0,404.8 83.4,402.1 86.8,398.1 90.2,394.1 93.6,394.1 97.0,394.1 100.4,394.1 103.8,389.2 107.2,388.9 110.6,388.7 114.0,388.3 117.4,388.3 120.8,388.3 124.2,387.3 127.6,386.7 131.0,382.8 134.4,382.8 137.8,382.8 141.2,380.9 144.6,380.7 148.0,380.7 151.4,380.7 154.8,377.7 158.2,377.2 161.6,377.2 165.0,375.3 168.4,372.9 171.8,369.3 175.2,369.3 178.6,369.3 182.0,369.3 185.4,369.3 188.8,369.3 192.1,369.3 195.5,369.3 198.9,369.3 202.3,369.3 205.7,369.3 209.1,367.8 212.5,367.1 215.9,367.1 219.3,367.0 222.7,366.6 226.1,364.4 229.5,363.5 232.9,363.2 236.3,362.6 239.7,360.6 243.1,360.4 246.5,359.1 249.9,356.3 253.3,354.4 256.7,354.2 260.1,353.2 263.5,353.0 266.9,351.7 270.3,351.1 273.7,347.2 277.1,346.8 280.5,346.8 283.9,346.8 287.3,346.8 290.7,346.8 294.1,346.8 297.5,346.8 300.9,346.8 304.3,343.2 307.7,343.2 311.1,343.2 314.5,343.2 317.9,343.2 321.3,342.8 324.7,341.5 328.1,340.2 331.5,340.2 334.9,340.0 338.3,336.3 341.7,335.8 345.1,335.3 348.5,331.8 351.9,331.2 355.3,330.1 358.7,328.0 362.1,323.1 365.5,320.3 368.9,315.0 372.3,313.4 375.7,311.5 379.1,311.3 382.5,311.3 385.9,311.3 389.3,311.3 392.7,311.3 396.1,311.3 399.5,311.2 402.9,311.2 406.2,311.2 409.6,311.2 413.0,311.2 416.4,311.2 419.8,311.0 423.2,311.0 426.6,311.0 430.0,310.4 433.4,310.3 436.8,303.5 440.2,301.4 443.6,300.1 447.0,298.1 450.4,291.5 453.8,290.6 457.2,290.6 460.6,278.8 464.0,276.8 467.4,272.1 470.8,270.4 474.2,268.9 477.6,266.4 481.0,266.1 484.4,266.1 487.8,265.7 491.2,263.1 494.6,262.8 498.0,261.8 501.4,261.8 504.8,261.2 508.2,261.2 511.6,253.0 515.0,249.0 518.4,247.5 521.8,247.3 525.2,247.2 528.6,247.1 532.0,247.1 535.4,247.0 538.8,247.0 542.2,247.0 545.6,247.0 549.0,247.0 552.4,247.0 555.8,247.0 559.2,247.0 562.6,246.9 566.0,246.9 569.4,244.4 572.8,243.0 576.2,241.7 579.6,240.8 583.0,240.7 586.4,239.9 589.8,237.3 593.2,235.3 596.6,233.1 600.0,232.5 603.4,231.6 606.8,231.6 610.2,231.6 613.6,231.6 617.0,230.7 620.4,230.4 623.8,230.2 627.1,230.1 630.5,230.0 633.9,230.0 637.3,230.0 640.7,230.0 644.1,230.0 647.5,230.0 650.9,229.5 654.3,229.5 657.7,229.5 661.1,228.1 664.5,227.4 667.9,226.2 671.3,225.1 674.7,223.8 678.1,223.7 681.5,221.4 684.9,221.2 688.3,214.4 691.7,214.4 695.1,214.0 698.5,211.6 701.9,211.1 705.3,211.1 708.7,210.8 712.1,210.8 715.5,209.3 718.9,207.2 722.3,207.2 725.7,207.1 729.1,207.1 732.5,205.9 735.9,205.8 739.3,205.8 742.7,204.1 746.1,204.1 749.5,203.8 752.9,203.8 756.3,203.7 759.7,203.7 763.1,199.2 766.5,199.0 769.9,199.0 773.3,199.0 776.7,199.0 780.1,199.0 783.5,199.0 786.9,199.0 790.3,199.0 793.7,199.0 797.1,199.0 800.5,197.8 803.9,197.6 807.3,197.4 810.7,197.0 814.1,195.8 817.5,195.4 820.9,195.4" fill="none" stroke="#b5491f" stroke-width="2" stroke-dasharray="6 5"/><polygon points="820.9,195.4 820.9,195.4 824.3,193.1 827.7,192.6 831.1,191.4 834.5,191.3 837.9,191.3 841.2,191.1 844.6,191.1 848.0,189.9 851.4,184.0 854.8,180.8 858.2,173.8 861.6,163.8 865.0,163.4 868.4,162.4 871.8,159.9 875.2,159.5 878.6,158.4 882.0,156.3 885.4,151.2 888.8,150.7 892.2,149.8 895.6,148.9 899.0,148.8 902.4,148.8 905.8,147.1 909.2,132.9 912.6,132.5 916.0,121.3 919.4,115.8 922.8,110.0 926.2,99.3 929.6,94.2 933.0,91.3 936.4,91.3 939.8,86.5 943.2,81.0 946.6,80.6 950.0,80.6 950.0,195.4" fill="#b5491f" fill-opacity="0.85"/><line x1="80" y1="410.0" x2="950" y2="410.0" stroke="#354045" stroke-width="2"/><text x="962.0" y="88.6" class="p-big" fill="#354045">$17k</text><text x="302.3" y="276.9" text-anchor="middle" class="p-label" fill="#666666">extrapolated</text><text x="302.3" y="302.9" text-anchor="middle" class="p-sub" fill="#666666">lines added × $0.052 per line</text><text x="806.9" y="131.4" text-anchor="end" class="p-label" fill="#b5491f">measured</text><text x="806.9" y="157.4" text-anchor="end" class="p-sub" fill="#666666">$5,887 in 5½ weeks →</text></svg>
+
+Note:
+Prototype. Measured: every API response in the session transcripts since Aug 10
+(when the kept transcripts start), priced at list prices: Opus 5 at $5/$25 per
+million tokens, cache writes 1.25x (5 min) or 2x (1 h), cache reads 0.1x.
+$5,887 for Hardwood work, talk sessions excluded. Most of it is cache
+reads: long contexts re-sent every turn.
+
+Extrapolated: before Aug 10, each week's lines added on main (data files, reviews
+and the talk excluded) times the measured cost per line added,
+$0.052. That assumes spring cost per line was like August's; the models
+and the way of working were different, so treat the hatched part as an order of
+magnitude.
+
+Say it as "on the order of $17k at API list prices". It isn't what I
+paid: a subscription costs a fraction. And it's only the sessions in this
+container.
+
+---
+
+## Prose rots. Checks don't.
+
+<span class="subtitle">One comment, in 29 filter matchers, May 11 to Sep 10</span>
+
+<span class="rot-go fragment" data-fragment-index="0"></span>
+
+<pre class="rot-comment"><code class="nohighlight" data-noescape>// Build the predicate bitmap ignoring nulls. The inner loop is fixed at 64
+// iterations and uses a branchless `(cond ? 1 : 0) << b` pack so HotSpot
+// <mark class="rot-claim">fully unrolls it and auto-vectorizes the comparison</mark>. The tail is split
+// off to keep the hot loop's trip count constant at 64.</code></pre>
+
+<div class="rot-proof fragment" data-fragment-index="0">
+<pre class="asm"><code class="nohighlight" data-noescape>mov    0x20(%rax,%r14,8),%rdi   ; load value
+xor    %r13d,%r13d
+cmp    %r9,%rdi                 ; compare to literal
+setg   %r13b                    ; 0 or 1
+shlx   %r11,%r13,%r13           ; shift into place
+or     %rcx,%r8                 ; accumulate into word</code></pre>
+<div class="rot-verdict">
+<p><strong>perfasm</strong>, C2</p>
+<p>Six scalar instructions per value</p>
+<p>Zero <code>ymm</code></p>
+<p>Unrolled 4×, not fully</p>
+</div>
+</div>
+
+<p class="aside rot-close fragment" data-fragment-index="1">The only documentation that doesn't rot is documentation that <em>runs</em>.</p>
+
+Note:
+Prototype, gives "Prose rots. Checks don't." its evidence. Two clicks.
+
+On arrival: a comment that sat in 29 filter matchers for four months. It said
+the JIT unrolls the loop and vectorizes the comparison. That claim was the reason
+the code has its awkward branchless shape.
+
+Click 1: perfasm on the compiled code. Six scalar instructions per value, not a
+single vector register. The comment was never true. It read well, it went
+through review, and nothing could check it until something ran.
+
+Click 2: the line. The design docs are worth writing as input. They are not a
+record.
+
+Facts: the comment came in with #250 (a contributed PR, May 11) and was corrected
+in 49e59d81 (#456, Sep 10). The asm is an excerpt of LongGtBatchMatcher::test,
+C2 level 4, JDK 25. Don't attribute the comment to anyone on stage.
+
+---
+
+## What no test catches
+
+<span class="subtitle">Hardwood docs, the write model, Aug 22</span>
+
+<div class="doc-excerpt">
+<p><strong>Page size</strong> governs read granularity. A reader that skips pages by their statistics can only skip whole pages.</p>
+<p><strong>Row-group size</strong> governs <mark class="doc-claim">read parallelism</mark> and split sizing, and on the write side it is the memory bound above.</p>
+</div>
+
+<blockquote class="transcript doc-me fragment" data-fragment-index="0">
+"…governs read parallelism" in the docs is not correct: we parallelize reading at the chunk and even page level.
+<cite>Me, Aug 26</cite>
+</blockquote>
+
+<div class="doc-checks fragment" data-fragment-index="1">
+<span class="doc-label">Passed it</span> <span>Tests</span> <span>Docs build</span>
+<span class="doc-label doc-caught">Caught it</span> <span class="doc-owner">Someone who knows the design</span>
+</div>
+
+Note:
+Prototype, closes the review chapter with a catch that went right. Two clicks.
+
+On arrival: a sentence from the writer docs. It reads like something a Parquet
+expert would write. Row groups are the unit people usually associate with
+parallel reads, in Spark for instance.
+
+Click 1: it's wrong for Hardwood. The reader runs two virtual threads per
+column and decodes pages concurrently inside a row group. Row-group size doesn't
+bound its parallelism at all. I flagged it, and it was corrected the next day
+(2c71576d).
+
+Click 2: nothing else could have caught it. Tests don't read docs. The docs build
+checks form, not truth. The only check for a sentence about
+the design is someone who owns the design.
+
+That's the part of review that stays with you.
+
+---
+
+##"Matches both oracles"?
+
+<span class="subtitle">PR #1103, Sep 10</span>
+
+<span class="ct-go fragment" data-fragment-index="0"></span>
+
+<div class="ct">
+<div class="ct-claim"><span class="ct-who">Claude</span> The bug reproduces before the fix, and the fix <mark>matches both oracles</mark>.</div>
+
+<table class="ct-table">
+<thead><tr><th>#1142</th><th>parquet-java</th><th>DuckDB</th><th>Hardwood before</th><th>Hardwood after</th></tr></thead>
+<tbody>
+<tr><td><code>amount &gt; 1.27</code></td><td>3.00</td><td>3.00</td><td class="bad">−2.56</td><td class="ct-flag"><span class="ct-bolt">⚡</span>throws</td></tr>
+</tbody>
+</table>
+
+<blockquote class="transcript ct-me fragment" data-fragment-index="1">
+"…that's not what the table suggests for 1142?"
+<cite>Me</cite>
+</blockquote>
+</div>
+
+<div class="ct-card fragment" data-fragment-index="2">
+<p class="ct-card-head">Why throw? The PR: 1.27 can be stored as <code>7F</code> or as <code>00 7F</code>,<br>so searching by bytes can miss it.</p>
+<p class="ct-card-test">Test file with 1.27 stored as <code>00 7F</code>, searched with <code>7F</code>:</p>
+<table class="ct-table">
+<tbody><tr><td>parquet-java</td><td class="good">found</td><td class="ct-dim">compares the bytes as numbers</td></tr></tbody>
+</table>
+<p class="ct-verdict">"Matches both" hid a refusal, built on a false reason.<br>Reworked, it now does match both.</p>
+</div>
+
+Note:
+Prototype, replaces the transcript slide in the review chapter. Three clicks.
+
+Setup: a DECIMAL column stores numbers as bytes, and you could search it with
+a byte value. Hardwood compared the bytes as plain byte strings. The bytes of
+-2.56 start with FF, which sorts above 7F, the bytes of 1.27. So "amount greater
+than 1.27" returned -2.56.
+
+On arrival: Claude's summary of the before/after run against parquet-java and
+DuckDB, and the row for that bug. Before the fix: -2.56, the bug reproduces.
+That half of the claim holds.
+
+Click 1: the other half doesn't. The fix doesn't compare correctly, it refuses.
+Hardwood throws, while both oracles answer. "Matches both oracles" reported a
+design decision as parity.
+
+Click 2: my question. I didn't read the code for this. I read the sentence
+against the table.
+
+Click 3: why refuse? The PR said: 1.27 can be stored as 7F or padded as 00 7F,
+so a byte-by-byte search with 7F could miss a padded value. Claude wrote a test
+file storing 1.27 as 00 7F and searched it with 7F. parquet-java finds 1.27 in
+it, because it compares these bytes as numbers. The reason, repeated in the
+issue, the PR, the release note and the docs, was false. The claim wasn't just
+sloppy wording: it hid the one decision in the PR that was wrong. I reworked
+the PR, and it now matches both oracles.
+
+The diff was fine. The claim wasn't.
+
+---
+
 ## A contributor's pull request
 
 <div class="stamped">
@@ -78,8 +254,6 @@ chunk (ColumnMetaData, field 17).
 
 ---
 
-<!-- .slide: class="no-parquet" -->
-
 ## The agent types. I only decide.
 
 <span class="subtitle">Sep 9: 205 prompts to 21 sessions, one every 2.7 minutes</span>
@@ -99,8 +273,6 @@ follows me from prompt to prompt.
 
 ---
 
-<!-- .slide: class="no-parquet" -->
-
 ## Nine months
 
 <span class="subtitle">1,029 commits to main, Jan 4 to Sep 15</span>
@@ -114,8 +286,6 @@ Prototype, replaces slide 72. One square per day, from `git log main`.
 
 ---
 
-<!-- .slide: class="no-parquet" -->
-
 ## S3 support
 
 <span class="subtitle">Mar 17: with the AWS SDK · Mar 27: without it</span>
@@ -125,3 +295,151 @@ Prototype, replaces slide 72. One square per day, from `git log main`.
 Note:
 Prototype, replaces slide 15. Mirrors the classpath slide: 31 JARs against one
 file. The signer passes AWS's published test vectors.
+
+---
+
+<!-- .slide: class="geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
+## A contributor's pull request
+
+<div class="stamped">
+  <img src="images/01-geo-pr-413.png" width="1100" height="445" style="max-height: none" alt="PR #413, merged May 1">
+  <div class="stamp fragment" data-fragment-index="0" style="left: 770px; top: 60px; --rot: -5deg; --c: #2e7d32">✓ Tests green</div>
+  <div class="stamp fragment" data-fragment-index="1" style="left: 740px; top: 140px; --rot: 3deg; --c: #2e7d32">✓ Merged, May 1</div>
+  <div class="stamp fragment" data-fragment-index="2" style="left: 640px; top: 220px; --rot: -4deg; --c: #2e7d32">✓ Shipped in 1.0.0.CR1</div>
+  <div class="stamp stamp-big fragment" data-fragment-index="3" style="left: 60px; top: 320px; --rot: -5deg; --c: #c62828">The feature couldn't work</div>
+</div>
+
+Note:
+Set the scene plainly: an outside contributor, LLM-assisted, offering
+page-level geospatial pruning for Hardwood. Skip pages whose bounding box
+can't intersect the query geometry. Their work, their commit. I fixed a few
+loose ends and merged it on May 1 as #413, which keeps their authorship (their
+original PR, #173, was superseded). So the review, and the merge, were mine.
+
+Coherent code. Sensible names. Reads like the rest of the codebase. Say
+explicitly: this is not bad code. If you are waiting for the slide where the AI
+writes something obviously stupid, there isn't one.
+
+Click: tests green (all 11 checks passed). Click: merged. Click: shipped in CR1.
+Users got it, under a version number with my name on it. Pause.
+
+Click: the feature couldn't work. Parquet doesn't store that information per
+page. No format details on stage. If someone asks: geospatial statistics exist
+only per column chunk (ColumnMetaData, field 17). The PR read ColumnIndex field 7
+as per-page bounding boxes; field 7 is the definition-level histograms.
+
+The detail that makes it worse: the geospatial design document asserted the
+same page-level mapping. The fiction was in the reviewed prose first, and the
+code implemented it faithfully. The model did not write a bug. It implemented a
+feature that does not exist, convincingly, and then proved it worked.
+
+---
+
+<!-- .slide: class="hero geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
+## How does someone careful end up here?
+
+<span class="aside">Back to the holidays.</span>
+
+Note:
+Don't explain how it got through yet. Leave the room with the question and go
+back in time. The story catches up with this moment at midnight.
+
+---
+
+<!-- .slide: class="hero geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
+## We caught it before Final.
+
+It wasn't the tests. It wasn't the review.
+
+Note:
+At that pace, something slips. Back to the feature that doesn't exist.
+
+Merged May 1, shipped in CR1 on May 31, fixed on June 4 (#608), three weeks
+before 1.0.0.Final.
+
+Back to the prologue: the story has caught up. Hold the question of what
+caught it open; it gets answered when we climb out.
+
+---
+
+<!-- .slide: class="geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
+## How it got through
+
+- I reviewed the <em>diff</em>, not the <em>claim</em>
+- I graded it against the PR description, not the spec
+- Volume. It looked competent, and others were waiting
+
+<div class="circled centred">
+  <img src="images/01-geo-pr-413-claim.png" width="1000" height="140" alt="PR #413 description: GeospatialStatistics with BoundingBox, page-level stats on ColumnIndex, plus page-level pushdown">
+  <span class="mark-box fragment" style="left: 48.8%; top: 24%; width: 34.8%; height: 30%"></span>
+</div>
+
+Note:
+All three, honestly. Don't soften it, and don't blame the contributor — the
+review was mine.
+
+Click: the claim was in the description the whole time, on the slide they saw
+at the start. "Page-level stats on ColumnIndex" is the feature that doesn't
+exist. Nobody asked whether it does.
+
+The first bullet is the whole talk in six words. The diff is the how; the claim
+is the what. Say it, then move on; you'll come back to it at the end.
+
+---
+
+<!-- .slide: class="geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
+## What caught the geo bug?
+
+<span class="subtitle">June 4, three weeks before 1.0.0.Final</span>
+
+<div class="columns geo-spec">
+<div>
+<p class="geo-label">The spec, <code>parquet.thrift</code></p>
+<pre class="rot-code"><code class="nohighlight" data-noescape><span class="k">struct</span> ColumnIndex {
+  1: null_pages
+  2: min_values
+  3: max_values
+  4: boundary_order
+  5: null_counts
+  6: repetition_level_histograms
+<span class="spec-7">  7: definition_level_histograms</span>
+  8: nan_counts
+}</code></pre>
+</div>
+<div class="geo-verdict">
+<p class="geo-claim fragment" data-fragment-index="0">Hardwood read field 7 as<br><s>geospatial statistics</s>.<br><strong>There is no geo field.</strong></p>
+<div class="verdict-list fragment" data-fragment-index="1">
+<p><span class="no">✗</span> The tests: same misreading</p>
+<p><span class="no">✗</span> The review: it passed</p>
+<p><span class="yes">✓</span> Reading the spec, for something else</p>
+</div>
+</div>
+</div>
+
+Note:
+Answer the prologue's question.
+
+On arrival: the page index as the spec defines it (types left out so it fits).
+Eight fields, nothing about geometry.
+
+Click 1: field 7. Hardwood's reader decoded it as geospatial statistics; the spec
+says definition-level histograms. The feature the PR claimed, "page-level stats
+on ColumnIndex", had nowhere to live. Filed as #608 on June 4, fixed three weeks
+before Final.
+
+Click 2: what didn't catch it, and what did. The tests were written against the
+same misreading, so they agreed with it. The review passed.
+
+I found it by accident: three minutes after filing #607, I was reading the
+ColumnIndex definition for the level histograms, and field 7 was already taken
+by "geospatial stats". The design doc had the same wrong mapping.
+
+A loop catches known unknowns, things somebody knew to check. The geo bug was an
+unknown unknown: nobody writes a test for a field that doesn't exist. Loops take
+most of the checking off your plate; expertise keeps the rest (Mar 30 post:
+"confidently bad for dealing with unknown unknowns").

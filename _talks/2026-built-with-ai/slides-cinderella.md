@@ -1,5 +1,7 @@
 <!-- .slide: class="section" data-state="section-slide" data-background-image="images/sections/title.jpg" data-background-opacity="0.55" -->
 
+<img class="title-bird" src="images/hardwood.svg" alt="Hardwood">
+
 # Built with AI, <em>not by AI</em>
 
 Nine months of building a Parquet library with an agent
@@ -17,6 +19,8 @@ Deliver the first five minutes standing still. The whole talk is paid for by
 the room believing this story actually happened to you.
 
 ---
+
+<!-- .slide: class="geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
 
 ## A contributor's pull request
 
@@ -54,7 +58,7 @@ feature that does not exist, convincingly, and then proved it worked.
 
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
 
 ## How does someone careful end up here?
 
@@ -105,7 +109,7 @@ That's what got me started too.
 
 ---
 
-<!-- .slide: class="hero no-parquet" -->
+<!-- .slide: class="hero" -->
 
 <img class="post" src="images/x-2026-01-04-where-is-the-disconnect.png" width="900" height="327" style="max-height: none" alt="Jan 4: Trying to reconcile the Claude did in 1h what took a Google team a year thing with my own LLM experiences. Where is the disconnect?">
 
@@ -165,6 +169,8 @@ The price moving is the only reason the rest of this act exists.
 
 <span class="subtitle">Hardwood: a lightweight Parquet library for the JVM</span>
 
+<div class="born">
+
 - Minimal dependencies
 - Fast
 - Complete
@@ -172,7 +178,7 @@ The price moving is the only reason the rest of this act exists.
 - Embeddable
 - Library, CLI, TUI
 
-<div class="float-listing" style="--x: 410px; --y: 215px; --w: 774px">
+<div class="born-listing">
 
 ```java
 try (ParquetFileReader file =
@@ -189,6 +195,7 @@ try (ParquetFileReader file =
 }
 ```
 
+</div>
 </div>
 
 Note:
@@ -208,7 +215,7 @@ not need it and it is not what they came for.
 
 ---
 
-<!-- .slide: class="timeline no-parquet" -->
+<!-- .slide: class="timeline" -->
 
 ## From first commit to 1.0
 
@@ -240,33 +247,72 @@ S3.
 
 ---
 
-<!-- .slide: class="hero" -->
-
-## It has <span class="xout">no<svg class="xout-mark fragment" data-fragment-index="0" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M4 8 C 30 22, 64 40, 96 54"/><path d="M6 54 C 34 40, 66 22, 95 6"/></svg><span class="xout-insert fragment" data-fragment-index="0"><svg class="xout-arrow" viewBox="0 0 120 90"><path d="M112 14 C 72 10, 30 26, 14 76"/><path d="M4 58 L 14 78 L 30 62"/></svg>ok, ok, no mandatory</span></span> dependencies.
-
-Note:
-Say it first as the claim everyone makes. Click: no *mandatory* dependencies.
-Compression codecs (snappy, zstd, lz4, brotli) are optional, and you add only
-the one your files use.
-
-This is the surprising half, and it's the part that transfers to their work.
-
----
-
 ## S3 support
 
 <span class="subtitle">Mar 17: with the AWS SDK · Mar 27: without it</span>
 
-| | JARs | Size |
-|---|---|---|
-| AWS SDK S3 client | 31 | ~8 MB |
-| `hardwood-s3` | <em>0</em> | <em>0</em> |
-
-289 lines of SigV4 signing. JDK crypto only.
+<div class="columns top deptrees">
+<div>
+<p class="deptree-label"><code>mvn dependency:tree</code>, Mar 17 · <strong>30 JARs, 8.3 MB</strong></p>
+<pre class="deptree"><code class="nohighlight" data-noescape>dev.hardwood:hardwood-s3
++- dev.hardwood:hardwood-core
++- software.amazon.awssdk:s3:2.42.17
+|  +- software.amazon.awssdk:aws-xml-protocol:2.42.17
+|  |  \- software.amazon.awssdk:aws-query-protocol:2.42.17
+|  +- software.amazon.awssdk:protocol-core:2.42.17
+|  +- software.amazon.awssdk:arns:2.42.17
+|  +- software.amazon.awssdk:profiles:2.42.17
+|  +- software.amazon.awssdk:http-auth:2.42.17
+|  +- software.amazon.awssdk:identity-spi:2.42.17
+|  +- software.amazon.awssdk:http-auth-spi:2.42.17
+|  |  \- org.reactivestreams:reactive-streams:1.0.4
+|  +- software.amazon.awssdk:http-auth-aws:2.42.17
+|  +- software.amazon.awssdk:checksums:2.42.17
+|  +- software.amazon.awssdk:checksums-spi:2.42.17
+|  +- software.amazon.awssdk:retries-spi:2.42.17
+|  +- software.amazon.awssdk:sdk-core:2.42.17
+|  |  \- software.amazon.awssdk:retries:2.42.17
+|  +- software.amazon.awssdk:auth:2.42.17
+|  |  +- software.amazon.awssdk:http-auth-aws-eventstream:2.42.17
+|  |  \- software.amazon.eventstream:eventstream:1.0.1
+|  +- software.amazon.awssdk:http-client-spi:2.42.17
+|  +- software.amazon.awssdk:regions:2.42.17
+|  +- software.amazon.awssdk:annotations:2.42.17
+|  +- software.amazon.awssdk:utils:2.42.17
+|  +- software.amazon.awssdk:aws-core:2.42.17
+|  |  \- software.amazon.awssdk:utils-lite:2.42.17
+|  +- software.amazon.awssdk:metrics-spi:2.42.17
+|  +- software.amazon.awssdk:json-utils:2.42.17
+|  |  \- software.amazon.awssdk:third-party-jackson-core:2.42.17
+|  \- software.amazon.awssdk:endpoints-spi:2.42.17
+\- software.amazon.awssdk:url-connection-client:2.42.17</code></pre>
+</div>
+<div class="fragment">
+<p class="deptree-label">Mar 27 · <strong><em>0 JARs</em></strong></p>
+<pre class="deptree"><code class="nohighlight" data-noescape>dev.hardwood:hardwood-s3
+\- dev.hardwood:hardwood-core</code></pre>
+<ul class="deptree-how">
+<li>HTTP: <code>java.net.http.HttpClient</code>, in the JDK</li>
+<li>Signing: 289 lines of SigV4, JDK crypto</li>
+<li>Checked against AWS's own signing test vectors</li>
+</ul>
+</div>
+</div>
 
 Note:
-Two HTTP operations are needed: a suffix-range GET and byte-range GETs. That
-does not warrant eight megabytes and thirty-one JARs.
+Mar 17: S3 support, built the obvious way, on the AWS SDK. Let the tree sit for
+a second: 30 JARs, 8.3 MB, for two HTTP operations, a suffix-range GET and
+byte-range GETs.
+
+Click: ten days later. The JDK has had an HTTP client since Java 11, so the
+only real work was request signing. 289 lines of SigV4 on JDK crypto, checked
+against the test vectors AWS publishes (aws-c-auth's signing test suite).
+Nobody would have written and owned that signer before. Now it was the cheap
+option, which is the next slide.
+
+Trees: `./mvnw dependency:tree -pl s3 -am -Dscope=runtime` at a513a967^ and
+a513a967 (inputs/s3-dependency-tree-*.txt); on the slide without the jar type and
+compile scope. Size from Maven Central.
 
 ---
 
@@ -274,16 +320,19 @@ does not warrant eight megabytes and thirty-one JARs.
 
 ## The line moved
 
-The build side of make-or-buy got roughly <em>5× cheaper</em>.
+"External dependencies now have to earn their place, <em>and the bar has moved</em>."
 
-Most teams have not re-drawn the line.
+<span class="aside">Me, Apr 21</span>
 
 Note:
 How it moved for me: an AWS request signer is not the kind of code you'd have
 wanted to write and own. But AWS publishes test vectors next to the spec, and a
 signer that passes them was pretty much one-shotted. The first feedback loop in
-the talk, before it has a name. "External dependencies now have to earn their
-place, and the bar has moved." (Apr 21 post)
+the talk, before it has a name. The quote is from the LinkedIn post that day:
+bespoke code costs real maintenance, but that cost is bounded when the spec is
+stable and conformance-tested.
+
+Most teams have not re-drawn the line yet.
 
 Their version: the dependency you took because writing it was
 unthinkable — is it still unthinkable? Vendor the 300 lines you actually use
@@ -294,7 +343,7 @@ it, forever, including the part you didn't understand.
 
 ---
 
-<!-- .slide: class="timeline no-parquet" -->
+<!-- .slide: class="timeline" -->
 
 ## From first commit to 1.0
 
@@ -306,7 +355,7 @@ it, forever, including the part you didn't understand.
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="318" y1="395" x2="318" y2="492"/></svg><img class="rtl-card" src="images/x-2026-02-07-race-condition.png" style="left: 96px; top: 492px; width: 320px; height: 140px" alt=""></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="433" y1="395" x2="446" y2="492"/></svg><img class="rtl-card" src="images/tl-2026-02-26-alpha1.png" style="left: 430px; top: 492px; width: 360px; height: 134px" alt=""></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="439" y1="395" x2="732" y2="298"/></svg><div class="rtl-card rtl-note" style="left: 716px; top: 186px; width: 234px; height: 112px">“Is Hardwood vibe-coded? <em>Absolutely not.</em>”</div></div>
-<div class="rtl-event fragment" data-fragment-index="1"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="998" y1="395" x2="998" y2="298"/></svg><div class="rtl-card rtl-note" style="left: 966px; top: 228px; width: 218px; height: 70px">Geospatial pruning ships</div></div>
+<div class="rtl-event fragment" data-fragment-index="1"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="998" y1="395" x2="998" y2="298"/></svg><div class="rtl-card rtl-note rtl-geo" style="left: 966px; top: 228px; width: 218px; height: 70px">Geospatial pruning ships</div></div>
 <div class="rtl-event fragment" data-fragment-index="0"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><line class="rtl-connector" x1="1148" y1="395" x2="1148" y2="492"/></svg><img class="rtl-card" src="images/tl-2026-06-25-final.png" style="left: 810px; top: 492px; width: 374px; height: 126px" alt=""></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="114" cy="395" r="7"/><text class="rtl-label" x="114" y="379" text-anchor="middle">First commit</text></svg></div>
 <div class="rtl-event"><svg class="rtl-layer" viewBox="0 0 1280 720" width="1280" height="720"><circle class="rtl-dot" cx="276" cy="395" r="7"/></svg></div>
@@ -386,23 +435,6 @@ jokes stop being funny.
 
 ---
 
-<!-- .slide: class="hero" -->
-
-## "Can we stop any probing or guessing, this drives me crazy."
-
-<span class="aside">Me, to Claude</span>
-
-Note:
-Lead-in, from a writer regression in August: four confident theories, each with
-arithmetic behind it, three refuted by the measurements. "The benchmark says I
-was wrong again — it got worse." What found it: a measurement (`-prof gc`).
-
-Let it land. Everyone in the room who has used an agent has wanted to type this.
-
-Don't soften it. This is what midnight sounds like.
-
----
-
 <!-- .slide: class="hero-image" -->
 
 <img class="post" src="images/x-2026-04-13-laterz-buddy.png" width="1288" height="516" alt="Apr 13: Claude casually I'm outta here, laterz buddy-ing me">
@@ -445,7 +477,7 @@ the design's per-column table through five read paths.
 
 ---
 
-<!-- .slide: class="hero-image no-parquet" data-background-image="images/a-few-moments-later.jpg" data-background-size="cover" data-background-color="#000000" -->
+<!-- .slide: class="hero-image" data-background-image="images/a-few-moments-later.jpg" data-background-size="cover" data-background-color="#000000" -->
 
 Note:
 Wait for the laugh. (Still from SpongeBob SquarePants,
@@ -453,36 +485,35 @@ youtube.com/watch?v=S3wsCRJVUyg.)
 
 ---
 
-<!-- .slide: class="no-parquet" -->
-
-<div class="pr-montage fragment" data-fragment-index="0">
-  <img src="images/1198-prs/pr-1103.png" width="560" height="101" style="--x: 344px; --y: 24px; --r: -1.0deg; --d: 0.00s" alt="PR #1103">
-  <img src="images/1198-prs/pr-1174.png" width="560" height="101" style="--x: 181px; --y: 39px; --r: 3.5deg; --d: 1.30s" alt="PR #1174">
-  <img src="images/1198-prs/pr-1180.png" width="560" height="101" style="--x: 441px; --y: 34px; --r: -0.7deg; --d: 2.31s" alt="PR #1180">
-  <img src="images/1198-prs/pr-1182.png" width="560" height="80" style="--x: 388px; --y: 50px; --r: -3.3deg; --d: 3.10s" alt="PR #1182">
-  <img src="images/1198-prs/pr-1187.png" width="560" height="101" style="--x: 441px; --y: 92px; --r: 0.0deg; --d: 3.72s" alt="PR #1187">
-  <img src="images/1198-prs/pr-1188.png" width="560" height="80" style="--x: 328px; --y: 119px; --r: -2.8deg; --d: 4.20s" alt="PR #1188">
-  <img src="images/1198-prs/pr-1191.png" width="560" height="101" style="--x: 153px; --y: 129px; --r: 1.8deg; --d: 4.58s" alt="PR #1191">
-  <img src="images/1198-prs/pr-1200.png" width="560" height="101" style="--x: 151px; --y: 123px; --r: 0.2deg; --d: 4.87s" alt="PR #1200">
-  <img src="images/1198-prs/pr-1201.png" width="560" height="101" style="--x: 191px; --y: 139px; --r: 2.8deg; --d: 5.10s" alt="PR #1201">
-  <img src="images/1198-prs/pr-1202.png" width="560" height="101" style="--x: 97px; --y: 177px; --r: 1.4deg; --d: 5.28s" alt="PR #1202">
-  <img src="images/1198-prs/pr-1204.png" width="560" height="101" style="--x: 476px; --y: 180px; --r: 1.2deg; --d: 5.42s" alt="PR #1204">
-  <img src="images/1198-prs/pr-1205.png" width="560" height="80" style="--x: 682px; --y: 251px; --r: -0.4deg; --d: 5.52s" alt="PR #1205">
-  <img src="images/1198-prs/pr-1207.png" width="560" height="101" style="--x: 131px; --y: 243px; --r: 2.7deg; --d: 5.61s" alt="PR #1207">
-  <img src="images/1198-prs/pr-1208.png" width="560" height="101" style="--x: 496px; --y: 246px; --r: 1.3deg; --d: 5.68s" alt="PR #1208">
-  <img src="images/1198-prs/pr-1209.png" width="560" height="101" style="--x: 549px; --y: 286px; --r: 1.5deg; --d: 5.73s" alt="PR #1209">
-  <img src="images/1198-prs/pr-1211.png" width="560" height="80" style="--x: 507px; --y: 304px; --r: -2.6deg; --d: 5.77s" alt="PR #1211">
-  <img src="images/1198-prs/pr-1212.png" width="560" height="101" style="--x: 307px; --y: 317px; --r: 0.9deg; --d: 5.80s" alt="PR #1212">
-  <img src="images/1198-prs/pr-1213.png" width="560" height="101" style="--x: 680px; --y: 317px; --r: -2.5deg; --d: 5.82s" alt="PR #1213">
-  <img src="images/1198-prs/pr-1214.png" width="560" height="101" style="--x: 234px; --y: 339px; --r: -1.1deg; --d: 5.84s" alt="PR #1214">
-  <img src="images/1198-prs/pr-1216.png" width="560" height="80" style="--x: 420px; --y: 360px; --r: -3.6deg; --d: 5.86s" alt="PR #1216">
-  <img src="images/1198-prs/pr-1219.png" width="560" height="80" style="--x: 189px; --y: 379px; --r: 3.4deg; --d: 5.87s" alt="PR #1219">
-  <img src="images/1198-prs/pr-1222.png" width="560" height="101" style="--x: 227px; --y: 399px; --r: -2.8deg; --d: 5.88s" alt="PR #1222">
-  <img src="images/1198-prs/pr-1226.png" width="560" height="101" style="--x: 99px; --y: 410px; --r: -2.6deg; --d: 5.88s" alt="PR #1226">
-  <img src="images/1198-prs/pr-1228.png" width="560" height="101" style="--x: 231px; --y: 424px; --r: -3.1deg; --d: 5.89s" alt="PR #1228">
-  <img src="images/1198-prs/pr-1233.png" width="560" height="101" style="--x: 393px; --y: 461px; --r: -3.4deg; --d: 5.89s" alt="PR #1233">
-  <img src="images/1198-prs/pr-1234.png" width="560" height="101" style="--x: 317px; --y: 480px; --r: -0.2deg; --d: 5.90s" alt="PR #1234">
-  <img src="images/1198-prs/pr-1235.png" width="560" height="101" style="--x: 440px; --y: 486px; --r: 1.2deg; --d: 5.90s" alt="PR #1235">
+<span class="pr-go fragment" data-fragment-index="0"></span>
+<div class="pr-montage">
+  <img class="pr-first" src="images/1198-prs/pr-1103.png" width="560" height="101" style="--x: 344px; --y: 24px; --r: -1.0deg; --d: 0.00s" alt="PR #1103">
+  <img src="images/1198-prs/pr-1174.png" width="560" height="101" style="--x: 181px; --y: 39px; --r: 3.5deg; --d: 0.00s" alt="PR #1174">
+  <img src="images/1198-prs/pr-1180.png" width="560" height="101" style="--x: 441px; --y: 34px; --r: -0.7deg; --d: 1.01s" alt="PR #1180">
+  <img src="images/1198-prs/pr-1182.png" width="560" height="80" style="--x: 388px; --y: 50px; --r: -3.3deg; --d: 1.80s" alt="PR #1182">
+  <img src="images/1198-prs/pr-1187.png" width="560" height="101" style="--x: 441px; --y: 92px; --r: 0.0deg; --d: 2.42s" alt="PR #1187">
+  <img src="images/1198-prs/pr-1188.png" width="560" height="80" style="--x: 328px; --y: 119px; --r: -2.8deg; --d: 2.90s" alt="PR #1188">
+  <img src="images/1198-prs/pr-1191.png" width="560" height="101" style="--x: 153px; --y: 129px; --r: 1.8deg; --d: 3.28s" alt="PR #1191">
+  <img src="images/1198-prs/pr-1200.png" width="560" height="101" style="--x: 151px; --y: 123px; --r: 0.2deg; --d: 3.57s" alt="PR #1200">
+  <img src="images/1198-prs/pr-1201.png" width="560" height="101" style="--x: 191px; --y: 139px; --r: 2.8deg; --d: 3.80s" alt="PR #1201">
+  <img src="images/1198-prs/pr-1202.png" width="560" height="101" style="--x: 97px; --y: 177px; --r: 1.4deg; --d: 3.98s" alt="PR #1202">
+  <img src="images/1198-prs/pr-1204.png" width="560" height="101" style="--x: 476px; --y: 180px; --r: 1.2deg; --d: 4.12s" alt="PR #1204">
+  <img src="images/1198-prs/pr-1205.png" width="560" height="80" style="--x: 682px; --y: 251px; --r: -0.4deg; --d: 4.22s" alt="PR #1205">
+  <img src="images/1198-prs/pr-1207.png" width="560" height="101" style="--x: 131px; --y: 243px; --r: 2.7deg; --d: 4.31s" alt="PR #1207">
+  <img src="images/1198-prs/pr-1208.png" width="560" height="101" style="--x: 496px; --y: 246px; --r: 1.3deg; --d: 4.38s" alt="PR #1208">
+  <img src="images/1198-prs/pr-1209.png" width="560" height="101" style="--x: 549px; --y: 286px; --r: 1.5deg; --d: 4.43s" alt="PR #1209">
+  <img src="images/1198-prs/pr-1211.png" width="560" height="80" style="--x: 507px; --y: 304px; --r: -2.6deg; --d: 4.47s" alt="PR #1211">
+  <img src="images/1198-prs/pr-1212.png" width="560" height="101" style="--x: 307px; --y: 317px; --r: 0.9deg; --d: 4.50s" alt="PR #1212">
+  <img src="images/1198-prs/pr-1213.png" width="560" height="101" style="--x: 680px; --y: 317px; --r: -2.5deg; --d: 4.52s" alt="PR #1213">
+  <img src="images/1198-prs/pr-1214.png" width="560" height="101" style="--x: 234px; --y: 339px; --r: -1.1deg; --d: 4.54s" alt="PR #1214">
+  <img src="images/1198-prs/pr-1216.png" width="560" height="80" style="--x: 420px; --y: 360px; --r: -3.6deg; --d: 4.56s" alt="PR #1216">
+  <img src="images/1198-prs/pr-1219.png" width="560" height="80" style="--x: 189px; --y: 379px; --r: 3.4deg; --d: 4.57s" alt="PR #1219">
+  <img src="images/1198-prs/pr-1222.png" width="560" height="101" style="--x: 227px; --y: 399px; --r: -2.8deg; --d: 4.58s" alt="PR #1222">
+  <img src="images/1198-prs/pr-1226.png" width="560" height="101" style="--x: 99px; --y: 410px; --r: -2.6deg; --d: 4.58s" alt="PR #1226">
+  <img src="images/1198-prs/pr-1228.png" width="560" height="101" style="--x: 231px; --y: 424px; --r: -3.1deg; --d: 4.59s" alt="PR #1228">
+  <img src="images/1198-prs/pr-1233.png" width="560" height="101" style="--x: 393px; --y: 461px; --r: -3.4deg; --d: 4.59s" alt="PR #1233">
+  <img src="images/1198-prs/pr-1234.png" width="560" height="101" style="--x: 317px; --y: 480px; --r: -0.2deg; --d: 4.60s" alt="PR #1234">
+  <img src="images/1198-prs/pr-1235.png" width="560" height="101" style="--x: 440px; --y: 486px; --r: 1.2deg; --d: 4.60s" alt="PR #1235">
 </div>
 
 <div class="pr-stats fragment" data-fragment-index="1">
@@ -496,7 +527,8 @@ youtube.com/watch?v=S3wsCRJVUyg.)
 </div>
 
 Note:
-Click once and let it run: the predicate pull requests merged after the docs PR,
+The docs PR (#1103, with the title it ended up with) is already on screen.
+Click once and let it run: the predicate pull requests merged after it,
 in merge order, faster and faster. 27 of them, Sep 10 to Sep 15, including the
 statistics rework (#1177) the literal rule pulled in. Don't read any of them.
 
@@ -509,7 +541,7 @@ lines.
 
 ## The old brake was effort.
 
-"That's three days" used to end a lot of bad ideas.
+<span class="aside">"That's three days" used to end a lot of bad ideas.</span>
 
 Note:
 Speed was the joy. This is the bill.
@@ -521,38 +553,11 @@ I have to be the brake, by hand, and I am not reliably good at it.
 
 ---
 
-<!-- .slide: class="hero" -->
-
-## I ran many sessions in parallel.
-
-I'm dialling it back.
-
-<img class="callback" src="images/x-2026-07-03-context-switching-tax.png" width="460" height="150" alt="Jul 3: the context switching tax is brutal, even just for two sessions in parallel">
-
-Note:
-This is the honest one. Say the real reason.
-
----
-
-<!-- .slide: class="hero-image" -->
-
-<img class="post" src="images/x-2026-07-31-like-a-psychopath.png" alt="Jul 31: Saw a guy working on his code. No multi-agent setup. Using just Claude and his CLI. Like a psychopath.">
-
-Note:
-Straight after the confession, no setup. Let them laugh; it's aimed at the
-elaborate setups, and that includes mine. 602 likes.
-
-Then back to the cost: "The agent types. I only decide."
-
----
-
-<!-- .slide: class="no-parquet" -->
-
 ## The agent types. I only decide.
 
 <span class="subtitle">Sep 9: 205 prompts to 21 sessions, one every 2.7 minutes</span>
 
-<svg class="proto " viewBox="0 0 1000 450" width="1000" height="450"><g class="fragment fade-out" data-fragment-index="1"><text x="150.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">09:00</text><line x1="150.0" y1="60" x2="150.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="314.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">12:00</text><line x1="314.0" y1="60" x2="314.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="478.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">15:00</text><line x1="478.0" y1="60" x2="478.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="642.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:00</text><line x1="642.0" y1="60" x2="642.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="806.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">21:00</text><line x1="806.0" y1="60" x2="806.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="970.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">24:00</text><line x1="970.0" y1="60" x2="970.0" y2="415" stroke="#e5e7eb" stroke-width="1"/></g><g class="fragment fade-out" data-fragment-index="0"><text x="134" y="228" text-anchor="end" class="p-sub" fill="#666666">all sessions</text><line x1="162.4" y1="190" x2="162.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="172.2" y1="190" x2="172.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="174.9" y1="190" x2="174.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="175.7" y1="190" x2="175.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="178.4" y1="190" x2="178.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="179.7" y1="190" x2="179.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="191.9" y1="190" x2="191.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="204.2" y1="190" x2="204.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="205.0" y1="190" x2="205.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="205.8" y1="190" x2="205.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="209.1" y1="190" x2="209.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="213.5" y1="190" x2="213.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="215.6" y1="190" x2="215.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="220.4" y1="190" x2="220.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="224.8" y1="190" x2="224.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="228.4" y1="190" x2="228.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="236.0" y1="190" x2="236.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="246.4" y1="190" x2="246.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="252.6" y1="190" x2="252.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="262.1" y1="190" x2="262.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="265.4" y1="190" x2="265.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="269.8" y1="190" x2="269.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="273.4" y1="190" x2="273.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="276.3" y1="190" x2="276.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="282.7" y1="190" x2="282.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="287.1" y1="190" x2="287.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="289.1" y1="190" x2="289.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="296.4" y1="190" x2="296.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="302.5" y1="190" x2="302.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="304.1" y1="190" x2="304.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="305.2" y1="190" x2="305.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="308.8" y1="190" x2="308.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="314.2" y1="190" x2="314.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="316.4" y1="190" x2="316.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="319.6" y1="190" x2="319.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="321.8" y1="190" x2="321.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="328.9" y1="190" x2="328.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="331.2" y1="190" x2="331.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="332.8" y1="190" x2="332.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="336.2" y1="190" x2="336.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="338.1" y1="190" x2="338.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="340.6" y1="190" x2="340.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="342.7" y1="190" x2="342.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="351.4" y1="190" x2="351.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="352.4" y1="190" x2="352.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="354.8" y1="190" x2="354.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="357.8" y1="190" x2="357.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="358.2" y1="190" x2="358.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="359.5" y1="190" x2="359.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="360.2" y1="190" x2="360.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="362.3" y1="190" x2="362.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="369.6" y1="190" x2="369.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="370.0" y1="190" x2="370.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="376.9" y1="190" x2="376.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="379.6" y1="190" x2="379.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="384.3" y1="190" x2="384.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="190" x2="386.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="190" x2="386.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="387.2" y1="190" x2="387.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="389.7" y1="190" x2="389.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="390.0" y1="190" x2="390.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="392.4" y1="190" x2="392.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="395.6" y1="190" x2="395.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="398.7" y1="190" x2="398.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="403.4" y1="190" x2="403.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="410.7" y1="190" x2="410.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="413.7" y1="190" x2="413.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="416.1" y1="190" x2="416.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="418.1" y1="190" x2="418.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="419.1" y1="190" x2="419.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="420.9" y1="190" x2="420.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="439.3" y1="190" x2="439.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="442.2" y1="190" x2="442.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="453.8" y1="190" x2="453.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="457.7" y1="190" x2="457.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="461.1" y1="190" x2="461.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="467.0" y1="190" x2="467.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="474.6" y1="190" x2="474.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="485.5" y1="190" x2="485.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="487.5" y1="190" x2="487.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="529.9" y1="190" x2="529.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="535.1" y1="190" x2="535.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="535.6" y1="190" x2="535.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="543.6" y1="190" x2="543.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="546.7" y1="190" x2="546.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="548.7" y1="190" x2="548.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="548.8" y1="190" x2="548.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="549.0" y1="190" x2="549.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="550.0" y1="190" x2="550.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="554.6" y1="190" x2="554.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="558.9" y1="190" x2="558.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="560.4" y1="190" x2="560.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="563.2" y1="190" x2="563.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="570.0" y1="190" x2="570.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="573.9" y1="190" x2="573.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="590.6" y1="190" x2="590.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="591.1" y1="190" x2="591.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="602.0" y1="190" x2="602.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="605.3" y1="190" x2="605.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="606.5" y1="190" x2="606.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="609.3" y1="190" x2="609.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="614.4" y1="190" x2="614.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="622.3" y1="190" x2="622.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="627.3" y1="190" x2="627.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="633.5" y1="190" x2="633.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="634.1" y1="190" x2="634.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="634.2" y1="190" x2="634.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="635.4" y1="190" x2="635.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="190" x2="637.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="190" x2="637.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="639.4" y1="190" x2="639.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="645.7" y1="190" x2="645.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="647.8" y1="190" x2="647.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="649.1" y1="190" x2="649.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="650.0" y1="190" x2="650.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="650.9" y1="190" x2="650.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="651.6" y1="190" x2="651.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="652.2" y1="190" x2="652.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="657.4" y1="190" x2="657.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="660.5" y1="190" x2="660.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="660.6" y1="190" x2="660.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="661.5" y1="190" x2="661.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="663.2" y1="190" x2="663.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="664.5" y1="190" x2="664.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="666.2" y1="190" x2="666.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="671.8" y1="190" x2="671.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="672.7" y1="190" x2="672.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="675.1" y1="190" x2="675.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="678.6" y1="190" x2="678.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="679.4" y1="190" x2="679.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="680.0" y1="190" x2="680.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="684.2" y1="190" x2="684.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="686.0" y1="190" x2="686.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="695.0" y1="190" x2="695.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="696.8" y1="190" x2="696.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="699.0" y1="190" x2="699.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="701.2" y1="190" x2="701.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="742.6" y1="190" x2="742.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="746.2" y1="190" x2="746.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="746.6" y1="190" x2="746.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="748.4" y1="190" x2="748.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="751.2" y1="190" x2="751.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="752.1" y1="190" x2="752.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="752.7" y1="190" x2="752.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="786.1" y1="190" x2="786.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="787.8" y1="190" x2="787.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="789.0" y1="190" x2="789.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="790.9" y1="190" x2="790.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="793.6" y1="190" x2="793.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="797.8" y1="190" x2="797.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="802.2" y1="190" x2="802.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="803.6" y1="190" x2="803.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="804.0" y1="190" x2="804.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="807.2" y1="190" x2="807.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="809.3" y1="190" x2="809.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="812.0" y1="190" x2="812.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="814.3" y1="190" x2="814.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="816.1" y1="190" x2="816.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="819.8" y1="190" x2="819.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="820.9" y1="190" x2="820.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="832.4" y1="190" x2="832.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="833.5" y1="190" x2="833.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="834.4" y1="190" x2="834.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="835.6" y1="190" x2="835.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="838.1" y1="190" x2="838.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="841.6" y1="190" x2="841.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="844.0" y1="190" x2="844.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="849.3" y1="190" x2="849.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="851.2" y1="190" x2="851.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="854.0" y1="190" x2="854.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="856.6" y1="190" x2="856.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="857.9" y1="190" x2="857.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="859.2" y1="190" x2="859.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="862.7" y1="190" x2="862.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="864.9" y1="190" x2="864.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="868.6" y1="190" x2="868.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="871.1" y1="190" x2="871.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="872.4" y1="190" x2="872.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="873.8" y1="190" x2="873.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="874.5" y1="190" x2="874.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="874.8" y1="190" x2="874.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="876.2" y1="190" x2="876.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="878.1" y1="190" x2="878.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="879.3" y1="190" x2="879.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="881.9" y1="190" x2="881.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="883.7" y1="190" x2="883.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="885.7" y1="190" x2="885.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="888.0" y1="190" x2="888.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="889.1" y1="190" x2="889.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="891.3" y1="190" x2="891.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="894.1" y1="190" x2="894.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="895.0" y1="190" x2="895.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="896.2" y1="190" x2="896.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="899.7" y1="190" x2="899.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="920.1" y1="190" x2="920.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="922.7" y1="190" x2="922.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="928.3" y1="190" x2="928.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="929.3" y1="190" x2="929.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="930.7" y1="190" x2="930.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="935.0" y1="190" x2="935.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="950.0" y1="190" x2="950.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="951.0" y1="190" x2="951.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="960.6" y1="190" x2="960.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="963.3" y1="190" x2="963.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="964.6" y1="190" x2="964.6" y2="250" stroke="#b5491f" stroke-width="2.5"/></g><g class="fragment fade-in-then-out" data-fragment-index="0"><text x="134" y="235.0" text-anchor="end" class="p-sub" fill="#666666">21 sessions</text><line x1="150" y1="77.9" x2="970" y2="77.9" stroke="#eef0f2" stroke-width="1"/><line x1="162.4" y1="72.0" x2="162.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="172.2" y1="72.0" x2="172.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="174.9" y1="72.0" x2="174.9" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="175.7" y1="72.0" x2="175.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="178.4" y1="72.0" x2="178.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="179.7" y1="72.0" x2="179.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="205.0" y1="72.0" x2="205.0" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="205.8" y1="72.0" x2="205.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="209.1" y1="72.0" x2="209.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="213.5" y1="72.0" x2="213.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="215.6" y1="72.0" x2="215.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="220.4" y1="72.0" x2="220.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="224.8" y1="72.0" x2="224.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="228.4" y1="72.0" x2="228.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="236.0" y1="72.0" x2="236.0" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="246.4" y1="72.0" x2="246.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="252.6" y1="72.0" x2="252.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="262.1" y1="72.0" x2="262.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="265.4" y1="72.0" x2="265.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="269.8" y1="72.0" x2="269.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="273.4" y1="72.0" x2="273.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="276.3" y1="72.0" x2="276.3" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="282.7" y1="72.0" x2="282.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="287.1" y1="72.0" x2="287.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="289.1" y1="72.0" x2="289.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="302.5" y1="72.0" x2="302.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="304.1" y1="72.0" x2="304.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="305.2" y1="72.0" x2="305.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="308.8" y1="72.0" x2="308.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="314.2" y1="72.0" x2="314.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="316.4" y1="72.0" x2="316.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="319.6" y1="72.0" x2="319.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="321.8" y1="72.0" x2="321.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="331.2" y1="72.0" x2="331.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="332.8" y1="72.0" x2="332.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="338.1" y1="72.0" x2="338.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="340.6" y1="72.0" x2="340.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="351.4" y1="72.0" x2="351.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="352.4" y1="72.0" x2="352.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="354.8" y1="72.0" x2="354.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="357.8" y1="72.0" x2="357.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="359.5" y1="72.0" x2="359.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="389.7" y1="72.0" x2="389.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="93.6" x2="970" y2="93.6" stroke="#eef0f2" stroke-width="1"/><line x1="191.9" y1="87.7" x2="191.9" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="204.2" y1="87.7" x2="204.2" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="336.2" y1="87.7" x2="336.2" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="109.3" x2="970" y2="109.3" stroke="#eef0f2" stroke-width="1"/><line x1="296.4" y1="103.4" x2="296.4" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="342.7" y1="103.4" x2="342.7" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="360.2" y1="103.4" x2="360.2" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="376.9" y1="103.4" x2="376.9" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="387.2" y1="103.4" x2="387.2" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="125.0" x2="970" y2="125.0" stroke="#eef0f2" stroke-width="1"/><line x1="328.9" y1="119.1" x2="328.9" y2="130.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="140.7" x2="970" y2="140.7" stroke="#eef0f2" stroke-width="1"/><line x1="358.2" y1="134.9" x2="358.2" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="362.3" y1="134.9" x2="362.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="369.6" y1="134.9" x2="369.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="379.6" y1="134.9" x2="379.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="384.3" y1="134.9" x2="384.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="134.9" x2="386.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="134.9" x2="386.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="390.0" y1="134.9" x2="390.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="392.4" y1="134.9" x2="392.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="395.6" y1="134.9" x2="395.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="398.7" y1="134.9" x2="398.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="403.4" y1="134.9" x2="403.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="410.7" y1="134.9" x2="410.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="413.7" y1="134.9" x2="413.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="416.1" y1="134.9" x2="416.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="418.1" y1="134.9" x2="418.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="419.1" y1="134.9" x2="419.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="420.9" y1="134.9" x2="420.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="439.3" y1="134.9" x2="439.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="442.2" y1="134.9" x2="442.2" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="453.8" y1="134.9" x2="453.8" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="457.7" y1="134.9" x2="457.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="461.1" y1="134.9" x2="461.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="467.0" y1="134.9" x2="467.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="529.9" y1="134.9" x2="529.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="535.1" y1="134.9" x2="535.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="548.7" y1="134.9" x2="548.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="548.8" y1="134.9" x2="548.8" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="549.0" y1="134.9" x2="549.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="550.0" y1="134.9" x2="550.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="570.0" y1="134.9" x2="570.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="573.9" y1="134.9" x2="573.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="590.6" y1="134.9" x2="590.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="602.0" y1="134.9" x2="602.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="605.3" y1="134.9" x2="605.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="606.5" y1="134.9" x2="606.5" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="609.3" y1="134.9" x2="609.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="622.3" y1="134.9" x2="622.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="627.3" y1="134.9" x2="627.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="633.5" y1="134.9" x2="633.5" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="635.4" y1="134.9" x2="635.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="134.9" x2="637.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="134.9" x2="637.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="649.1" y1="134.9" x2="649.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="650.9" y1="134.9" x2="650.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="156.4" x2="970" y2="156.4" stroke="#eef0f2" stroke-width="1"/><line x1="370.0" y1="150.6" x2="370.0" y2="162.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="172.1" x2="970" y2="172.1" stroke="#eef0f2" stroke-width="1"/><line x1="474.6" y1="166.3" x2="474.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="485.5" y1="166.3" x2="485.5" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="487.5" y1="166.3" x2="487.5" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="543.6" y1="166.3" x2="543.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="546.7" y1="166.3" x2="546.7" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="554.6" y1="166.3" x2="554.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="558.9" y1="166.3" x2="558.9" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="560.4" y1="166.3" x2="560.4" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="563.2" y1="166.3" x2="563.2" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="591.1" y1="166.3" x2="591.1" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="634.2" y1="166.3" x2="634.2" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="645.7" y1="166.3" x2="645.7" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="650.0" y1="166.3" x2="650.0" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="187.9" x2="970" y2="187.9" stroke="#eef0f2" stroke-width="1"/><line x1="535.6" y1="182.0" x2="535.6" y2="193.7" stroke="#b5491f" stroke-width="2.5"/><line x1="614.4" y1="182.0" x2="614.4" y2="193.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="203.6" x2="970" y2="203.6" stroke="#eef0f2" stroke-width="1"/><line x1="634.1" y1="197.7" x2="634.1" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="639.4" y1="197.7" x2="639.4" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="647.8" y1="197.7" x2="647.8" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="651.6" y1="197.7" x2="651.6" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="219.3" x2="970" y2="219.3" stroke="#eef0f2" stroke-width="1"/><line x1="652.2" y1="213.4" x2="652.2" y2="225.1" stroke="#b5491f" stroke-width="2.5"/><line x1="661.5" y1="213.4" x2="661.5" y2="225.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="235.0" x2="970" y2="235.0" stroke="#eef0f2" stroke-width="1"/><line x1="657.4" y1="229.1" x2="657.4" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="660.5" y1="229.1" x2="660.5" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="663.2" y1="229.1" x2="663.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="666.2" y1="229.1" x2="666.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="672.7" y1="229.1" x2="672.7" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="679.4" y1="229.1" x2="679.4" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="699.0" y1="229.1" x2="699.0" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="742.6" y1="229.1" x2="742.6" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="746.6" y1="229.1" x2="746.6" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="751.2" y1="229.1" x2="751.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="787.8" y1="229.1" x2="787.8" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="804.0" y1="229.1" x2="804.0" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="885.7" y1="229.1" x2="885.7" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="889.1" y1="229.1" x2="889.1" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="896.2" y1="229.1" x2="896.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="250.7" x2="970" y2="250.7" stroke="#eef0f2" stroke-width="1"/><line x1="660.6" y1="244.9" x2="660.6" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="664.5" y1="244.9" x2="664.5" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="671.8" y1="244.9" x2="671.8" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="266.4" x2="970" y2="266.4" stroke="#eef0f2" stroke-width="1"/><line x1="675.1" y1="260.6" x2="675.1" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="680.0" y1="260.6" x2="680.0" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="696.8" y1="260.6" x2="696.8" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="701.2" y1="260.6" x2="701.2" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="746.2" y1="260.6" x2="746.2" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="752.1" y1="260.6" x2="752.1" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="282.1" x2="970" y2="282.1" stroke="#eef0f2" stroke-width="1"/><line x1="678.6" y1="276.3" x2="678.6" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="695.0" y1="276.3" x2="695.0" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="748.4" y1="276.3" x2="748.4" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="786.1" y1="276.3" x2="786.1" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="789.0" y1="276.3" x2="789.0" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="790.9" y1="276.3" x2="790.9" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="297.9" x2="970" y2="297.9" stroke="#eef0f2" stroke-width="1"/><line x1="684.2" y1="292.0" x2="684.2" y2="303.7" stroke="#b5491f" stroke-width="2.5"/><line x1="686.0" y1="292.0" x2="686.0" y2="303.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="313.6" x2="970" y2="313.6" stroke="#eef0f2" stroke-width="1"/><line x1="752.7" y1="307.7" x2="752.7" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="793.6" y1="307.7" x2="793.6" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="803.6" y1="307.7" x2="803.6" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="807.2" y1="307.7" x2="807.2" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="812.0" y1="307.7" x2="812.0" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="814.3" y1="307.7" x2="814.3" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="820.9" y1="307.7" x2="820.9" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="963.3" y1="307.7" x2="963.3" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="329.3" x2="970" y2="329.3" stroke="#eef0f2" stroke-width="1"/><line x1="797.8" y1="323.4" x2="797.8" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="809.3" y1="323.4" x2="809.3" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="832.4" y1="323.4" x2="832.4" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="833.5" y1="323.4" x2="833.5" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="835.6" y1="323.4" x2="835.6" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="844.0" y1="323.4" x2="844.0" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="345.0" x2="970" y2="345.0" stroke="#eef0f2" stroke-width="1"/><line x1="802.2" y1="339.1" x2="802.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="816.1" y1="339.1" x2="816.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="819.8" y1="339.1" x2="819.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="834.4" y1="339.1" x2="834.4" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="838.1" y1="339.1" x2="838.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="841.6" y1="339.1" x2="841.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="849.3" y1="339.1" x2="849.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="851.2" y1="339.1" x2="851.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="854.0" y1="339.1" x2="854.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="856.6" y1="339.1" x2="856.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="857.9" y1="339.1" x2="857.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="859.2" y1="339.1" x2="859.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="862.7" y1="339.1" x2="862.7" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="864.9" y1="339.1" x2="864.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="868.6" y1="339.1" x2="868.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="871.1" y1="339.1" x2="871.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="872.4" y1="339.1" x2="872.4" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="873.8" y1="339.1" x2="873.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="874.5" y1="339.1" x2="874.5" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="874.8" y1="339.1" x2="874.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="876.2" y1="339.1" x2="876.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="878.1" y1="339.1" x2="878.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="879.3" y1="339.1" x2="879.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="881.9" y1="339.1" x2="881.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="883.7" y1="339.1" x2="883.7" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="888.0" y1="339.1" x2="888.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="891.3" y1="339.1" x2="891.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="894.1" y1="339.1" x2="894.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="895.0" y1="339.1" x2="895.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="360.7" x2="970" y2="360.7" stroke="#eef0f2" stroke-width="1"/><line x1="899.7" y1="354.9" x2="899.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="920.1" y1="354.9" x2="920.1" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="922.7" y1="354.9" x2="922.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="928.3" y1="354.9" x2="928.3" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="929.3" y1="354.9" x2="929.3" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="930.7" y1="354.9" x2="930.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="950.0" y1="354.9" x2="950.0" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="376.4" x2="970" y2="376.4" stroke="#eef0f2" stroke-width="1"/><line x1="935.0" y1="370.6" x2="935.0" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="951.0" y1="370.6" x2="951.0" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="960.6" y1="370.6" x2="960.6" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="392.1" x2="970" y2="392.1" stroke="#eef0f2" stroke-width="1"/><line x1="964.6" y1="386.3" x2="964.6" y2="398.0" stroke="#b5491f" stroke-width="2.5"/></g><g class="fragment" data-fragment-index="1"><line x1="150.0" y1="60" x2="150.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="150.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">17:50</text><line x1="423.3" y1="60" x2="423.3" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="423.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:05</text><line x1="696.7" y1="60" x2="696.7" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="696.7" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:20</text><line x1="970.0" y1="60" x2="970.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="970.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:35</text><text x="134" y="104.5" text-anchor="end" class="p-sub" fill="#666666">session A</text><line x1="150" y1="97.5" x2="970" y2="97.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="159.5" text-anchor="end" class="p-sub" fill="#666666">session B</text><line x1="150" y1="152.5" x2="970" y2="152.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="214.5" text-anchor="end" class="p-sub" fill="#666666">session C</text><line x1="150" y1="207.5" x2="970" y2="207.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="269.5" text-anchor="end" class="p-sub" fill="#666666">session D</text><line x1="150" y1="262.5" x2="970" y2="262.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="324.5" text-anchor="end" class="p-sub" fill="#666666">session E</text><line x1="150" y1="317.5" x2="970" y2="317.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="379.5" text-anchor="end" class="p-sub" fill="#666666">session F</text><line x1="150" y1="372.5" x2="970" y2="372.5" stroke="#eef0f2" stroke-width="1"/><path d="M161.8 97.5L173.8 152.5L177.1 207.5L201.0 97.5L234.0 97.5L234.0 97.5L280.0 152.5L406.5 207.5L448.8 152.5L473.6 97.5L493.5 207.5L510.7 97.5L523.9 152.5L537.4 262.5L640.9 317.5L702.5 317.5L703.5 372.5L722.1 262.5L756.7 317.5L782.9 372.5L816.8 317.5L928.6 372.5L946.0 317.5" fill="none" stroke="#b5491f" stroke-opacity="0.35" stroke-width="2"/><line x1="161.8" y1="78.0" x2="161.8" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="173.8" y1="133.0" x2="173.8" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="177.1" y1="188.0" x2="177.1" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="201.0" y1="78.0" x2="201.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="234.0" y1="78.0" x2="234.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="234.0" y1="78.0" x2="234.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="280.0" y1="133.0" x2="280.0" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="406.5" y1="188.0" x2="406.5" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="448.8" y1="133.0" x2="448.8" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="473.6" y1="78.0" x2="473.6" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="493.5" y1="188.0" x2="493.5" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="510.7" y1="78.0" x2="510.7" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="523.9" y1="133.0" x2="523.9" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="537.4" y1="243.0" x2="537.4" y2="282.0" stroke="#b5491f" stroke-width="5"/><line x1="640.9" y1="298.0" x2="640.9" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="702.5" y1="298.0" x2="702.5" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="703.5" y1="353.0" x2="703.5" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="722.1" y1="243.0" x2="722.1" y2="282.0" stroke="#b5491f" stroke-width="5"/><line x1="756.7" y1="298.0" x2="756.7" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="782.9" y1="353.0" x2="782.9" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="816.8" y1="298.0" x2="816.8" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="928.6" y1="353.0" x2="928.6" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="946.0" y1="298.0" x2="946.0" y2="337.0" stroke="#b5491f" stroke-width="5"/><text x="970" y="50" text-anchor="end" class="p-sub" fill="#354045">17:50–18:35: 23 prompts, 6 sessions, 19 switches</text></g></svg>
+<svg class="proto" viewBox="0 0 1000 450" width="1000" height="450"><g class="fragment fade-out" data-fragment-index="1"><text x="150.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">09:00</text><line x1="150.0" y1="60" x2="150.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="314.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">12:00</text><line x1="314.0" y1="60" x2="314.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="478.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">15:00</text><line x1="478.0" y1="60" x2="478.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="642.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:00</text><line x1="642.0" y1="60" x2="642.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="806.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">21:00</text><line x1="806.0" y1="60" x2="806.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="970.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">24:00</text><line x1="970.0" y1="60" x2="970.0" y2="415" stroke="#e5e7eb" stroke-width="1"/></g><g class="fragment fade-out" data-fragment-index="0"><text x="134" y="228" text-anchor="end" class="p-sub" fill="#666666">all sessions</text><line x1="162.4" y1="190" x2="162.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="172.2" y1="190" x2="172.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="174.9" y1="190" x2="174.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="175.7" y1="190" x2="175.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="178.4" y1="190" x2="178.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="179.7" y1="190" x2="179.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="191.9" y1="190" x2="191.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="204.2" y1="190" x2="204.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="205.0" y1="190" x2="205.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="205.8" y1="190" x2="205.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="209.1" y1="190" x2="209.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="213.5" y1="190" x2="213.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="215.6" y1="190" x2="215.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="220.4" y1="190" x2="220.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="224.8" y1="190" x2="224.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="228.4" y1="190" x2="228.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="236.0" y1="190" x2="236.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="246.4" y1="190" x2="246.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="252.6" y1="190" x2="252.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="262.1" y1="190" x2="262.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="265.4" y1="190" x2="265.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="269.8" y1="190" x2="269.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="273.4" y1="190" x2="273.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="276.3" y1="190" x2="276.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="282.7" y1="190" x2="282.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="287.1" y1="190" x2="287.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="289.1" y1="190" x2="289.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="296.4" y1="190" x2="296.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="302.5" y1="190" x2="302.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="304.1" y1="190" x2="304.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="305.2" y1="190" x2="305.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="308.8" y1="190" x2="308.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="314.2" y1="190" x2="314.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="316.4" y1="190" x2="316.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="319.6" y1="190" x2="319.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="321.8" y1="190" x2="321.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="328.9" y1="190" x2="328.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="331.2" y1="190" x2="331.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="332.8" y1="190" x2="332.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="336.2" y1="190" x2="336.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="338.1" y1="190" x2="338.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="340.6" y1="190" x2="340.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="342.7" y1="190" x2="342.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="351.4" y1="190" x2="351.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="352.4" y1="190" x2="352.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="354.8" y1="190" x2="354.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="357.8" y1="190" x2="357.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="358.2" y1="190" x2="358.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="359.5" y1="190" x2="359.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="360.2" y1="190" x2="360.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="362.3" y1="190" x2="362.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="369.6" y1="190" x2="369.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="370.0" y1="190" x2="370.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="376.9" y1="190" x2="376.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="379.6" y1="190" x2="379.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="384.3" y1="190" x2="384.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="190" x2="386.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="190" x2="386.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="387.2" y1="190" x2="387.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="389.7" y1="190" x2="389.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="390.0" y1="190" x2="390.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="392.4" y1="190" x2="392.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="395.6" y1="190" x2="395.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="398.7" y1="190" x2="398.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="403.4" y1="190" x2="403.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="410.7" y1="190" x2="410.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="413.7" y1="190" x2="413.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="416.1" y1="190" x2="416.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="418.1" y1="190" x2="418.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="419.1" y1="190" x2="419.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="420.9" y1="190" x2="420.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="439.3" y1="190" x2="439.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="442.2" y1="190" x2="442.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="453.8" y1="190" x2="453.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="457.7" y1="190" x2="457.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="461.1" y1="190" x2="461.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="467.0" y1="190" x2="467.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="474.6" y1="190" x2="474.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="485.5" y1="190" x2="485.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="487.5" y1="190" x2="487.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="529.9" y1="190" x2="529.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="535.1" y1="190" x2="535.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="535.6" y1="190" x2="535.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="543.6" y1="190" x2="543.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="546.7" y1="190" x2="546.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="548.7" y1="190" x2="548.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="548.8" y1="190" x2="548.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="549.0" y1="190" x2="549.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="550.0" y1="190" x2="550.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="554.6" y1="190" x2="554.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="558.9" y1="190" x2="558.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="560.4" y1="190" x2="560.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="563.2" y1="190" x2="563.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="570.0" y1="190" x2="570.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="573.9" y1="190" x2="573.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="590.6" y1="190" x2="590.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="591.1" y1="190" x2="591.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="602.0" y1="190" x2="602.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="605.3" y1="190" x2="605.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="606.5" y1="190" x2="606.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="609.3" y1="190" x2="609.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="614.4" y1="190" x2="614.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="622.3" y1="190" x2="622.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="627.3" y1="190" x2="627.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="633.5" y1="190" x2="633.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="634.1" y1="190" x2="634.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="634.2" y1="190" x2="634.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="635.4" y1="190" x2="635.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="190" x2="637.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="190" x2="637.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="639.4" y1="190" x2="639.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="645.7" y1="190" x2="645.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="647.8" y1="190" x2="647.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="649.1" y1="190" x2="649.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="650.0" y1="190" x2="650.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="650.9" y1="190" x2="650.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="651.6" y1="190" x2="651.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="652.2" y1="190" x2="652.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="657.4" y1="190" x2="657.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="660.5" y1="190" x2="660.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="660.6" y1="190" x2="660.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="661.5" y1="190" x2="661.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="663.2" y1="190" x2="663.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="664.5" y1="190" x2="664.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="666.2" y1="190" x2="666.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="671.8" y1="190" x2="671.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="672.7" y1="190" x2="672.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="675.1" y1="190" x2="675.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="678.6" y1="190" x2="678.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="679.4" y1="190" x2="679.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="680.0" y1="190" x2="680.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="684.2" y1="190" x2="684.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="686.0" y1="190" x2="686.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="695.0" y1="190" x2="695.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="696.8" y1="190" x2="696.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="699.0" y1="190" x2="699.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="701.2" y1="190" x2="701.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="742.6" y1="190" x2="742.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="746.2" y1="190" x2="746.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="746.6" y1="190" x2="746.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="748.4" y1="190" x2="748.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="751.2" y1="190" x2="751.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="752.1" y1="190" x2="752.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="752.7" y1="190" x2="752.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="786.1" y1="190" x2="786.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="787.8" y1="190" x2="787.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="789.0" y1="190" x2="789.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="790.9" y1="190" x2="790.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="793.6" y1="190" x2="793.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="797.8" y1="190" x2="797.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="802.2" y1="190" x2="802.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="803.6" y1="190" x2="803.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="804.0" y1="190" x2="804.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="807.2" y1="190" x2="807.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="809.3" y1="190" x2="809.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="812.0" y1="190" x2="812.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="814.3" y1="190" x2="814.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="816.1" y1="190" x2="816.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="819.8" y1="190" x2="819.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="820.9" y1="190" x2="820.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="832.4" y1="190" x2="832.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="833.5" y1="190" x2="833.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="834.4" y1="190" x2="834.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="835.6" y1="190" x2="835.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="838.1" y1="190" x2="838.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="841.6" y1="190" x2="841.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="844.0" y1="190" x2="844.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="849.3" y1="190" x2="849.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="851.2" y1="190" x2="851.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="854.0" y1="190" x2="854.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="856.6" y1="190" x2="856.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="857.9" y1="190" x2="857.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="859.2" y1="190" x2="859.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="862.7" y1="190" x2="862.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="864.9" y1="190" x2="864.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="868.6" y1="190" x2="868.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="871.1" y1="190" x2="871.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="872.4" y1="190" x2="872.4" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="873.8" y1="190" x2="873.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="874.5" y1="190" x2="874.5" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="874.8" y1="190" x2="874.8" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="876.2" y1="190" x2="876.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="878.1" y1="190" x2="878.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="879.3" y1="190" x2="879.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="881.9" y1="190" x2="881.9" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="883.7" y1="190" x2="883.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="885.7" y1="190" x2="885.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="888.0" y1="190" x2="888.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="889.1" y1="190" x2="889.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="891.3" y1="190" x2="891.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="894.1" y1="190" x2="894.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="895.0" y1="190" x2="895.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="896.2" y1="190" x2="896.2" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="899.7" y1="190" x2="899.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="920.1" y1="190" x2="920.1" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="922.7" y1="190" x2="922.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="928.3" y1="190" x2="928.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="929.3" y1="190" x2="929.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="930.7" y1="190" x2="930.7" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="935.0" y1="190" x2="935.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="950.0" y1="190" x2="950.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="951.0" y1="190" x2="951.0" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="960.6" y1="190" x2="960.6" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="963.3" y1="190" x2="963.3" y2="250" stroke="#b5491f" stroke-width="2.5"/><line x1="964.6" y1="190" x2="964.6" y2="250" stroke="#b5491f" stroke-width="2.5"/></g><g class="fragment fade-in-then-out" data-fragment-index="0"><text x="134" y="235.0" text-anchor="end" class="p-sub" fill="#666666">21 sessions</text><line x1="150" y1="77.9" x2="970" y2="77.9" stroke="#eef0f2" stroke-width="1"/><line x1="162.4" y1="72.0" x2="162.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="172.2" y1="72.0" x2="172.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="174.9" y1="72.0" x2="174.9" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="175.7" y1="72.0" x2="175.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="178.4" y1="72.0" x2="178.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="179.7" y1="72.0" x2="179.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="205.0" y1="72.0" x2="205.0" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="205.8" y1="72.0" x2="205.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="209.1" y1="72.0" x2="209.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="213.5" y1="72.0" x2="213.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="215.6" y1="72.0" x2="215.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="220.4" y1="72.0" x2="220.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="224.8" y1="72.0" x2="224.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="228.4" y1="72.0" x2="228.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="236.0" y1="72.0" x2="236.0" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="246.4" y1="72.0" x2="246.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="252.6" y1="72.0" x2="252.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="262.1" y1="72.0" x2="262.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="265.4" y1="72.0" x2="265.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="269.8" y1="72.0" x2="269.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="273.4" y1="72.0" x2="273.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="276.3" y1="72.0" x2="276.3" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="282.7" y1="72.0" x2="282.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="287.1" y1="72.0" x2="287.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="289.1" y1="72.0" x2="289.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="302.5" y1="72.0" x2="302.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="304.1" y1="72.0" x2="304.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="305.2" y1="72.0" x2="305.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="308.8" y1="72.0" x2="308.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="314.2" y1="72.0" x2="314.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="316.4" y1="72.0" x2="316.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="319.6" y1="72.0" x2="319.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="321.8" y1="72.0" x2="321.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="331.2" y1="72.0" x2="331.2" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="332.8" y1="72.0" x2="332.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="338.1" y1="72.0" x2="338.1" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="340.6" y1="72.0" x2="340.6" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="351.4" y1="72.0" x2="351.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="352.4" y1="72.0" x2="352.4" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="354.8" y1="72.0" x2="354.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="357.8" y1="72.0" x2="357.8" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="359.5" y1="72.0" x2="359.5" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="389.7" y1="72.0" x2="389.7" y2="83.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="93.6" x2="970" y2="93.6" stroke="#eef0f2" stroke-width="1"/><line x1="191.9" y1="87.7" x2="191.9" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="204.2" y1="87.7" x2="204.2" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="336.2" y1="87.7" x2="336.2" y2="99.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="109.3" x2="970" y2="109.3" stroke="#eef0f2" stroke-width="1"/><line x1="296.4" y1="103.4" x2="296.4" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="342.7" y1="103.4" x2="342.7" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="360.2" y1="103.4" x2="360.2" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="376.9" y1="103.4" x2="376.9" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="387.2" y1="103.4" x2="387.2" y2="115.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="125.0" x2="970" y2="125.0" stroke="#eef0f2" stroke-width="1"/><line x1="328.9" y1="119.1" x2="328.9" y2="130.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="140.7" x2="970" y2="140.7" stroke="#eef0f2" stroke-width="1"/><line x1="358.2" y1="134.9" x2="358.2" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="362.3" y1="134.9" x2="362.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="369.6" y1="134.9" x2="369.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="379.6" y1="134.9" x2="379.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="384.3" y1="134.9" x2="384.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="134.9" x2="386.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="386.9" y1="134.9" x2="386.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="390.0" y1="134.9" x2="390.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="392.4" y1="134.9" x2="392.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="395.6" y1="134.9" x2="395.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="398.7" y1="134.9" x2="398.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="403.4" y1="134.9" x2="403.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="410.7" y1="134.9" x2="410.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="413.7" y1="134.9" x2="413.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="416.1" y1="134.9" x2="416.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="418.1" y1="134.9" x2="418.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="419.1" y1="134.9" x2="419.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="420.9" y1="134.9" x2="420.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="439.3" y1="134.9" x2="439.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="442.2" y1="134.9" x2="442.2" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="453.8" y1="134.9" x2="453.8" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="457.7" y1="134.9" x2="457.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="461.1" y1="134.9" x2="461.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="467.0" y1="134.9" x2="467.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="529.9" y1="134.9" x2="529.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="535.1" y1="134.9" x2="535.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="548.7" y1="134.9" x2="548.7" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="548.8" y1="134.9" x2="548.8" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="549.0" y1="134.9" x2="549.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="550.0" y1="134.9" x2="550.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="570.0" y1="134.9" x2="570.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="573.9" y1="134.9" x2="573.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="590.6" y1="134.9" x2="590.6" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="602.0" y1="134.9" x2="602.0" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="605.3" y1="134.9" x2="605.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="606.5" y1="134.9" x2="606.5" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="609.3" y1="134.9" x2="609.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="622.3" y1="134.9" x2="622.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="627.3" y1="134.9" x2="627.3" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="633.5" y1="134.9" x2="633.5" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="635.4" y1="134.9" x2="635.4" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="134.9" x2="637.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="637.1" y1="134.9" x2="637.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="649.1" y1="134.9" x2="649.1" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="650.9" y1="134.9" x2="650.9" y2="146.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="156.4" x2="970" y2="156.4" stroke="#eef0f2" stroke-width="1"/><line x1="370.0" y1="150.6" x2="370.0" y2="162.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="172.1" x2="970" y2="172.1" stroke="#eef0f2" stroke-width="1"/><line x1="474.6" y1="166.3" x2="474.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="485.5" y1="166.3" x2="485.5" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="487.5" y1="166.3" x2="487.5" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="543.6" y1="166.3" x2="543.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="546.7" y1="166.3" x2="546.7" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="554.6" y1="166.3" x2="554.6" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="558.9" y1="166.3" x2="558.9" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="560.4" y1="166.3" x2="560.4" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="563.2" y1="166.3" x2="563.2" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="591.1" y1="166.3" x2="591.1" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="634.2" y1="166.3" x2="634.2" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="645.7" y1="166.3" x2="645.7" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="650.0" y1="166.3" x2="650.0" y2="178.0" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="187.9" x2="970" y2="187.9" stroke="#eef0f2" stroke-width="1"/><line x1="535.6" y1="182.0" x2="535.6" y2="193.7" stroke="#b5491f" stroke-width="2.5"/><line x1="614.4" y1="182.0" x2="614.4" y2="193.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="203.6" x2="970" y2="203.6" stroke="#eef0f2" stroke-width="1"/><line x1="634.1" y1="197.7" x2="634.1" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="639.4" y1="197.7" x2="639.4" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="647.8" y1="197.7" x2="647.8" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="651.6" y1="197.7" x2="651.6" y2="209.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="219.3" x2="970" y2="219.3" stroke="#eef0f2" stroke-width="1"/><line x1="652.2" y1="213.4" x2="652.2" y2="225.1" stroke="#b5491f" stroke-width="2.5"/><line x1="661.5" y1="213.4" x2="661.5" y2="225.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="235.0" x2="970" y2="235.0" stroke="#eef0f2" stroke-width="1"/><line x1="657.4" y1="229.1" x2="657.4" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="660.5" y1="229.1" x2="660.5" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="663.2" y1="229.1" x2="663.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="666.2" y1="229.1" x2="666.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="672.7" y1="229.1" x2="672.7" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="679.4" y1="229.1" x2="679.4" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="699.0" y1="229.1" x2="699.0" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="742.6" y1="229.1" x2="742.6" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="746.6" y1="229.1" x2="746.6" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="751.2" y1="229.1" x2="751.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="787.8" y1="229.1" x2="787.8" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="804.0" y1="229.1" x2="804.0" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="885.7" y1="229.1" x2="885.7" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="889.1" y1="229.1" x2="889.1" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="896.2" y1="229.1" x2="896.2" y2="240.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="250.7" x2="970" y2="250.7" stroke="#eef0f2" stroke-width="1"/><line x1="660.6" y1="244.9" x2="660.6" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="664.5" y1="244.9" x2="664.5" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="671.8" y1="244.9" x2="671.8" y2="256.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="266.4" x2="970" y2="266.4" stroke="#eef0f2" stroke-width="1"/><line x1="675.1" y1="260.6" x2="675.1" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="680.0" y1="260.6" x2="680.0" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="696.8" y1="260.6" x2="696.8" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="701.2" y1="260.6" x2="701.2" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="746.2" y1="260.6" x2="746.2" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="752.1" y1="260.6" x2="752.1" y2="272.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="282.1" x2="970" y2="282.1" stroke="#eef0f2" stroke-width="1"/><line x1="678.6" y1="276.3" x2="678.6" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="695.0" y1="276.3" x2="695.0" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="748.4" y1="276.3" x2="748.4" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="786.1" y1="276.3" x2="786.1" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="789.0" y1="276.3" x2="789.0" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="790.9" y1="276.3" x2="790.9" y2="288.0" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="297.9" x2="970" y2="297.9" stroke="#eef0f2" stroke-width="1"/><line x1="684.2" y1="292.0" x2="684.2" y2="303.7" stroke="#b5491f" stroke-width="2.5"/><line x1="686.0" y1="292.0" x2="686.0" y2="303.7" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="313.6" x2="970" y2="313.6" stroke="#eef0f2" stroke-width="1"/><line x1="752.7" y1="307.7" x2="752.7" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="793.6" y1="307.7" x2="793.6" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="803.6" y1="307.7" x2="803.6" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="807.2" y1="307.7" x2="807.2" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="812.0" y1="307.7" x2="812.0" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="814.3" y1="307.7" x2="814.3" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="820.9" y1="307.7" x2="820.9" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="963.3" y1="307.7" x2="963.3" y2="319.4" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="329.3" x2="970" y2="329.3" stroke="#eef0f2" stroke-width="1"/><line x1="797.8" y1="323.4" x2="797.8" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="809.3" y1="323.4" x2="809.3" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="832.4" y1="323.4" x2="832.4" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="833.5" y1="323.4" x2="833.5" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="835.6" y1="323.4" x2="835.6" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="844.0" y1="323.4" x2="844.0" y2="335.1" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="345.0" x2="970" y2="345.0" stroke="#eef0f2" stroke-width="1"/><line x1="802.2" y1="339.1" x2="802.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="816.1" y1="339.1" x2="816.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="819.8" y1="339.1" x2="819.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="834.4" y1="339.1" x2="834.4" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="838.1" y1="339.1" x2="838.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="841.6" y1="339.1" x2="841.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="849.3" y1="339.1" x2="849.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="851.2" y1="339.1" x2="851.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="854.0" y1="339.1" x2="854.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="856.6" y1="339.1" x2="856.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="857.9" y1="339.1" x2="857.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="859.2" y1="339.1" x2="859.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="862.7" y1="339.1" x2="862.7" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="864.9" y1="339.1" x2="864.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="868.6" y1="339.1" x2="868.6" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="871.1" y1="339.1" x2="871.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="872.4" y1="339.1" x2="872.4" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="873.8" y1="339.1" x2="873.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="874.5" y1="339.1" x2="874.5" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="874.8" y1="339.1" x2="874.8" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="876.2" y1="339.1" x2="876.2" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="878.1" y1="339.1" x2="878.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="879.3" y1="339.1" x2="879.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="881.9" y1="339.1" x2="881.9" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="883.7" y1="339.1" x2="883.7" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="888.0" y1="339.1" x2="888.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="891.3" y1="339.1" x2="891.3" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="894.1" y1="339.1" x2="894.1" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="895.0" y1="339.1" x2="895.0" y2="350.9" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="360.7" x2="970" y2="360.7" stroke="#eef0f2" stroke-width="1"/><line x1="899.7" y1="354.9" x2="899.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="920.1" y1="354.9" x2="920.1" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="922.7" y1="354.9" x2="922.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="928.3" y1="354.9" x2="928.3" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="929.3" y1="354.9" x2="929.3" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="930.7" y1="354.9" x2="930.7" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="950.0" y1="354.9" x2="950.0" y2="366.6" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="376.4" x2="970" y2="376.4" stroke="#eef0f2" stroke-width="1"/><line x1="935.0" y1="370.6" x2="935.0" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="951.0" y1="370.6" x2="951.0" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="960.6" y1="370.6" x2="960.6" y2="382.3" stroke="#b5491f" stroke-width="2.5"/><line x1="150" y1="392.1" x2="970" y2="392.1" stroke="#eef0f2" stroke-width="1"/><line x1="964.6" y1="386.3" x2="964.6" y2="398.0" stroke="#b5491f" stroke-width="2.5"/></g><g class="fragment" data-fragment-index="1"><line x1="150.0" y1="60" x2="150.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="150.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">17:50</text><line x1="423.3" y1="60" x2="423.3" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="423.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:05</text><line x1="696.7" y1="60" x2="696.7" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="696.7" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:20</text><line x1="970.0" y1="60" x2="970.0" y2="415" stroke="#e5e7eb" stroke-width="1"/><text x="970.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">18:35</text><text x="134" y="104.5" text-anchor="end" class="p-sub" fill="#666666">session A</text><line x1="150" y1="97.5" x2="970" y2="97.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="159.5" text-anchor="end" class="p-sub" fill="#666666">session B</text><line x1="150" y1="152.5" x2="970" y2="152.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="214.5" text-anchor="end" class="p-sub" fill="#666666">session C</text><line x1="150" y1="207.5" x2="970" y2="207.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="269.5" text-anchor="end" class="p-sub" fill="#666666">session D</text><line x1="150" y1="262.5" x2="970" y2="262.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="324.5" text-anchor="end" class="p-sub" fill="#666666">session E</text><line x1="150" y1="317.5" x2="970" y2="317.5" stroke="#eef0f2" stroke-width="1"/><text x="134" y="379.5" text-anchor="end" class="p-sub" fill="#666666">session F</text><line x1="150" y1="372.5" x2="970" y2="372.5" stroke="#eef0f2" stroke-width="1"/><path d="M161.8 97.5L173.8 152.5L177.1 207.5L201.0 97.5L234.0 97.5L234.0 97.5L280.0 152.5L406.5 207.5L448.8 152.5L473.6 97.5L493.5 207.5L510.7 97.5L523.9 152.5L537.4 262.5L640.9 317.5L702.5 317.5L703.5 372.5L722.1 262.5L756.7 317.5L782.9 372.5L816.8 317.5L928.6 372.5L946.0 317.5" fill="none" stroke="#b5491f" stroke-opacity="0.35" stroke-width="2"/><line x1="161.8" y1="78.0" x2="161.8" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="173.8" y1="133.0" x2="173.8" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="177.1" y1="188.0" x2="177.1" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="201.0" y1="78.0" x2="201.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="234.0" y1="78.0" x2="234.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="234.0" y1="78.0" x2="234.0" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="280.0" y1="133.0" x2="280.0" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="406.5" y1="188.0" x2="406.5" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="448.8" y1="133.0" x2="448.8" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="473.6" y1="78.0" x2="473.6" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="493.5" y1="188.0" x2="493.5" y2="227.0" stroke="#b5491f" stroke-width="5"/><line x1="510.7" y1="78.0" x2="510.7" y2="117.0" stroke="#b5491f" stroke-width="5"/><line x1="523.9" y1="133.0" x2="523.9" y2="172.0" stroke="#b5491f" stroke-width="5"/><line x1="537.4" y1="243.0" x2="537.4" y2="282.0" stroke="#b5491f" stroke-width="5"/><line x1="640.9" y1="298.0" x2="640.9" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="702.5" y1="298.0" x2="702.5" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="703.5" y1="353.0" x2="703.5" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="722.1" y1="243.0" x2="722.1" y2="282.0" stroke="#b5491f" stroke-width="5"/><line x1="756.7" y1="298.0" x2="756.7" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="782.9" y1="353.0" x2="782.9" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="816.8" y1="298.0" x2="816.8" y2="337.0" stroke="#b5491f" stroke-width="5"/><line x1="928.6" y1="353.0" x2="928.6" y2="392.0" stroke="#b5491f" stroke-width="5"/><line x1="946.0" y1="298.0" x2="946.0" y2="337.0" stroke="#b5491f" stroke-width="5"/><text x="970" y="50" text-anchor="end" class="p-sub" fill="#354045">17:50–18:35: 23 prompts, 6 sessions, 19 switches</text></g></svg>
 
 Note:
 09:13 to 23:54; the 2.7 minutes is the median gap.
@@ -570,6 +575,21 @@ reviews, a rebase and force push, an architecture question about value
 converters, issue triage. Many of the prompts are one word: "yes", "b, go ahead".
 Even a two-minute review session needed checking: "did you rework the branch? or
 where is the review work?"
+
+Land it on the cost, then the confession on the next slide.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## I ran many sessions in parallel.
+
+I'm dialling it back.
+
+<img class="callback" src="images/x-2026-07-03-context-switching-tax.png" width="460" height="150" alt="Jul 3: the context switching tax is brutal, even just for two sessions in parallel">
+
+Note:
+The conclusion from the chart. This is the honest one. Say the real reason.
 
 Writing code used to mix mechanical work (typing, compiling, fixing the
 obvious) with decisions. The mechanical part was where your mind rested and got
@@ -590,13 +610,27 @@ Fully personal here. This is the beat no other AI talk has.
 
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero-image" -->
+
+<img class="post" src="images/x-2026-07-31-like-a-psychopath.png" alt="Jul 31: Saw a guy working on his code. No multi-agent setup. Using just Claude and his CLI. Like a psychopath.">
+
+Note:
+Straight after the confession, no setup. Let them laugh; it's aimed at the
+elaborate setups, and that includes mine. 602 likes.
+
+Then on: at that pace, something slips.
+
+---
+
+<!-- .slide: class="hero geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
 
 ## We caught it before Final.
 
 It wasn't the tests. It wasn't the review.
 
 Note:
+At that pace, something slips. Back to the feature that doesn't exist.
+
 Merged May 1, shipped in CR1 on May 31, fixed on June 4 (#608), three weeks
 before 1.0.0.Final.
 
@@ -605,15 +639,17 @@ caught it open; it gets answered when we climb out.
 
 ---
 
+<!-- .slide: class="geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
 ## How it got through
 
 - I reviewed the <em>diff</em>, not the <em>claim</em>
 - I graded it against the PR description, not the spec
 - Volume. It looked competent, and others were waiting
 
-<div class="circled">
+<div class="circled centred">
   <img src="images/01-geo-pr-413-claim.png" width="1000" height="140" alt="PR #413 description: GeospatialStatistics with BoundingBox, page-level stats on ColumnIndex, plus page-level pushdown">
-  <svg class="circle-mark fragment" viewBox="0 0 100 100" preserveAspectRatio="none" style="left: 50%; top: 22%; width: 40.5%; height: 36%"><path d="M52 6 C 86 4, 99 30, 97 52 C 95 80, 60 96, 34 93 C 10 90, 1 68, 3 46 C 5 20, 30 5, 60 8"/></svg>
+  <span class="mark-box fragment" style="left: 48.8%; top: 24%; width: 34.8%; height: 30%"></span>
 </div>
 
 Note:
@@ -654,7 +690,7 @@ sufficient one. Things slipped through while I was reading every diff.
 
 ## I've lost full control over my own code base.
 
-<span class="aside">I no longer understand every line of it.</span>
+I no longer understand every line of it.
 
 Note:
 The loss, said plainly. Twenty years of knowing every bit of what I ship, and
@@ -668,11 +704,27 @@ Let it sit. This is the identity question everyone in the room carries.
 
 ---
 
-<!-- .slide: class="hero-image" -->
 
-<div class="stack">
-  <img class="tweet" src="images/08-tweet-exhausting.png" alt="Tweet: Finally realized why it's so exhausting and stressful to work with AI agents 8h a day.">
-  <img class="zoom fragment" src="images/08b-tweet-exhausting-counters.png" alt="304.3K views, 4.1K likes, 754 bookmarks">
+## The exhaustion is real
+
+<span class="ex-stats-go fragment" data-fragment-index="0"></span>
+<span class="ex-r1-go fragment" data-fragment-index="1"></span>
+<span class="ex-r2-go fragment" data-fragment-index="2"></span>
+
+<div class="ex">
+  <div class="ex-tweet">
+    <div class="ex-card">
+      <img src="images/08-tweet-exhausting.png" width="598" height="406" alt="Tweet: Finally realized why it's so exhausting and stressful to work with AI agents 8h a day.">
+      <span class="ex-box"></span>
+    </div>
+  </div>
+  <div class="ex-reply ex-r1">
+    <img src="images/10-reply-responsibility.png" width="598" height="129" alt="Reply: when you delegate to other people, they can take accountability. You're still responsible for what you delegated to AI and sign with your name.">
+    <span class="ex-tail"></span>
+  </div>
+  <div class="ex-reply ex-r2">
+    <img src="images/09-reply-manager.png" width="598" height="90" alt="Reply: Welcome to being a manager.">
+  </div>
 </div>
 
 Note:
@@ -683,42 +735,30 @@ not taking short cuts."
 
 This is the bottom of the curve. Act three answers it.
 
-Click: the counters. 304,000 views. 754 bookmarks: people saved a complaint so
+Click 1: the counters. 304,000 views. 754 bookmarks: people saved a complaint so
 they could come back to it. Show of hands: who in this room has felt this? Look
 around before you move on.
 
----
+Click 2: the first reply. Read it out cleanly, without the typos:
+when you delegate to a person, they can take on the accountability. When you
+delegate to the agent, nobody does. Your name stays on it.
 
-<!-- .slide: class="hero-image" -->
+For this room it's contractual: your name, and your company's name, goes on
+what you deliver to a client. "Claude wrote that part" is not an answer a client
+accepts.
 
-<div class="thread">
-  <img src="images/08a-tweet-exhausting-body.png" alt="The tweet">
-  <img class="fragment" src="images/09-reply-manager.png" alt="Reply: Welcome to being a manager.">
-  <img class="fragment" src="images/10-reply-responsibility.png" alt="Reply: when you delegate to other people, they can take accountability. You're still responsible for what you delegated to AI and sign with your name.">
-</div>
+Click 3: the second reply. "Welcome to being a manager." Wait for the laugh.
 
-Note:
-First reply: "Welcome to being a manager." Wait for the laugh.
-
-It's right. Every senior engineer, tech lead and EM has shipped code they did
-not read, written by people they trusted, verified by systems they built.
-
+It's half right. Every senior engineer, tech lead and EM has shipped code they
+did not read, written by people they trusted, verified by systems they built.
 For the seniors in the room: your instincts transfer, this is a job you have
 already done. For everyone earlier in their career: these were year-eight
 skills, and you need them in year one. Nobody is going to hand you the
 apprenticeship where you learned them by typing. Don't say any of that *at*
 the juniors.
 
-Second reply: but it's not quite right. Read it out cleanly, without the
-typos. When you delegate to a person, they can take on the accountability. When
-you delegate to the agent, nobody does. Your name stays on it.
-
-For this room it's contractual: your name, and your company's name, goes on
-what you deliver to a client. "Claude wrote that part" is not an answer a client
-accepts.
-
-Optional aside: the complaint got 304,000 views. The two replies that explain
-it got about 550 between them.
+The other half is the first reply: a manager's reports carry their own
+accountability. The agent carries none.
 
 ---
 
@@ -763,7 +803,7 @@ theatre the rest of the talk gets discounted. Mean it.
 
 ## My case, and yours
 
-<div class="columns top">
+<div class="columns top compact">
 <div>
 
 **Hardwood**
@@ -788,26 +828,17 @@ theatre the rest of the talk gets discounted. Mean it.
 </div>
 </div>
 
+<p class="aside fragment hinge-q">I had it easy. Your projects are harder. <em>So what actually got me out?</em></p>
+
 Note:
 Left column first. Every one of these is a gift, and I did not earn any of
 them. Call back to the start: this is exactly why I picked the project.
 
 Then the right column. Get the laugh, then land it flat.
 
----
-
-<!-- .slide: class="hero" -->
-
-## I had the best case. You have the worst.
-
-You'll hit midnight faster than I did.
-So what actually got me out?
-
-Note:
-This is the hinge of the talk. Everything before it was "look what happened".
-Everything after it is "here is what to do about it".
-
-Leave the question open. The note trainer answers it.
+Click: the hinge of the talk. Everything before was "look what happened",
+everything after is "here is what to do about it". On a harder project, midnight
+comes sooner. Leave the question open; the note trainer answers it.
 
 ---
 
@@ -826,7 +857,7 @@ Photo: "Mechanics' Institute spiral staircase, from above" by chad_k (CC BY 2.0,
 
 ## Meanwhile, a weekend project
 
-![](images/05-note-reading.png)
+![](images/05-note-reading.png) <!-- .element: style="max-height: 450px" -->
 
 <span class="aside">Sight-reading drill · pitch detection from the microphone · no dependencies</span>
 
@@ -848,18 +879,23 @@ Their version: the internal tool, the pitch demo, the spike nobody would fund.
 
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero" data-background-image="images/sections/piano.jpg" data-background-opacity="0.10" -->
 
 ## I vibe-coded all of it.
 
-I checked the <em>what</em>: by ear.
+I checked the <em>what</em>: by playing it.
+
+<span class="credit-side">© OnceCaptured https://flic.kr/p/iiCcNU (CC BY 2.0)</span>
 
 Note:
+Photo: "Piano keys" by OnceCaptured (CC BY 2.0, https://flic.kr/p/iiCcNU), faintly behind the text.
+
 Let the first line land in a talk called "not by AI". Somebody in the room is
 waiting for you to contradict yourself. Give them a second to think you have.
 
-Then the second line. I play a note and hear whether it's right. I am the
-feedback loop: instant, exact, and the only user. A wrong answer is obvious the
+Then the second line. I play a note and see whether the app heard it right. The
+pitch detection is the part that can be wrong, and I always know what I played.
+I am the feedback loop: instant, exact, and the only user. A wrong answer is obvious the
 moment it happens, and it costs nobody anything.
 
 Hardwood's users are people I will never meet, and its wrong answers look
@@ -876,17 +912,18 @@ was missing at midnight.
 
 ## Looking back, the magic happened wherever a <em>feedback loop</em> existed.
 
-<span class="aside">Something that says right away whether the result is wrong:<br>test vectors, a conformance suite, my ears.</span>
+<span class="aside">Something that says right away whether the result is wrong:<br>test vectors, a conformance suite, a piano under my fingers.</span>
 
 Note:
 The realisation that turns the curve. The SigV4 signer had AWS's test vectors.
-Hardwood had the parquet-testing corpus. The note trainer had my ears.
+Hardwood had the parquet-testing corpus. The note trainer had the piano.
 
-I was the loop in both. By ear, it answers in a second. Reading diffs, it takes
+I was the loop in both. At the keyboard, it answers in a second. Reading diffs, it takes
 all day. That's the whole difference.
 
 Where a loop existed, the agent was magic. It doesn't matter much what does the
-checking: my ears count, because they answer in a second and they're exact.
+checking: me at the keyboard counts, because it answers in a second and I know
+what I played.
 
 Where nothing answered quickly, I was the loop the slow way: reading diffs and
 guessing whether they were right, all day. That was midnight.
@@ -897,7 +934,7 @@ guessing whether they were right, all day. That was midnight.
 
 ## What a feedback loop can check, you can hand off.
 
-<span class="aside">The rest stays with you.</span>
+The rest stays with you.
 
 Note:
 Pre-empt the "so, write tests" reaction. Tests aren't new. What's new is the
@@ -912,7 +949,7 @@ no feedback loop can see.
 
 ## Stop being the loop
 
-<svg class="cycle" viewBox="0 0 1088 560" width="1088" height="560"><defs><marker id="cycle-head" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="cycle-head"/></marker></defs><path class="cycle-arc" d="M581.0 186.3 L585.5 187.6 L589.9 189.1 L594.3 190.8 L598.7 192.7 L602.9 194.8 L607.1 197.0 L611.2 199.4 L615.2 201.9 L619.2 204.7 L623.0 207.5 L626.7 210.6 L630.3 213.7 L633.7 217.1 L637.1 220.5 L640.3 224.1 L643.3 227.8 L646.3 231.7 L649.0 235.6 L651.7 239.7 L654.1 243.9 L656.4 248.2 L658.6 252.5 L660.5 257.0 L662.3 261.6" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M665.4 339.4 L663.9 344.2 L662.3 349.0 L660.4 353.7 L658.4 358.3 L656.2 362.8 L653.8 367.3 L651.3 371.7 L648.5 375.9 L645.6 380.1 L642.5 384.2 L639.3 388.1 L635.9 391.9 L632.4 395.6 L628.7 399.2 L624.9 402.6 L620.9 405.8 L616.8 408.9 L612.6 411.9 L608.2 414.6 L603.7 417.3 L599.2 419.7 L594.5 422.0 L589.8 424.0 L584.9 425.9" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M502.1 429.0 L497.0 427.4 L492.0 425.6 L487.0 423.7 L482.1 421.5 L477.3 419.2 L472.5 416.6 L467.9 413.9 L463.4 411.0 L458.9 407.9 L454.6 404.6 L450.5 401.2 L446.4 397.6 L442.5 393.8 L438.8 389.9 L435.2 385.8 L431.7 381.6 L428.4 377.2 L425.3 372.7 L422.4 368.1 L419.6 363.4 L417.0 358.5 L414.7 353.6 L412.5 348.5 L410.5 343.4" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M407.4 255.6 L409.1 250.2 L411.0 244.9 L413.0 239.6 L415.3 234.4 L417.8 229.3 L420.5 224.3 L423.4 219.4 L426.5 214.7 L429.8 210.0 L433.3 205.4 L436.9 201.0 L440.8 196.8 L444.8 192.6 L448.9 188.7 L453.2 184.9 L457.7 181.2 L462.3 177.8 L467.1 174.5 L472.0 171.4 L477.0 168.5 L482.1 165.8 L487.4 163.3 L492.7 161.0 L498.1 158.9" marker-end="url(#cycle-head)"/><text class="cycle-label" x="544" y="110" text-anchor="middle"><tspan class="cycle-num">1</tspan>  Build the <tspan class="cycle-em">feedback loop</tspan></text><text class="cycle-sub" x="544" y="140" text-anchor="middle">so the agent finds out it’s wrong</text><text class="cycle-label" x="734" y="304" text-anchor="start"><tspan class="cycle-num">2</tspan>  Make it <tspan class="cycle-em">fast</tspan></text><text class="cycle-sub" x="734" y="334" text-anchor="start">or it gets skipped</text><text class="cycle-label" x="544" y="512" text-anchor="middle"><tspan class="cycle-num">3</tspan>  Review what <tspan class="cycle-em">no feedback loop</tspan> can see</text><text class="cycle-sub" x="544" y="542" text-anchor="middle">that part stays with you</text><text class="cycle-label" x="354" y="304" text-anchor="end"><tspan class="cycle-num">4</tspan>  Raise the <tspan class="cycle-em">floor</tspan></text><text class="cycle-sub" x="354" y="334" text-anchor="end">make every correction stick</text></svg>
+<svg class="cycle" viewBox="0 80 1088 475" width="1088" height="475"><defs><marker id="cycle-head" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="cycle-head"/></marker></defs><path class="cycle-arc" d="M581.0 186.3 L585.5 187.6 L589.9 189.1 L594.3 190.8 L598.7 192.7 L602.9 194.8 L607.1 197.0 L611.2 199.4 L615.2 201.9 L619.2 204.7 L623.0 207.5 L626.7 210.6 L630.3 213.7 L633.7 217.1 L637.1 220.5 L640.3 224.1 L643.3 227.8 L646.3 231.7 L649.0 235.6 L651.7 239.7 L654.1 243.9 L656.4 248.2 L658.6 252.5 L660.5 257.0 L662.3 261.6" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M665.4 339.4 L663.9 344.2 L662.3 349.0 L660.4 353.7 L658.4 358.3 L656.2 362.8 L653.8 367.3 L651.3 371.7 L648.5 375.9 L645.6 380.1 L642.5 384.2 L639.3 388.1 L635.9 391.9 L632.4 395.6 L628.7 399.2 L624.9 402.6 L620.9 405.8 L616.8 408.9 L612.6 411.9 L608.2 414.6 L603.7 417.3 L599.2 419.7 L594.5 422.0 L589.8 424.0 L584.9 425.9" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M502.1 429.0 L497.0 427.4 L492.0 425.6 L487.0 423.7 L482.1 421.5 L477.3 419.2 L472.5 416.6 L467.9 413.9 L463.4 411.0 L458.9 407.9 L454.6 404.6 L450.5 401.2 L446.4 397.6 L442.5 393.8 L438.8 389.9 L435.2 385.8 L431.7 381.6 L428.4 377.2 L425.3 372.7 L422.4 368.1 L419.6 363.4 L417.0 358.5 L414.7 353.6 L412.5 348.5 L410.5 343.4" marker-end="url(#cycle-head)"/><path class="cycle-arc" d="M407.4 255.6 L409.1 250.2 L411.0 244.9 L413.0 239.6 L415.3 234.4 L417.8 229.3 L420.5 224.3 L423.4 219.4 L426.5 214.7 L429.8 210.0 L433.3 205.4 L436.9 201.0 L440.8 196.8 L444.8 192.6 L448.9 188.7 L453.2 184.9 L457.7 181.2 L462.3 177.8 L467.1 174.5 L472.0 171.4 L477.0 168.5 L482.1 165.8 L487.4 163.3 L492.7 161.0 L498.1 158.9" marker-end="url(#cycle-head)"/><text class="cycle-label" x="544" y="110" text-anchor="middle"><tspan class="cycle-num">1</tspan>  Build the <tspan class="cycle-em">feedback loop</tspan></text><text class="cycle-sub" x="544" y="140" text-anchor="middle">so the agent finds out it’s wrong</text><text class="cycle-label" x="734" y="304" text-anchor="start"><tspan class="cycle-num">2</tspan>  Make it <tspan class="cycle-em">fast</tspan></text><text class="cycle-sub" x="734" y="334" text-anchor="start">or it gets skipped</text><text class="cycle-label" x="544" y="512" text-anchor="middle"><tspan class="cycle-num">3</tspan>  Review what <tspan class="cycle-em">no feedback loop</tspan> can see</text><text class="cycle-sub" x="544" y="542" text-anchor="middle">that part stays with you</text><text class="cycle-label" x="354" y="304" text-anchor="end"><tspan class="cycle-num">4</tspan>  Raise the <tspan class="cycle-em">floor</tspan></text><text class="cycle-sub" x="354" y="334" text-anchor="end">make every correction stick</text></svg>
 
 Note:
 The map for the rest of this part, and the closing slide in advance. Go round
@@ -941,7 +978,7 @@ little further out. The helix at the end of the act pays that off.
 
 ## What is the oracle?
 
-<div class="columns top">
+<div class="columns top oracle">
 <div>
 
 **Hardwood**
@@ -992,6 +1029,10 @@ five read paths, against parquet-java and DuckDB, in every PR build.
 
 Right column: the brownfield version. None of this is new. All of it was
 optional before, because humans were slow enough that review caught things.
+
+On "golden-master", in case the term is new to some: "record what the old system
+does, then diff against it." The recording isn't correct, it's what clients
+depend on today, and it doesn't come from whoever wrote the new code.
 
 ---
 
@@ -1067,28 +1108,46 @@ vectorised, and what got inlined.
 
 <span class="subtitle">Delta decoding: 69% of cycles in one method</span>
 
-<pre class="asm"><code class="nohighlight" data-noescape>   1.16%  add    %rsi,%rax                 ;*ladd
-   1.45%  mov    0x38(%rsp),%r10
-   0.79%  mov    %rax,0x10(%r10,%rcx,8)    ;*lastore
-<mark>   5.13%  mov    0x48(%rsp),%r10
-   1.03%  mov    %rax,0x10(%r10)           ;*putfield lastValue
-   6.66%  mov    %rbp,%r10</mark>
-   0.74%  shr    $0x3,%r10
-   …
-   0.45%  cmp    0x70(%rsp),%r10d
-   0.54%  jae    …                         ;*invokestatic checkIndex
-   …
-   0.95%  mov    %rsi,0x18(%r10,%rcx,8)    ;*lastore
-<mark>   3.97%  mov    0x48(%rsp),%r10
-   0.99%  mov    %rsi,0x10(%r10)           ;*putfield lastValue
-   5.25%  add    0x60(%rsp),%rdx</mark></code></pre>
+<span class="fix-go fragment" data-fragment-index="0"></span>
 
-<span class="aside fragment">The fix: one local variable instead of the field. +2% to +7%, fewer instructions per value.</span>
+<div class="columns asm-code">
+<div class="asm-left">
+<blockquote class="transcript asm-prompt">
+"profile the decoding benchmark on the N300 to identify whether there's any remaining bottlenecks"
+<cite>Me, to Claude, Aug 30</cite>
+</blockquote>
+<pre class="asm"><code class="nohighlight" data-noescape>1.16%  add  %rsi,%rax        ;*ladd
+0.79%  mov  %rax,0x10(…)     ;*lastore
+<mark>5.13%  mov  0x48(%rsp),%r10
+1.03%  mov  %rax,0x10(%r10)  ;*putfield
+                             ; lastValue
+6.66%  mov  %rbp,%r10</mark>
+0.74%  shr  $0x3,%r10</code></pre>
+</div>
+<div>
+<pre class="rot-code fix-code"><code class="nohighlight" data-noescape><span class="rot-swap"><span class="rot-old"><span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; count; i++) {
+    <span class="c">// unpack the residual …</span>
+    lastValue += delta + residual;
+    dest[offset + i] = lastValue;
+}
+</span><span class="rot-new"><span class="k">long</span> <mark class="rot-fixed">value</mark> = lastValue;
+<span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; count; i++) {
+    <span class="c">// unpack the residual …</span>
+    <mark class="rot-fixed">value</mark> += delta + residual;
+    dest[offset + i] = <mark class="rot-fixed">value</mark>;
+}
+lastValue = value;</span></span></code></pre>
+</div>
+</div>
+
+<div class="asm-asides">
+<p class="aside fragment" data-fragment-index="0">The fix: a local instead of the field. +2% to +7%.</p>
+<p class="aside fragment" data-fragment-index="1">It never gets tired of trying. <em>The number decides what worked.</em></p>
+</div>
 
 Note:
-Aug 30, reviewing the delta decoder rewrite. My whole prompt: "profile the
-decoding benchmark on the N300 to identify whether there's any remaining
-bottlenecks".
+On arrival: the loop from the delta decoder rewrite, and my whole prompt on Aug
+30 (verbatim, grammar and all). Let them look at the code: nothing looks wrong.
 
 perfnorm first: no cache or TLB misses, few branch misses, so pure instruction
 count. Then perfasm: the loop is unrolled twice, and in each copy the running
@@ -1098,7 +1157,8 @@ value is loaded from and stored to the field lastValue, on every value. About
 The agent's explanation: the JIT can't keep the field in a register, because it
 can't prove the output array doesn't alias `this`.
 
-Click: the fix. The agent carried the value in a local and wrote it back once.
+Click 1: what perfasm found, and the fix, in the code. The agent carried the value in a local and wrote
+it back once (loop simplified on the slide: the residual unpacking is elided).
 Measured on the N300 (x86): +2%, +5%, +7% ops/ms at bit widths 10, 21, 64;
 instructions per value 38.6 → 36.9, 39.1 → 37.3, 26.4 → 24.8. On an Apple
 M-series laptop it's neutral, so it's free there.
@@ -1109,24 +1169,9 @@ and dropped it.
 
 The fix is on main today, with a comment saying why the locals are there.
 
----
-
-<!-- .slide: class="hero" -->
-
-## It never gets tired of trying.
-
-<em>The number decides what worked.</em>
-
-Note:
-Running profilers, reading assembly, trying variant after variant at two in
-the morning: it will do that all night and never get bored.
-
-Whether any of it worked is a number. Not an explanation.
-
-The rules that came out of midnight: measure
-before naming a cause; an untested theory says "untested" in the same sentence;
-A/B/A, never A/B; "is any of this making a difference end to end?"; a hard time
-cap, checked inside every run.
+Click 2: it will run profilers and try variant after variant all night without
+getting bored. Whether any of it worked is a number, not an explanation. The
+rules from midnight: measure before naming a cause, A/B/A, a hard time cap.
 
 ---
 
@@ -1146,30 +1191,70 @@ cap, checked inside every run.
 
 <span class="subtitle">Me, to Claude, Sep 7</span>
 
-- Integration tests: 40 of 130 seconds → <code>-DskipITs</code> while iterating <!-- .element: class="fragment" -->
-- The licence check: 8–16 s instead of 0.4 s. It walked 205,000 files, most of them in agent worktrees. <em>CI never saw it.</em> <!-- .element: class="fragment" -->
+<div class="loop-chart">
+<div class="loop-row  fragment" data-fragment-index="0">
+<div class="loop-label"><strong>The licence check</strong><span>walked 205,000 files to pick 1,000</span></div>
+<div class="loop-bars">
+<div class="loop-bar before" style="width: 170px"><span>16.5 s</span></div>
+<div class="loop-bar after" style="width: 6px"><span>0.6 s</span></div>
+</div>
+<div class="loop-note">CI never saw it: every CI checkout is fresh.</div>
+</div>
+<div class="loop-row  fragment" data-fragment-index="1">
+<div class="loop-label"><strong>Tests in parallel</strong><span>they ran one class at a time</span></div>
+<div class="loop-bars">
+<div class="loop-bar before" style="width: 619px"><span>60 s</span></div>
+<div class="loop-bar after" style="width: 347px"><span>34 s</span></div>
+</div>
+</div>
+<div class="loop-row  fragment" data-fragment-index="2">
+<div class="loop-label"><strong>The slowest tests</strong><span>63% of it parsing Hadoop's config</span></div>
+<div class="loop-bars">
+<div class="loop-bar before" style="width: 361px"><span>35 s</span></div>
+<div class="loop-bar after" style="width: 165px"><span>16 s</span></div>
+</div>
+<div class="loop-note">In a Parquet library built to need no Hadoop.</div>
+</div>
+<div class="loop-row loop-total fragment" data-fragment-index="3">
+<div class="loop-label"><strong>The dev loop</strong><span>two days later</span></div>
+<div class="loop-bars">
+<div class="loop-bar before" style="width: 619px"><span>60 s</span></div>
+<div class="loop-bar after" style="width: 288px"><span>28 s</span></div>
+</div>
+</div>
+</div>
 
 Note:
 My prompt, verbatim: how long does verify take with and without the ITs, "I'm
-feeling our feedback loop is too slow." Then: reproduce it on the N300 and
-profile it there.
+feeling our feedback loop is too slow." Then: profile it. Three fixes came out
+of it over two days, each with its own measurement; one scale for all bars.
 
-First click: the integration tests need Docker and exercise nothing most
-changes touch. So iterating skips them, and the full build runs before pushing.
-That's a rule in the agent instructions now.
+Click 1: the licence check. `license:check` took 8.6 to 16.5 s in my working
+clone and 0.4 s in a fresh one. The plugin descends into every directory an
+include pattern could match, excluded or not, so it walked the agent worktrees,
+the benchmark data and the virtualenvs: 205,000 files to pick 1,000. Bounded
+includes: 0.6 s. CI never saw it, because every CI checkout is fresh. The way I
+work with agents was slowing down the agents' own feedback loop, only on my
+machine. (Commit efc78e2a, #1120.)
 
-Second click: the licence plugin descends into every directory it could match,
-including the ones it excludes. So it walked the agent worktrees, the benchmark
-data and the virtualenvs, 205,000 files to select 1,000. CI never saw it,
-because every CI checkout is fresh. The way I work with agents was slowing down
-the agents' own feedback loop, and only on my machine.
+Click 2: nothing in the build was parallel. Two modules running their tests one
+class at a time were 42 of the 60 seconds of verify -DskipITs; compilation,
+Error Prone, packaging were under five. Parallel modules, four test forks: 34 s.
+(482daba9, #1124.)
 
-Even here the first explanation was wrong: "The dir walk is the reason. I said
-otherwise a message ago and that was wrong." The measurement caught it.
+Click 3: the slowest module, profiled. 63% of the samples in Hadoop's
+`new Configuration()`, which parses four thousand lines of XML each time, and
+1.5% in the writer the test exists to check. Built once and shared: 35 s to
+16 s, same files, same assertions. The irony: Hadoop keeps biting us in the
+build of a Parquet library whose point is not needing Hadoop. It's there only
+because parquet-java, one of our oracles, needs it. (f2369002, #1129.)
 
-Three builds now: `-Dquick` to just build something (no tests, no quality
-checks; a test run under it reports success having run nothing), `-DskipITs`
-while iterating, everything before you push.
+Click 4: the dev loop itself, verify -DskipITs in the same container: 60 s on
+Sep 7, 28 s on Sep 8. That's the one bar that is cumulative; the three above are
+separate measurements, don't add them up.
+
+Skipping the integration tests isn't on the slide on purpose: once the build ran
+in parallel, they overlapped with other modules and the saving mostly vanished.
 
 On your project: profile your build like any other workload.
 
@@ -1223,14 +1308,53 @@ Their version: the client system nobody can inspect without raising a ticket.
 
 ---
 
+<!-- .slide: class="geo" data-background-image="images/geo-backdrop.svg" data-background-size="cover" -->
+
 ## What caught the geo bug?
 
-- Not the tests — they tested the fiction <!-- .element: class="fragment" -->
-- Not the review — it passed <!-- .element: class="fragment" -->
-- Someone who knew the format well enough to ask whether the thing <em>exists</em> <!-- .element: class="fragment" -->
+<span class="subtitle">June 4, three weeks before 1.0.0.Final</span>
+
+<div class="columns geo-spec">
+<div>
+<p class="geo-label">The spec, <code>parquet.thrift</code></p>
+<pre class="rot-code"><code class="nohighlight" data-noescape><span class="k">struct</span> ColumnIndex {
+  1: null_pages
+  2: min_values
+  3: max_values
+  4: boundary_order
+  5: null_counts
+  6: repetition_level_histograms
+<span class="spec-7">  7: definition_level_histograms</span>
+  8: nan_counts
+}</code></pre>
+</div>
+<div class="geo-verdict">
+<p class="geo-claim fragment" data-fragment-index="0">Hardwood read field 7 as<br><s>geospatial statistics</s>.<br><strong>There is no geo field.</strong></p>
+<div class="verdict-list fragment" data-fragment-index="1">
+<p><span class="no">✗</span> The tests: same misreading</p>
+<p><span class="no">✗</span> The review: it passed</p>
+<p><span class="yes">✓</span> Reading the spec, for something else</p>
+</div>
+</div>
+</div>
 
 Note:
 Answer the prologue's question.
+
+On arrival: the page index as the spec defines it (types left out so it fits).
+Eight fields, nothing about geometry.
+
+Click 1: field 7. Hardwood's reader decoded it as geospatial statistics; the spec
+says definition-level histograms. The feature the PR claimed, "page-level stats
+on ColumnIndex", had nowhere to live. Filed as #608 on June 4, fixed three weeks
+before Final.
+
+Click 2: what didn't catch it, and what did. The tests were written against the
+same misreading, so they agreed with it. The review passed.
+
+I found it by accident: three minutes after filing #607, I was reading the
+ColumnIndex definition for the level histograms, and field 7 was already taken
+by "geospatial stats". The design doc had the same wrong mapping.
 
 A loop catches known unknowns, things somebody knew to check. The geo bug was an
 unknown unknown: nobody writes a test for a field that doesn't exist. Loops take
@@ -1280,11 +1404,9 @@ judgment stays with me.
 
 <!-- .slide: class="hero-image" -->
 
-## The Code Review Pyramid
+![The Code Review Pyramid](images/07-code-review-pyramid-cropped.png) <!-- .element: class="plain pyramid" -->
 
-![](images/07-code-review-pyramid.png) <!-- .element: class="plain" style="max-height: 500px" -->
-
-<span class="aside">The base is the <em>what</em>. The top is the <em>how</em>.</span>
+<p class="aside" style="margin: 6px 0 0">The base is the <em>what</em>. The top is the <em>how</em>.</p>
 
 Note:
 Some people in the room will know this image. I drew it a few years ago, long
@@ -1306,28 +1428,41 @@ claim, not the diff" is this pyramid, applied to AI output.
 
 ---
 
-<!-- .slide: class="hero" -->
 
-## "If the author shipped this exact line tomorrow, what specifically breaks?"
+## What no test catches
 
-<span class="aside">No concrete one-sentence answer: delete the finding.</span>
+<span class="subtitle">Hardwood docs, the write model, Aug 22</span>
 
-Note:
-This is the most transferable slide in the section. It works for human
-reviewers tomorrow, no agent required.
+<div class="doc-excerpt">
+<p><strong>Page size</strong> governs read granularity. A reader that skips pages by their statistics can only skip whole pages.</p>
+<p><strong>Row-group size</strong> governs <mark class="doc-claim">read parallelism</mark> and split sizing, and on the write side it is the memory bound above.</p>
+</div>
 
----
-
-<!-- .slide: class="hero" -->
-
-<blockquote class="transcript">
-"'all three bugs reproduce before the fix and match both oracles after' — that's not what the table suggests for 1142?"
-<cite>Me, Sep 10</cite>
+<blockquote class="transcript doc-me fragment" data-fragment-index="0">
+"…governs read parallelism" in the docs is not correct: we parallelize reading at the chunk and even page level.
+<cite>Me, Aug 26</cite>
 </blockquote>
 
+<div class="doc-checks fragment" data-fragment-index="1">
+<span class="doc-label">Passed it</span> <span>Tests</span> <span>Docs build</span>
+<span class="doc-label doc-caught">Caught it</span> <span class="doc-owner">Someone who knows the design</span>
+</div>
+
 Note:
-Reviewing the claim, in practice. The agent's summary said one thing, and the
-table directly above it said another. The diff was fine. The claim wasn't.
+On arrival: a sentence from the writer docs. It reads like something a Parquet
+expert would write. Row groups are the unit people usually associate with
+parallel reads, in Spark for instance.
+
+Click 1: it's wrong for Hardwood. The reader runs two virtual threads per
+column and decodes pages concurrently inside a row group. Row-group size doesn't
+bound its parallelism at all. I flagged it, and it was corrected the next day
+(2c71576d).
+
+Click 2: nothing else could have caught it. Tests don't read docs. The docs build
+checks form, not truth. The only check for a sentence about
+the design is someone who owns the design.
+
+That's the part of review that stays with you.
 
 ---
 
@@ -1339,7 +1474,7 @@ table directly above it said another. The diff was fine. The claim wasn't.
 
 <span class="aside">Make every correction stick.</span>
 
-<span class="credit">© jdtornow https://flic.kr/p/39W1Nx (CC BY 2.0)</span>
+<span class="credit">© &#126;MVI&#126; (warped) https://flic.kr/p/4kA93z (CC BY 2.0)</span>
 
 Note:
 Every time you correct the agent, ask: will it make this mistake again
@@ -1353,7 +1488,7 @@ it's called that.
 
 ## Automate the top: the ladder
 
-<svg class="proto " viewBox="0 0 1000 460" width="1000" height="460"><g class="fragment" data-fragment-index="0"><rect x="25" y="350" width="310" height="90" fill="#354045" fill-opacity="0.25"/><text x="41" y="386" class="p-label" fill="#ffffff">1</text><text x="73" y="386" class="p-step" fill="#ffffff">Ask in prose</text><text x="31" y="304" class="p-sub" fill="#354045">Sep 4: a rule in CLAUDE.md</text><text x="31" y="330" class="p-sub" fill="#354045">Sep 8: “why again?”</text></g><g class="fragment" data-fragment-index="1"><rect x="345" y="260" width="310" height="180" fill="#354045" fill-opacity="0.55"/><text x="361" y="296" class="p-label" fill="#ffffff">2</text><text x="393" y="296" class="p-step" fill="#ffffff">Automated check</text><text x="351" y="214" class="p-sub" fill="#354045">Filler prose → PR build check</text><text x="351" y="240" class="p-sub" fill="#354045">var → compiler error</text></g><g class="fragment" data-fragment-index="2"><rect x="665" y="170" width="310" height="270" fill="#354045" fill-opacity="0.85"/><text x="681" y="206" class="p-label" fill="#ffffff">3</text><text x="713" y="206" class="p-step" fill="#ffffff">Unrepresentable</text><text x="671" y="124" class="p-sub" fill="#354045">Sep 14: co-author trailer</text><text x="671" y="150" class="p-sub" fill="#354045">off in the settings file</text></g></svg>
+<svg class="proto" viewBox="0 0 1000 460" width="1000" height="460"><g class="fragment" data-fragment-index="0"><rect x="25" y="350" width="310" height="90" fill="#354045" fill-opacity="0.25"/><text x="41" y="386" class="p-label" fill="#ffffff">1</text><text x="73" y="386" class="p-step" fill="#ffffff">Ask in prose</text><text x="31" y="304" class="p-sub" fill="#354045">Sep 4: a rule in CLAUDE.md</text><text x="31" y="330" class="p-sub" fill="#354045">Sep 8: “why again?”</text></g><g class="fragment" data-fragment-index="1"><rect x="345" y="260" width="310" height="180" fill="#354045" fill-opacity="0.55"/><text x="361" y="296" class="p-label" fill="#ffffff">2</text><text x="393" y="296" class="p-step" fill="#ffffff">Automated check</text><text x="351" y="214" class="p-sub" fill="#354045">Filler prose → PR build check</text><text x="351" y="240" class="p-sub" fill="#354045">var → compiler error</text></g><g class="fragment" data-fragment-index="2"><rect x="665" y="170" width="310" height="270" fill="#354045" fill-opacity="0.85"/><text x="681" y="206" class="p-label" fill="#ffffff">3</text><text x="713" y="206" class="p-step" fill="#ffffff">Unrepresentable</text><text x="671" y="124" class="p-sub" fill="#354045">Sep 14: co-author trailer</text><text x="671" y="150" class="p-sub" fill="#354045">off in the settings file</text></g></svg>
 
 Note:
 Every standard in the project starts at step one. The ones that matter get
@@ -1378,21 +1513,57 @@ repeated in every session.
 
 ---
 
-<!-- .slide: class="hero" -->
 
 ## Prose rots. Checks don't.
 
-<span class="aside">90 design documents. I have not kept them current.</span>
+<span class="subtitle">One comment, in 29 filter matchers, May 11 to Sep 10</span>
 
-The only documentation that doesn't rot
-is documentation that <em>runs</em>.
+<span class="rot-go fragment" data-fragment-index="0"></span>
+<span class="rot-fix-go fragment" data-fragment-index="1"></span>
+
+<pre class="rot-code"><code class="nohighlight" data-noescape><span class="rot-swap"><span class="rot-old c">// Build the predicate bitmap ignoring nulls. The inner loop is fixed at 64
+// iterations and uses a branchless `(cond ? 1 : 0) &lt;&lt; b` pack so HotSpot
+// <mark class="rot-claim">fully unrolls it and auto-vectorizes the comparison</mark>. The tail is split
+// off to keep the hot loop's trip count constant at 64.</span><span class="rot-new c">// Build the predicate bitmap ignoring nulls; nulls are masked out in the
+// word-wise pass below. The comparison is branchless, but <mark class="rot-fixed">C2 does not</mark>
+// <mark class="rot-fixed">vectorize it</mark> — packing a vector compare into bitmap bits has no
+// autovectorization idiom, so this compiles to a scalar cmp/setcc/shl/or
+// chain unrolled 4x. The tail is split off to keep the hot loop's trip
+// count constant at 64.</span></span>
+<span class="k">for</span> (<span class="k">int</span> w = 0; w &lt; fullWords; w++) {
+    <span class="k">int</span> base = w &lt;&lt; 6;
+    <span class="k">long</span> word = 0L;
+    <span class="k">for</span> (<span class="k">int</span> b = 0; b &lt; 64; b++) {
+        word |= ((vals[base + b] &gt; lit) ? 1L : 0L) &lt;&lt; b;
+    }
+    outWords[w] = word;
+}</code></pre>
+
+<div class="rot-captions">
+<p class="aside rot-verdict">perfasm: six scalar instructions per value, no vector instructions, unrolled 4×.</p>
+<p class="aside rot-fix">Sep 10: rewritten from a measurement. <em>Still prose, so it can rot again.</em></p>
+</div>
 
 Note:
-The design docs are still worth writing — as *input*. They are the thinking I
-do before generating, and steering the agent with a document beats steering it
-with a paragraph.
+On arrival: the loop at the heart of 29 filter matchers, and the comment above
+it. It says the JIT unrolls the loop and vectorizes the comparison. That claim
+was the reason the code has its awkward branchless shape, and it sat there for
+four months.
 
-But they are not a record. What survives is what executes.
+Click 1: perfasm on the compiled code (shown earlier in this part, no need to
+show assembly again). Six scalar instructions per value, not a single vector
+instruction. The comment was never true. It read well, it went through review,
+and nothing could check it until something ran.
+
+Click 2: how it was resolved. The comment now says what one perfasm run showed:
+branchless, but not vectorized, and why. It's still prose: a JDK update can make
+it wrong again, and nothing will notice. Only a check that runs keeps a claim
+true; for assembly that's impractical, so read such comments as claims with a
+date, not facts. Design docs are worth writing as input; they are not a record.
+
+Facts: the comment came in with #250 (a contributed PR, May 11) and was corrected
+in 49e59d81 (#456, Sep 10). Code from LongGtBatchMatcher::test; perfasm on C2
+level 4, JDK 25. Don't attribute the comment to anyone on stage.
 
 ---
 
@@ -1429,21 +1600,6 @@ Click. The ring tilts and turns out to be a spiral. "Midnight still comes. But
 every time, the floor is higher."
 
 Three turns, matching the next-but-one slide. Change with data-turns.
-
----
-
-<!-- .slide: class="hero" -->
-
-## What raises the floor is what outlasts the turn.
-
-<span class="aside">Checks. Skills. Rules in the build. Not the instructions I gave in the moment.</span>
-
-Note:
-The five wrong causes became written rules. The co-author rule moved from
-prose into the settings file. The rebase trouble became a skill. The edited
-test became "changes to the oracle get read line by line".
-
-This is "prose rots, checks don't" again, now as the reason the trend goes up.
 
 ---
 
@@ -1510,14 +1666,24 @@ hand the code over to.
 
 ## Nine months
 
+<div class="columns nine-months">
+<div>
+
 | | |
 |---|---|
-| Commits | ~1,000 |
-| Main code | ~500k lines |
-| Test code | about the same again |
-| Design documents | 90 |
-| Review files | 221 |
-| Issues | 1,200+ |
+| Commits | 1,039 |
+| Main code (Java) | 91k lines |
+| Test code | 90k lines |
+| Design docs | 90 |
+| Review files | 222 |
+| Issues · PRs | 728 · 503 |
+
+</div>
+<div>
+<img class="plain gh-activity" src="images/gh-commit-activity-2026-09-17.png" alt="GitHub commit activity: commits per week, January to September 2026">
+<p class="gh-caption">Commits per week, from GitHub, Sep 17</p>
+</div>
+</div>
 
 Note:
 The joy, in numbers: this is what one person built in nine months, next to a
@@ -1526,17 +1692,29 @@ day job. Don't read the table.
 Point at test code being the same size as main code: that ratio is not
 discipline, it is the only reason any of this was possible.
 
+Counted Sep 17: commits on main; Java lines (including comments) under src/main
+and src/test across all modules; design docs in _designs; review files in
+_reviews; issues and PRs on GitHub.
+
+The chart is GitHub's Insights > Commits (commits per week on the default branch),
+screenshotted Sep 17. The tallest bar, about 100 commits, is the week the #1198
+thread ran.
+
 ---
 
-<!-- .slide: class="hero" -->
+<!-- .slide: class="hero" data-background-image="images/sections/piano.jpg" data-background-opacity="0.10" -->
 
 ## AI lets you build things you otherwise just <em>wouldn't</em>.
 
-<span class="aside">Me, Sep 14</span>
+<span class="credit-side">© OnceCaptured https://flic.kr/p/iiCcNU (CC BY 2.0)</span>
 
 Note:
+Photo: "Piano keys" by OnceCaptured (CC BY 2.0, https://flic.kr/p/iiCcNU), the
+same backdrop as "I vibe-coded all of it": the note trainer thread comes back
+without a word.
+
 The joy. My own words from the post announcing the note trainer, but don't
-show the post again: they've seen the project.
+show the post again: they've seen the project, and the piano is enough.
 
 Their version: the internal tool nobody would staff, the pitch demo, the spike
 nobody would fund. Now it's a weekend.
@@ -1559,7 +1737,7 @@ Say the arbiter part as a role, not a loss: the answer to "what's left for us?"
 You decide whether something is right, and whether it should exist at all.
 "More and more": the core and the public API still get every diff.
 
-The note trainer: never read the how, verified the what by ear. Hardwood: the
+The note trainer: never read the how, verified the what by playing it. Hardwood: the
 agent writes the how, and everything in act three is machinery for verifying the
 what. The geo PR: I checked the how and never asked about the what.
 
@@ -1582,19 +1760,28 @@ Let it stand alone. Don't add anything.
 
 ## Stop being the loop
 
-<svg class="cycle cycle-monday" viewBox="0 0 1088 560" width="1088" height="560"><defs><marker id="cycle-head-monday" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="cycle-head"/></marker></defs><path class="cycle-arc" d="M581.0 186.3 L585.5 187.6 L589.9 189.1 L594.3 190.8 L598.7 192.7 L602.9 194.8 L607.1 197.0 L611.2 199.4 L615.2 201.9 L619.2 204.7 L623.0 207.5 L626.7 210.6 L630.3 213.7 L633.7 217.1 L637.1 220.5 L640.3 224.1 L643.3 227.8 L646.3 231.7 L649.0 235.6 L651.7 239.7 L654.1 243.9 L656.4 248.2 L658.6 252.5 L660.5 257.0 L662.3 261.6" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M665.4 339.4 L663.9 344.2 L662.3 349.0 L660.4 353.7 L658.4 358.3 L656.2 362.8 L653.8 367.3 L651.3 371.7 L648.5 375.9 L645.6 380.1 L642.5 384.2 L639.3 388.1 L635.9 391.9 L632.4 395.6 L628.7 399.2 L624.9 402.6 L620.9 405.8 L616.8 408.9 L612.6 411.9 L608.2 414.6 L603.7 417.3 L599.2 419.7 L594.5 422.0 L589.8 424.0 L584.9 425.9" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M502.1 429.0 L497.0 427.4 L492.0 425.6 L487.0 423.7 L482.1 421.5 L477.3 419.2 L472.5 416.6 L467.9 413.9 L463.4 411.0 L458.9 407.9 L454.6 404.6 L450.5 401.2 L446.4 397.6 L442.5 393.8 L438.8 389.9 L435.2 385.8 L431.7 381.6 L428.4 377.2 L425.3 372.7 L422.4 368.1 L419.6 363.4 L417.0 358.5 L414.7 353.6 L412.5 348.5 L410.5 343.4" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M407.4 255.6 L409.1 250.2 L411.0 244.9 L413.0 239.6 L415.3 234.4 L417.8 229.3 L420.5 224.3 L423.4 219.4 L426.5 214.7 L429.8 210.0 L433.3 205.4 L436.9 201.0 L440.8 196.8 L444.8 192.6 L448.9 188.7 L453.2 184.9 L457.7 181.2 L462.3 177.8 L467.1 174.5 L472.0 171.4 L477.0 168.5 L482.1 165.8 L487.4 163.3 L492.7 161.0 L498.1 158.9" marker-end="url(#cycle-head-monday)"/><text class="cycle-label" x="544" y="110" text-anchor="middle"><tspan class="cycle-num">1</tspan>  Build the <tspan class="cycle-em">feedback loop</tspan></text><text class="cycle-sub" x="544" y="140" text-anchor="middle">so the agent finds out it’s wrong</text><text class="cycle-label" x="734" y="304" text-anchor="start"><tspan class="cycle-num">2</tspan>  Make it <tspan class="cycle-em">fast</tspan></text><text class="cycle-sub" x="734" y="334" text-anchor="start">or it gets skipped</text><text class="cycle-label" x="544" y="512" text-anchor="middle"><tspan class="cycle-num">3</tspan>  Review what <tspan class="cycle-em">no feedback loop</tspan> can see</text><text class="cycle-sub" x="544" y="542" text-anchor="middle">that part stays with you</text><text class="cycle-label" x="354" y="304" text-anchor="end"><tspan class="cycle-num">4</tspan>  Raise the <tspan class="cycle-em">floor</tspan></text><text class="cycle-sub" x="354" y="334" text-anchor="end">make every correction stick</text></svg>
+<svg class="cycle cycle-monday" viewBox="0 80 1088 475" width="1088" height="475"><defs><marker id="cycle-head-monday" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="cycle-head"/></marker></defs><path class="cycle-arc" d="M581.0 186.3 L585.5 187.6 L589.9 189.1 L594.3 190.8 L598.7 192.7 L602.9 194.8 L607.1 197.0 L611.2 199.4 L615.2 201.9 L619.2 204.7 L623.0 207.5 L626.7 210.6 L630.3 213.7 L633.7 217.1 L637.1 220.5 L640.3 224.1 L643.3 227.8 L646.3 231.7 L649.0 235.6 L651.7 239.7 L654.1 243.9 L656.4 248.2 L658.6 252.5 L660.5 257.0 L662.3 261.6" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M665.4 339.4 L663.9 344.2 L662.3 349.0 L660.4 353.7 L658.4 358.3 L656.2 362.8 L653.8 367.3 L651.3 371.7 L648.5 375.9 L645.6 380.1 L642.5 384.2 L639.3 388.1 L635.9 391.9 L632.4 395.6 L628.7 399.2 L624.9 402.6 L620.9 405.8 L616.8 408.9 L612.6 411.9 L608.2 414.6 L603.7 417.3 L599.2 419.7 L594.5 422.0 L589.8 424.0 L584.9 425.9" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M502.1 429.0 L497.0 427.4 L492.0 425.6 L487.0 423.7 L482.1 421.5 L477.3 419.2 L472.5 416.6 L467.9 413.9 L463.4 411.0 L458.9 407.9 L454.6 404.6 L450.5 401.2 L446.4 397.6 L442.5 393.8 L438.8 389.9 L435.2 385.8 L431.7 381.6 L428.4 377.2 L425.3 372.7 L422.4 368.1 L419.6 363.4 L417.0 358.5 L414.7 353.6 L412.5 348.5 L410.5 343.4" marker-end="url(#cycle-head-monday)"/><path class="cycle-arc" d="M407.4 255.6 L409.1 250.2 L411.0 244.9 L413.0 239.6 L415.3 234.4 L417.8 229.3 L420.5 224.3 L423.4 219.4 L426.5 214.7 L429.8 210.0 L433.3 205.4 L436.9 201.0 L440.8 196.8 L444.8 192.6 L448.9 188.7 L453.2 184.9 L457.7 181.2 L462.3 177.8 L467.1 174.5 L472.0 171.4 L477.0 168.5 L482.1 165.8 L487.4 163.3 L492.7 161.0 L498.1 158.9" marker-end="url(#cycle-head-monday)"/><text class="cycle-label" x="544" y="110" text-anchor="middle"><tspan class="cycle-num">1</tspan>  Build the <tspan class="cycle-em">feedback loop</tspan></text><text class="cycle-sub" x="544" y="140" text-anchor="middle">so the agent finds out it’s wrong</text><text class="cycle-label" x="734" y="304" text-anchor="start"><tspan class="cycle-num">2</tspan>  Make it <tspan class="cycle-em">fast</tspan></text><text class="cycle-sub" x="734" y="334" text-anchor="start">or it gets skipped</text><text class="cycle-label" x="544" y="512" text-anchor="middle"><tspan class="cycle-num">3</tspan>  Review what <tspan class="cycle-em">no feedback loop</tspan> can see</text><text class="cycle-sub" x="544" y="542" text-anchor="middle">that part stays with you</text><text class="cycle-label" x="354" y="304" text-anchor="end"><tspan class="cycle-num">4</tspan>  Raise the <tspan class="cycle-em">floor</tspan></text><text class="cycle-sub" x="354" y="334" text-anchor="end">make every correction stick</text></svg>
 
-<div class="signoff">
-  <img src="images/gunnar-morling.jpg" width="96" height="96" alt="Gunnar Morling">
+<div class="signoff fragment">
+  <strong class="signoff-thanks">Thank you!</strong>
+  <img src="images/gunnar-morling.jpg" width="160" height="160" alt="Gunnar Morling">
   <div>
-    <strong>Thank you!</strong> Gunnar Morling
+    Gunnar Morling
+    <span class="signoff-role">Technologist, Confluent</span>
     <span>morling.dev · hardwood.dev · @gunnarmorling</span>
   </div>
 </div>
 
 Note:
-Ten seconds each, once round the circle. Then stop.
+Straight after "Review the claim, not the diff." Keep it abrupt.
 
+On arrival, one breath, no recap per step: "Build the feedback loop, make it
+fast, review what no loop can see, and raise the floor. Stop being the loop."
+
+Click as you finish that sentence, and say it while the photo comes in: "I'm
+Gunnar Morling, I work as a Technologist at Confluent. Thank you."
+
+Then stop talking. No "any questions?"; the moderator takes it from there.
 Leave this slide up through the applause and the questions.
 
 ---
@@ -1607,6 +1794,32 @@ Leave this slide up through the applause and the questions.
 Note:
 Not part of the talk. Candidates that might come back in; everything after this
 slide is out of the running order.
+
+---
+
+
+## What did Hardwood cost?
+
+<span class="subtitle">At API list prices, Jan 4 to Sep 17</span>
+
+<svg class="proto " viewBox="0 0 1100 470" width="1100" height="470"><defs><pattern id="cost-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#f3e3dc"/><line x1="0" y1="0" x2="0" y2="8" stroke="#b5491f" stroke-opacity="0.35" stroke-width="3"/></pattern></defs><line x1="80" y1="410.0" x2="950" y2="410.0" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="416.0" text-anchor="end" class="p-sub" fill="#666666">$0k</text><line x1="80" y1="312.5" x2="950" y2="312.5" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="318.5" text-anchor="end" class="p-sub" fill="#666666">$5k</text><line x1="80" y1="215.0" x2="950" y2="215.0" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="221.0" text-anchor="end" class="p-sub" fill="#666666">$10k</text><line x1="80" y1="117.5" x2="950" y2="117.5" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="123.5" text-anchor="end" class="p-sub" fill="#666666">$15k</text><line x1="80" y1="20.0" x2="950" y2="20.0" stroke="#e5e7eb" stroke-width="1"/><text x="68" y="26.0" text-anchor="end" class="p-sub" fill="#666666">$20k</text><text x="80.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">Jan</text><text x="175.2" y="440" text-anchor="middle" class="p-sub" fill="#666666">Feb</text><text x="270.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">Mar</text><text x="375.7" y="440" text-anchor="middle" class="p-sub" fill="#666666">Apr</text><text x="477.6" y="440" text-anchor="middle" class="p-sub" fill="#666666">May</text><text x="583.0" y="440" text-anchor="middle" class="p-sub" fill="#666666">Jun</text><text x="684.9" y="440" text-anchor="middle" class="p-sub" fill="#666666">Jul</text><text x="790.3" y="440" text-anchor="middle" class="p-sub" fill="#666666">Aug</text><text x="895.6" y="440" text-anchor="middle" class="p-sub" fill="#666666">Sep</text><polygon points="80.0,410.0 80.0,404.8 83.4,402.1 86.8,398.1 90.2,394.1 93.6,394.1 97.0,394.1 100.4,394.1 103.8,389.2 107.2,388.9 110.6,388.7 114.0,388.3 117.4,388.3 120.8,388.3 124.2,387.3 127.6,386.7 131.0,382.8 134.4,382.8 137.8,382.8 141.2,380.9 144.6,380.7 148.0,380.7 151.4,380.7 154.8,377.7 158.2,377.2 161.6,377.2 165.0,375.3 168.4,372.9 171.8,369.3 175.2,369.3 178.6,369.3 182.0,369.3 185.4,369.3 188.8,369.3 192.1,369.3 195.5,369.3 198.9,369.3 202.3,369.3 205.7,369.3 209.1,367.8 212.5,367.1 215.9,367.1 219.3,367.0 222.7,366.6 226.1,364.4 229.5,363.5 232.9,363.2 236.3,362.6 239.7,360.6 243.1,360.4 246.5,359.1 249.9,356.3 253.3,354.4 256.7,354.2 260.1,353.2 263.5,353.0 266.9,351.7 270.3,351.1 273.7,347.2 277.1,346.8 280.5,346.8 283.9,346.8 287.3,346.8 290.7,346.8 294.1,346.8 297.5,346.8 300.9,346.8 304.3,343.2 307.7,343.2 311.1,343.2 314.5,343.2 317.9,343.2 321.3,342.8 324.7,341.5 328.1,340.2 331.5,340.2 334.9,340.0 338.3,336.3 341.7,335.8 345.1,335.3 348.5,331.8 351.9,331.2 355.3,330.1 358.7,328.0 362.1,323.1 365.5,320.3 368.9,315.0 372.3,313.4 375.7,311.5 379.1,311.3 382.5,311.3 385.9,311.3 389.3,311.3 392.7,311.3 396.1,311.3 399.5,311.2 402.9,311.2 406.2,311.2 409.6,311.2 413.0,311.2 416.4,311.2 419.8,311.0 423.2,311.0 426.6,311.0 430.0,310.4 433.4,310.3 436.8,303.5 440.2,301.4 443.6,300.1 447.0,298.1 450.4,291.5 453.8,290.6 457.2,290.6 460.6,278.8 464.0,276.8 467.4,272.1 470.8,270.4 474.2,268.9 477.6,266.4 481.0,266.1 484.4,266.1 487.8,265.7 491.2,263.1 494.6,262.8 498.0,261.8 501.4,261.8 504.8,261.2 508.2,261.2 511.6,253.0 515.0,249.0 518.4,247.5 521.8,247.3 525.2,247.2 528.6,247.1 532.0,247.1 535.4,247.0 538.8,247.0 542.2,247.0 545.6,247.0 549.0,247.0 552.4,247.0 555.8,247.0 559.2,247.0 562.6,246.9 566.0,246.9 569.4,244.4 572.8,243.0 576.2,241.7 579.6,240.8 583.0,240.7 586.4,239.9 589.8,237.3 593.2,235.3 596.6,233.1 600.0,232.5 603.4,231.6 606.8,231.6 610.2,231.6 613.6,231.6 617.0,230.7 620.4,230.4 623.8,230.2 627.1,230.1 630.5,230.0 633.9,230.0 637.3,230.0 640.7,230.0 644.1,230.0 647.5,230.0 650.9,229.5 654.3,229.5 657.7,229.5 661.1,228.1 664.5,227.4 667.9,226.2 671.3,225.1 674.7,223.8 678.1,223.7 681.5,221.4 684.9,221.2 688.3,214.4 691.7,214.4 695.1,214.0 698.5,211.6 701.9,211.1 705.3,211.1 708.7,210.8 712.1,210.8 715.5,209.3 718.9,207.2 722.3,207.2 725.7,207.1 729.1,207.1 732.5,205.9 735.9,205.8 739.3,205.8 742.7,204.1 746.1,204.1 749.5,203.8 752.9,203.8 756.3,203.7 759.7,203.7 763.1,199.2 766.5,199.0 769.9,199.0 773.3,199.0 776.7,199.0 780.1,199.0 783.5,199.0 786.9,199.0 790.3,199.0 793.7,199.0 797.1,199.0 800.5,197.8 803.9,197.6 807.3,197.4 810.7,197.0 814.1,195.8 817.5,195.4 820.9,195.4 824.3,195.4 827.7,195.4 831.1,195.4 834.5,195.4 837.9,195.4 841.2,195.4 844.6,195.4 848.0,195.4 851.4,195.4 854.8,195.4 858.2,195.4 861.6,195.4 865.0,195.4 868.4,195.4 871.8,195.4 875.2,195.4 878.6,195.4 882.0,195.4 885.4,195.4 888.8,195.4 892.2,195.4 895.6,195.4 899.0,195.4 902.4,195.4 905.8,195.4 909.2,195.4 912.6,195.4 916.0,195.4 919.4,195.4 922.8,195.4 926.2,195.4 929.6,195.4 933.0,195.4 936.4,195.4 939.8,195.4 943.2,195.4 946.6,195.4 950.0,195.4 950.0,410.0" fill="url(#cost-hatch)"/><polyline points="80.0,404.8 83.4,402.1 86.8,398.1 90.2,394.1 93.6,394.1 97.0,394.1 100.4,394.1 103.8,389.2 107.2,388.9 110.6,388.7 114.0,388.3 117.4,388.3 120.8,388.3 124.2,387.3 127.6,386.7 131.0,382.8 134.4,382.8 137.8,382.8 141.2,380.9 144.6,380.7 148.0,380.7 151.4,380.7 154.8,377.7 158.2,377.2 161.6,377.2 165.0,375.3 168.4,372.9 171.8,369.3 175.2,369.3 178.6,369.3 182.0,369.3 185.4,369.3 188.8,369.3 192.1,369.3 195.5,369.3 198.9,369.3 202.3,369.3 205.7,369.3 209.1,367.8 212.5,367.1 215.9,367.1 219.3,367.0 222.7,366.6 226.1,364.4 229.5,363.5 232.9,363.2 236.3,362.6 239.7,360.6 243.1,360.4 246.5,359.1 249.9,356.3 253.3,354.4 256.7,354.2 260.1,353.2 263.5,353.0 266.9,351.7 270.3,351.1 273.7,347.2 277.1,346.8 280.5,346.8 283.9,346.8 287.3,346.8 290.7,346.8 294.1,346.8 297.5,346.8 300.9,346.8 304.3,343.2 307.7,343.2 311.1,343.2 314.5,343.2 317.9,343.2 321.3,342.8 324.7,341.5 328.1,340.2 331.5,340.2 334.9,340.0 338.3,336.3 341.7,335.8 345.1,335.3 348.5,331.8 351.9,331.2 355.3,330.1 358.7,328.0 362.1,323.1 365.5,320.3 368.9,315.0 372.3,313.4 375.7,311.5 379.1,311.3 382.5,311.3 385.9,311.3 389.3,311.3 392.7,311.3 396.1,311.3 399.5,311.2 402.9,311.2 406.2,311.2 409.6,311.2 413.0,311.2 416.4,311.2 419.8,311.0 423.2,311.0 426.6,311.0 430.0,310.4 433.4,310.3 436.8,303.5 440.2,301.4 443.6,300.1 447.0,298.1 450.4,291.5 453.8,290.6 457.2,290.6 460.6,278.8 464.0,276.8 467.4,272.1 470.8,270.4 474.2,268.9 477.6,266.4 481.0,266.1 484.4,266.1 487.8,265.7 491.2,263.1 494.6,262.8 498.0,261.8 501.4,261.8 504.8,261.2 508.2,261.2 511.6,253.0 515.0,249.0 518.4,247.5 521.8,247.3 525.2,247.2 528.6,247.1 532.0,247.1 535.4,247.0 538.8,247.0 542.2,247.0 545.6,247.0 549.0,247.0 552.4,247.0 555.8,247.0 559.2,247.0 562.6,246.9 566.0,246.9 569.4,244.4 572.8,243.0 576.2,241.7 579.6,240.8 583.0,240.7 586.4,239.9 589.8,237.3 593.2,235.3 596.6,233.1 600.0,232.5 603.4,231.6 606.8,231.6 610.2,231.6 613.6,231.6 617.0,230.7 620.4,230.4 623.8,230.2 627.1,230.1 630.5,230.0 633.9,230.0 637.3,230.0 640.7,230.0 644.1,230.0 647.5,230.0 650.9,229.5 654.3,229.5 657.7,229.5 661.1,228.1 664.5,227.4 667.9,226.2 671.3,225.1 674.7,223.8 678.1,223.7 681.5,221.4 684.9,221.2 688.3,214.4 691.7,214.4 695.1,214.0 698.5,211.6 701.9,211.1 705.3,211.1 708.7,210.8 712.1,210.8 715.5,209.3 718.9,207.2 722.3,207.2 725.7,207.1 729.1,207.1 732.5,205.9 735.9,205.8 739.3,205.8 742.7,204.1 746.1,204.1 749.5,203.8 752.9,203.8 756.3,203.7 759.7,203.7 763.1,199.2 766.5,199.0 769.9,199.0 773.3,199.0 776.7,199.0 780.1,199.0 783.5,199.0 786.9,199.0 790.3,199.0 793.7,199.0 797.1,199.0 800.5,197.8 803.9,197.6 807.3,197.4 810.7,197.0 814.1,195.8 817.5,195.4 820.9,195.4" fill="none" stroke="#b5491f" stroke-width="2" stroke-dasharray="6 5"/><polygon points="820.9,195.4 820.9,195.4 824.3,193.1 827.7,192.6 831.1,191.4 834.5,191.3 837.9,191.3 841.2,191.1 844.6,191.1 848.0,189.9 851.4,184.0 854.8,180.8 858.2,173.8 861.6,163.8 865.0,163.4 868.4,162.4 871.8,159.9 875.2,159.5 878.6,158.4 882.0,156.3 885.4,151.2 888.8,150.7 892.2,149.8 895.6,148.9 899.0,148.8 902.4,148.8 905.8,147.1 909.2,132.9 912.6,132.5 916.0,121.3 919.4,115.8 922.8,110.0 926.2,99.3 929.6,94.2 933.0,91.3 936.4,91.3 939.8,86.5 943.2,81.0 946.6,80.6 950.0,80.6 950.0,195.4" fill="#b5491f" fill-opacity="0.85"/><line x1="80" y1="410.0" x2="950" y2="410.0" stroke="#354045" stroke-width="2"/><text x="962.0" y="88.6" class="p-big" fill="#354045">$17k</text><text x="302.3" y="276.9" text-anchor="middle" class="p-label" fill="#666666">extrapolated</text><text x="302.3" y="302.9" text-anchor="middle" class="p-sub" fill="#666666">lines added × $0.052 per line</text><text x="806.9" y="131.4" text-anchor="end" class="p-label" fill="#b5491f">measured</text><text x="806.9" y="157.4" text-anchor="end" class="p-sub" fill="#666666">$5,887 in 5½ weeks →</text></svg>
+
+Note:
+Q&A backup, for "what did it cost?". Measured: every API response in the session transcripts since Aug 10
+(when the kept transcripts start), priced at list prices: Opus 5 at $5/$25 per
+million tokens, cache writes 1.25x (5 min) or 2x (1 h), cache reads 0.1x.
+$5,887 for Hardwood work, talk sessions excluded. Most of it is cache
+reads: long contexts re-sent every turn.
+
+Extrapolated: before Aug 10, each week's lines added on main (data files, reviews
+and the talk excluded) times the measured cost per line added,
+$0.052. That assumes spring cost per line was like August's; the models
+and the way of working were different, so treat the hatched part as an order of
+magnitude.
+
+Say it as "on the order of $17k at API list prices". It isn't what I
+paid: a subscription costs a fraction. And it's only the sessions in this
+container.
 
 ---
 
@@ -1826,3 +2039,106 @@ file and ticks them off as they're addressed.
 
 The comment thread is gone after the merge. The file is still there, and the next
 review starts from it.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## "If the author shipped this exact line tomorrow, what specifically breaks?"
+
+<span class="aside">No concrete one-sentence answer: delete the finding.</span>
+
+Note:
+This is the most transferable slide in the section. It works for human
+reviewers tomorrow, no agent required.
+
+---
+
+<!-- .slide: class="hero" -->
+
+<blockquote class="transcript">
+"'all three bugs reproduce before the fix and match both oracles after' — that's not what the table suggests for 1142?"
+<cite>Me, Sep 10</cite>
+</blockquote>
+
+Note:
+Reviewing the claim, in practice. The agent's summary said one thing, and the
+table directly above it said another. The diff was fine. The claim wasn't.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## It has <span class="xout">no<svg class="xout-mark fragment" data-fragment-index="0" viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M4 8 C 30 22, 64 40, 96 54"/><path d="M6 54 C 34 40, 66 22, 95 6"/></svg><span class="xout-insert fragment" data-fragment-index="0"><svg class="xout-arrow" viewBox="0 0 120 90"><path d="M112 14 C 72 10, 30 26, 14 76"/><path d="M4 58 L 14 78 L 30 62"/></svg>ok, ok, no mandatory</span></span> dependencies.
+
+Note:
+Say it first as the claim everyone makes. Click: no *mandatory* dependencies.
+Compression codecs (snappy, zstd, lz4, brotli) are optional, and you add only
+the one your files use.
+
+This is the surprising half, and it's the part that transfers to their work.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## "Can we stop any probing or guessing, this drives me crazy."
+
+<span class="aside">Me, to Claude</span>
+
+Note:
+Lead-in, from a writer regression in August: four confident theories, each with
+arithmetic behind it, three refuted by the measurements. "The benchmark says I
+was wrong again — it got worse." What found it: a measurement (`-prof gc`).
+
+Let it land. Everyone in the room who has used an agent has wanted to type this.
+
+Don't soften it. This is what midnight sounds like.
+
+---
+
+<!-- .slide: class="hero" -->
+
+## What raises the floor is what outlasts the turn.
+
+<span class="aside">Checks. Skills. Rules in the build. Not the instructions I gave in the moment.</span>
+
+Note:
+The five wrong causes became written rules. The co-author rule moved from
+prose into the settings file. The rebase trouble became a skill. The edited
+test became "changes to the oracle get read line by line".
+
+This is "prose rots, checks don't" again, now as the reason the trend goes up.
+
+---
+
+
+<!-- .slide: class="hero-image" -->
+
+<div class="term">
+<div class="term-bar"><span></span><span></span><span></span><em>Claude Code session, Sep 7 · transcript excerpt</em></div>
+<div class="term-body">
+<p class="term-user">&gt; can we take a step back. you said you copied the workspace, and it was fast for that copy. how can that be.</p>
+<div class="fragment">
+<p>Straight answer: <strong>because the copy wasn't the same tree.</strong> My <code>tar</code> had <code>--exclude=./.claude --exclude=./_tmp --exclude=./.docker-venv</code>. I excluded precisely the directories that turned out to be the cause […]</p>
+<p>So my "250× — the filesystem is the entire variable" claim was an artefact of my own <code>tar</code> flags. […] <mark>Bad instrument, confidently wrong conclusion</mark>, and it sent us down the filesystem path for several rounds.</p>
+</div>
+</div>
+</div>
+
+Note:
+Hunting the licence check, the agent had built a clean experiment: copy the
+workspace to a fast filesystem, run the check there, compare. Fast. Its
+conclusion, with a number: "250×, the filesystem is the entire variable." We
+spent several rounds on filesystems.
+
+I didn't read any code for this. I asked how the fast copy could be fast.
+
+Click: its answer. The copy had left out exactly the directories that were the
+cause, because an earlier probe (counting the wrong callback) said they were
+never walked. A confident conclusion from a broken instrument. One question about
+the claim undid it.
+
+Exact wording from the session transcript (05ac5299, Sep 7, 18:46 UTC), with
+cuts marked. The session was compacted later, so this is rendered, not a
+screenshot.

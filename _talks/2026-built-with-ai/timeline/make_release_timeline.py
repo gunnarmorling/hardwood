@@ -41,7 +41,7 @@ EVENTS = [
     dict(d=date(2026, 4, 2), part=2, step=0, label="Beta1"),
     dict(d=date(2026, 4, 29), part=2, step=0, label="Beta2"),
     dict(d=date(2026, 5, 31), part=2, step=0, card_step=1, label="CR1",
-         card=("note", "Geospatial pruning ships", 966, 218, 70), above=True),
+         card=("note", "Geospatial pruning ships", 966, 218, 70), above=True, css="rtl-geo"),
     dict(d=date(2026, 6, 7), part=2, step=0, label="CR2"),
     dict(d=date(2026, 6, 25), part=2, step=0, label="Final",
          card=("img", "images/tl-2026-06-25-final.png", 810, 374, (1550, 524)), above=False),
@@ -94,7 +94,8 @@ def event(e):
         if kind == "img":
             html = f'<img class="rtl-card" src="{content}" style="{style}" alt="">'
         else:
-            html = f'<div class="rtl-card rtl-note" style="{style}">{content}</div>'
+            extra = f' {e["css"]}' if "css" in e else ""
+            html = f'<div class="rtl-card rtl-note{extra}" style="{style}">{content}</div>'
         card_layer = svg(connector) + html
     return card_layer, svg(marks)
 

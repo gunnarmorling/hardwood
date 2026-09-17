@@ -1,142 +1,156 @@
 {
-  "title": {
-    "title": "Wood Grain",
-    "creator": "mrpolyonymous",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/8961540@N07/5967312084",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/a6j2Z7"
-  },
-  "the-magic": {
-    "title": "TNT",
-    "creator": "Alex Holyoake",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/49007814@N03/22837078651",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/AN2ZRn"
-  },
-  "midnight": {
-    "title": "Solitude",
-    "creator": "*rboed*",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/92082510@N04/26073260671",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/FJ1h26"
-  },
-  "hinge": {
-    "title": "Rusty hinge",
-    "creator": "ConspiracyofHappiness",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/97964364@N00/491407086",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/KqAcY"
-  },
-  "new-way": {
-    "title": "Mechanics' Institute spiral staircase, from above",
-    "creator": "chad_k",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/99535234@N00/3674574542",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/6AH9Zu"
-  },
-  "price-joy": {
-    "title": "Meteorite",
-    "creator": "Michael Elleray",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/36021014@N06/6319435539",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/aCqL2a"
-  },
-  "chapter-build-loop": {
-    "title": "Aerial view of roundabout on OR 57 in Forest Grove",
-    "creator": "OregonDOT",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/28364885@N02/49894716506",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/2j22sUS"
-  },
-  "chapter-make-fast": {
-    "title": "Intersting 1960s desk stopwatch 5",
-    "creator": "Elsie esq.",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/61132483@N00/11257644073",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/i9NnnB"
-  },
-  "chapter-review": {
-    "title": "Magnifying glass 6/5",
-    "creator": "John 'Pathfinder' Lester",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/40615055@N00/7155071752",
-    "size": "b",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/bUgBy5"
-  },
-  "chapter-raise-floor": {
-    "title": "New Cowboys Stadium",
-    "creator": "jdtornow",
-    "license": "CC BY 2.0",
-    "page": "https://www.flickr.com/photos/33602281@N00/1413784251",
-    "size": "k",
-    "license_on_page": [
-      [
-        "by",
-        "2.0"
-      ]
-    ],
-    "short": "https://flic.kr/p/39W1Nx"
-  }
+ "title": {
+  "title": "Wood Grain",
+  "creator": "mrpolyonymous",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/8961540@N07/5967312084",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/a6j2Z7"
+ },
+ "the-magic": {
+  "title": "TNT",
+  "creator": "Alex Holyoake",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/49007814@N03/22837078651",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/AN2ZRn"
+ },
+ "midnight": {
+  "title": "Solitude",
+  "creator": "*rboed*",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/92082510@N04/26073260671",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/FJ1h26"
+ },
+ "hinge": {
+  "title": "Rusty hinge",
+  "creator": "ConspiracyofHappiness",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/97964364@N00/491407086",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/KqAcY"
+ },
+ "new-way": {
+  "title": "Mechanics' Institute spiral staircase, from above",
+  "creator": "chad_k",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/99535234@N00/3674574542",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/6AH9Zu"
+ },
+ "price-joy": {
+  "title": "Meteorite",
+  "creator": "Michael Elleray",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/36021014@N06/6319435539",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/aCqL2a"
+ },
+ "chapter-build-loop": {
+  "title": "Aerial view of roundabout on OR 57 in Forest Grove",
+  "creator": "OregonDOT",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/28364885@N02/49894716506",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/2j22sUS"
+ },
+ "chapter-make-fast": {
+  "title": "Intersting 1960s desk stopwatch 5",
+  "creator": "Elsie esq.",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/61132483@N00/11257644073",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/i9NnnB"
+ },
+ "chapter-review": {
+  "title": "Magnifying glass 6/5",
+  "creator": "John 'Pathfinder' Lester",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/40615055@N00/7155071752",
+  "size": "b",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/bUgBy5"
+ },
+ "chapter-raise-floor": {
+  "title": "Bae Rice Terraces (Kiangan, Ifugao)",
+  "creator": "~MVI~ (warped)",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/20119750@N00/2190744597",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/4kA93z"
+ },
+ "piano": {
+  "title": "Piano keys",
+  "creator": "OnceCaptured",
+  "license": "CC BY 2.0",
+  "page": "https://www.flickr.com/photos/111456865@N04/11357509244",
+  "size": "k",
+  "license_on_page": [
+   [
+    "by",
+    "2.0"
+   ]
+  ],
+  "short": "https://flic.kr/p/iiCcNU"
+ }
 }

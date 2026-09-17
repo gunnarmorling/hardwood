@@ -134,7 +134,8 @@ committing.
 | `chapter-build-loop.jpg` | "Aerial view of roundabout on OR 57 in Forest Grove" | OregonDOT | CC BY 2.0 | https://flic.kr/p/2j22sUS |
 | `chapter-make-fast.jpg` | "Intersting 1960s desk stopwatch 5" | Elsie esq. | CC BY 2.0 | https://flic.kr/p/i9NnnB |
 | `chapter-review.jpg` | "Magnifying glass 6/5" | John 'Pathfinder' Lester | CC BY 2.0 | https://flic.kr/p/bUgBy5 |
-| `chapter-raise-floor.jpg` | "New Cowboys Stadium" | jdtornow | CC BY 2.0 | https://flic.kr/p/39W1Nx |
+| `chapter-raise-floor.jpg` | "Bae Rice Terraces (Kiangan, Ifugao)" | ~MVI~ (warped) | CC BY 2.0 | https://flic.kr/p/4kA93z |
+| `piano.jpg` | "Piano keys" | OnceCaptured | CC BY 2.0 | https://flic.kr/p/iiCcNU |
 
 ## Timing
 
