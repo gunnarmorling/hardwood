@@ -507,7 +507,14 @@ def decisions(day='2026-09-09'):
     gaps = sorted((b[0] - a[0]).total_seconds() / 60 for a, b in zip(msgs, msgs[1:]))
     median = gaps[len(gaps) // 2]
     h0, h1 = 9, 24
-    X0, X1 = 150, 970
+    # The plot sits in the middle of the box with equal gutters, so that it reads as centred on the
+    # slide; the left gutter holds the row labels. The slide carries "wide", so the box may exceed
+    # the regular text column.
+    W, H = 1240, 480
+    X0, X1 = 140, 1100
+    TOP, ROWS = 43, 385          # the band the session rows share
+    AX0, AX1 = 28, 428           # how far the hour gridlines run
+    MID = TOP + ROWS / 2
 
     def x(t):
         return X0 + (t.hour + t.minute / 60 + t.second / 3600 - h0) / (h1 - h0) * (X1 - X0)
@@ -515,17 +522,17 @@ def decisions(day='2026-09-09'):
     axis = ''
     for hh in range(h0, h1 + 1, 3):
         xx = X0 + (hh - h0) / (h1 - h0) * (X1 - X0)
-        axis += f'<text x="{xx:.1f}" y="440" text-anchor="middle" class="p-sub" fill="{DIM}">{hh:02d}:00</text>'
-        axis += f'<line x1="{xx:.1f}" y1="60" x2="{xx:.1f}" y2="415" stroke="#e5e7eb" stroke-width="1"/>'
-    merged = f'<text x="{X0 - 16}" y="228" text-anchor="end" class="p-sub" fill="{DIM}">all sessions</text>'
-    merged += ''.join(f'<line x1="{x(t):.1f}" y1="190" x2="{x(t):.1f}" y2="250" stroke="{ACC}" stroke-width="2.5"/>' for t, _ in msgs)
+        axis += f'<text x="{xx:.1f}" y="{H - AX0 - 4}" text-anchor="middle" class="p-sub" fill="{DIM}">{hh:02d}:00</text>'
+        axis += f'<line x1="{xx:.1f}" y1="{AX0}" x2="{xx:.1f}" y2="{AX1}" stroke="#e5e7eb" stroke-width="1"/>'
+    merged = f'<text x="{X0 - 16}" y="{MID + 7:.1f}" text-anchor="end" class="p-sub" fill="{DIM}">all sessions</text>'
+    merged += ''.join(f'<line x1="{x(t):.1f}" y1="{MID - 38:.1f}" x2="{x(t):.1f}" y2="{MID + 38:.1f}" stroke="{ACC}" stroke-width="2.5"/>' for t, _ in msgs)
     counts = collections.Counter(s for _, s in msgs)
     # One row per session, ordered by its first prompt of the day.
     order = sorted(counts, key=lambda sid: min(tt for tt, ss in msgs if ss == sid))
-    row_h = 330 / len(order)
-    split = f'<text x="{X0 - 16}" y="{70 + 330 / 2}" text-anchor="end" class="p-sub" fill="{DIM}">{len(order)} sessions</text>'
+    row_h = ROWS / len(order)
+    split = f'<text x="{X0 - 16}" y="{MID + 7:.1f}" text-anchor="end" class="p-sub" fill="{DIM}">{len(order)} sessions</text>'
     for i, sid in enumerate(order):
-        y = 70 + i * row_h
+        y = TOP + i * row_h
         split += f'<line x1="{X0}" y1="{y + row_h / 2:.1f}" x2="{X1}" y2="{y + row_h / 2:.1f}" stroke="#eef0f2" stroke-width="1"/>'
         for tt, ss in msgs:
             if ss == sid:
@@ -540,42 +547,40 @@ def decisions(day='2026-09-09'):
     def zx(tt):
         return X0 + (tt - z0).total_seconds() / (z1 - z0).total_seconds() * (X1 - X0)
 
-    zrow = 330 / len(zorder)
+    zrow = ROWS / len(zorder)
     zoom = ''
     for m in range(0, 46, 15):
         xx = X0 + m / 45 * (X1 - X0)
-        zoom += f'<line x1="{xx:.1f}" y1="60" x2="{xx:.1f}" y2="415" stroke="#e5e7eb" stroke-width="1"/>'
+        zoom += f'<line x1="{xx:.1f}" y1="{AX0}" x2="{xx:.1f}" y2="{AX1}" stroke="#e5e7eb" stroke-width="1"/>'
         label = (z0 + datetime.timedelta(minutes=m)).strftime('%H:%M')
-        zoom += f'<text x="{xx:.1f}" y="440" text-anchor="middle" class="p-sub" fill="{DIM}">{label}</text>'
+        zoom += f'<text x="{xx:.1f}" y="{H - AX0 - 4}" text-anchor="middle" class="p-sub" fill="{DIM}">{label}</text>'
     for i, sid in enumerate(zorder):
-        y = 70 + i * zrow
+        y = TOP + i * zrow
         zoom += f'<text x="{X0 - 16}" y="{y + zrow / 2 + 7:.1f}" text-anchor="end" class="p-sub" fill="{DIM}">session {chr(65 + i)}</text>'
         zoom += f'<line x1="{X0}" y1="{y + zrow / 2:.1f}" x2="{X1}" y2="{y + zrow / 2:.1f}" stroke="#eef0f2" stroke-width="1"/>'
     path = ''
     for k, (tt, ss) in enumerate(window):
-        y = 70 + zorder.index(ss) * zrow + zrow / 2
+        y = TOP + zorder.index(ss) * zrow + zrow / 2
         path += ('M' if k == 0 else 'L') + f'{zx(tt):.1f} {y:.1f}'
     zoom += f'<path d="{path}" fill="none" stroke="{ACC}" stroke-opacity="0.35" stroke-width="2"/>'
     for tt, ss in window:
-        y = 70 + zorder.index(ss) * zrow
-        zoom += f'<line x1="{zx(tt):.1f}" y1="{y + 8:.1f}" x2="{zx(tt):.1f}" y2="{y + zrow - 8:.1f}" stroke="{ACC}" stroke-width="5"/>'
-    zoom += (f'<text x="{X1}" y="50" text-anchor="end" class="p-sub" fill="{INK}">'
-             f'{z0.strftime("%H:%M")}–{z1.strftime("%H:%M")}: {len(window)} prompts, {len(zorder)} sessions, {switches} switches</text>')
+        y = TOP + zorder.index(ss) * zrow
+        zoom += f'<line x1="{zx(tt):.1f}" y1="{y + 10:.1f}" x2="{zx(tt):.1f}" y2="{y + zrow - 10:.1f}" stroke="{ACC}" stroke-width="5"/>'
+    zoom += (f'<text x="{X1}" y="{AX0 - 8}" text-anchor="end" class="p-sub" fill="{INK}">'
+             f'{z0.strftime("%H:%M")}\u2013{z1.strftime("%H:%M")}: {len(window)} prompts, {len(zorder)} sessions, {switches} switches</text>')
 
-    body = (f'<g class="fragment fade-out" data-fragment-index="0">{axis}</g>'
+    body = (f'<g class="fragment fade-out" data-fragment-index="1">{axis}</g>'
             f'<g class="fragment fade-out" data-fragment-index="0">{merged}</g>'
-            f'<g class="fragment fade-in-then-out" data-fragment-index="0">{axis}{split}</g>'
+            f'<g class="fragment fade-in-then-out" data-fragment-index="0">{split}</g>'
             f'<g class="fragment" data-fragment-index="1">{zoom}</g>')
-    body = body.replace('<g class="fragment fade-out" data-fragment-index="0">' + axis + '</g>', '')
-    body = f'<g class="fragment fade-out" data-fragment-index="1">{axis}</g>' + body.replace(
-        f'<g class="fragment fade-in-then-out" data-fragment-index="0">{axis}{split}</g>',
-        f'<g class="fragment fade-in-then-out" data-fragment-index="0">{split}</g>')
     first, last = msgs[0][0].strftime('%H:%M'), msgs[-1][0].strftime('%H:%M')
-    return f'''## The agent types. I only decide.
+    return f'''<!-- .slide: class="wide" -->
+
+## The agent types. I only decide.
 
 <span class="subtitle">Sep 9: {len(msgs)} prompts to {len(counts)} sessions, one every {median:.1f} minutes</span>
 
-{svg(1000, 450, body)}
+{svg(W, H, body)}
 
 Note:
 Prototype, replaces slide 28. {first} to {last}; the 2.7 minutes is the median gap.

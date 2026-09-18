@@ -288,6 +288,64 @@
   line-height: 1.25;
 }
 
+/* A hero-image slide carries the "center" class only in the live deck, not in print, so it
+   needs the same title/subtitle spacing spelled out for both. */
+.reveal .slides section.hero-image > h2:first-child:has(+ p > .subtitle) {
+  margin-bottom: 0;
+}
+
+.reveal .slides section.hero-image > h2:first-child + p:has(> .subtitle) {
+  margin: 0 0 0.7em;
+  line-height: 1.25;
+}
+
+/* Caption-sized, so the line under a hero image's title doesn't wrap. */
+.reveal .slides section.hero-image .subtitle {
+  font-size: var(--fs-aside);
+}
+
+/* A hero image that carries a subtitle lays out like a regular slide: the title and subtitle
+   at the top, the visual filling and centred in what is left above the footer. The section fills
+   the slide, so reveal's per-slide "center" class resolves to top: 0 and leaves the flexbox in
+   charge, and the image sizes itself to the band instead of to a hand-set height. */
+.reveal :is(.slides, .pdf-page) > section.hero-image:has(> h2:first-child + p > .subtitle):not([style*="display: none"]) {
+  display: flex !important;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  padding-bottom: 56px;
+  /* The "center" class has reveal position the slide from an inline top, measured before this
+     rule gave the section the full slide height. It fills the slide now, so that offset is 0. */
+  top: 0 !important;
+}
+
+/* A print page is taller than the slide (reveal adds its margin), so 100% would stretch the section,
+   and reveal's print CSS zeroes section padding with !important, which the footer gap needs back. */
+.reveal .pdf-page > section.hero-image:has(> h2:first-child + p > .subtitle):not([style*="display: none"]) {
+  height: var(--slide-height, 720px);
+  padding-bottom: 56px !important;
+}
+
+.reveal :is(.slides, .pdf-page) > section.hero-image:has(> h2:first-child + p > .subtitle) > * {
+  flex: 0 0 auto;
+}
+
+/* min-height: 0 so the paragraph may shrink below the image's intrinsic height. */
+.reveal :is(.slides, .pdf-page) > section.hero-image:has(> h2:first-child + p > .subtitle) > p:has(> img) {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.reveal :is(.slides, .pdf-page) > section.hero-image:has(> h2:first-child + p > .subtitle) > p > img {
+  width: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
+
 .reveal .subtitle {
   font-weight: 300;
   font-size: 0.95em;
@@ -506,6 +564,29 @@ html.grid-view.reveal-print .reveal .slides .pdf-page:hover {
 
 html.grid-view.reveal-print .reveal .slides .pdf-page.grid-current {
   box-shadow: 0 0 0 14px var(--accent);
+}
+
+/* A payload that sets its own width and is wider than the regular text column: the inset would
+   push it off to the right rather than centre it, since margin auto has nothing left to hand out.
+   Use: <!-- .slide: class="wide" -->. !important for the print layout, which restates the inset. */
+.reveal :is(.slides, .pdf-page) > section.wide {
+  padding-inline: 0 !important;
+}
+
+/* A wide slide's chart fills the band under the title, the way a hero image does, instead of
+   keeping the size baked into its width/height attributes. preserveAspectRatio centres the
+   drawing inside that box, so it is as large as the slide allows and never distorted. */
+.reveal :is(.slides, .pdf-page) > section.wide > p:has(> svg.proto) {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+.reveal :is(.slides, .pdf-page) > section.wide > p > svg.proto {
+  width: 100%;
+  height: 100%;
+  margin: 0;
 }
 
 /* Screenshots piling up on top of each other. Each image sets its place with
